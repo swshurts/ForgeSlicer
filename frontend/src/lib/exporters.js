@@ -98,31 +98,19 @@ export function readFileAsArrayBuffer(file) {
 }
 
 // ---------- STL/OBJ/3MF Import ----------
-export async function import3MFFile(file) {
-  const buf = await readFileAsArrayBuffer(file);
-  const zip = await JSZip.loadAsync(buf);
-  // 3MF spec: 3D/3dmodel.model is the primary part. Some exporters use mixed-case.
-  let modelFile = zip.file("3D/3dmodel.model");
-  if (!modelFile) {
-    const candidates = zip.file(/3dmodel\.model$/i);
-    modelFile = candidates && candidates[0];
-  }
-  if (!modelFile) throw new Error("Invalid 3MF: missing 3D/3dmodel.model");
-  const xml = await modelFile.async("text");
+function _parseModelXml(xml, positions, indices, baseOffsetRef) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   const parserError = doc.getElementsByTagName("parsererror")[0];
-  if (parserError) throw new Error("3MF XML parse error: " + parserError.textContent);
-
-  const positions = [];
-  const indices = [];
-  let baseOffset = 0;
-  const objectNodes = doc.getElementsByTagName("object");
-  if (objectNodes.length === 0) throw new Error("3MF contains no <object> entries");
+  if (parserError) {
+    throw new Error("3MF XML parse error: " + parserError.textContent);
+  }
+  const NS_WILDCARD = "*";
+  const objectNodes = doc.getElementsByTagNameNS(NS_WILDCARD, "object");
   for (let oi = 0; oi < objectNodes.length; oi++) {
-    const mesh = objectNodes[oi].getElementsByTagName("mesh")[0];
+    const mesh = objectNodes[oi].getElementsByTagNameNS(NS_WILDCARD, "mesh")[0];
     if (!mesh) continue;
-    const verts = mesh.getElementsByTagName("vertex");
-    const startOffset = baseOffset;
+    const verts = mesh.getElementsByTagNameNS(NS_WILDCARD, "vertex");
+    const startOffset = baseOffsetRef.value;
     for (let i = 0; i < verts.length; i++) {
       positions.push(
         parseFloat(verts[i].getAttribute("x")) || 0,
@@ -130,7 +118,7 @@ export async function import3MFFile(file) {
         parseFloat(verts[i].getAttribute("z")) || 0,
       );
     }
-    const tris = mesh.getElementsByTagName("triangle");
+    const tris = mesh.getElementsByTagNameNS(NS_WILDCARD, "triangle");
     for (let i = 0; i < tris.length; i++) {
       indices.push(
         (parseInt(tris[i].getAttribute("v1"), 10) || 0) + startOffset,
@@ -138,9 +126,48 @@ export async function import3MFFile(file) {
         (parseInt(tris[i].getAttribute("v3"), 10) || 0) + startOffset,
       );
     }
-    baseOffset += verts.length;
+    baseOffsetRef.value += verts.length;
   }
-  if (positions.length === 0) throw new Error("3MF contains no vertex data");
+}
+
+export async function import3MFFile(file) {
+  const buf = await readFileAsArrayBuffer(file);
+  const zip = await JSZip.loadAsync(buf);
+  // 3MF spec: 3D/3dmodel.model is the primary part. Some producers (Bambu
+  // Studio, OrcaSlicer) split mesh data across Metadata/model_*.model
+  // files referenced via <components>, so we walk ALL *.model entries when
+  // the primary alone yields no vertices.
+  let modelFile = zip.file("3D/3dmodel.model");
+  if (!modelFile) {
+    const candidates = zip.file(/3dmodel\.model$/i);
+    modelFile = candidates && candidates[0];
+  }
+  if (!modelFile) throw new Error("Invalid 3MF: missing 3D/3dmodel.model");
+
+  const positions = [];
+  const indices = [];
+  const baseOffset = { value: 0 };
+
+  const primaryXml = await modelFile.async("text");
+  _parseModelXml(primaryXml, positions, indices, baseOffset);
+
+  if (positions.length === 0) {
+    // Fall back to scanning every *.model in the archive.
+    const allModelFiles = zip.file(/\.model$/i) || [];
+    for (const f of allModelFiles) {
+      if (f === modelFile) continue;
+      const txt = await f.async("text");
+      _parseModelXml(txt, positions, indices, baseOffset);
+      if (positions.length > 0) break;
+    }
+  }
+
+  if (positions.length === 0) {
+    throw new Error(
+      "3MF contains no vertex data — the file may use the beam-lattice " +
+      "or component-reference extension which ForgeSlicer doesn't import yet."
+    );
+  }
 
   const verts = new Float32Array(positions);
   // bbox + recenter so XZ center is at origin and bottom sits on Y=0

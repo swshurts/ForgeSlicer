@@ -43,6 +43,31 @@ export function buildGeometry(obj) {
 }
 
 /**
+ * Compute the base (scale = 1) size of an object along each axis in mm.
+ * Used by the Scale popup to translate between scale factor and real size.
+ */
+export function getBaseSize(obj) {
+  const t = obj.type, d = obj.dims || {};
+  if (t === "cube") return { x: d.x || 20, y: d.z || 20, z: d.y || 20 };
+  if (t === "sphere") {
+    const r = d.r || 10;
+    return { x: 2 * r, y: 2 * r, z: 2 * r };
+  }
+  if (t === "cylinder" || t === "cone") {
+    const r = d.r || 10;
+    return { x: 2 * r, y: d.h || 20, z: 2 * r };
+  }
+  if (t === "torus") {
+    const r = d.r || 12, tube = d.tube || 4;
+    return { x: 2 * (r + tube), y: 2 * tube, z: 2 * (r + tube) };
+  }
+  if (t === "imported" && obj.originalBbox) {
+    return { x: obj.originalBbox.x, y: obj.originalBbox.y, z: obj.originalBbox.z };
+  }
+  return { x: 1, y: 1, z: 1 };
+}
+
+/**
  * Apply position/rotation/scale to a Mesh. Rotation is in degrees in our store.
  */
 export function applyTransform(mesh, obj) {

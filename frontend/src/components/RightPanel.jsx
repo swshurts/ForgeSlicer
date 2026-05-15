@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { useScene, useSliceSettings, PRINTERS, FILAMENTS } from "../lib/store";
+import { useScene, PRINTERS, FILAMENTS } from "../lib/store";
+import { useSliceSettings } from "../lib/store";
 import { getPrinter, getFilament } from "../lib/presets";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
-import { downloadText } from "../lib/exporters";
-import { evaluateSceneStatsAsync, sliceToGCODEAsync } from "../lib/workerClient";
+import { evaluateSceneStatsAsync } from "../lib/workerClient";
 import { printersApi } from "../lib/api";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
+import { Printer, Sliders, Sigma, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -397,11 +397,8 @@ function Inspector() {
   const selectedId = useScene((s) => s.selectedId);
   const updateObject = useScene((s) => s.updateObject);
   const updateDims = useScene((s) => s.updateDims);
-  const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
-  const setImportedDim = useScene((s) => s.setImportedDim);
   const flipModifier = useScene((s) => s.flipModifier);
   const dropToBed = useScene((s) => s.dropToBed);
-  const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const setColorIndex = useScene((s) => s.setColorIndex);
 
   const obj = objects.find((o) => o.id === selectedId);
@@ -412,22 +409,6 @@ function Inspector() {
       </Section>
     );
   }
-
-  const setPos = (i, v) => {
-    const p = [...obj.position]; p[i] = v; setTransformWithHistory(obj.id, "position", p);
-  };
-  const setRot = (i, v) => {
-    const r = [...obj.rotation]; r[i] = v;
-    setTransformWithHistory(obj.id, "rotation", r);
-    if (autoDropOnRotate) {
-      setTimeout(() => dropToBed(obj.id, false), 0);
-    }
-  };
-  const setScl = (i, v) => {
-    const s = [...obj.scale]; s[i] = v; setTransformWithHistory(obj.id, "scale", s);
-  };
-
-  const isImported = obj.type === "imported";
 
   return (
     <Section title={`Inspector — ${obj.type}`} icon={Sliders} testid="inspector">
@@ -502,65 +483,25 @@ function Inspector() {
       )}
 
       <div>
-        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Position (mm)</div>
-        <div className="grid grid-cols-3 gap-2">
-          <NumberField testid="transform-x-input" label="X" value={obj.position[0]} onChange={(v) => setPos(0, v)} step={0.5} />
-          <NumberField testid="transform-y-input" label="Y" value={obj.position[1]} onChange={(v) => setPos(1, v)} step={0.5} />
-          <NumberField testid="transform-z-input" label="Z" value={obj.position[2]} onChange={(v) => setPos(2, v)} step={0.5} />
+        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
+          <span>Transforms</span>
+          <span className="text-[9px] normal-case text-slate-500">use top toolbar</span>
+        </div>
+        <div className="grid grid-cols-3 gap-1 text-[10px] font-mono bg-slate-950/60 border border-slate-800 rounded p-1.5">
+          <span className="text-slate-500">Pos</span>
+          <span className="col-span-2 text-slate-200 text-right truncate">
+            {obj.position[0].toFixed(1)}, {obj.position[1].toFixed(1)}, {obj.position[2].toFixed(1)}
+          </span>
+          <span className="text-slate-500">Rot</span>
+          <span className="col-span-2 text-slate-200 text-right truncate">
+            {obj.rotation[0].toFixed(0)}°, {obj.rotation[1].toFixed(0)}°, {obj.rotation[2].toFixed(0)}°
+          </span>
+          <span className="text-slate-500">Scale</span>
+          <span className="col-span-2 text-slate-200 text-right truncate">
+            {obj.scale[0].toFixed(2)} · {obj.scale[1].toFixed(2)} · {obj.scale[2].toFixed(2)}
+          </span>
         </div>
       </div>
-
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Rotation (deg)</div>
-        <div className="grid grid-cols-3 gap-2">
-          <NumberField testid="rotation-x" label="X" value={obj.rotation[0]} onChange={(v) => setRot(0, v)} step={5} />
-          <NumberField testid="rotation-y" label="Y" value={obj.rotation[1]} onChange={(v) => setRot(1, v)} step={5} />
-          <NumberField testid="rotation-z" label="Z" value={obj.rotation[2]} onChange={(v) => setRot(2, v)} step={5} />
-        </div>
-      </div>
-
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Scale</div>
-        <div className="grid grid-cols-3 gap-2">
-          <NumberField testid="scale-x" label="X" value={obj.scale[0]} onChange={(v) => setScl(0, v)} step={0.1} />
-          <NumberField testid="scale-y" label="Y" value={obj.scale[1]} onChange={(v) => setScl(1, v)} step={0.1} />
-          <NumberField testid="scale-z" label="Z" value={obj.scale[2]} onChange={(v) => setScl(2, v)} step={0.1} />
-        </div>
-      </div>
-
-      {isImported && obj.originalBbox && (
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center gap-1">
-            <Beaker size={10} /> Real Size (mm)
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <NumberField
-              testid="imported-dim-x"
-              label="X"
-              value={obj.originalBbox.x * obj.scale[0]}
-              onChange={(v) => setImportedDim(obj.id, "x", v)}
-              step={0.5} min={0.1}
-            />
-            <NumberField
-              testid="imported-dim-y"
-              label="Y"
-              value={obj.originalBbox.y * obj.scale[1]}
-              onChange={(v) => setImportedDim(obj.id, "y", v)}
-              step={0.5} min={0.1}
-            />
-            <NumberField
-              testid="imported-dim-z"
-              label="Z"
-              value={obj.originalBbox.z * obj.scale[2]}
-              onChange={(v) => setImportedDim(obj.id, "z", v)}
-              step={0.5} min={0.1}
-            />
-          </div>
-          <p className="text-[10px] text-slate-500 mt-1">
-            Original: {obj.originalBbox.x.toFixed(2)} × {obj.originalBbox.y.toFixed(2)} × {obj.originalBbox.z.toFixed(2)} mm
-          </p>
-        </div>
-      )}
 
       {obj.type === "cube" && (
         <div>
@@ -592,85 +533,6 @@ function Inspector() {
           </div>
         </div>
       )}
-    </Section>
-  );
-}
-
-function SliceStats({ stats }) {
-  if (!stats) return null;
-  return (
-    <div className="bg-slate-950 border border-slate-700 rounded p-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] font-mono" data-testid="slice-stats">
-      <span className="text-slate-500">Layers</span>
-      <span className="text-orange-400 text-right">{stats.layers}</span>
-      <span className="text-slate-500">Segments</span>
-      <span className="text-orange-400 text-right">{stats.segments}</span>
-      <span className="text-slate-500">Filament</span>
-      <span className="text-orange-400 text-right">{stats.filamentMM.toFixed(1)} mm</span>
-      <span className="text-slate-500">BBox X</span>
-      <span className="text-slate-300 text-right">{stats.bbox.x.toFixed(1)} mm</span>
-      <span className="text-slate-500">BBox Y</span>
-      <span className="text-slate-300 text-right">{stats.bbox.y.toFixed(1)} mm</span>
-      <span className="text-slate-500">BBox Z</span>
-      <span className="text-slate-300 text-right">{stats.bbox.z.toFixed(1)} mm</span>
-    </div>
-  );
-}
-
-function SlicerSection() {
-  const objects = useScene((s) => s.objects);
-  const projectName = useScene((s) => s.projectName);
-  const buildVolume = useScene((s) => s.buildVolume);
-  const settings = useSliceSettings();
-  const setS = useSliceSettings((s) => s.set);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [stats, setStats] = useState(null);
-
-  const handleSlice = async () => {
-    setError(""); setBusy(true); setStats(null);
-    try {
-      const { gcode, stats } = await sliceToGCODEAsync(objects, {
-        ...settings,
-        bedX: buildVolume.x,
-        bedY: buildVolume.y,
-      });
-      setStats(stats);
-      const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-      downloadText(gcode, `${safe}.gcode`, "text/plain");
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Section title="Slicer Settings" icon={Printer} testid="slicer-section">
-      <div className="grid grid-cols-2 gap-2">
-        <NumberField testid="slice-layer-height" label="Layer Height" value={settings.layerHeight} onChange={(v) => setS({ layerHeight: v })} step={0.05} min={0.05} suffix="mm" />
-        <NumberField testid="slice-first-layer" label="First Layer" value={settings.firstLayerHeight} onChange={(v) => setS({ firstLayerHeight: v })} step={0.05} min={0.05} suffix="mm" />
-        <NumberField testid="slice-nozzle" label="Nozzle" value={settings.nozzleDiameter} onChange={(v) => setS({ nozzleDiameter: v })} step={0.05} min={0.1} suffix="mm" />
-        <NumberField testid="slice-filament" label="Filament Ø" value={settings.filamentDiameter} onChange={(v) => setS({ filamentDiameter: v })} step={0.05} suffix="mm" />
-        <NumberField testid="slice-print-speed" label="Print Speed" value={settings.printSpeed} onChange={(v) => setS({ printSpeed: v })} step={5} suffix="mm/s" />
-        <NumberField testid="slice-travel-speed" label="Travel" value={settings.travelSpeed} onChange={(v) => setS({ travelSpeed: v })} step={5} suffix="mm/s" />
-        <NumberField testid="slice-nozzle-temp" label="Hotend" value={settings.nozzleTemp} onChange={(v) => setS({ nozzleTemp: v })} step={5} suffix="°C" />
-        <NumberField testid="slice-bed-temp" label="Bed" value={settings.bedTemp} onChange={(v) => setS({ bedTemp: v })} step={5} suffix="°C" />
-      </div>
-      <div className="text-[10px] text-amber-400/80 flex items-start gap-1 font-medium leading-tight">
-        <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-        <span>Preview slicer: perimeter contours only. For production prints use OrcaSlicer with the exported 3MF.</span>
-      </div>
-      <button
-        data-testid="slice-model-btn"
-        onClick={handleSlice}
-        disabled={busy || objects.length === 0}
-        className="w-full h-10 bg-green-500 hover:bg-green-600 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold rounded-md shadow-md transition-all uppercase tracking-wide text-sm flex items-center justify-center gap-2"
-      >
-        <Activity size={16} />
-        {busy ? "Slicing..." : "Slice & Export GCODE"}
-      </button>
-      {error && <div className="text-xs text-red-400" data-testid="slice-error">{error}</div>}
-      <SliceStats stats={stats} />
     </Section>
   );
 }
@@ -728,7 +590,6 @@ export default function RightPanel({ onSavePrinter }) {
       <CompatibilityWarning />
       <ManifoldHealth />
       <StatsSection />
-      <SlicerSection />
     </aside>
   );
 }

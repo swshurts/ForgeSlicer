@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useScene } from "../lib/store";
 import {
   Move3D, RotateCw, Scale3D, Grid3x3, Magnet, Combine, PlusSquare, MinusSquare,
   FileUp, FileDown, Save, Upload, Layers, Globe, Printer, Hexagon, FilePlus2,
-  Undo2, Redo2, Ruler,
+  Undo2, Redo2, Ruler, MapPin, Maximize, Sliders,
 } from "lucide-react";
 import {
   saveProjectJSON, openFileDialog,
@@ -15,6 +15,7 @@ import { galleryApi } from "../lib/api";
 import { getSlicersForPrinter } from "../lib/presets";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
+import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover } from "./ActionPopovers";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -71,6 +72,12 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
 
   const [busyMsg, setBusyMsg] = useState("");
+  const [openPopover, setOpenPopover] = useState(null); // 'position' | 'rotation' | 'scale' | 'slicer' | null
+  const posBtnRef = useRef(null);
+  const rotBtnRef = useRef(null);
+  const sclBtnRef = useRef(null);
+  const slcBtnRef = useRef(null);
+  const togglePopover = (name) => setOpenPopover((cur) => (cur === name ? null : name));
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -300,6 +307,66 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
         <Ruler size={16} />
       </IconBtn>
 
+      <Divider />
+
+      {/* Quick-access popover buttons for the most-edited transforms + slicer
+          settings — replaces the need to scroll the right panel. */}
+      <button
+        ref={posBtnRef}
+        data-testid="menu-position-btn"
+        onClick={() => togglePopover("position")}
+        disabled={!selectedId}
+        title="Position (X / Y / Z mm)"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          openPopover === "position"
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+      >
+        <MapPin size={12} /> Position
+      </button>
+      <button
+        ref={rotBtnRef}
+        data-testid="menu-rotation-btn"
+        onClick={() => togglePopover("rotation")}
+        disabled={!selectedId}
+        title="Rotation (degrees)"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          openPopover === "rotation"
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+      >
+        <RotateCw size={12} /> Rotation
+      </button>
+      <button
+        ref={sclBtnRef}
+        data-testid="menu-scale-btn"
+        onClick={() => togglePopover("scale")}
+        disabled={!selectedId}
+        title="Scale & Real Size (percent or mm) with aspect lock"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          openPopover === "scale"
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+      >
+        <Maximize size={12} /> Size
+      </button>
+      <button
+        ref={slcBtnRef}
+        data-testid="menu-slicer-btn"
+        onClick={() => togglePopover("slicer")}
+        title="Slicer settings & Export GCODE"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          openPopover === "slicer"
+            ? "bg-green-500/20 border-green-500/60 text-green-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        }`}
+      >
+        <Sliders size={12} /> Slicer
+      </button>
+
       <div className="flex-1" />
 
       <input
@@ -365,6 +432,18 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       )}
       {busyMsg && (
         <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
+      )}
+      {openPopover === "position" && (
+        <PositionPopover anchor={posBtnRef.current} onClose={() => setOpenPopover(null)} />
+      )}
+      {openPopover === "rotation" && (
+        <RotationPopover anchor={rotBtnRef.current} onClose={() => setOpenPopover(null)} />
+      )}
+      {openPopover === "scale" && (
+        <ScalePopover anchor={sclBtnRef.current} onClose={() => setOpenPopover(null)} />
+      )}
+      {openPopover === "slicer" && (
+        <SlicerPopover anchor={slcBtnRef.current} onClose={() => setOpenPopover(null)} />
       )}
     </div>
   );
