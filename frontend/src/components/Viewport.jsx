@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect, useState } from "react";
+import React, { useRef, useMemo, useEffect } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edges, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
@@ -34,7 +34,7 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit }) {
       onClick={(e) => {
         e.stopPropagation();
         if (measureMode) {
-          onMeasureHit([e.point.x, e.point.y, e.point.z]);
+          onMeasureHit([e.point.x, e.point.y, e.point.z], obj.id);
         } else {
           onSelect(obj.id);
         }
@@ -63,6 +63,8 @@ function SelectedTransform() {
   const snapRotate = useScene((s) => s.snapRotate);
   const setTransform = useScene((s) => s.setTransform);
   const beginTransform = useScene((s) => s.beginTransform);
+  const dropToBed = useScene((s) => s.dropToBed);
+  const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const objects = useScene((s) => s.objects);
   const { scene } = useThree();
   const draggingRef = useRef(false);
@@ -90,17 +92,6 @@ function SelectedTransform() {
     setTransform(obj.id, "scale", [mesh.scale.x, mesh.scale.y, mesh.scale.z]);
   };
 
-  const handleDragChange = (e) => {
-    // drei's TransformControls forwards three.js TransformControls `dragging-changed`
-    const dragging = e?.value ?? e?.target?.dragging;
-    if (dragging && !draggingRef.current) {
-      draggingRef.current = true;
-      beginTransform();
-    } else if (!dragging) {
-      draggingRef.current = false;
-    }
-  };
-
   return (
     <TransformControls
       object={mesh}
@@ -111,9 +102,18 @@ function SelectedTransform() {
       onObjectChange={handleChange}
       onMouseDown={beginTransform}
       onChange={(e) => {
-        // also listen to dragging-changed (legacy event passthrough)
         if (e && e.target && typeof e.target.dragging === "boolean") {
-          handleDragChange({ value: e.target.dragging, target: e.target });
+          const dragging = e.target.dragging;
+          if (dragging && !draggingRef.current) {
+            draggingRef.current = true;
+          } else if (!dragging && draggingRef.current) {
+            draggingRef.current = false;
+            // Auto-drop after rotation drag completes
+            if (autoDropOnRotate && transformMode === "rotate") {
+              // defer to next tick so latest rotation is committed
+              setTimeout(() => dropToBed(obj.id, false), 0);
+            }
+          }
         }
       }}
       size={0.9}
@@ -149,7 +149,8 @@ function BuildPlate() {
   );
 }
 
-function MeasurementLine({ a, b }) {
+function MeasurementLine({ measurement, onRemove }) {
+  const { a, b, id } = measurement;
   const points = useMemo(() => [
     new THREE.Vector3(a[0], a[1], a[2]),
     new THREE.Vector3(b[0], b[1], b[2]),
@@ -162,18 +163,30 @@ function MeasurementLine({ a, b }) {
   const dist = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
   return (
     <group>
-      <Line points={points} color="#22C55E" lineWidth={2} dashed={false} />
-      <mesh position={points[0]}>
-        <sphereGeometry args={[0.6, 12, 12]} />
-        <meshBasicMaterial color="#22C55E" />
+      <Line points={points} color="#22C55E" lineWidth={3} dashed={false} depthTest={false} />
+      <mesh position={points[0]} renderOrder={1000}>
+        <sphereGeometry args={[1.2, 16, 16]} />
+        <meshBasicMaterial color="#22C55E" depthTest={false} />
       </mesh>
-      <mesh position={points[1]}>
-        <sphereGeometry args={[0.6, 12, 12]} />
-        <meshBasicMaterial color="#22C55E" />
+      <mesh position={points[1]} renderOrder={1000}>
+        <sphereGeometry args={[1.2, 16, 16]} />
+        <meshBasicMaterial color="#22C55E" depthTest={false} />
       </mesh>
-      <Html position={mid} center distanceFactor={120} zIndexRange={[100, 0]}>
-        <div className="px-2 py-0.5 bg-black/85 border border-green-500/50 text-green-300 text-[11px] font-mono rounded pointer-events-none whitespace-nowrap">
-          {dist.toFixed(2)} mm
+      <Html position={mid} center zIndexRange={[100, 0]} sprite={false}>
+        <div
+          data-testid={`measurement-label-${id}`}
+          className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-950 border border-green-500/70 text-green-300 text-sm font-mono rounded-md shadow-lg whitespace-nowrap select-none"
+          style={{ pointerEvents: "auto" }}
+        >
+          <span className="font-bold tracking-tight">{dist.toFixed(2)} mm</span>
+          <button
+            data-testid={`measurement-close-${id}`}
+            onClick={(e) => { e.stopPropagation(); onRemove(id); }}
+            className="ml-1 w-4 h-4 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center leading-none"
+            title="Remove this measurement"
+          >
+            <span className="text-[12px] leading-none -mt-px">×</span>
+          </button>
         </div>
       </Html>
     </group>
@@ -183,9 +196,9 @@ function MeasurementLine({ a, b }) {
 function PendingMarker({ pt }) {
   if (!pt) return null;
   return (
-    <mesh position={pt}>
-      <sphereGeometry args={[0.8, 16, 16]} />
-      <meshBasicMaterial color="#FACC15" />
+    <mesh position={pt} renderOrder={1000}>
+      <sphereGeometry args={[1.4, 18, 18]} />
+      <meshBasicMaterial color="#FACC15" depthTest={false} />
     </mesh>
   );
 }
@@ -224,10 +237,13 @@ function BBoxOverlay() {
 function MeasurementsLayer() {
   const measurements = useScene((s) => s.measurements);
   const pending = useScene((s) => s.pendingMeasurePoint);
+  const measureMode = useScene((s) => s.measureMode);
+  const removeMeasurement = useScene((s) => s.removeMeasurement);
+  if (!measureMode) return null; // hide everything when measure tool is off
   return (
     <group>
       {measurements.map((m) => (
-        <MeasurementLine key={m.id} a={m.a} b={m.b} />
+        <MeasurementLine key={m.id} measurement={m} onRemove={removeMeasurement} />
       ))}
       <PendingMarker pt={pending} />
     </group>
@@ -242,13 +258,17 @@ export default function Viewport() {
   const buildVolume = useScene((s) => s.buildVolume);
   const measureMode = useScene((s) => s.measureMode);
   const handleMeasureClick = useScene((s) => s.handleMeasureClick);
+  const measurementsCount = useScene((s) => s.measurements.length);
 
   return (
     <div className="w-full h-full relative" data-testid="viewport-container">
       {measureMode && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/80 border border-green-500/40 rounded text-[11px] font-mono text-green-300 pointer-events-none flex items-center gap-2" data-testid="measure-hint">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-green-500/40 rounded text-[11px] font-mono text-green-300 pointer-events-none flex items-center gap-2" data-testid="measure-hint">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
           MEASURE MODE — click two points on any object (Esc to exit)
+          {measurementsCount > 0 && (
+            <span className="text-slate-400">| {measurementsCount} measurement{measurementsCount === 1 ? "" : "s"}</span>
+          )}
         </div>
       )}
       <Canvas

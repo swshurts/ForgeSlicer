@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useScene, useSliceSettings, PRINTERS, FILAMENTS } from "../lib/store";
 import { getPrinter, getFilament } from "../lib/presets";
 import { sliceToGCODE } from "../lib/slicer";
 import { downloadText } from "../lib/exporters";
-import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory } from "lucide-react";
+import { printersApi } from "../lib/api";
+import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -38,34 +39,71 @@ function Section({ title, icon: Icon, children, testid, accent = "text-slate-500
   );
 }
 
-// Group printers by brand for the select
-function printerOptions() {
+// Group printers by brand for the select (built-ins + community)
+function printerOptions(community) {
   const byBrand = {};
   for (const p of PRINTERS) {
     if (!byBrand[p.brand]) byBrand[p.brand] = [];
-    byBrand[p.brand].push(p);
+    byBrand[p.brand].push({ id: p.id, label: p.name, kind: "builtin" });
+  }
+  if (community && community.length > 0) {
+    byBrand["Community"] = community.map((c) => ({
+      id: c.id,
+      label: `${c.brand} ${c.name}${c.uses ? ` · ${c.uses}★` : ""}`,
+      kind: "community",
+    }));
   }
   return byBrand;
 }
 
-function ProfileSection() {
+function findPrinterAny(id, community) {
+  return (
+    PRINTERS.find((p) => p.id === id) ||
+    (() => {
+      const c = community.find((x) => x.id === id);
+      if (!c) return null;
+      return {
+        id: c.id,
+        brand: c.brand,
+        name: c.name,
+        buildVolume: { x: c.build_x, y: c.build_y, z: c.build_z },
+        maxNozzleTemp: c.max_nozzle_temp,
+        maxBedTemp: c.max_bed_temp,
+        defaultNozzle: c.default_nozzle,
+        defaultPrintSpeed: c.default_print_speed,
+        notes: c.notes,
+        submitter: c.submitter,
+        community: true,
+      };
+    })()
+  );
+}
+
+function ProfileSection({ onSavePrinter }) {
   const printerId = useScene((s) => s.printerId);
   const filamentId = useScene((s) => s.filamentId);
+  const community = useScene((s) => s.communityPrinters);
   const setPrinter = useScene((s) => s.setPrinter);
   const setFilament = useScene((s) => s.setFilament);
+  const removeCommunityPrinter = useScene((s) => s.removeCommunityPrinter);
   const setS = useSliceSettings((s) => s.set);
+  const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
+  const setAutoDropOnRotate = useScene((s) => s.setAutoDropOnRotate);
 
-  const printer = getPrinter(printerId);
+  const printer = findPrinterAny(printerId, community) || getPrinter("custom");
   const filament = getFilament(filamentId);
-  const groups = useMemo(() => printerOptions(), []);
+  const groups = useMemo(() => printerOptions(community), [community]);
+  const isCommunity = !!printer.community;
 
   const handlePrinter = (id) => {
-    const p = getPrinter(id);
+    const p = findPrinterAny(id, community);
+    if (!p) return;
     setPrinter(id);
     setS({
       nozzleDiameter: p.defaultNozzle,
-      printSpeed: Math.round(p.defaultPrintSpeed * (filament.printSpeedMultiplier || 1)),
+      printSpeed: Math.round((p.defaultPrintSpeed || 100) * (filament.printSpeedMultiplier || 1)),
     });
+    if (p.community) printersApi.use(id);
   };
   const handleFilament = (id) => {
     const f = getFilament(id);
@@ -74,14 +112,34 @@ function ProfileSection() {
       nozzleTemp: f.nozzleTemp,
       bedTemp: f.bedTemp,
       retraction: f.retraction,
-      printSpeed: Math.round(printer.defaultPrintSpeed * (f.printSpeedMultiplier || 1)),
+      printSpeed: Math.round((printer.defaultPrintSpeed || 100) * (f.printSpeedMultiplier || 1)),
     });
+  };
+  const handleRemoveCommunity = async () => {
+    if (!isCommunity) return;
+    if (!window.confirm(`Remove community printer "${printer.brand} ${printer.name}"?`)) return;
+    try {
+      await printersApi.delete(printer.id);
+      removeCommunityPrinter(printer.id);
+      setPrinter("custom");
+    } catch (e) {
+      window.alert("Delete failed: " + (e.response?.data?.detail || e.message));
+    }
   };
 
   return (
     <Section title="Printer & Filament" icon={Factory} testid="profile-section" accent="text-orange-500">
       <label className="flex flex-col gap-1">
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Printer</span>
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium flex items-center justify-between">
+          Printer
+          <button
+            data-testid="save-printer-btn"
+            onClick={onSavePrinter}
+            className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-1 normal-case tracking-normal font-semibold"
+          >
+            <Upload size={11} /> Save mine
+          </button>
+        </span>
         <select
           data-testid="printer-select"
           value={printerId}
@@ -91,7 +149,7 @@ function ProfileSection() {
           {Object.keys(groups).map((brand) => (
             <optgroup key={brand} label={brand}>
               {groups[brand].map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>{p.label}</option>
               ))}
             </optgroup>
           ))}
@@ -106,6 +164,24 @@ function ProfileSection() {
         <span className="col-span-2 text-slate-200 text-right">{printer.maxNozzleTemp} °C</span>
         <span className="text-slate-500">Max bed</span>
         <span className="col-span-2 text-slate-200 text-right">{printer.maxBedTemp} °C</span>
+        {isCommunity && (
+          <>
+            <span className="text-slate-500">Submitter</span>
+            <span className="col-span-2 text-orange-400 text-right">{printer.submitter || "Anonymous"}</span>
+            {printer.notes && (
+              <span className="col-span-3 text-slate-400 italic text-[10px] leading-snug pt-1 normal-case">
+                "{printer.notes}"
+              </span>
+            )}
+            <button
+              data-testid="delete-community-printer-btn"
+              onClick={handleRemoveCommunity}
+              className="col-span-3 mt-1 h-6 text-[10px] flex items-center justify-center gap-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-400 rounded border border-slate-700"
+            >
+              <Trash2 size={10} /> Remove from community
+            </button>
+          </>
+        )}
       </div>
 
       <label className="flex flex-col gap-1">
@@ -122,6 +198,17 @@ function ProfileSection() {
         </select>
       </label>
       <p className="text-[10px] text-slate-400 leading-snug">{filament.notes}</p>
+
+      <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+        <input
+          data-testid="auto-drop-toggle"
+          type="checkbox"
+          checked={autoDropOnRotate}
+          onChange={(e) => setAutoDropOnRotate(e.target.checked)}
+          className="accent-orange-500"
+        />
+        Auto-drop to bed on rotate
+      </label>
     </Section>
   );
 }
@@ -200,6 +287,8 @@ function Inspector() {
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
   const setImportedDim = useScene((s) => s.setImportedDim);
   const flipModifier = useScene((s) => s.flipModifier);
+  const dropToBed = useScene((s) => s.dropToBed);
+  const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
 
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj) {
@@ -214,7 +303,11 @@ function Inspector() {
     const p = [...obj.position]; p[i] = v; setTransformWithHistory(obj.id, "position", p);
   };
   const setRot = (i, v) => {
-    const r = [...obj.rotation]; r[i] = v; setTransformWithHistory(obj.id, "rotation", r);
+    const r = [...obj.rotation]; r[i] = v;
+    setTransformWithHistory(obj.id, "rotation", r);
+    if (autoDropOnRotate) {
+      setTimeout(() => dropToBed(obj.id, false), 0);
+    }
   };
   const setScl = (i, v) => {
     const s = [...obj.scale]; s[i] = v; setTransformWithHistory(obj.id, "scale", s);
@@ -258,6 +351,15 @@ function Inspector() {
           NEGATIVE
         </button>
       </div>
+
+      <button
+        data-testid="drop-to-bed-btn"
+        onClick={() => dropToBed(obj.id)}
+        className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-slate-700"
+        title="Drop object so its lowest point sits on Y=0"
+      >
+        <ArrowDownToLine size={13} /> Drop to Bed
+      </button>
 
       <div>
         <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Position (mm)</div>
@@ -466,11 +568,24 @@ function StatsSection() {
   );
 }
 
-export default function RightPanel() {
+export default function RightPanel({ onSavePrinter }) {
+  const setCommunity = useScene((s) => s.setCommunityPrinters);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await printersApi.list();
+        if (!cancelled) setCommunity(list);
+      } catch (_) { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [setCommunity]);
+
   return (
     <aside className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900 flex flex-col h-full overflow-y-auto" data-testid="right-panel">
       <Inspector />
-      <ProfileSection />
+      <ProfileSection onSavePrinter={onSavePrinter} />
       <CompatibilityWarning />
       <StatsSection />
       <SlicerSection />

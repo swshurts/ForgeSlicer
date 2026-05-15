@@ -48,6 +48,38 @@ class GalleryItemMeta(BaseModel):
     downloads: int = 0
 
 
+class CommunityPrinterCreate(BaseModel):
+    brand: str
+    name: str
+    submitter: str = "Anonymous"
+    build_x: float
+    build_y: float
+    build_z: float
+    max_nozzle_temp: int = 260
+    max_bed_temp: int = 100
+    default_nozzle: float = 0.4
+    default_print_speed: int = 100
+    notes: str = ""
+
+
+class CommunityPrinter(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    brand: str
+    name: str
+    submitter: str
+    build_x: float
+    build_y: float
+    build_z: float
+    max_nozzle_temp: int
+    max_bed_temp: int
+    default_nozzle: float
+    default_print_speed: int
+    notes: str
+    created_at: datetime
+    uses: int = 0
+
+
 @api_router.get("/")
 async def root():
     return {"message": "ForgeSlicer API", "version": "1.0.0"}
@@ -139,6 +171,65 @@ async def delete_gallery_item(item_id: str):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Gallery item not found")
     return {"deleted": True, "id": item_id}
+
+
+# ---------- Community Printer Profiles ----------
+@api_router.post("/printers", response_model=CommunityPrinter)
+async def create_community_printer(p: CommunityPrinterCreate):
+    pid = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc)
+    doc = {
+        "id": pid,
+        "brand": p.brand.strip()[:40] or "Custom",
+        "name": p.name.strip()[:60] or "Printer",
+        "submitter": (p.submitter or "Anonymous").strip()[:40] or "Anonymous",
+        "build_x": float(p.build_x),
+        "build_y": float(p.build_y),
+        "build_z": float(p.build_z),
+        "max_nozzle_temp": int(p.max_nozzle_temp),
+        "max_bed_temp": int(p.max_bed_temp),
+        "default_nozzle": float(p.default_nozzle),
+        "default_print_speed": int(p.default_print_speed),
+        "notes": (p.notes or "").strip()[:280],
+        "created_at": created_at.isoformat(),
+        "uses": 0,
+    }
+    await db.community_printers.insert_one(doc)
+    return CommunityPrinter(**{**doc, "created_at": created_at})
+
+
+@api_router.get("/printers", response_model=List[CommunityPrinter])
+async def list_community_printers():
+    cursor = db.community_printers.find({}, {"_id": 0}).sort("created_at", -1)
+    items = await cursor.to_list(1000)
+    out = []
+    for d in items:
+        ca = d.get("created_at")
+        if isinstance(ca, str):
+            try:
+                ca = datetime.fromisoformat(ca)
+            except Exception:
+                ca = datetime.now(timezone.utc)
+        out.append(CommunityPrinter(**{**d, "created_at": ca}))
+    return out
+
+
+@api_router.post("/printers/{printer_id}/use")
+async def increment_printer_use(printer_id: str):
+    res = await db.community_printers.update_one(
+        {"id": printer_id}, {"$inc": {"uses": 1}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return {"ok": True}
+
+
+@api_router.delete("/printers/{printer_id}")
+async def delete_community_printer(printer_id: str):
+    res = await db.community_printers.delete_one({"id": printer_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return {"deleted": True, "id": printer_id}
 
 
 app.include_router(api_router)

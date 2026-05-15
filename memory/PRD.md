@@ -68,12 +68,18 @@
 - Backend pytest: 8/8 passing for gallery CRUD.
 - Frontend: workspace, primitives, outliner, inspector, transforms, boolean union, share/orca dialogs, slice→GCODE download all verified.
 
+## Iteration 3 (2026-05-15) — Polish + Community Profiles
+- ✅ **Drop to Bed** on rotate: rotating an object via numeric input or gizmo automatically snaps it so the lowest point sits on Y=0 (matches TinkerCAD). Toggleable in the Printer & Filament panel; manual "Drop to Bed" button in Inspector.
+- ✅ **Friendlier measurement labels**: fixed-size, larger text-sm labels with green outline + individual X-close button per measurement; endpoints now `1.2mm` spheres with `depthTest=false` so they stay visible behind geometry.
+- ✅ **Auto-hide measurements** when the measure tool is turned off (re-appear when toggled on again).
+- ✅ **Auto-purge** of any measurement whose referenced object is deleted (object ID stored per endpoint).
+- ✅ **Community Printer Profiles**: full backend (`POST/GET/DELETE /api/printers`, `POST /api/printers/{id}/use` for popularity), plus a "Save mine" dialog with form. Community submissions show under a "Community" optgroup in the printer dropdown, with submitter name, notes, and a × removal button for moderation.
+
 ## Backlog / Future Enhancements
-- P1: Slicer in a Web Worker (currently main-thread; large meshes can take >5s)
-- P1: Real solid infill in GCODE slicer (currently perimeter contours only)
+- P1: Slicer in a Web Worker (currently main-thread)
+- P1: Real solid infill in GCODE slicer
 - P2: Multi-object multi-select & group transforms (`d` — deferred per user)
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app for one-click hand-off to OrcaSlicer
-- P3: Likes/votes on gallery designs (engagement)
+- P3: Like/upvote on community printers and gallery designs
 - P3: Sketch / 2D drawing mode
-- P3: Save & load printer/filament profiles to backend for cross-device use

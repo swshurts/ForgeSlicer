@@ -4,11 +4,12 @@ import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
 import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
-import { ShareDialog, OrcaDialog } from "./Dialogs";
+import { ShareDialog, OrcaDialog, SavePrinterDialog } from "./Dialogs";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
   const [orcaOpen, setOrcaOpen] = useState(false);
+  const [savePrinterOpen, setSavePrinterOpen] = useState(false);
 
   return (
     <div
@@ -22,11 +23,12 @@ export default function Workspace() {
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
           <Viewport />
         </main>
-        <RightPanel />
+        <RightPanel onSavePrinter={() => setSavePrinterOpen(true)} />
       </div>
       <StatusBar />
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       <OrcaDialog open={orcaOpen} onClose={() => setOrcaOpen(false)} />
+      <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
     </div>
   );
 }

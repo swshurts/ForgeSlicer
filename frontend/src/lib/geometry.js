@@ -56,3 +56,33 @@ export function applyTransform(mesh, obj) {
   mesh.updateMatrix();
   mesh.updateMatrixWorld(true);
 }
+
+/**
+ * Compute the bounding box of an object's geometry AFTER applying its
+ * rotation and scale (but NOT translation). Returns { min:{x,y,z}, max:{x,y,z} }.
+ * Used by dropToBed to compute the new Y offset.
+ */
+export function computeRotatedBBox(obj) {
+  const g = buildGeometry(obj);
+  const mat = new THREE.Matrix4();
+  const q = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(
+      THREE.MathUtils.degToRad(obj.rotation[0]),
+      THREE.MathUtils.degToRad(obj.rotation[1]),
+      THREE.MathUtils.degToRad(obj.rotation[2])
+    )
+  );
+  mat.compose(
+    new THREE.Vector3(0, 0, 0),
+    q,
+    new THREE.Vector3(obj.scale[0], obj.scale[1], obj.scale[2])
+  );
+  g.applyMatrix4(mat);
+  g.computeBoundingBox();
+  const bb = g.boundingBox;
+  g.dispose();
+  return {
+    min: { x: bb.min.x, y: bb.min.y, z: bb.min.z },
+    max: { x: bb.max.x, y: bb.max.y, z: bb.max.z },
+  };
+}

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
+import { computeRotatedBBox } from "./geometry";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -66,11 +67,14 @@ export const useScene = create((set, get) => ({
   // ---- profiles ----
   printerId: defaultPrinterId,
   filamentId: defaultFilamentId,
+  communityPrinters: [],         // [{ id, brand, name, build_x/y/z, max_*, default_*, submitter, uses }]
+  autoDropOnRotate: true,
 
   // ---- measurement ----
   measureMode: false,
-  measurements: [], // [{id, a:[x,y,z], b:[x,y,z]}]
+  measurements: [], // [{id, a:[x,y,z], b:[x,y,z], objIdA, objIdB}]
   pendingMeasurePoint: null,
+  pendingMeasureObjId: null,
 
   // ---- history ----
   history: [],
@@ -113,13 +117,37 @@ export const useScene = create((set, get) => ({
 
   // ---- profile actions ----
   setPrinter: (id) => {
-    const p = getPrinter(id);
+    const s = get();
+    // Look in built-in first, then community
+    let p = PRINTERS.find((x) => x.id === id);
+    if (!p) {
+      const c = s.communityPrinters.find((x) => x.id === id);
+      if (c) {
+        p = {
+          id: c.id,
+          brand: c.brand,
+          name: c.name,
+          buildVolume: { x: c.build_x, y: c.build_y, z: c.build_z },
+          maxNozzleTemp: c.max_nozzle_temp,
+          maxBedTemp: c.max_bed_temp,
+          defaultNozzle: c.default_nozzle,
+          defaultPrintSpeed: c.default_print_speed,
+        };
+      }
+    }
+    if (!p) p = getPrinter(defaultPrinterId);
     set({
       printerId: p.id,
       buildVolume: { ...p.buildVolume },
     });
   },
   setFilament: (id) => set({ filamentId: id }),
+  setAutoDropOnRotate: (v) => set({ autoDropOnRotate: v }),
+  setCommunityPrinters: (list) => set({ communityPrinters: list }),
+  addCommunityPrinter: (p) =>
+    set((s) => ({ communityPrinters: [p, ...s.communityPrinters] })),
+  removeCommunityPrinter: (id) =>
+    set((s) => ({ communityPrinters: s.communityPrinters.filter((c) => c.id !== id) })),
 
   // ---- scene mutations ----
   setProjectName: (name) => set({ projectName: name }),
@@ -163,7 +191,33 @@ export const useScene = create((set, get) => ({
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
+      measurements: s.measurements.filter((m) => m.objIdA !== id && m.objIdB !== id),
+      pendingMeasurePoint:
+        s.pendingMeasureObjId === id ? null : s.pendingMeasurePoint,
+      pendingMeasureObjId:
+        s.pendingMeasureObjId === id ? null : s.pendingMeasureObjId,
     }));
+  },
+
+  // Drop the object so its lowest point sits on Y=0 (the build plate).
+  dropToBed: (id, withHistory = true) => {
+    const s = get();
+    const obj = s.objects.find((o) => o.id === id);
+    if (!obj || obj.type === "imported" ? false : false) {} // placeholder
+    if (!obj) return;
+    try {
+      const bb = computeRotatedBBox(obj);
+      const newY = -bb.min.y;
+      if (Math.abs(newY - obj.position[1]) < 1e-4) return;
+      if (withHistory) s.pushHistory();
+      set((st) => ({
+        objects: st.objects.map((o) =>
+          o.id === id ? { ...o, position: [o.position[0], newY, o.position[2]] } : o
+        ),
+      }));
+    } catch (e) {
+      // ignore — geometry may not be ready
+    }
   },
 
   duplicateObject: (id) => {
@@ -280,22 +334,25 @@ export const useScene = create((set, get) => ({
 
   // ---- Measurement ----
   setMeasureMode: (on) =>
-    set({ measureMode: on, pendingMeasurePoint: null }),
+    set({ measureMode: on, pendingMeasurePoint: null, pendingMeasureObjId: null }),
 
-  handleMeasureClick: (point) => {
+  handleMeasureClick: (point, objId = null) => {
     const s = get();
     if (!s.measureMode) return;
     if (!s.pendingMeasurePoint) {
-      set({ pendingMeasurePoint: point });
+      set({ pendingMeasurePoint: point, pendingMeasureObjId: objId });
     } else {
       const m = {
         id: `m-${Date.now()}`,
         a: s.pendingMeasurePoint,
         b: point,
+        objIdA: s.pendingMeasureObjId,
+        objIdB: objId,
       };
       set({
         measurements: [...s.measurements, m],
         pendingMeasurePoint: null,
+        pendingMeasureObjId: null,
       });
     }
   },

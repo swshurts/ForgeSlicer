@@ -18,3 +18,23 @@ export const galleryApi = {
     return data;
   },
 };
+
+export const printersApi = {
+  list: async () => {
+    const { data } = await axios.get(`${API}/printers`);
+    return data;
+  },
+  create: async (payload) => {
+    const { data } = await axios.post(`${API}/printers`, payload);
+    return data;
+  },
+  use: async (id) => {
+    try {
+      await axios.post(`${API}/printers/${id}/use`);
+    } catch (_) { /* non-fatal */ }
+  },
+  delete: async (id) => {
+    const { data } = await axios.delete(`${API}/printers/${id}`);
+    return data;
+  },
+};
