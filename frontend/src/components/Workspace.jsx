@@ -9,7 +9,13 @@ import { ShareDialog, OrcaDialog, SavePrinterDialog } from "./Dialogs";
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
   const [orcaOpen, setOrcaOpen] = useState(false);
+  const [targetSlicer, setTargetSlicer] = useState(null);
   const [savePrinterOpen, setSavePrinterOpen] = useState(false);
+
+  const handleSendTo = (slicer) => {
+    setTargetSlicer(slicer);
+    setOrcaOpen(true);
+  };
 
   return (
     <div
@@ -17,7 +23,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={() => setOrcaOpen(true)} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
@@ -27,7 +33,7 @@ export default function Workspace() {
       </div>
       <StatusBar />
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
-      <OrcaDialog open={orcaOpen} onClose={() => setOrcaOpen(false)} />
+      <OrcaDialog open={orcaOpen} onClose={() => setOrcaOpen(false)} targetSlicer={targetSlicer} />
       <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
     </div>
   );

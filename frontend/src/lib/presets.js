@@ -403,3 +403,67 @@ export const FILAMENTS = [
 
 export const getPrinter = (id) => PRINTERS.find((p) => p.id === id) || PRINTERS[0];
 export const getFilament = (id) => FILAMENTS.find((f) => f.id === id) || FILAMENTS[0];
+
+// ---------- Slicer software directory ----------
+// Each slicer is an installable desktop program that opens .3mf/.stl files.
+// We list the printer-vendor's native slicer first, then OrcaSlicer & PrusaSlicer
+// as widely-compatible community options when relevant.
+export const SLICERS = {
+  orca:    { id: "orca",    name: "OrcaSlicer",            url: "https://github.com/SoftFever/OrcaSlicer/releases", formats: ["3mf", "stl"] },
+  prusa:   { id: "prusa",   name: "PrusaSlicer",           url: "https://www.prusa3d.com/page/prusaslicer_424/",     formats: ["3mf", "stl"] },
+  bambu:   { id: "bambu",   name: "Bambu Studio",          url: "https://bambulab.com/en/download/studio",            formats: ["3mf", "stl"] },
+  flashprint: { id: "flashprint", name: "FlashPrint 5",    url: "https://www.flashforge.com/download-center",         formats: ["3mf", "stl"] },
+  orca_ff: { id: "orca_ff", name: "OrcaSlicer (FlashForge fork)", url: "https://github.com/Flashforge-official/OrcaSlicer-Flashforge/releases", formats: ["3mf", "stl"] },
+  creality_print: { id: "creality_print", name: "Creality Print", url: "https://www.crealitycloud.com/software-firmware/software", formats: ["3mf", "stl"] },
+  elegoo:  { id: "elegoo",  name: "Elegoo Slicer",         url: "https://www.elegoo.com/pages/3d-printing-user-center", formats: ["3mf", "stl"] },
+  cura:    { id: "cura",    name: "UltiMaker Cura",        url: "https://ultimaker.com/software/ultimaker-cura/",      formats: ["3mf", "stl"] },
+  superslicer: { id: "superslicer", name: "SuperSlicer",   url: "https://github.com/supermerill/SuperSlicer/releases", formats: ["3mf", "stl"] },
+};
+
+// Per-printer slicer recommendations. First entry is the printer-maker's default.
+// Falls back to a vendor-agnostic list when the printer isn't in this map.
+export const PRINTER_SLICERS = {
+  // Bambu
+  "bambu-p1s":      ["bambu", "orca"],
+  "bambu-a1":       ["bambu", "orca"],
+  "bambu-a1-mini":  ["bambu", "orca"],
+  "bambu-x1c":      ["bambu", "orca"],
+  // Prusa
+  "prusa-mk4":      ["prusa", "orca", "superslicer"],
+  "prusa-mini":     ["prusa", "orca", "superslicer"],
+  "prusa-xl":       ["prusa", "orca", "superslicer"],
+  // Creality
+  "creality-ender3-v3-se": ["creality_print", "orca", "cura"],
+  "creality-ender3-pro":   ["creality_print", "cura", "orca"],
+  "creality-k1":           ["creality_print", "orca"],
+  // FlashForge
+  "flashforge-adventurer5m": ["flashprint", "orca_ff", "orca"],
+  "flashforge-ad5x":         ["flashprint", "orca_ff", "orca"],
+  "flashforge-creator5":     ["flashprint", "orca_ff"],
+  "flashforge-creator5-pro": ["flashprint", "orca_ff"],
+  "flashforge-creator-pro":  ["flashprint", "cura"],
+  "flashforge-finder":       ["flashprint"],
+  // Elegoo
+  "elegoo-neptune-4":       ["elegoo", "cura", "orca"],
+  "elegoo-neptune-4-pro":   ["elegoo", "cura", "orca"],
+  "elegoo-neptune-4-plus":  ["elegoo", "cura", "orca"],
+  "elegoo-neptune-4-max":   ["elegoo", "cura", "orca"],
+  "elegoo-neptune-3":       ["elegoo", "cura", "orca"],
+  "elegoo-centauri-carbon": ["elegoo", "orca"],
+  "elegoo-orangestorm-giga":["elegoo", "cura"],
+  // Anycubic
+  "anycubic-kobra2":        ["orca", "cura"],
+  // Sovol
+  "sovol-sv06":             ["orca", "prusa", "superslicer"],
+  "sovol-sv07":             ["orca", "prusa", "cura"],
+  "sovol-sv08":             ["orca", "prusa"],
+  // Voron
+  "voron-2.4":              ["superslicer", "orca", "prusa"],
+  // Custom / fallback
+  "custom":                 ["orca", "prusa", "cura"],
+};
+
+export function getSlicersForPrinter(printerId) {
+  const ids = PRINTER_SLICERS[printerId] || ["orca", "prusa"];
+  return ids.map((id) => SLICERS[id]).filter(Boolean);
+}

@@ -3,8 +3,9 @@ import { useScene, useSliceSettings, PRINTERS, FILAMENTS } from "../lib/store";
 import { getPrinter, getFilament } from "../lib/presets";
 import { sliceToGCODE } from "../lib/slicer";
 import { downloadText } from "../lib/exporters";
+import { evaluateScene } from "../lib/csg";
 import { printersApi } from "../lib/api";
-import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine } from "lucide-react";
+import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -210,6 +211,43 @@ function ProfileSection({ onSavePrinter }) {
         Auto-drop to bed on rotate
       </label>
     </Section>
+  );
+}
+
+function ManifoldHealth() {
+  const objects = useScene((s) => s.objects);
+  const [info, setInfo] = useState({ ok: true, edges: 0, tris: 0 });
+
+  // Debounced recompute when scene changes
+  useEffect(() => {
+    if (objects.length === 0) {
+      setInfo({ ok: true, edges: 0, tris: 0 });
+      return;
+    }
+    const handle = setTimeout(() => {
+      try {
+        const r = evaluateScene(objects);
+        setInfo({ ok: r.manifold, edges: r.boundaryEdges, tris: r.triangleCount });
+      } catch (_) {
+        setInfo({ ok: true, edges: 0, tris: 0 });
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [objects]);
+
+  if (info.ok || info.tris === 0) return null;
+  return (
+    <div className="mx-3 mb-3 rounded border border-blue-500/40 bg-blue-500/10 p-2" data-testid="manifold-warning">
+      <div className="flex items-center gap-1 text-blue-300 text-[10px] font-semibold uppercase tracking-wider mb-1">
+        <ShieldAlert size={11} /> Mesh has {info.edges} open edges
+      </div>
+      <p className="text-[11px] text-blue-100/90 leading-snug">
+        Your Boolean operation produced a near-tangent boundary that the CSG engine
+        can't perfectly close. <span className="text-white font-medium">Your print will still slice fine</span> —
+        modern slicers (OrcaSlicer, PrusaSlicer, FlashPrint 5, Bambu Studio) all auto-repair on import.
+        For perfect manifold geometry, slightly overlap or fully separate the parts.
+      </p>
+    </div>
   );
 }
 
@@ -587,6 +625,7 @@ export default function RightPanel({ onSavePrinter }) {
       <Inspector />
       <ProfileSection onSavePrinter={onSavePrinter} />
       <CompatibilityWarning />
+      <ManifoldHealth />
       <StatsSection />
       <SlicerSection />
     </aside>

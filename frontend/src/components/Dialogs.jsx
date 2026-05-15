@@ -101,13 +101,15 @@ export function ShareDialog({ open, onClose }) {
   );
 }
 
-export function OrcaDialog({ open, onClose }) {
+export function OrcaDialog({ open, onClose, targetSlicer }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const [busy, setBusy] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
 
   if (!open) return null;
+
+  const slicer = targetSlicer || { name: "OrcaSlicer", url: "https://github.com/SoftFever/OrcaSlicer/releases" };
 
   const handleDownload = async () => {
     setBusy(true);
@@ -126,14 +128,15 @@ export function OrcaDialog({ open, onClose }) {
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Printer size={16} className="text-orange-400" />
-            <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Send to OrcaSlicer</h2>
+            <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Send to {slicer.name}</h2>
           </div>
           <button onClick={onClose} data-testid="orca-close-btn" className="text-slate-400 hover:text-white"><X size={16} /></button>
         </div>
         <div className="p-4 flex flex-col gap-3">
           <p className="text-sm text-slate-300">
-            ForgeSlicer integrates with OrcaSlicer via the standard <span className="font-mono text-orange-400">.3mf</span> file format.
-            Click below to download a print-ready 3MF, then open it in OrcaSlicer.
+            ForgeSlicer hands off to <span className="font-semibold text-orange-400">{slicer.name}</span> via the
+            standard <span className="font-mono text-orange-400">.3mf</span> file format. Download the file below and
+            open it in {slicer.name} for production slicing.
           </p>
           <button
             data-testid="orca-download-btn"
@@ -142,16 +145,18 @@ export function OrcaDialog({ open, onClose }) {
             className="h-10 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 text-white font-semibold rounded flex items-center justify-center gap-2"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            {downloaded ? "Download again" : "Download 3MF for OrcaSlicer"}
+            {downloaded ? "Download again" : `Download 3MF for ${slicer.name}`}
           </button>
 
           <div className="bg-slate-950 border border-slate-800 rounded p-3 text-[11px] text-slate-300 leading-relaxed">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">How to open in OrcaSlicer</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">How to open in {slicer.name}</div>
             <ol className="list-decimal list-inside space-y-1">
-              <li>Make sure <a href="https://github.com/SoftFever/OrcaSlicer" target="_blank" rel="noreferrer" className="text-orange-400 underline">OrcaSlicer</a> is installed locally.</li>
-              <li>Double-click the downloaded <span className="font-mono text-orange-400">.3mf</span> file — OrcaSlicer will open it.</li>
-              <li>Or in OrcaSlicer: <span className="font-mono">File → Import → Import 3MF</span>.</li>
-              <li>Slice with OrcaSlicer's full feature-set (infill, supports, multi-material).</li>
+              <li>
+                Install <a href={slicer.url} target="_blank" rel="noreferrer" className="text-orange-400 underline">{slicer.name}</a> on your computer.
+              </li>
+              <li>Double-click the downloaded <span className="font-mono text-orange-400">.3mf</span> file — {slicer.name} will open it.</li>
+              <li>Or inside {slicer.name}: <span className="font-mono">File → Import / Open → 3MF</span>.</li>
+              <li>Slice with {slicer.name}'s full feature set (infill, supports, multi-material).</li>
             </ol>
           </div>
           <p className="text-[10px] text-slate-500">

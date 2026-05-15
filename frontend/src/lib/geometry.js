@@ -13,16 +13,16 @@ export function buildGeometry(obj) {
     // Note: three.js Y is up; we map our z->Y (height) so that "z" dim feels like up
   }
   if (t === "sphere") {
-    return new THREE.SphereGeometry(d.r || 10, d.segments || 32, Math.max(8, (d.segments || 32) / 2));
+    return new THREE.SphereGeometry(d.r || 10, d.segments || 48, Math.max(16, (d.segments || 48) / 2));
   }
   if (t === "cylinder") {
-    return new THREE.CylinderGeometry(d.r || 10, d.r || 10, d.h || 20, d.segments || 32);
+    return new THREE.CylinderGeometry(d.r || 10, d.r || 10, d.h || 20, d.segments || 64);
   }
   if (t === "cone") {
-    return new THREE.ConeGeometry(d.r || 10, d.h || 20, d.segments || 32);
+    return new THREE.ConeGeometry(d.r || 10, d.h || 20, d.segments || 64);
   }
   if (t === "torus") {
-    return new THREE.TorusGeometry(d.r || 12, d.tube || 4, 16, d.segments || 24);
+    return new THREE.TorusGeometry(d.r || 12, d.tube || 4, 24, d.segments || 48);
   }
   if (t === "imported" && obj.geometry) {
     const g = new THREE.BufferGeometry();

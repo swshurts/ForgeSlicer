@@ -11,7 +11,9 @@ import {
 } from "../lib/exporters";
 import { combineTwo } from "../lib/csg";
 import { galleryApi } from "../lib/api";
+import { getSlicersForPrinter } from "../lib/presets";
 import { Link } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -61,6 +63,11 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
   const redoLen = useScene((s) => s.redoStack.length);
   const measureMode = useScene((s) => s.measureMode);
   const setMeasureMode = useScene((s) => s.setMeasureMode);
+  const printerId = useScene((s) => s.printerId);
+  const slicers = getSlicersForPrinter(printerId);
+  const primarySlicer = slicers[0] || { id: "orca", name: "OrcaSlicer" };
+  const alternateSlicers = slicers.slice(1);
+  const [sendMenuOpen, setSendMenuOpen] = useState(false);
 
   const [busyMsg, setBusyMsg] = useState("");
 
@@ -298,11 +305,43 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       </button>
       <button
         data-testid="send-to-orcaslicer-btn"
-        onClick={onSendToOrca}
-        className="h-8 px-3 ml-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center gap-1.5 shadow"
+        onClick={() => onSendToOrca(primarySlicer)}
+        className="h-8 px-3 ml-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-l flex items-center gap-1.5 shadow"
+        title={`Send to ${primarySlicer.name} (recommended for your printer)`}
       >
-        <Printer size={14} /> Send to OrcaSlicer
+        <Printer size={14} /> Send to {primarySlicer.name}
       </button>
+      {alternateSlicers.length > 0 && (
+        <div className="relative">
+          <button
+            data-testid="send-slicer-menu-btn"
+            onClick={() => setSendMenuOpen((v) => !v)}
+            onBlur={() => setTimeout(() => setSendMenuOpen(false), 150)}
+            className="h-8 px-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-r border-l border-orange-700 flex items-center shadow"
+            title="Choose a different slicer"
+          >
+            <ChevronDown size={14} />
+          </button>
+          {sendMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded shadow-xl z-50 min-w-[180px]" data-testid="send-slicer-menu">
+              {alternateSlicers.map((s) => (
+                <button
+                  key={s.id}
+                  data-testid={`send-slicer-option-${s.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setSendMenuOpen(false);
+                    onSendToOrca(s);
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Printer size={12} className="text-orange-400" /> {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {busyMsg && (
         <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
       )}

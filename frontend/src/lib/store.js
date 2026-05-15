@@ -4,10 +4,10 @@ import { computeRotatedBBox } from "./geometry";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
-  sphere:   { dims: { r: 12, segments: 32 } },
-  cylinder: { dims: { r: 10, h: 24, segments: 32 } },
-  cone:     { dims: { r: 10, h: 24, segments: 32 } },
-  torus:    { dims: { r: 14, tube: 4, segments: 24 } },
+  sphere:   { dims: { r: 12, segments: 48 } },
+  cylinder: { dims: { r: 10, h: 24, segments: 64 } },
+  cone:     { dims: { r: 10, h: 24, segments: 64 } },
+  torus:    { dims: { r: 14, tube: 4, segments: 48 } },
 };
 
 let nextId = 1;
