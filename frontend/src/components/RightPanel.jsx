@@ -244,7 +244,7 @@ function ManifoldHealth() {
       <p className="text-[11px] text-blue-100/90 leading-snug">
         Your Boolean operation produced a near-tangent boundary that the CSG engine
         can't perfectly close. <span className="text-white font-medium">Your print will still slice fine</span> —
-        modern slicers (OrcaSlicer, PrusaSlicer, FlashPrint 5, Bambu Studio) all auto-repair on import.
+        modern slicers (OrcaSlicer, PrusaSlicer, Flash Studio, Bambu Studio) all auto-repair on import.
         For perfect manifold geometry, slightly overlap or fully separate the parts.
       </p>
     </div>
