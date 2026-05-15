@@ -89,12 +89,19 @@
   - Voron → SuperSlicer (alt: OrcaSlicer, PrusaSlicer)
   - Custom → OrcaSlicer (alt: PrusaSlicer, Cura)
 
+## Iteration 5 (2026-05-15) — Worker Offload, Landing Import, Multi-Color 3MF
+- ✅ **Landing-page Import** (`hero-cta-import`): users can drop in an existing STL, 3MF, or OBJ from the landing page and skip straight into the workspace with the mesh loaded. New `lib/pendingImport.js` is StrictMode-safe (idempotent consume). Workspace shows a transient success/error banner (`import-banner`).
+- ✅ **3MF Import**: parses `3D/3dmodel.model` XML out of the 3MF zip, merges all `<object>` meshes, recenters to build-plate origin (`importAnyMeshFile` dispatch).
+- ✅ **Web Worker offload** (`lib/workers/csg.worker.js` + `lib/workerClient.js`): all heavy operations now run off the main thread — `evaluateSceneStatsAsync` (manifold check), `combineTwoAsync` (booleans), `sliceToGCODEAsync` (slicer), `exportSTLBytesAsync`, `export3MFBytesAsync`. Falls back to main-thread if Worker construction fails. Non-clonable Zustand actions are stripped from slice settings before crossing the worker boundary.
+- ✅ **Multi-color 3MF export**: each object now carries a `colorIndex` (0..7) and the Inspector exposes 8 color swatches (`color-swatch-0` .. `color-swatch-7`). The Viewport renders each object in its assigned palette color. When 2+ distinct colors are in the scene, `export-3mf-btn` automatically emits a multi-object 3MF with a `<basematerials>` block and `forgeslicer:colorIndex` metadata so downstream slicers (Bambu Studio, OrcaSlicer) can map parts to AMS slots.
+- ✅ **Backend pytest** (`backend/tests/`) extended from 14 → 20: added `TestRemixLineage` (3) and `test_upvote_increments`, `test_upvote_404`, `test_list_sort_order_top_voted_first` (3). All green.
+
 ## Backlog / Future Enhancements
-- P1: Slicer in a Web Worker (currently main-thread)
-- P1: Real solid infill in GCODE slicer
+- P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
-- P2: Multi-object multi-select & group transforms (`d` — deferred per user)
+- P2: Multi-object multi-select & group transforms
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
-- P3: Like/upvote on community printers and gallery designs
+- P3: Like/upvote on gallery designs (already shipped for community printers)
 - P3: Sketch / 2D drawing mode
+- P3: AMS-aware preview — visualize multi-color slices layer-by-layer with extruder swaps

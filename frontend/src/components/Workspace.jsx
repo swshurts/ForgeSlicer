@@ -23,15 +23,18 @@ export default function Workspace() {
   const setProjectName = useScene((s) => s.setProjectName);
   const setRemixOf = useScene((s) => s.setRemixOf);
 
-  // Load a file handed off from the Landing page (one-shot).
+  // Load a file handed off from the Landing page (one-shot, survives
+  // StrictMode double-mount because takePendingImport() is idempotent — once
+  // it returns the File, subsequent calls return null even if the effect
+  // re-runs. We intentionally do NOT abort the in-flight work on cleanup so
+  // the imported mesh always lands in the Zustand store (which is global,
+  // not tied to this component instance).
   useEffect(() => {
     const file = takePendingImport();
     if (!file) return;
-    let cancelled = false;
     (async () => {
       try {
         const mesh = await importAnyMeshFile(file);
-        if (cancelled) return;
         addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
         setProjectName(mesh.name);
         setImportBanner({
@@ -40,14 +43,12 @@ export default function Workspace() {
         });
         setTimeout(() => setImportBanner(null), 4000);
       } catch (e) {
-        if (cancelled) return;
         setImportBanner({
           kind: "err",
           message: `Could not import "${file.name}": ${e.message || e}`,
         });
       }
     })();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

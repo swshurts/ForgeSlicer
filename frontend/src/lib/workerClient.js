@@ -90,9 +90,17 @@ export async function combineTwoAsync(a, b, op) {
 }
 
 export async function sliceToGCODEAsync(objects, settings, onProgress) {
-  const p = runOnWorker("slice", { objects, settings }, { onProgress });
+  // Strip non-clonable fields (e.g. Zustand's `set` action) before
+  // crossing the Worker boundary. structuredClone (used by postMessage)
+  // rejects function values, which would surface as a confusing "could
+  // not be cloned" error to the user.
+  const safeSettings = {};
+  for (const [k, v] of Object.entries(settings || {})) {
+    if (typeof v !== "function") safeSettings[k] = v;
+  }
+  const p = runOnWorker("slice", { objects, settings: safeSettings }, { onProgress });
   if (p) return p;
-  return sliceToGCODE(objects, settings, onProgress);
+  return sliceToGCODE(objects, safeSettings, onProgress);
 }
 
 export async function exportSTLBytesAsync(objects) {
