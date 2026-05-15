@@ -63,6 +63,7 @@ export const useScene = create((set, get) => ({
   gridVisible: true,
   buildVolume: getPrinter(defaultPrinterId).buildVolume,
   projectName: "Untitled Project",
+  remixOf: null,  // gallery item id this project is remixing
 
   // ---- profiles ----
   printerId: defaultPrinterId,
@@ -151,6 +152,7 @@ export const useScene = create((set, get) => ({
 
   // ---- scene mutations ----
   setProjectName: (name) => set({ projectName: name }),
+  setRemixOf: (id) => set({ remixOf: id }),
 
   addPrimitive: (type, modifier = "positive") => {
     get().pushHistory();

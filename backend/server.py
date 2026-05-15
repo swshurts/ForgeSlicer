@@ -33,6 +33,7 @@ class GalleryItemCreate(BaseModel):
     thumbnail_base64: str = ""  # base64-encoded PNG data url (without prefix)
     triangle_count: int = 0
     object_count: int = 0
+    remix_of: Optional[str] = None  # id of the parent gallery item, if this is a remix
 
 
 class GalleryItemMeta(BaseModel):
@@ -46,6 +47,8 @@ class GalleryItemMeta(BaseModel):
     thumbnail_base64: str
     created_at: datetime
     downloads: int = 0
+    remix_of: Optional[str] = None
+    remix_count: int = 0
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -78,6 +81,8 @@ class CommunityPrinter(BaseModel):
     notes: str
     created_at: datetime
     uses: int = 0
+    votes: int = 0
+    verified: bool = False
 
 
 @api_router.get("/")
@@ -100,8 +105,12 @@ async def create_gallery_item(item: GalleryItemCreate):
         "object_count": item.object_count,
         "created_at": created_at.isoformat(),
         "downloads": 0,
+        "remix_of": item.remix_of,
+        "remix_count": 0,
     }
     await db.gallery.insert_one(doc)
+    if item.remix_of:
+        await db.gallery.update_one({"id": item.remix_of}, {"$inc": {"remix_count": 1}})
     return GalleryItemMeta(
         id=item_id,
         name=doc["name"],
@@ -112,6 +121,8 @@ async def create_gallery_item(item: GalleryItemCreate):
         thumbnail_base64=doc["thumbnail_base64"],
         created_at=created_at,
         downloads=0,
+        remix_of=item.remix_of,
+        remix_count=0,
     )
 
 
@@ -141,6 +152,8 @@ async def list_gallery():
                 thumbnail_base64=d.get("thumbnail_base64", ""),
                 created_at=ca,
                 downloads=d.get("downloads", 0),
+                remix_of=d.get("remix_of"),
+                remix_count=d.get("remix_count", 0),
             )
         )
     return result
@@ -193,6 +206,8 @@ async def create_community_printer(p: CommunityPrinterCreate):
         "notes": (p.notes or "").strip()[:280],
         "created_at": created_at.isoformat(),
         "uses": 0,
+        "votes": 0,
+        "verified": False,
     }
     await db.community_printers.insert_one(doc)
     return CommunityPrinter(**{**doc, "created_at": created_at})
@@ -200,7 +215,10 @@ async def create_community_printer(p: CommunityPrinterCreate):
 
 @api_router.get("/printers", response_model=List[CommunityPrinter])
 async def list_community_printers():
-    cursor = db.community_printers.find({}, {"_id": 0}).sort("created_at", -1)
+    # Sort by votes desc, then by created_at desc so top-voted entries surface first.
+    cursor = db.community_printers.find({}, {"_id": 0}).sort(
+        [("verified", -1), ("votes", -1), ("created_at", -1)]
+    )
     items = await cursor.to_list(1000)
     out = []
     for d in items:
@@ -210,7 +228,12 @@ async def list_community_printers():
                 ca = datetime.fromisoformat(ca)
             except Exception:
                 ca = datetime.now(timezone.utc)
-        out.append(CommunityPrinter(**{**d, "created_at": ca}))
+        out.append(CommunityPrinter(**{
+            **d,
+            "created_at": ca,
+            "votes": d.get("votes", 0),
+            "verified": d.get("verified", False),
+        }))
     return out
 
 
@@ -222,6 +245,17 @@ async def increment_printer_use(printer_id: str):
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Printer not found")
     return {"ok": True}
+
+
+@api_router.post("/printers/{printer_id}/upvote")
+async def upvote_printer(printer_id: str):
+    res = await db.community_printers.update_one(
+        {"id": printer_id}, {"$inc": {"votes": 1}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    doc = await db.community_printers.find_one({"id": printer_id}, {"_id": 0, "votes": 1})
+    return {"ok": True, "votes": doc.get("votes", 0)}
 
 
 @api_router.delete("/printers/{printer_id}")

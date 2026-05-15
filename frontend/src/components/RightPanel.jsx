@@ -5,7 +5,8 @@ import { sliceToGCODE } from "../lib/slicer";
 import { downloadText } from "../lib/exporters";
 import { evaluateScene } from "../lib/csg";
 import { printersApi } from "../lib/api";
-import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert } from "lucide-react";
+import { recentPrinters, upvotedPrinters } from "../lib/persist";
+import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -84,22 +85,35 @@ function ProfileSection({ onSavePrinter }) {
   const printerId = useScene((s) => s.printerId);
   const filamentId = useScene((s) => s.filamentId);
   const community = useScene((s) => s.communityPrinters);
+  const setCommunity = useScene((s) => s.setCommunityPrinters);
   const setPrinter = useScene((s) => s.setPrinter);
   const setFilament = useScene((s) => s.setFilament);
   const removeCommunityPrinter = useScene((s) => s.removeCommunityPrinter);
   const setS = useSliceSettings((s) => s.set);
   const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const setAutoDropOnRotate = useScene((s) => s.setAutoDropOnRotate);
+  const [recents, setRecents] = useState(() => recentPrinters.list());
+  const [upvoting, setUpvoting] = useState(false);
 
   const printer = findPrinterAny(printerId, community) || getPrinter("custom");
   const filament = getFilament(filamentId);
   const groups = useMemo(() => printerOptions(community), [community]);
   const isCommunity = !!printer.community;
+  const recentEntries = useMemo(
+    () =>
+      recents
+        .map((id) => findPrinterAny(id, community))
+        .filter(Boolean)
+        .filter((p) => p.id !== printerId)
+        .slice(0, 4),
+    [recents, community, printerId]
+  );
 
   const handlePrinter = (id) => {
     const p = findPrinterAny(id, community);
     if (!p) return;
     setPrinter(id);
+    setRecents(recentPrinters.push(id));
     setS({
       nozzleDiameter: p.defaultNozzle,
       printSpeed: Math.round((p.defaultPrintSpeed || 100) * (filament.printSpeedMultiplier || 1)),
@@ -127,9 +141,43 @@ function ProfileSection({ onSavePrinter }) {
       window.alert("Delete failed: " + (e.response?.data?.detail || e.message));
     }
   };
+  const handleUpvote = async () => {
+    if (!isCommunity || upvoting || upvotedPrinters.has(printer.id)) return;
+    setUpvoting(true);
+    try {
+      const res = await printersApi.upvote(printer.id);
+      upvotedPrinters.add(printer.id);
+      // refresh community list to reflect new vote count
+      const list = await printersApi.list();
+      setCommunity(list);
+    } catch (e) {
+      window.alert("Vote failed: " + (e.response?.data?.detail || e.message));
+    } finally { setUpvoting(false); }
+  };
+  const alreadyVoted = isCommunity && upvotedPrinters.has(printer.id);
 
   return (
     <Section title="Printer & Filament" icon={Factory} testid="profile-section" accent="text-orange-500">
+      {recentEntries.length > 0 && (
+        <div data-testid="recent-printers">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center gap-1">
+            <History size={10} /> Recent
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {recentEntries.map((p) => (
+              <button
+                key={p.id}
+                data-testid={`recent-printer-${p.id}`}
+                onClick={() => handlePrinter(p.id)}
+                className="text-[10px] px-2 py-1 rounded bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 text-slate-300 border border-slate-700 truncate max-w-[120px]"
+                title={`${p.brand} ${p.name}`}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <label className="flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium flex items-center justify-between">
           Printer
@@ -168,19 +216,41 @@ function ProfileSection({ onSavePrinter }) {
         {isCommunity && (
           <>
             <span className="text-slate-500">Submitter</span>
-            <span className="col-span-2 text-orange-400 text-right">{printer.submitter || "Anonymous"}</span>
+            <span className="col-span-2 text-orange-400 text-right flex items-center justify-end gap-1">
+              {printer.submitter || "Anonymous"}
+              {printer.verified && <BadgeCheck size={11} className="text-green-400" />}
+            </span>
+            <span className="text-slate-500">Votes</span>
+            <span className="col-span-2 text-slate-200 text-right font-bold">
+              ★ {printer.votes ?? 0}
+            </span>
             {printer.notes && (
               <span className="col-span-3 text-slate-400 italic text-[10px] leading-snug pt-1 normal-case">
                 "{printer.notes}"
               </span>
             )}
-            <button
-              data-testid="delete-community-printer-btn"
-              onClick={handleRemoveCommunity}
-              className="col-span-3 mt-1 h-6 text-[10px] flex items-center justify-center gap-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-400 rounded border border-slate-700"
-            >
-              <Trash2 size={10} /> Remove from community
-            </button>
+            <div className="col-span-3 flex gap-1 mt-1">
+              <button
+                data-testid="upvote-community-printer-btn"
+                onClick={handleUpvote}
+                disabled={alreadyVoted || upvoting}
+                className={`flex-1 h-6 text-[10px] flex items-center justify-center gap-1 rounded border ${
+                  alreadyVoted
+                    ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                    : "bg-slate-800 hover:bg-yellow-500/20 hover:text-yellow-300 text-slate-300 border-slate-700"
+                }`}
+              >
+                <Star size={10} fill={alreadyVoted ? "#FACC15" : "none"} />
+                {alreadyVoted ? "Voted" : "Upvote"}
+              </button>
+              <button
+                data-testid="delete-community-printer-btn"
+                onClick={handleRemoveCommunity}
+                className="h-6 px-2 text-[10px] flex items-center justify-center gap-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-400 rounded border border-slate-700"
+              >
+                <Trash2 size={10} />
+              </button>
+            </div>
           </>
         )}
       </div>

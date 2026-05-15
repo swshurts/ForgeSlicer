@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { galleryApi } from "../lib/api";
-import { Download, Hexagon, ArrowLeft, Trash2, RefreshCw } from "lucide-react";
+import { Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat } from "lucide-react";
 
 const PLACEHOLDERS = [
   "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
@@ -30,6 +30,16 @@ function GalleryCard({ item, idx, onDelete }) {
         <div className="absolute top-2 right-2 bg-black/70 backdrop-blur text-[10px] font-mono text-orange-400 px-1.5 py-0.5 rounded">
           {item.triangle_count.toLocaleString()} △
         </div>
+        {item.remix_of && (
+          <div className="absolute top-2 left-2 bg-black/70 backdrop-blur text-[10px] font-mono text-cyan-300 px-1.5 py-0.5 rounded flex items-center gap-1">
+            <Repeat size={10} /> remix
+          </div>
+        )}
+        {item.remix_count > 0 && (
+          <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur text-[10px] font-mono text-orange-300 px-1.5 py-0.5 rounded flex items-center gap-1">
+            <GitFork size={10} /> {item.remix_count}
+          </div>
+        )}
       </div>
       <div className="p-3">
         <h3 className="text-sm font-semibold text-white truncate" title={item.name}>{item.name}</h3>
@@ -41,10 +51,19 @@ function GalleryCard({ item, idx, onDelete }) {
           <p className="text-[11px] text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
         )}
         <div className="flex gap-1 mt-2">
+          <Link
+            data-testid={`gallery-remix-${item.id}`}
+            to={`/workspace?remix=${item.id}`}
+            className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded flex items-center justify-center gap-1.5"
+            title="Open in workspace as remix"
+          >
+            <GitFork size={12} /> Remix
+          </Link>
           <a
             data-testid={`gallery-download-${item.id}`}
             href={galleryApi.downloadUrl(item.id)}
-            className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded flex items-center justify-center gap-1.5"
+            className="h-8 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center justify-center gap-1 border border-slate-700"
+            title="Download STL"
           >
             <Download size={12} /> STL
           </a>

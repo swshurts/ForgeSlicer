@@ -33,6 +33,10 @@ export const printersApi = {
       await axios.post(`${API}/printers/${id}/use`);
     } catch (_) { /* non-fatal */ }
   },
+  upvote: async (id) => {
+    const { data } = await axios.post(`${API}/printers/${id}/upvote`);
+    return data;
+  },
   delete: async (id) => {
     const { data } = await axios.delete(`${API}/printers/${id}`);
     return data;

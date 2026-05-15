@@ -33,6 +33,7 @@ export function ShareDialog({ open, onClose }) {
       const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
       const b64 = bytesToBase64(bytes);
       const thumb = getThumbnail();
+      const remixOf = useScene.getState().remixOf;
       const created = await galleryApi.create({
         name: name || "Untitled",
         author: author || "Anonymous",
@@ -41,6 +42,7 @@ export function ShareDialog({ open, onClose }) {
         thumbnail_base64: thumb,
         triangle_count: Math.floor(triangleCount),
         object_count: objects.length,
+        remix_of: remixOf || undefined,
       });
       setDone(created);
     } catch (e) {
@@ -120,12 +122,37 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
 
   const slicer = targetSlicer || { name: "OrcaSlicer", url: "https://github.com/SoftFever/OrcaSlicer/releases" };
 
+  // Try to launch the slicer via custom URL protocol after download.
+  // Browsers can't tell us if the slicer is installed, so this fails
+  // silently if the protocol isn't registered.
+  const PROTOCOLS = {
+    "OrcaSlicer": "orcaslicer://",
+    "Orca-Flashforge": "orcaslicer://",
+    "Bambu Studio": "bambustudioopen://",
+    "PrusaSlicer": "prusaslicer://",
+    "SuperSlicer": "superslicer://",
+    "Flash Studio Desktop": "flashforge://",
+  };
+  const attemptProtocolLaunch = () => {
+    const proto = PROTOCOLS[slicer.name];
+    if (!proto) return;
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = proto;
+      document.body.appendChild(iframe);
+      setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 2000);
+    } catch (_) { /* nope */ }
+  };
+
   const handleDownload = async () => {
     setBusy(true);
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
       await exportSceneTo3MF(objects, `${safe}.3mf`);
       setDownloaded(true);
+      // After the file lands, try to launch the slicer optimistically.
+      attemptProtocolLaunch();
     } catch (e) {
       alert(e.message);
     } finally { setBusy(false); }
