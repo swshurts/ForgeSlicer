@@ -75,11 +75,26 @@
 - ✅ **Auto-purge** of any measurement whose referenced object is deleted (object ID stored per endpoint).
 - ✅ **Community Printer Profiles**: full backend (`POST/GET/DELETE /api/printers`, `POST /api/printers/{id}/use` for popularity), plus a "Save mine" dialog with form. Community submissions show under a "Community" optgroup in the printer dropdown, with submitter name, notes, and a × removal button for moderation.
 
+## Iteration 4 (2026-05-15) — Manifold-Warning + Dynamic Send-to-Slicer
+- ✅ **Improved CSG output**: bumped default segment counts (cylinder/cone 64, sphere/torus 48) and added a custom vertex-welding cleanup at 5-micron tolerance after every Boolean operation. Still drops zero-area triangles. This significantly reduces (but cannot always eliminate) the non-manifold edges three-bvh-csg leaves on near-tangent boolean boundaries.
+- ✅ **Manifold health chip** in the right panel: detects open boundary edges after CSG and shows a blue, reassuring chip — "Your print will still slice fine — modern slicers (OrcaSlicer, PrusaSlicer, FlashPrint 5, Bambu Studio) all auto-repair on import." Hidden when geometry is watertight or scene is empty.
+- ✅ **Dynamic Send-to-Slicer split button**: button label, dialog title, install link, and how-to-open instructions all adapt to the printer's recommended primary slicer. A chevron dropdown surfaces alternates when more than one slicer is recommended for the printer:
+  - Bambu Lab → Bambu Studio (alt: OrcaSlicer)
+  - Prusa → PrusaSlicer (alt: OrcaSlicer, SuperSlicer)
+  - Creality → Creality Print (alt: OrcaSlicer, Cura)
+  - FlashForge (Adv 5M, AD5X, Creator 5/5 Pro) → FlashPrint 5 (alt: OrcaSlicer FF fork, OrcaSlicer)
+  - FlashForge Finder → FlashPrint 5 (single — no dropdown)
+  - Elegoo → Elegoo Slicer (alt: Cura, OrcaSlicer)
+  - Sovol → OrcaSlicer (alt: PrusaSlicer, SuperSlicer)
+  - Voron → SuperSlicer (alt: OrcaSlicer, PrusaSlicer)
+  - Custom → OrcaSlicer (alt: PrusaSlicer, Cura)
+
 ## Backlog / Future Enhancements
 - P1: Slicer in a Web Worker (currently main-thread)
 - P1: Real solid infill in GCODE slicer
+- P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
 - P2: Multi-object multi-select & group transforms (`d` — deferred per user)
 - P2: Curve/extrude primitives
-- P2: `forgeslicer://` URL protocol companion app for one-click hand-off to OrcaSlicer
+- P2: `forgeslicer://` URL protocol companion app
 - P3: Like/upvote on community printers and gallery designs
 - P3: Sketch / 2D drawing mode
