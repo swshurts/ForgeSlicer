@@ -273,7 +273,7 @@ export default function Viewport() {
       )}
       <Canvas
         shadows
-        camera={{ position: [180, 160, 200], fov: 45, near: 0.1, far: 5000 }}
+        camera={{ position: [0, 160, 280], fov: 45, near: 0.1, far: 5000 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
         onPointerMissed={() => { if (!measureMode) clearSelection(); }}
         style={{ background: "#1E293B" }}

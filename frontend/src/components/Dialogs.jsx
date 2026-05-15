@@ -106,6 +106,15 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
   const projectName = useScene((s) => s.projectName);
   const [busy, setBusy] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      const dismissed = (() => { try { return localStorage.getItem("forgeslicer.hideSlicerHelp") === "1"; } catch { return false; } })();
+      setShowHelp(!dismissed && false); // default collapsed; user opens manually
+      setDownloaded(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -122,6 +131,11 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
     } finally { setBusy(false); }
   };
 
+  const dontShowAgain = () => {
+    try { localStorage.setItem("forgeslicer.hideSlicerHelp", "1"); } catch {}
+    setShowHelp(false);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="orca-dialog">
       <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl">
@@ -134,9 +148,9 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
         </div>
         <div className="p-4 flex flex-col gap-3">
           <p className="text-sm text-slate-300">
-            ForgeSlicer hands off to <span className="font-semibold text-orange-400">{slicer.name}</span> via the
-            standard <span className="font-mono text-orange-400">.3mf</span> file format. Download the file below and
-            open it in {slicer.name} for production slicing.
+            Downloads a print-ready <span className="font-mono text-orange-400">.3mf</span> for{" "}
+            <span className="font-semibold text-orange-400">{slicer.name}</span>. Double-click the file
+            and your slicer will open it.
           </p>
           <button
             data-testid="orca-download-btn"
@@ -148,19 +162,39 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
             {downloaded ? "Download again" : `Download 3MF for ${slicer.name}`}
           </button>
 
-          <div className="bg-slate-950 border border-slate-800 rounded p-3 text-[11px] text-slate-300 leading-relaxed">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5 font-semibold">How to open in {slicer.name}</div>
-            <ol className="list-decimal list-inside space-y-1">
-              <li>
-                Install <a href={slicer.url} target="_blank" rel="noreferrer" className="text-orange-400 underline">{slicer.name}</a> on your computer.
-              </li>
-              <li>Double-click the downloaded <span className="font-mono text-orange-400">.3mf</span> file — {slicer.name} will open it.</li>
-              <li>Or inside {slicer.name}: <span className="font-mono">File → Import / Open → 3MF</span>.</li>
-              <li>Slice with {slicer.name}'s full feature set (infill, supports, multi-material).</li>
-            </ol>
-          </div>
+          {!showHelp ? (
+            <button
+              data-testid="orca-show-help-btn"
+              onClick={() => setShowHelp(true)}
+              className="text-[11px] text-slate-400 hover:text-orange-400 underline self-start"
+            >
+              Don't have {slicer.name} yet? Show install instructions
+            </button>
+          ) : (
+            <div className="bg-slate-950 border border-slate-800 rounded p-3 text-[11px] text-slate-300 leading-relaxed" data-testid="orca-help-block">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">How to open in {slicer.name}</span>
+                <button
+                  onClick={dontShowAgain}
+                  data-testid="orca-hide-help-btn"
+                  className="text-[10px] text-slate-500 hover:text-slate-300"
+                >
+                  Don't show again
+                </button>
+              </div>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>
+                  Install <a href={slicer.url} target="_blank" rel="noreferrer" className="text-orange-400 underline">{slicer.name}</a> on your computer.
+                </li>
+                <li>Double-click the downloaded <span className="font-mono text-orange-400">.3mf</span> file — {slicer.name} will open it.</li>
+                <li>Or inside {slicer.name}: <span className="font-mono">File → Import / Open → 3MF</span>.</li>
+                <li>Slice with {slicer.name}'s full feature set (infill, supports, multi-material).</li>
+              </ol>
+            </div>
+          )}
           <p className="text-[10px] text-slate-500">
-            A deep-link helper plugin is on the roadmap that will register the <span className="font-mono">forgeslicer://</span> protocol on your OS for one-click hand-off.
+            We assume {slicer.name} is already installed (browsers can't detect it directly).
+            A <span className="font-mono">forgeslicer://</span> companion is on the roadmap for true one-click hand-off.
           </p>
         </div>
       </div>
