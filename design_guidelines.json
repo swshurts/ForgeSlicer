@@ -1,0 +1,165 @@
+{
+  "theme_and_archetype": {
+    "theme": "dark",
+    "archetype": "Archetype 2: The Performance Pro (Tactical & Precision)",
+    "description": "A dense, professional, high-contrast dark UI that mirrors desktop CAD applications like OrcaSlicer and FreeCAD. Functional, tool-rich, utilizing structural slates with vibrant indicators for additive (positive) and subtractive (negative) operations."
+  },
+  "colors": {
+    "background": {
+      "app_bg": "#020617",
+      "panel_bg": "#0F172A",
+      "viewport_bg": "#1E293B",
+      "card_bg": "#0F172A",
+      "hover": "#1E293B",
+      "active": "#334155"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8",
+      "muted": "#64748B",
+      "accent": "#F97316"
+    },
+    "border": {
+      "default": "#334155",
+      "focus": "#F97316",
+      "divider": "#1E293B"
+    },
+    "brand_and_actions": {
+      "primary": "#F97316",
+      "primary_hover": "#EA580C",
+      "positive_operation": "#F97316",
+      "negative_operation": "#06B6D4",
+      "success_action": "#22C55E",
+      "danger": "#EF4444"
+    },
+    "viewport_materials": {
+      "build_plate_grid": "#475569",
+      "build_plate_base": "#0F172A",
+      "positive_mesh": "#F97316",
+      "negative_mesh": "#06B6D4",
+      "mesh_selected_wireframe": "#FFFFFF"
+    }
+  },
+  "typography": {
+    "rules": "Never use Inter for headings. Use technical, precise fonts suitable for high-density tools.",
+    "font_families": {
+      "heading": "'IBM Plex Sans', sans-serif",
+      "body": "'IBM Plex Sans', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "scales": {
+      "h1": "text-2xl font-bold tracking-tight",
+      "h2": "text-xl font-semibold",
+      "h3": "text-lg font-medium",
+      "panel_title": "text-sm font-semibold uppercase tracking-wider text-slate-400",
+      "body": "text-sm",
+      "ui_label": "text-xs font-medium text-slate-400",
+      "mono_data": "text-xs font-mono text-slate-300"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "High-density 'Control Room' grid. Efficient use of space, minimal padding on panels to maximize 3D viewport.",
+    "panel_padding": "p-3 sm:p-4",
+    "item_gap": "gap-2",
+    "border_radius": "rounded-md",
+    "workspace_grid": {
+      "left_sidebar": "w-64 flex-shrink-0 border-r border-slate-700 bg-slate-900",
+      "right_sidebar": "w-72 flex-shrink-0 border-l border-slate-700 bg-slate-900",
+      "center_viewport": "flex-grow relative bg-slate-800 overflow-hidden",
+      "top_toolbar": "h-12 border-b border-slate-700 bg-slate-900 flex items-center px-4",
+      "bottom_status": "h-8 border-t border-slate-700 bg-slate-950 flex items-center px-4 text-xs"
+    }
+  },
+  "components": {
+    "buttons": {
+      "toolbar_icon": "h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center transition-colors",
+      "primary_action": "h-8 px-4 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded transition-colors",
+      "secondary_action": "h-8 px-4 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors border border-slate-600",
+      "slice_button": "w-full h-10 bg-green-500 hover:bg-green-600 text-white font-bold rounded-md shadow-md transition-all uppercase tracking-wide"
+    },
+    "inputs": {
+      "number_input": "h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none font-mono",
+      "select": "h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none",
+      "slider": "w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+    },
+    "panels": {
+      "container": "bg-slate-900 flex flex-col h-full",
+      "header": "h-10 flex items-center px-3 border-b border-slate-700 bg-slate-900/50",
+      "section": "border-b border-slate-800 p-3 flex flex-col gap-3"
+    },
+    "tree_view": {
+      "row": "flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-800 cursor-pointer text-sm text-slate-300",
+      "row_active": "flex items-center gap-2 px-2 py-1.5 rounded bg-slate-800 border-l-2 border-orange-500 text-white font-medium"
+    },
+    "viewport_overlays": {
+      "floating_toolbar": "absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl",
+      "measurement_label": "px-2 py-1 bg-black/80 text-white text-xs font-mono rounded pointer-events-none"
+    }
+  },
+  "page_layouts": {
+    "1_workspace": {
+      "description": "The main CAD interface.",
+      "layout": "Flex column root (h-screen). Top header/menu (h-12). Main content area (flex-1 flex row). Inside main: Left Sidebar (Primitives, Outliner), Center Viewport (Three.js), Right Sidebar (Transform Inspector, Slicer Settings). Bottom Status Bar (h-8)."
+    },
+    "2_public_gallery": {
+      "description": "Community design browser.",
+      "layout": "Standard website layout. Fixed top nav. Main container with max-w-7xl, pt-24 pb-12 px-6. 'Bento' or CSS Grid for 3D thumbnail cards (grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6)."
+    },
+    "3_welcome_modal": {
+      "description": "Initial entry point.",
+      "layout": "Centered dialog on top of the blurred workspace. Options to Start New Project, Open Local File, or Browse Gallery."
+    }
+  },
+  "icons_and_assets": {
+    "library": "lucide-react",
+    "specific_icons": {
+      "primitives": ["Box", "Circle", "Cylinder", "Cone", "Donut"],
+      "boolean": ["PlusSquare", "MinusSquare", "Combine"],
+      "tools": ["Move3D", "Rotate3D", "Scale3D", "Ruler"],
+      "actions": ["Download", "Upload", "Save", "Printer", "Globe"]
+    }
+  },
+  "media_urls": {
+    "gallery_placeholders": [
+      {
+        "url": "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
+        "category": "gallery_item",
+        "description": "Blue and white round illustration"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1709626011485-6fe000ea2dbc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHw0fHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
+        "category": "gallery_item",
+        "description": "Black and blue abstract background with squares and rectangles"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1622737133809-d95047b9e673?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwxfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
+        "category": "gallery_item",
+        "description": "Brown cardboard box with yellow light"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1702863361902-93c51bfbd923?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwzfHwzZCUyMHByaW50ZWQlMjBvYmplY3R8ZW58MHx8fHwxNzc4ODI0MjYyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "gallery_item",
+        "description": "3D printer close up"
+      }
+    ]
+  },
+  "testing_attributes": {
+    "rule": "All interactive and key informational elements MUST include a data-testid attribute.",
+    "convention": "kebab-case, role-based",
+    "examples": [
+      "data-testid='add-cube-btn'",
+      "data-testid='boolean-union-btn'",
+      "data-testid='slice-model-btn'",
+      "data-testid='send-to-orcaslicer-btn'",
+      "data-testid='transform-x-input'",
+      "data-testid='scene-tree-item-1'"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Use react-three-fiber and @react-three/drei for the 3D viewport.",
+    "Implement the layout precisely with the defined spacing and technical fonts.",
+    "Ensure the application occupies 100vh with no global scrollbar, acting as a desktop app.",
+    "Bind Three.js transform controls to the toolbar toggles.",
+    "Distinguish additive and subtractive geometry in the scene tree visually using the defined positive/negative operation colors (orange vs cyan)."
+  ]
+}
