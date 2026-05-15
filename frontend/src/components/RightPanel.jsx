@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useScene, useSliceSettings, PRINTERS, FILAMENTS } from "../lib/store";
 import { getPrinter, getFilament } from "../lib/presets";
-import { sliceToGCODE } from "../lib/slicer";
+import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { downloadText } from "../lib/exporters";
-import { evaluateScene } from "../lib/csg";
+import { evaluateSceneStatsAsync, sliceToGCODEAsync } from "../lib/workerClient";
 import { printersApi } from "../lib/api";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
@@ -288,21 +288,26 @@ function ManifoldHealth() {
   const objects = useScene((s) => s.objects);
   const [info, setInfo] = useState({ ok: true, edges: 0, tris: 0 });
 
-  // Debounced recompute when scene changes
+  // Debounced recompute when scene changes (runs in a Web Worker so the UI
+  // doesn't stutter on heavy models).
   useEffect(() => {
     if (objects.length === 0) {
       setInfo({ ok: true, edges: 0, tris: 0 });
       return;
     }
+    let cancelled = false;
     const handle = setTimeout(() => {
-      try {
-        const r = evaluateScene(objects);
-        setInfo({ ok: r.manifold, edges: r.boundaryEdges, tris: r.triangleCount });
-      } catch (_) {
-        setInfo({ ok: true, edges: 0, tris: 0 });
-      }
+      evaluateSceneStatsAsync(objects)
+        .then((r) => {
+          if (cancelled) return;
+          setInfo({ ok: r.manifold, edges: r.boundaryEdges, tris: r.triangleCount });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setInfo({ ok: true, edges: 0, tris: 0 });
+        });
     }, 350);
-    return () => clearTimeout(handle);
+    return () => { cancelled = true; clearTimeout(handle); };
   }, [objects]);
 
   if (info.ok || info.tris === 0) return null;
@@ -397,6 +402,7 @@ function Inspector() {
   const flipModifier = useScene((s) => s.flipModifier);
   const dropToBed = useScene((s) => s.dropToBed);
   const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
+  const setColorIndex = useScene((s) => s.setColorIndex);
 
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj) {
@@ -468,6 +474,32 @@ function Inspector() {
       >
         <ArrowDownToLine size={13} /> Drop to Bed
       </button>
+
+      {obj.modifier !== "negative" && (
+        <div data-testid="inspector-color-picker">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
+            <span>Filament Color</span>
+            <span className="text-[9px] normal-case text-slate-500">slot T{obj.colorIndex || 0}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {MULTICOLOR_PALETTE.map((c, i) => {
+              const active = (obj.colorIndex || 0) === i;
+              return (
+                <button
+                  key={i}
+                  data-testid={`color-swatch-${i}`}
+                  onClick={() => setColorIndex(obj.id, i)}
+                  title={`${c.name} (T${i})`}
+                  className={`w-6 h-6 rounded-full border-2 transition-transform ${
+                    active ? "border-white scale-110 ring-2 ring-orange-500" : "border-slate-700 hover:scale-105"
+                  }`}
+                  style={{ background: c.hex }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Position (mm)</div>
@@ -597,8 +629,7 @@ function SlicerSection() {
   const handleSlice = async () => {
     setError(""); setBusy(true); setStats(null);
     try {
-      await new Promise((r) => setTimeout(r, 30));
-      const { gcode, stats } = sliceToGCODE(objects, {
+      const { gcode, stats } = await sliceToGCODEAsync(objects, {
         ...settings,
         bedX: buildVolume.x,
         bedY: buildVolume.y,

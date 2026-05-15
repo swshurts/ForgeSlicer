@@ -1,6 +1,21 @@
 // Printer + filament presets. Build volumes are in mm (X x Y x Z where Z is height).
 // Sources: manufacturer spec sheets, public OrcaSlicer / PrusaSlicer profile data.
 
+// Multi-color palette used for assigning each scene object to a printer
+// extruder/filament when exporting multi-material 3MF. Indices are stable —
+// downstream slicers (Bambu Studio, OrcaSlicer) map them to AMS slots 0..7.
+export const MULTICOLOR_PALETTE = [
+  { name: "White",  hex: "#E5E5E5" },
+  { name: "Black",  hex: "#1F1F1F" },
+  { name: "Red",    hex: "#E53935" },
+  { name: "Green",  hex: "#2E9D57" },
+  { name: "Blue",   hex: "#3182CE" },
+  { name: "Yellow", hex: "#F0B72E" },
+  { name: "Purple", hex: "#7B5CC1" },
+  { name: "Orange", hex: "#F97316" },
+];
+
+
 export const PRINTERS = [
   {
     id: "custom",

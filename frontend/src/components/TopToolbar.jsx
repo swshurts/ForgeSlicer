@@ -6,10 +6,11 @@ import {
   Undo2, Redo2, Ruler,
 } from "lucide-react";
 import {
-  exportSceneToSTL, exportSceneTo3MF, saveProjectJSON, openFileDialog,
-  importSTLFile, importOBJFile, readFileAsText, exportSceneToSTLBytes, bytesToBase64,
+  saveProjectJSON, openFileDialog,
+  importSTLFile, importOBJFile, import3MFFile, readFileAsText, exportSceneToSTLBytes, bytesToBase64,
+  downloadBlob,
 } from "../lib/exporters";
-import { combineTwo } from "../lib/csg";
+import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "../lib/workerClient";
 import { galleryApi } from "../lib/api";
 import { getSlicersForPrinter } from "../lib/presets";
 import { Link } from "react-router-dom";
@@ -99,7 +100,7 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
     return () => window.removeEventListener("keydown", handler);
   }, [undo, redo, measureMode, setMeasureMode, setTransformMode]);
 
-  const doBool = (op) => {
+  const doBool = async (op) => {
     // Take last 2 objects: prefer selected as base, last added as other.
     if (objects.length < 2) {
       alert("Select at least two objects (we use the last two added).");
@@ -107,8 +108,9 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
     }
     const a = selectedId ? objects.find((o) => o.id === selectedId) : objects[objects.length - 2];
     const b = objects[objects.length - 1] === a ? objects[objects.length - 2] : objects[objects.length - 1];
+    setBusyMsg("Computing...");
     try {
-      const merged = combineTwo(a, b, op);
+      const merged = await combineTwoAsync(a, b, op);
       // remove both
       removeObject(a.id);
       removeObject(b.id);
@@ -126,15 +128,20 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       });
     } catch (e) {
       alert("Boolean failed: " + (e.message || e));
+    } finally {
+      setBusyMsg("");
     }
   };
 
   const handleImport = async () => {
     try {
-      const file = await openFileDialog(".stl,.obj");
+      const file = await openFileDialog(".stl,.obj,.3mf");
       setBusyMsg("Importing...");
       const ext = file.name.split(".").pop().toLowerCase();
-      const mesh = ext === "obj" ? await importOBJFile(file) : await importSTLFile(file);
+      const mesh =
+        ext === "obj" ? await importOBJFile(file)
+        : ext === "3mf" ? await import3MFFile(file)
+        : await importSTLFile(file);
       addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
     } catch (e) {
       if (e.message !== "No file selected") alert("Import failed: " + e.message);
@@ -171,18 +178,32 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
     saveProjectJSON(data, `${safe}.forge.json`);
   };
 
-  const handleExportSTL = () => {
+  const handleExportSTL = async () => {
+    setBusyMsg("Exporting STL...");
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-      exportSceneToSTL(objects, `${safe}.stl`);
+      const { bytes } = await exportSTLBytesAsync(objects);
+      downloadBlob(new Blob([bytes], { type: "model/stl" }), `${safe}.stl`);
     } catch (e) { alert(e.message); }
+    finally { setBusyMsg(""); }
   };
 
   const handleExport3MF = async () => {
+    setBusyMsg("Exporting 3MF...");
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-      await exportSceneTo3MF(objects, `${safe}.3mf`);
-    } catch (e) { alert(e.message); }
+      const { bytes, multicolor, parts } = await export3MFBytesAsync(objects);
+      downloadBlob(new Blob([bytes], { type: "model/3mf" }), `${safe}.3mf`);
+      if (multicolor && parts > 1) {
+        setBusyMsg(`Exported ${parts}-part 3MF`);
+        setTimeout(() => setBusyMsg(""), 2500);
+      } else {
+        setBusyMsg("");
+      }
+    } catch (e) {
+      setBusyMsg("");
+      alert(e.message);
+    }
   };
 
   return (
@@ -208,7 +229,7 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       <IconBtn testid="file-save-btn" onClick={handleSaveProject} title="Save Project to Local">
         <Save size={16} />
       </IconBtn>
-      <IconBtn testid="file-import-btn" onClick={handleImport} title="Import STL / OBJ">
+      <IconBtn testid="file-import-btn" onClick={handleImport} title="Import STL / OBJ / 3MF">
         <Upload size={16} />
       </IconBtn>
 

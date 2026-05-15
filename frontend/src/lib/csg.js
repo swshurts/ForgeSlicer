@@ -173,6 +173,57 @@ export function evaluateScene(objects) {
 }
 
 /**
+ * Like evaluateScene but produces a separate merged geometry per color index.
+ * Negatives are applied to ALL color groups so a single subtractive hole
+ * carves through every material. Returns:
+ *   { groups: [{ colorIndex, geometry, triangleCount }], totalTriangles }
+ * Groups are returned only for colorIndex values that have at least one
+ * visible positive object.
+ */
+export function evaluateSceneByColor(objects) {
+  const visibles = objects.filter((o) => o.visible !== false);
+  const positives = visibles.filter((o) => o.modifier !== "negative");
+  const negatives = visibles.filter((o) => o.modifier === "negative");
+  if (positives.length === 0) return { groups: [], totalTriangles: 0 };
+
+  // Group positives by colorIndex (default 0).
+  const byColor = new Map();
+  for (const p of positives) {
+    const k = (p.colorIndex | 0) || 0;
+    if (!byColor.has(k)) byColor.set(k, []);
+    byColor.get(k).push(p);
+  }
+
+  const evaluator = new Evaluator();
+  const groups = [];
+  let total = 0;
+  // Iterate colors in numeric order so 3MF object ids are stable across exports.
+  const colorKeys = Array.from(byColor.keys()).sort((a, b) => a - b);
+  for (const colorIndex of colorKeys) {
+    const colorPositives = byColor.get(colorIndex);
+    let result = makeBrush(colorPositives[0]);
+    for (let i = 1; i < colorPositives.length; i++) {
+      result = evaluator.evaluate(result, makeBrush(colorPositives[i]), ADDITION);
+    }
+    for (const n of negatives) {
+      result = evaluator.evaluate(result, makeBrush(n), SUBTRACTION);
+    }
+    let baked = result.geometry.clone();
+    baked.applyMatrix4(result.matrixWorld);
+    baked.clearGroups();
+    baked = cleanGeometry(baked);
+    const tri = baked.index
+      ? baked.index.count / 3
+      : baked.attributes.position.count / 3;
+    if (tri > 0) {
+      groups.push({ colorIndex, geometry: baked, triangleCount: Math.floor(tri) });
+      total += tri;
+    }
+  }
+  return { groups, totalTriangles: Math.floor(total) };
+}
+
+/**
  * Apply boolean op on two specific objects (selected pair). Returns merged
  * geometry as an "imported" object replacement.
  */

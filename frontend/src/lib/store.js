@@ -26,6 +26,7 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     dims: { ...def.dims },
+    colorIndex: 0,
     ...overrides,
   };
 };
@@ -174,6 +175,7 @@ export const useScene = create((set, get) => ({
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       dims: {},
+      colorIndex: 0,
       originalBbox: originalBbox || undefined, // {x,y,z} in mm at scale 1
       geometry: { vertices, indices },
     };
@@ -321,6 +323,15 @@ export const useScene = create((set, get) => ({
         o.id === id
           ? { ...o, modifier: o.modifier === "positive" ? "negative" : "positive" }
           : o
+      ),
+    }));
+  },
+
+  setColorIndex: (id, idx) => {
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        o.id === id ? { ...o, colorIndex: Math.max(0, Math.min(7, idx | 0)) } : o
       ),
     }));
   },

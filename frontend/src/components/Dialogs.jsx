@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useScene } from "../lib/store";
-import { exportSceneToSTLBytes, bytesToBase64, exportSceneTo3MF } from "../lib/exporters";
+import { bytesToBase64, downloadBlob } from "../lib/exporters";
+import { exportSTLBytesAsync, export3MFBytesAsync } from "../lib/workerClient";
 import { galleryApi, printersApi } from "../lib/api";
 import { X, Globe, CheckCircle2, Loader2, Printer, Download, Factory } from "lucide-react";
 
@@ -30,7 +31,7 @@ export function ShareDialog({ open, onClose }) {
   const handleShare = async () => {
     setError(""); setBusy(true); setDone(null);
     try {
-      const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
+      const { bytes, triangleCount } = await exportSTLBytesAsync(objects);
       const b64 = bytesToBase64(bytes);
       const thumb = getThumbnail();
       const remixOf = useScene.getState().remixOf;
@@ -149,7 +150,8 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
     setBusy(true);
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-      await exportSceneTo3MF(objects, `${safe}.3mf`);
+      const { bytes } = await export3MFBytesAsync(objects);
+      downloadBlob(new Blob([bytes], { type: "model/3mf" }), `${safe}.3mf`);
       setDownloaded(true);
       // After the file lands, try to launch the slicer optimistically.
       attemptProtocolLaunch();

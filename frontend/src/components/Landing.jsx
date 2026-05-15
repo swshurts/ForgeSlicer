@@ -1,6 +1,7 @@
-import React from "react";
-import { Link } from "react-router-dom";
-import { Hexagon, Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D } from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Hexagon, Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle } from "lucide-react";
+import { setPendingImport } from "../lib/pendingImport";
 
 function Feature({ icon: Icon, title, desc, accent }) {
   return (
@@ -15,6 +16,29 @@ function Feature({ icon: Icon, title, desc, accent }) {
 }
 
 export default function Landing() {
+  const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const [importError, setImportError] = useState("");
+
+  const handlePickFile = () => {
+    setImportError("");
+    fileInputRef.current && fileInputRef.current.click();
+  };
+
+  const handleFileChange = (e) => {
+    const f = e.target.files && e.target.files[0];
+    // reset input so picking the same file twice still triggers onChange
+    e.target.value = "";
+    if (!f) return;
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    if (!["stl", "obj", "3mf"].includes(ext)) {
+      setImportError(`Unsupported file type .${ext}. Please pick an STL, OBJ, or 3MF file.`);
+      return;
+    }
+    setPendingImport(f);
+    navigate("/workspace");
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white" data-testid="landing-page" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
       {/* Header */}
@@ -50,14 +74,39 @@ export default function Landing() {
             <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl">
               A TinkerCAD-style 3D modeler with positive & negative parts, real boolean operations, and a built-in GCODE slicer — all in one browser tab. Export STL, 3MF, or hand off to OrcaSlicer in a click.
             </p>
-            <div className="mt-7 flex gap-3">
+            <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/workspace" data-testid="hero-cta-workspace" className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2">
                 <Box size={16} /> Start Modeling
               </Link>
+              <button
+                type="button"
+                data-testid="hero-cta-import"
+                onClick={handlePickFile}
+                className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-orange-500/40 hover:border-orange-500/70 transition-colors"
+              >
+                <Upload size={16} className="text-orange-400" /> Import STL · 3MF · OBJ
+              </button>
               <Link to="/gallery" data-testid="hero-cta-gallery" className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-slate-700">
                 <Globe size={16} /> Browse Gallery
               </Link>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".stl,.obj,.3mf"
+                onChange={handleFileChange}
+                className="hidden"
+                data-testid="hero-import-file-input"
+              />
             </div>
+            <p className="mt-3 text-[11px] text-slate-500 max-w-xl">
+              Already started a project elsewhere? Drop in an existing STL, 3MF, or OBJ and pick up right where you left off — measurements, booleans, and slicing all work on imports.
+            </p>
+            {importError && (
+              <div data-testid="hero-import-error" className="mt-3 flex items-start gap-2 px-3 py-2 rounded bg-red-500/10 border border-red-500/40 text-red-300 text-xs max-w-xl">
+                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>{importError}</span>
+              </div>
+            )}
             <div className="mt-8 grid grid-cols-3 gap-4 max-w-md">
               <div>
                 <div className="text-2xl font-bold text-orange-400 font-mono">5</div>

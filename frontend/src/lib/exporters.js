@@ -4,6 +4,7 @@ import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { evaluateScene } from "./csg";
+import { build3MFBytes } from "./threemf";
 
 // ---------- Downloads ----------
 export function downloadBlob(blob, filename) {
@@ -54,61 +55,8 @@ export async function exportSceneToSTLBytes(objects) {
 export async function exportSceneTo3MF(objects, filename = "model.3mf") {
   const { geometry, empty } = evaluateScene(objects);
   if (empty) throw new Error("Scene is empty. Add at least one positive component.");
-
-  const pos = geometry.attributes.position.array;
-  let verts = "";
-  const vertCount = pos.length / 3;
-  for (let i = 0; i < vertCount; i++) {
-    verts += `        <vertex x="${pos[i * 3].toFixed(4)}" y="${pos[i * 3 + 1].toFixed(4)}" z="${pos[i * 3 + 2].toFixed(4)}"/>\n`;
-  }
-
-  let tris = "";
-  if (geometry.index) {
-    const idx = geometry.index.array;
-    for (let i = 0; i < idx.length; i += 3) {
-      tris += `        <triangle v1="${idx[i]}" v2="${idx[i + 1]}" v3="${idx[i + 2]}"/>\n`;
-    }
-  } else {
-    for (let i = 0; i < vertCount; i += 3) {
-      tris += `        <triangle v1="${i}" v2="${i + 1}" v3="${i + 2}"/>\n`;
-    }
-  }
-
-  const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-  <metadata name="Application">ForgeSlicer</metadata>
-  <resources>
-    <object id="1" type="model">
-      <mesh>
-        <vertices>
-${verts}        </vertices>
-        <triangles>
-${tris}        </triangles>
-      </mesh>
-    </object>
-  </resources>
-  <build>
-    <item objectid="1"/>
-  </build>
-</model>`;
-
-  const ct = `<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
-</Types>`;
-
-  const rels = `<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
-</Relationships>`;
-
-  const zip = new JSZip();
-  zip.file("[Content_Types].xml", ct);
-  zip.folder("_rels").file(".rels", rels);
-  zip.folder("3D").file("3dmodel.model", modelXml);
-  const blob = await zip.generateAsync({ type: "blob", mimeType: "model/3mf" });
-  downloadBlob(blob, filename);
+  const bytes = await build3MFBytes(geometry);
+  downloadBlob(new Blob([bytes], { type: "model/3mf" }), filename);
 }
 
 // ---------- Project Save/Load ----------
@@ -149,7 +97,89 @@ export function readFileAsArrayBuffer(file) {
   });
 }
 
-// ---------- STL/OBJ Import ----------
+// ---------- STL/OBJ/3MF Import ----------
+export async function import3MFFile(file) {
+  const buf = await readFileAsArrayBuffer(file);
+  const zip = await JSZip.loadAsync(buf);
+  // 3MF spec: 3D/3dmodel.model is the primary part. Some exporters use mixed-case.
+  let modelFile = zip.file("3D/3dmodel.model");
+  if (!modelFile) {
+    const candidates = zip.file(/3dmodel\.model$/i);
+    modelFile = candidates && candidates[0];
+  }
+  if (!modelFile) throw new Error("Invalid 3MF: missing 3D/3dmodel.model");
+  const xml = await modelFile.async("text");
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  const parserError = doc.getElementsByTagName("parsererror")[0];
+  if (parserError) throw new Error("3MF XML parse error: " + parserError.textContent);
+
+  const positions = [];
+  const indices = [];
+  let baseOffset = 0;
+  const objectNodes = doc.getElementsByTagName("object");
+  if (objectNodes.length === 0) throw new Error("3MF contains no <object> entries");
+  for (let oi = 0; oi < objectNodes.length; oi++) {
+    const mesh = objectNodes[oi].getElementsByTagName("mesh")[0];
+    if (!mesh) continue;
+    const verts = mesh.getElementsByTagName("vertex");
+    const startOffset = baseOffset;
+    for (let i = 0; i < verts.length; i++) {
+      positions.push(
+        parseFloat(verts[i].getAttribute("x")) || 0,
+        parseFloat(verts[i].getAttribute("y")) || 0,
+        parseFloat(verts[i].getAttribute("z")) || 0,
+      );
+    }
+    const tris = mesh.getElementsByTagName("triangle");
+    for (let i = 0; i < tris.length; i++) {
+      indices.push(
+        (parseInt(tris[i].getAttribute("v1"), 10) || 0) + startOffset,
+        (parseInt(tris[i].getAttribute("v2"), 10) || 0) + startOffset,
+        (parseInt(tris[i].getAttribute("v3"), 10) || 0) + startOffset,
+      );
+    }
+    baseOffset += verts.length;
+  }
+  if (positions.length === 0) throw new Error("3MF contains no vertex data");
+
+  const verts = new Float32Array(positions);
+  // bbox + recenter so XZ center is at origin and bottom sits on Y=0
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < verts.length; i += 3) {
+    const x = verts[i], y = verts[i + 1], z = verts[i + 2];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  for (let i = 0; i < verts.length; i += 3) {
+    verts[i] -= cx;
+    verts[i + 1] -= minY;
+    verts[i + 2] -= cz;
+  }
+  return {
+    name: file.name.replace(/\.[^.]+$/, ""),
+    vertices: verts,
+    indices: indices.length ? new Uint32Array(indices) : null,
+    originalBbox: {
+      x: maxX - minX,
+      y: maxY - minY,
+      z: maxZ - minZ,
+    },
+  };
+}
+
+// Dispatch to the right importer based on file extension.
+export async function importAnyMeshFile(file) {
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if (ext === "stl") return importSTLFile(file);
+  if (ext === "obj") return importOBJFile(file);
+  if (ext === "3mf") return import3MFFile(file);
+  throw new Error(`Unsupported file type: .${ext} (use .stl, .obj, or .3mf)`);
+}
+
 export async function importSTLFile(file) {
   const buf = await readFileAsArrayBuffer(file);
   const loader = new STLLoader();

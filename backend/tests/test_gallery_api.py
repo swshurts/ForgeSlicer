@@ -123,6 +123,53 @@ class TestGalleryCrud:
         assert r.status_code == 404
 
 
+class TestRemixLineage:
+    """Verify remix_of / remix_count increment when a remix is uploaded."""
+    parent_id = None
+    remix_id = None
+
+    def _create(self, api, stl_b64, **extra):
+        payload = {
+            "name": "TEST_Remix_Parent",
+            "author": "TEST_Tester",
+            "description": "remix parent",
+            "stl_base64": stl_b64,
+            "thumbnail_base64": "",
+            "triangle_count": 1,
+            "object_count": 1,
+        }
+        payload.update(extra)
+        r = api.post(f"{API}/gallery", json=payload)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_create_parent(self, api, stl_b64):
+        parent = self._create(api, stl_b64, name="TEST_Remix_Parent")
+        assert parent["remix_count"] == 0
+        assert parent["remix_of"] in (None, "")
+        TestRemixLineage.parent_id = parent["id"]
+
+    def test_create_remix_increments_parent(self, api, stl_b64):
+        assert TestRemixLineage.parent_id, "parent must exist"
+        remix = self._create(
+            api, stl_b64,
+            name="TEST_Remix_Child",
+            remix_of=TestRemixLineage.parent_id,
+        )
+        assert remix["remix_of"] == TestRemixLineage.parent_id
+        TestRemixLineage.remix_id = remix["id"]
+        # Pull parent from list and check counter incremented
+        items = api.get(f"{API}/gallery").json()
+        parent = next((i for i in items if i["id"] == TestRemixLineage.parent_id), None)
+        assert parent is not None, "Parent should still exist"
+        assert parent["remix_count"] >= 1
+
+    def test_cleanup(self, api):
+        for cid in (TestRemixLineage.remix_id, TestRemixLineage.parent_id):
+            if cid:
+                api.delete(f"{API}/gallery/{cid}")
+
+
 # ---------- Cleanup ----------
 def teardown_module(module):
     """Clean up any remaining TEST_ items just in case."""

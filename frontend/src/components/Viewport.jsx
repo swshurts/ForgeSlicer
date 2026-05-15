@@ -4,9 +4,19 @@ import { Grid, OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edg
 import * as THREE from "three";
 import { useScene } from "../lib/store";
 import { buildGeometry } from "../lib/geometry";
+import { MULTICOLOR_PALETTE } from "../lib/presets";
 
 const POSITIVE_COLOR = "#F97316";
 const NEGATIVE_COLOR = "#06B6D4";
+
+function colorForObject(obj) {
+  if (obj.modifier === "negative") return NEGATIVE_COLOR;
+  const idx = obj.colorIndex | 0;
+  // colorIndex 0 keeps the default ForgeSlicer orange so single-color scenes
+  // look identical to before; any explicit slot picks from the palette.
+  if (!idx) return POSITIVE_COLOR;
+  return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
+}
 
 function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit }) {
   const meshRef = useRef();
@@ -15,7 +25,7 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [obj.type, JSON.stringify(obj.dims)]
   );
-  const color = obj.modifier === "negative" ? NEGATIVE_COLOR : POSITIVE_COLOR;
+  const color = colorForObject(obj);
 
   useEffect(() => () => geom.dispose(), [geom]);
   if (!obj.visible) return null;

@@ -87,6 +87,43 @@ class TestPrintersCrud:
         r = api.post(f"{API}/printers/nonexistent-xyz/use")
         assert r.status_code == 404
 
+    def test_upvote_increments(self, api):
+        cid = TestPrintersCrud.created[0]
+        before = api.get(f"{API}/printers").json()
+        before_votes = next(i["votes"] for i in before if i["id"] == cid)
+        r = api.post(f"{API}/printers/{cid}/upvote")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("ok") is True
+        assert body.get("votes") == before_votes + 1
+        # Second upvote should also bump.
+        r2 = api.post(f"{API}/printers/{cid}/upvote")
+        assert r2.json().get("votes") == before_votes + 2
+
+    def test_upvote_404(self, api):
+        r = api.post(f"{API}/printers/nonexistent-xyz/upvote")
+        assert r.status_code == 404
+
+    def test_list_sort_order_top_voted_first(self, api):
+        """Top-voted printers should appear ahead of newer zero-vote ones."""
+        # Add a fresh zero-vote printer so we have a comparison.
+        payload = {
+            "brand": "TEST_BrandZero",
+            "name": "TEST_Printer_Zero",
+            "submitter": "TEST_User",
+            "build_x": 200.0, "build_y": 200.0, "build_z": 200.0,
+            "max_nozzle_temp": 260, "max_bed_temp": 100,
+            "default_nozzle": 0.4, "default_print_speed": 100,
+            "notes": "",
+        }
+        zero = api.post(f"{API}/printers", json=payload).json()
+        TestPrintersCrud.created.append(zero["id"])
+        items = api.get(f"{API}/printers").json()
+        idx_voted = next(i for i, it in enumerate(items) if it["id"] == TestPrintersCrud.created[0])
+        idx_zero = next(i for i, it in enumerate(items) if it["id"] == zero["id"])
+        # voted (>=2) should rank ahead of zero-vote
+        assert idx_voted < idx_zero
+
     def test_delete_printer(self, api):
         cid = TestPrintersCrud.created[0]
         r = api.delete(f"{API}/printers/{cid}")
