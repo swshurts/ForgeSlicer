@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { useScene, useSliceSettings } from "../lib/store";
+import React, { useState, useMemo } from "react";
+import { useScene, useSliceSettings, PRINTERS, FILAMENTS } from "../lib/store";
+import { getPrinter, getFilament } from "../lib/presets";
 import { sliceToGCODE } from "../lib/slicer";
 import { downloadText } from "../lib/exporters";
-import { Printer, Sliders, Activity, Sigma, AlertTriangle } from "lucide-react";
+import { Printer, Sliders, Activity, Sigma, AlertTriangle, Beaker, Factory } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -25,11 +26,11 @@ function NumberField({ label, value, onChange, step = 1, min, max, testid, suffi
   );
 }
 
-function Section({ title, icon: Icon, children, testid }) {
+function Section({ title, icon: Icon, children, testid, accent = "text-slate-500" }) {
   return (
     <div className="border-b border-slate-800" data-testid={testid}>
       <div className="px-3 py-2 flex items-center gap-2 bg-slate-900/40">
-        {Icon && <Icon size={12} className="text-slate-500" />}
+        {Icon && <Icon size={12} className={accent} />}
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{title}</span>
       </div>
       <div className="p-3 flex flex-col gap-3">{children}</div>
@@ -37,12 +38,167 @@ function Section({ title, icon: Icon, children, testid }) {
   );
 }
 
+// Group printers by brand for the select
+function printerOptions() {
+  const byBrand = {};
+  for (const p of PRINTERS) {
+    if (!byBrand[p.brand]) byBrand[p.brand] = [];
+    byBrand[p.brand].push(p);
+  }
+  return byBrand;
+}
+
+function ProfileSection() {
+  const printerId = useScene((s) => s.printerId);
+  const filamentId = useScene((s) => s.filamentId);
+  const setPrinter = useScene((s) => s.setPrinter);
+  const setFilament = useScene((s) => s.setFilament);
+  const setS = useSliceSettings((s) => s.set);
+
+  const printer = getPrinter(printerId);
+  const filament = getFilament(filamentId);
+  const groups = useMemo(() => printerOptions(), []);
+
+  const handlePrinter = (id) => {
+    const p = getPrinter(id);
+    setPrinter(id);
+    setS({
+      nozzleDiameter: p.defaultNozzle,
+      printSpeed: Math.round(p.defaultPrintSpeed * (filament.printSpeedMultiplier || 1)),
+    });
+  };
+  const handleFilament = (id) => {
+    const f = getFilament(id);
+    setFilament(id);
+    setS({
+      nozzleTemp: f.nozzleTemp,
+      bedTemp: f.bedTemp,
+      retraction: f.retraction,
+      printSpeed: Math.round(printer.defaultPrintSpeed * (f.printSpeedMultiplier || 1)),
+    });
+  };
+
+  return (
+    <Section title="Printer & Filament" icon={Factory} testid="profile-section" accent="text-orange-500">
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Printer</span>
+        <select
+          data-testid="printer-select"
+          value={printerId}
+          onChange={(e) => handlePrinter(e.target.value)}
+          className="h-8 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
+        >
+          {Object.keys(groups).map((brand) => (
+            <optgroup key={brand} label={brand}>
+              {groups[brand].map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+      <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-[10px] font-mono bg-slate-950/60 border border-slate-800 rounded p-2">
+        <span className="text-slate-500">Volume</span>
+        <span className="col-span-2 text-slate-200 text-right">
+          {printer.buildVolume.x}×{printer.buildVolume.y}×{printer.buildVolume.z} mm
+        </span>
+        <span className="text-slate-500">Max hotend</span>
+        <span className="col-span-2 text-slate-200 text-right">{printer.maxNozzleTemp} °C</span>
+        <span className="text-slate-500">Max bed</span>
+        <span className="col-span-2 text-slate-200 text-right">{printer.maxBedTemp} °C</span>
+      </div>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Filament</span>
+        <select
+          data-testid="filament-select"
+          value={filamentId}
+          onChange={(e) => handleFilament(e.target.value)}
+          className="h-8 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
+        >
+          {FILAMENTS.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </label>
+      <p className="text-[10px] text-slate-400 leading-snug">{filament.notes}</p>
+    </Section>
+  );
+}
+
+function CompatibilityWarning() {
+  const objects = useScene((s) => s.objects);
+  const buildVolume = useScene((s) => s.buildVolume);
+  const printerId = useScene((s) => s.printerId);
+  const filamentId = useScene((s) => s.filamentId);
+  const settings = useSliceSettings();
+  const printer = getPrinter(printerId);
+  const filament = getFilament(filamentId);
+
+  const warnings = [];
+
+  // Build-volume check: estimate world bbox from object positions + dims
+  // (approximation: use position +/- max extent from dims/scale)
+  for (const o of objects) {
+    if (!o.visible) continue;
+    const half = estimateHalfExtents(o);
+    const max = [
+      o.position[0] + half[0],
+      o.position[1] + half[1] * 2,
+      o.position[2] + half[2],
+    ];
+    const min = [o.position[0] - half[0], 0, o.position[2] - half[2]];
+    if (
+      max[0] > buildVolume.x / 2 || min[0] < -buildVolume.x / 2 ||
+      max[2] > buildVolume.y / 2 || min[2] < -buildVolume.y / 2 ||
+      max[1] > buildVolume.z
+    ) {
+      warnings.push(`"${o.name}" extends beyond ${printer.name} build volume`);
+      break; // one is enough
+    }
+  }
+
+  if (settings.nozzleTemp > printer.maxNozzleTemp) {
+    warnings.push(`Hotend ${settings.nozzleTemp}°C exceeds printer max ${printer.maxNozzleTemp}°C`);
+  }
+  if (settings.bedTemp > printer.maxBedTemp) {
+    warnings.push(`Bed ${settings.bedTemp}°C exceeds printer max ${printer.maxBedTemp}°C`);
+  }
+  if (settings.nozzleTemp < filament.minNozzleTemp || settings.nozzleTemp > filament.maxNozzleTemp) {
+    warnings.push(`Hotend ${settings.nozzleTemp}°C outside ${filament.name} range (${filament.minNozzleTemp}–${filament.maxNozzleTemp}°C)`);
+  }
+
+  if (warnings.length === 0) return null;
+  return (
+    <div className="mx-3 mb-3 rounded border border-amber-500/40 bg-amber-500/10 p-2" data-testid="compat-warning">
+      <div className="flex items-center gap-1 text-amber-400 text-[10px] font-semibold uppercase tracking-wider mb-1">
+        <AlertTriangle size={11} /> Compatibility
+      </div>
+      <ul className="text-[11px] text-amber-100/90 list-disc list-inside space-y-0.5">
+        {warnings.map((w, i) => <li key={i}>{w}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+function estimateHalfExtents(o) {
+  const d = o.dims || {};
+  const s = o.scale || [1, 1, 1];
+  if (o.type === "cube") return [(d.x || 20) / 2 * s[0], (d.z || 20) / 2 * s[1], (d.y || 20) / 2 * s[2]];
+  if (o.type === "sphere") return [(d.r || 10) * s[0], (d.r || 10) * s[1], (d.r || 10) * s[2]];
+  if (o.type === "cylinder" || o.type === "cone") return [(d.r || 10) * s[0], (d.h || 20) / 2 * s[1], (d.r || 10) * s[2]];
+  if (o.type === "torus") return [((d.r || 12) + (d.tube || 4)) * s[0], (d.tube || 4) * s[1], ((d.r || 12) + (d.tube || 4)) * s[2]];
+  if (o.originalBbox) return [o.originalBbox.x / 2 * s[0], o.originalBbox.y / 2 * s[1], o.originalBbox.z / 2 * s[2]];
+  return [10, 10, 10];
+}
+
 function Inspector() {
   const objects = useScene((s) => s.objects);
   const selectedId = useScene((s) => s.selectedId);
   const updateObject = useScene((s) => s.updateObject);
   const updateDims = useScene((s) => s.updateDims);
-  const setTransform = useScene((s) => s.setTransform);
+  const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
+  const setImportedDim = useScene((s) => s.setImportedDim);
   const flipModifier = useScene((s) => s.flipModifier);
 
   const obj = objects.find((o) => o.id === selectedId);
@@ -55,14 +211,16 @@ function Inspector() {
   }
 
   const setPos = (i, v) => {
-    const p = [...obj.position]; p[i] = v; setTransform(obj.id, "position", p);
+    const p = [...obj.position]; p[i] = v; setTransformWithHistory(obj.id, "position", p);
   };
   const setRot = (i, v) => {
-    const r = [...obj.rotation]; r[i] = v; setTransform(obj.id, "rotation", r);
+    const r = [...obj.rotation]; r[i] = v; setTransformWithHistory(obj.id, "rotation", r);
   };
   const setScl = (i, v) => {
-    const s = [...obj.scale]; s[i] = v; setTransform(obj.id, "scale", s);
+    const s = [...obj.scale]; s[i] = v; setTransformWithHistory(obj.id, "scale", s);
   };
+
+  const isImported = obj.type === "imported";
 
   return (
     <Section title={`Inspector — ${obj.type}`} icon={Sliders} testid="inspector">
@@ -128,6 +286,40 @@ function Inspector() {
         </div>
       </div>
 
+      {isImported && obj.originalBbox && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center gap-1">
+            <Beaker size={10} /> Real Size (mm)
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <NumberField
+              testid="imported-dim-x"
+              label="X"
+              value={obj.originalBbox.x * obj.scale[0]}
+              onChange={(v) => setImportedDim(obj.id, "x", v)}
+              step={0.5} min={0.1}
+            />
+            <NumberField
+              testid="imported-dim-y"
+              label="Y"
+              value={obj.originalBbox.y * obj.scale[1]}
+              onChange={(v) => setImportedDim(obj.id, "y", v)}
+              step={0.5} min={0.1}
+            />
+            <NumberField
+              testid="imported-dim-z"
+              label="Z"
+              value={obj.originalBbox.z * obj.scale[2]}
+              onChange={(v) => setImportedDim(obj.id, "z", v)}
+              step={0.5} min={0.1}
+            />
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">
+            Original: {obj.originalBbox.x.toFixed(2)} × {obj.originalBbox.y.toFixed(2)} × {obj.originalBbox.z.toFixed(2)} mm
+          </p>
+        </div>
+      )}
+
       {obj.type === "cube" && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
@@ -185,6 +377,7 @@ function SliceStats({ stats }) {
 function SlicerSection() {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
+  const buildVolume = useScene((s) => s.buildVolume);
   const settings = useSliceSettings();
   const setS = useSliceSettings((s) => s.set);
   const [busy, setBusy] = useState(false);
@@ -194,9 +387,12 @@ function SlicerSection() {
   const handleSlice = async () => {
     setError(""); setBusy(true); setStats(null);
     try {
-      // run in microtask to allow UI repaint
       await new Promise((r) => setTimeout(r, 30));
-      const { gcode, stats } = sliceToGCODE(objects, settings);
+      const { gcode, stats } = sliceToGCODE(objects, {
+        ...settings,
+        bedX: buildVolume.x,
+        bedY: buildVolume.y,
+      });
       setStats(stats);
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
       downloadText(gcode, `${safe}.gcode`, "text/plain");
@@ -240,6 +436,8 @@ function SlicerSection() {
 
 function StatsSection() {
   const objects = useScene((s) => s.objects);
+  const measurements = useScene((s) => s.measurements);
+  const clearMeasurements = useScene((s) => s.clearMeasurements);
   const visibles = objects.filter((o) => o.visible);
   const positives = visibles.filter((o) => o.modifier !== "negative").length;
   const negatives = visibles.filter((o) => o.modifier === "negative").length;
@@ -252,7 +450,18 @@ function StatsSection() {
         <span className="text-orange-400 text-right">{positives}</span>
         <span className="text-slate-500">Negative</span>
         <span className="text-cyan-400 text-right">{negatives}</span>
+        <span className="text-slate-500">Measurements</span>
+        <span className="text-slate-200 text-right">{measurements.length}</span>
       </div>
+      {measurements.length > 0 && (
+        <button
+          data-testid="clear-measurements-btn"
+          onClick={clearMeasurements}
+          className="h-7 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700"
+        >
+          Clear measurements
+        </button>
+      )}
     </Section>
   );
 }
@@ -261,6 +470,8 @@ export default function RightPanel() {
   return (
     <aside className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900 flex flex-col h-full overflow-y-auto" data-testid="right-panel">
       <Inspector />
+      <ProfileSection />
+      <CompatibilityWarning />
       <StatsSection />
       <SlicerSection />
     </aside>

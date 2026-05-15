@@ -3,6 +3,7 @@ import { useScene } from "../lib/store";
 import {
   Move3D, RotateCw, Scale3D, Grid3x3, Magnet, Combine, PlusSquare, MinusSquare,
   FileUp, FileDown, Save, Upload, Layers, Globe, Printer, Hexagon, FilePlus2,
+  Undo2, Redo2, Ruler,
 } from "lucide-react";
 import {
   exportSceneToSTL, exportSceneTo3MF, saveProjectJSON, openFileDialog,
@@ -54,8 +55,42 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
   const serialize = useScene((s) => s.serialize);
   const addRawObject = useScene((s) => s.addRawObject);
   const removeObject = useScene((s) => s.removeObject);
+  const undo = useScene((s) => s.undo);
+  const redo = useScene((s) => s.redo);
+  const historyLen = useScene((s) => s.history.length);
+  const redoLen = useScene((s) => s.redoStack.length);
+  const measureMode = useScene((s) => s.measureMode);
+  const setMeasureMode = useScene((s) => s.setMeasureMode);
 
   const [busyMsg, setBusyMsg] = useState("");
+
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handler = (e) => {
+      const tag = (e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && !e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+      } else if ((meta && e.key.toLowerCase() === "y") || (meta && e.shiftKey && e.key.toLowerCase() === "z")) {
+        e.preventDefault();
+        redo();
+      } else if (e.key.toLowerCase() === "m") {
+        setMeasureMode(!measureMode);
+      } else if (e.key.toLowerCase() === "g") {
+        setTransformMode("translate");
+      } else if (e.key.toLowerCase() === "r") {
+        setTransformMode("rotate");
+      } else if (e.key.toLowerCase() === "s") {
+        setTransformMode("scale");
+      } else if (e.key === "Escape") {
+        if (measureMode) setMeasureMode(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [undo, redo, measureMode, setMeasureMode, setTransformMode]);
 
   const doBool = (op) => {
     // Take last 2 objects: prefer selected as base, last added as other.
@@ -93,7 +128,7 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       setBusyMsg("Importing...");
       const ext = file.name.split(".").pop().toLowerCase();
       const mesh = ext === "obj" ? await importOBJFile(file) : await importSTLFile(file);
-      addImportedMesh(mesh.name, mesh.vertices, mesh.indices);
+      addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
     } catch (e) {
       if (e.message !== "No file selected") alert("Import failed: " + e.message);
     } finally { setBusyMsg(""); }
@@ -208,6 +243,33 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       </IconBtn>
       <IconBtn active={gridVisible} testid="toggle-grid-btn" onClick={() => setGridVisible(!gridVisible)} title="Toggle grid">
         <Grid3x3 size={16} />
+      </IconBtn>
+
+      <Divider />
+
+      <IconBtn
+        testid="undo-btn"
+        onClick={undo}
+        title="Undo (Ctrl+Z)"
+        active={false}
+      >
+        <Undo2 size={16} className={historyLen === 0 ? "opacity-30" : ""} />
+      </IconBtn>
+      <IconBtn
+        testid="redo-btn"
+        onClick={redo}
+        title="Redo (Ctrl+Y / Ctrl+Shift+Z)"
+        active={false}
+      >
+        <Redo2 size={16} className={redoLen === 0 ? "opacity-30" : ""} />
+      </IconBtn>
+      <IconBtn
+        active={measureMode}
+        testid="measure-mode-btn"
+        onClick={() => setMeasureMode(!measureMode)}
+        title="Measure (M) — click two points to measure distance"
+      >
+        <Ruler size={16} />
       </IconBtn>
 
       <div className="flex-1" />

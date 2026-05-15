@@ -155,16 +155,22 @@ export async function importSTLFile(file) {
   const loader = new STLLoader();
   const geom = loader.parse(buf);
   geom.computeVertexNormals();
-  // re-center on build plate: shift so min Y = 0
   geom.computeBoundingBox();
   const bb = geom.boundingBox;
   geom.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+  geom.computeBoundingBox();
+  const bb2 = geom.boundingBox;
   const pos = geom.attributes.position.array;
   const indices = geom.index ? geom.index.array : null;
   return {
     name: file.name.replace(/\.[^.]+$/, ""),
     vertices: new Float32Array(pos),
     indices: indices ? new Uint32Array(indices) : null,
+    originalBbox: {
+      x: bb2.max.x - bb2.min.x,
+      y: bb2.max.y - bb2.min.y,
+      z: bb2.max.z - bb2.min.z,
+    },
   };
 }
 
@@ -205,6 +211,11 @@ export async function importOBJFile(file) {
     name: file.name.replace(/\.[^.]+$/, ""),
     vertices: verts,
     indices: null,
+    originalBbox: {
+      x: bb.max.x - bb.min.x,
+      y: bb.max.y - bb.min.y,
+      z: bb.max.z - bb.min.z,
+    },
   };
 }
 

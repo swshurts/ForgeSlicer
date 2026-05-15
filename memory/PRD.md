@@ -51,6 +51,16 @@
 - ✅ FastAPI `/api/gallery` CRUD with MongoDB storage
 - ✅ Custom dark slate + orange (positive) / cyan (negative) OrcaSlicer-inspired theme
 
+## Iteration 2 (2026-05-15) — Profiles + P2 Polish
+- ✅ **Printer profiles** for Bambu Lab (P1S, A1, A1 mini, X1C), Prusa (MK4, MINI, XL), Creality (Ender-3, Pro, V3 SE, K1), FlashForge (Adventurer 5M, Creator Pro 2, Finder), Anycubic (Kobra 2), Sovol (SV06, SV07, SV08), Voron 2.4, plus Custom. Build volume drives the visible build plate. Hotend/bed max temperatures power compatibility warnings.
+- ✅ **Filament profiles** (PLA, PLA+, PETG, ABS, ASA, TPU, Nylon, PC) with recommended hotend/bed temps, retraction, and speed multipliers — automatically applied when selecting filament.
+- ✅ **Compatibility warning panel** flags out-of-build-volume models, hotend/bed over printer max, and hotend out of filament range.
+- ✅ **(c) Real dimension editing for imported STL** — bbox X/Y/Z mm shown in Inspector for imported meshes; editing rescales the geometry to the requested mm.
+- ✅ **(e) Undo / Redo** — Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z), toolbar buttons, 60-step history stack. Snapshots taken before every meaningful action and at gizmo drag start.
+- ✅ **(a) Measurement tool** — toolbar toggle or `M` shortcut; click two points on any object → persistent green dimension line + mm label. Multi-measurement support. Clear-all button in Scene stats.
+- ✅ **(b) Live bbox dimensions overlay** — hovering above the currently-selected object's bounding box, in real mm, updates live during gizmo drag.
+- ✅ Status bar surfaces printer, build, filament, mode (incl. MEASURE), and history depth.
+
 ## Patches / Quirks
 - `@emergentbase/visual-edits` injects `x-line-number` etc. into all JSX, which broke react-three-fiber's `applyProps`. Three R3F bundles in `/app/frontend/node_modules/@react-three/fiber/dist/` were patched to skip props starting with `x-`, `data-ve-`, `data-debug-`. If `node_modules` is reinstalled the patches must be re-applied.
 
@@ -61,10 +71,9 @@
 ## Backlog / Future Enhancements
 - P1: Slicer in a Web Worker (currently main-thread; large meshes can take >5s)
 - P1: Real solid infill in GCODE slicer (currently perimeter contours only)
-- P2: Measurement tool (point-to-point distance overlay)
-- P2: Multi-object multi-select & group transforms
-- P2: Undo/redo stack
+- P2: Multi-object multi-select & group transforms (`d` — deferred per user)
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app for one-click hand-off to OrcaSlicer
 - P3: Likes/votes on gallery designs (engagement)
 - P3: Sketch / 2D drawing mode
+- P3: Save & load printer/filament profiles to backend for cross-device use

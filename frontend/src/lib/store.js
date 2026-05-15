@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -17,7 +18,7 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     id: newId(type),
     name: `${type[0].toUpperCase() + type.slice(1)}`,
     type,
-    modifier,         // 'positive' | 'negative'
+    modifier,
     visible: true,
     locked: false,
     position: [0, (def.dims.z || def.dims.h || def.dims.r) / 2 || 10, 0],
@@ -28,28 +29,110 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
   };
 };
 
+// Deep clone helper. Preserves typed arrays for imported geometry.
+const cloneObjects = (objects) =>
+  objects.map((o) => ({
+    ...o,
+    position: [...o.position],
+    rotation: [...o.rotation],
+    scale: [...o.scale],
+    dims: { ...o.dims },
+    originalBbox: o.originalBbox ? { ...o.originalBbox } : undefined,
+    geometry: o.geometry
+      ? {
+          vertices: o.geometry.vertices, // shared reference (immutable in store)
+          indices: o.geometry.indices,
+        }
+      : undefined,
+  }));
+
+const HISTORY_LIMIT = 60;
+
+const defaultPrinterId = "custom";
+const defaultFilamentId = "pla";
+
 export const useScene = create((set, get) => ({
   objects: [],
   selectedId: null,
-  transformMode: "translate", // translate | rotate | scale
+  transformMode: "translate",
   snapEnabled: true,
-  snapTranslate: 1,    // mm
-  snapRotate: 15,      // degrees
+  snapTranslate: 1,
+  snapRotate: 15,
   snapScale: 0.1,
   gridVisible: true,
-  buildVolume: { x: 220, y: 220, z: 250 },
+  buildVolume: getPrinter(defaultPrinterId).buildVolume,
   projectName: "Untitled Project",
 
-  // ---------- mutations ----------
+  // ---- profiles ----
+  printerId: defaultPrinterId,
+  filamentId: defaultFilamentId,
+
+  // ---- measurement ----
+  measureMode: false,
+  measurements: [], // [{id, a:[x,y,z], b:[x,y,z]}]
+  pendingMeasurePoint: null,
+
+  // ---- history ----
+  history: [],
+  redoStack: [],
+
+  // ---- internals ----
+  pushHistory: () => {
+    const s = get();
+    const snap = cloneObjects(s.objects);
+    const next = [...s.history, snap];
+    if (next.length > HISTORY_LIMIT) next.shift();
+    set({ history: next, redoStack: [] });
+  },
+
+  undo: () => {
+    const s = get();
+    if (s.history.length === 0) return;
+    const last = s.history[s.history.length - 1];
+    const cur = cloneObjects(s.objects);
+    set({
+      objects: last,
+      history: s.history.slice(0, -1),
+      redoStack: [...s.redoStack, cur],
+      selectedId: null,
+    });
+  },
+
+  redo: () => {
+    const s = get();
+    if (s.redoStack.length === 0) return;
+    const next = s.redoStack[s.redoStack.length - 1];
+    const cur = cloneObjects(s.objects);
+    set({
+      objects: next,
+      redoStack: s.redoStack.slice(0, -1),
+      history: [...s.history, cur],
+      selectedId: null,
+    });
+  },
+
+  // ---- profile actions ----
+  setPrinter: (id) => {
+    const p = getPrinter(id);
+    set({
+      printerId: p.id,
+      buildVolume: { ...p.buildVolume },
+    });
+  },
+  setFilament: (id) => set({ filamentId: id }),
+
+  // ---- scene mutations ----
   setProjectName: (name) => set({ projectName: name }),
 
   addPrimitive: (type, modifier = "positive") => {
+    get().pushHistory();
     const obj = buildPrimitive(type, modifier);
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id }));
     return obj.id;
   },
 
-  addImportedMesh: (name, vertices, indices = null) => {
+  addImportedMesh: (name, vertices, indices = null, originalBbox = null) => {
+    get().pushHistory();
     const obj = {
       id: newId("mesh"),
       name: name || "Imported Mesh",
@@ -61,25 +144,30 @@ export const useScene = create((set, get) => ({
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       dims: {},
-      geometry: { vertices, indices }, // Float32Array, Uint32Array|null
+      originalBbox: originalBbox || undefined, // {x,y,z} in mm at scale 1
+      geometry: { vertices, indices },
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id }));
     return obj.id;
   },
 
   addRawObject: (obj) => {
+    get().pushHistory();
     const withId = { ...obj, id: obj.id || newId(obj.type || "mesh") };
     set((s) => ({ objects: [...s.objects, withId], selectedId: withId.id }));
     return withId.id;
   },
 
-  removeObject: (id) =>
+  removeObject: (id) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
-    })),
+    }));
+  },
 
-  duplicateObject: (id) =>
+  duplicateObject: (id) => {
+    get().pushHistory();
     set((s) => {
       const src = s.objects.find((o) => o.id === id);
       if (!src) return s;
@@ -90,20 +178,27 @@ export const useScene = create((set, get) => ({
         position: [src.position[0] + 5, src.position[1], src.position[2] + 5],
       };
       return { objects: [...s.objects, copy], selectedId: copy.id };
-    }),
+    });
+  },
 
-  updateObject: (id, patch) =>
+  updateObject: (id, patch) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.map((o) => (o.id === id ? { ...o, ...patch } : o)),
-    })),
+    }));
+  },
 
-  updateDims: (id, dimsPatch) =>
+  updateDims: (id, dimsPatch) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.map((o) =>
         o.id === id ? { ...o, dims: { ...o.dims, ...dimsPatch } } : o
       ),
-    })),
+    }));
+  },
 
+  // Bare transform setter — fires constantly during gizmo drag; DOES NOT snapshot.
+  // Use beginTransform / commitTransform around drag for undo support.
   setTransform: (id, key, value) =>
     set((s) => ({
       objects: s.objects.map((o) =>
@@ -111,28 +206,68 @@ export const useScene = create((set, get) => ({
       ),
     })),
 
-  toggleVisible: (id) =>
+  beginTransform: () => {
+    get().pushHistory();
+  },
+
+  // For numeric input changes that are atomic
+  setTransformWithHistory: (id, key, value) => {
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        o.id === id ? { ...o, [key]: value } : o
+      ),
+    }));
+  },
+
+  // For imported meshes: set real dimension in mm (per axis)
+  setImportedDim: (id, axis /* 'x'|'y'|'z' */, mm) => {
+    const s = get();
+    const obj = s.objects.find((o) => o.id === id);
+    if (!obj || !obj.originalBbox) return;
+    const idx = { x: 0, y: 1, z: 2 }[axis];
+    const orig = obj.originalBbox[axis];
+    if (!orig || orig <= 0) return;
+    s.pushHistory();
+    const newScale = mm / orig;
+    set((st) => ({
+      objects: st.objects.map((o) => {
+        if (o.id !== id) return o;
+        const ns = [...o.scale];
+        ns[idx] = newScale;
+        return { ...o, scale: ns };
+      }),
+    }));
+  },
+
+  toggleVisible: (id) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.map((o) =>
         o.id === id ? { ...o, visible: !o.visible } : o
       ),
-    })),
+    }));
+  },
 
-  toggleLocked: (id) =>
+  toggleLocked: (id) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.map((o) =>
         o.id === id ? { ...o, locked: !o.locked } : o
       ),
-    })),
+    }));
+  },
 
-  flipModifier: (id) =>
+  flipModifier: (id) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.map((o) =>
         o.id === id
           ? { ...o, modifier: o.modifier === "positive" ? "negative" : "positive" }
           : o
       ),
-    })),
+    }));
+  },
 
   selectObject: (id) => set({ selectedId: id }),
   clearSelection: () => set({ selectedId: null }),
@@ -143,26 +278,69 @@ export const useScene = create((set, get) => ({
   setGridVisible: (v) => set({ gridVisible: v }),
   setBuildVolume: (v) => set({ buildVolume: v }),
 
-  clearScene: () =>
-    set({ objects: [], selectedId: null, projectName: "Untitled Project" }),
+  // ---- Measurement ----
+  setMeasureMode: (on) =>
+    set({ measureMode: on, pendingMeasurePoint: null }),
 
-  loadProject: (state) =>
+  handleMeasureClick: (point) => {
+    const s = get();
+    if (!s.measureMode) return;
+    if (!s.pendingMeasurePoint) {
+      set({ pendingMeasurePoint: point });
+    } else {
+      const m = {
+        id: `m-${Date.now()}`,
+        a: s.pendingMeasurePoint,
+        b: point,
+      };
+      set({
+        measurements: [...s.measurements, m],
+        pendingMeasurePoint: null,
+      });
+    }
+  },
+
+  removeMeasurement: (id) =>
+    set((s) => ({ measurements: s.measurements.filter((m) => m.id !== id) })),
+
+  clearMeasurements: () =>
+    set({ measurements: [], pendingMeasurePoint: null }),
+
+  clearScene: () => {
+    get().pushHistory();
+    set({
+      objects: [],
+      selectedId: null,
+      projectName: "Untitled Project",
+      measurements: [],
+      pendingMeasurePoint: null,
+    });
+  },
+
+  loadProject: (state) => {
+    get().pushHistory();
     set({
       objects: state.objects || [],
       selectedId: null,
       projectName: state.projectName || "Untitled Project",
       buildVolume: state.buildVolume || { x: 220, y: 220, z: 250 },
-    }),
+      printerId: state.printerId || defaultPrinterId,
+      filamentId: state.filamentId || defaultFilamentId,
+      measurements: state.measurements || [],
+    });
+  },
 
   serialize: () => {
     const s = get();
     return {
-      version: 1,
+      version: 2,
       projectName: s.projectName,
       buildVolume: s.buildVolume,
+      printerId: s.printerId,
+      filamentId: s.filamentId,
+      measurements: s.measurements,
       objects: s.objects.map((o) => ({
         ...o,
-        // strip non-serializable Float32Array if any -> convert to plain arrays
         geometry: o.geometry
           ? {
               vertices: Array.from(o.geometry.vertices),
@@ -179,7 +357,7 @@ export const useSliceSettings = create((set) => ({
   firstLayerHeight: 0.3,
   nozzleDiameter: 0.4,
   filamentDiameter: 1.75,
-  printSpeed: 60,         // mm/s
+  printSpeed: 60,
   travelSpeed: 120,
   perimeters: 2,
   infillPercent: 15,
@@ -188,3 +366,5 @@ export const useSliceSettings = create((set) => ({
   retraction: 1.0,
   set: (patch) => set(patch),
 }));
+
+export { PRINTERS, FILAMENTS };
