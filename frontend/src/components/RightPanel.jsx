@@ -6,7 +6,7 @@ import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { evaluateSceneStatsAsync } from "../lib/workerClient";
 import { printersApi } from "../lib/api";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (

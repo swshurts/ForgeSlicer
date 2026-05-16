@@ -6,19 +6,41 @@ import { sliceToGCODEAsync } from "../lib/workerClient";
 import { downloadText } from "../lib/exporters";
 
 // ---------- Building blocks ----------
-function NumberField({ label, value, onChange, step = 1, min, suffix, testid, disabled }) {
+function NumberField({ label, value, onChange, step = 1, suffix, testid, disabled }) {
+  // Keep a string draft so the user can transiently type "" / "0" / "0.5"
+  // without the field firing onChange on every keystroke (which used to
+  // collapse the scale to 0 mid-edit and freeze the lock math). Commit on
+  // Enter or blur.
+  const [draft, setDraft] = React.useState(null);
+  const display = draft !== null ? draft : (Number.isFinite(value) ? String(value) : "");
+
+  const commit = () => {
+    if (draft === null) return;
+    const v = parseFloat(draft);
+    setDraft(null);
+    if (Number.isFinite(v)) onChange(v);
+  };
+
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{label}</span>
+      {label !== "" && (
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{label}</span>
+      )}
       <div className="relative flex items-center">
         <input
           data-testid={testid}
-          type="number"
-          step={step}
-          min={min}
+          type="text"
+          inputMode="decimal"
           disabled={disabled}
-          value={Number.isFinite(value) ? value : 0}
-          onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
+          value={display}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); e.currentTarget.blur(); }
+            if (e.key === "Escape") { setDraft(null); e.currentTarget.blur(); }
+            if (e.key === "ArrowUp") { e.preventDefault(); onChange((Number.isFinite(value) ? value : 0) + step); }
+            if (e.key === "ArrowDown") { e.preventDefault(); onChange((Number.isFinite(value) ? value : 0) - step); }
+          }}
           className="h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 pr-7 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none font-mono disabled:opacity-50"
         />
         {suffix && <span className="absolute right-2 text-[10px] text-slate-500 font-mono">{suffix}</span>}
@@ -173,12 +195,12 @@ export function ScalePopover({ anchor, onClose }) {
 
   const setPercent = (axis, percentValue) => {
     if (!obj) return;
+    if (!Number.isFinite(percentValue) || percentValue <= 0) return;
     const newFactor = percentValue / 100;
     if (locked) {
-      // Ratio against the previous scale on the same axis.
-      const prev = obj.scale[axis] || 1;
-      const ratio = newFactor / (prev || 1e-9);
-      const ns = obj.scale.map((s) => s * ratio);
+      // Use the base (scale-=-1) size as the anchor so the lock keeps
+      // working even if some axis got knocked to 0 by an earlier edit.
+      const ns = baseArr.map((_, i) => (i === axis ? newFactor : (obj.scale[i] / (obj.scale[axis] || newFactor)) * newFactor));
       applyScale(ns);
     } else {
       const ns = [...obj.scale]; ns[axis] = newFactor;
@@ -188,11 +210,12 @@ export function ScalePopover({ anchor, onClose }) {
 
   const setRealSize = (axis, mm) => {
     if (!obj) return;
-    const newFactor = mm / (baseArr[axis] || 1e-9);
+    if (!Number.isFinite(mm) || mm <= 0) return;
+    const base = baseArr[axis];
+    if (!base || base <= 0) return;
+    const newFactor = mm / base;
     if (locked) {
-      const prev = obj.scale[axis] || 1;
-      const ratio = newFactor / (prev || 1e-9);
-      const ns = obj.scale.map((s) => s * ratio);
+      const ns = baseArr.map((_, i) => (i === axis ? newFactor : (obj.scale[i] / (obj.scale[axis] || newFactor)) * newFactor));
       applyScale(ns);
     } else {
       const ns = [...obj.scale]; ns[axis] = newFactor;
@@ -235,8 +258,7 @@ export function ScalePopover({ anchor, onClose }) {
                     label=""
                     value={percent}
                     onChange={(v) => setPercent(axis, v)}
-                    step={1}
-                    min={0.01}
+                    step={10}
                     suffix="%"
                   />
                   <NumberField
@@ -244,8 +266,7 @@ export function ScalePopover({ anchor, onClose }) {
                     label=""
                     value={mm}
                     onChange={(v) => setRealSize(axis, v)}
-                    step={0.5}
-                    min={0.01}
+                    step={1}
                     suffix="mm"
                   />
                 </React.Fragment>
