@@ -46,7 +46,9 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit }) {
         if (measureMode) {
           onMeasureHit([e.point.x, e.point.y, e.point.z], obj.id);
         } else {
-          onSelect(obj.id);
+          const ne = e.nativeEvent || {};
+          const mode = ne.ctrlKey || ne.metaKey ? "toggle" : ne.shiftKey ? "add" : null;
+          onSelect(obj.id, mode);
         }
       }}
       castShadow
@@ -263,6 +265,7 @@ function MeasurementsLayer() {
 export default function Viewport() {
   const objects = useScene((s) => s.objects);
   const selectedId = useScene((s) => s.selectedId);
+  const selectedIds = useScene((s) => s.selectedIds);
   const selectObject = useScene((s) => s.selectObject);
   const clearSelection = useScene((s) => s.clearSelection);
   const buildVolume = useScene((s) => s.buildVolume);
@@ -305,7 +308,7 @@ export default function Viewport() {
           <SceneObject
             key={o.id}
             obj={o}
-            isSelected={o.id === selectedId}
+            isSelected={o.id === selectedId || (selectedIds && selectedIds.includes(o.id))}
             onSelect={selectObject}
             measureMode={measureMode}
             onMeasureHit={handleMeasureClick}

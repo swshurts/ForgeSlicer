@@ -46,24 +46,31 @@ function PrimitiveButton({ p, modifier, compact = false }) {
 
 function SceneTreeItem({ obj }) {
   const selectedId = useScene((s) => s.selectedId);
+  const selectedIds = useScene((s) => s.selectedIds);
   const select = useScene((s) => s.selectObject);
   const toggleVisible = useScene((s) => s.toggleVisible);
   const toggleLocked = useScene((s) => s.toggleLocked);
   const remove = useScene((s) => s.removeObject);
   const duplicate = useScene((s) => s.duplicateObject);
   const flipModifier = useScene((s) => s.flipModifier);
-  const isActive = obj.id === selectedId;
+  const inSelection = (selectedIds && selectedIds.length) ? selectedIds.includes(obj.id) : obj.id === selectedId;
+  const isPrimary = obj.id === selectedId;
   const isNeg = obj.modifier === "negative";
 
   return (
     <div
       data-testid={`scene-tree-item-${obj.id}`}
       className={`group flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer border-l-2 ${
-        isActive
+        isPrimary
           ? "bg-slate-800 border-orange-500 text-white"
-          : "border-transparent hover:bg-slate-800/60 text-slate-300"
+          : inSelection
+            ? "bg-slate-800/60 border-orange-500/60 text-white"
+            : "border-transparent hover:bg-slate-800/60 text-slate-300"
       }`}
-      onClick={() => select(obj.id)}
+      onClick={(e) => {
+        const mode = e.ctrlKey || e.metaKey ? "toggle" : e.shiftKey ? "add" : null;
+        select(obj.id, mode);
+      }}
     >
       <button
         data-testid={`tree-flip-${obj.id}`}

@@ -63,7 +63,8 @@ const defaultFilamentId = "pla";
 
 export const useScene = create((set, get) => ({
   objects: [],
-  selectedId: null,
+  selectedId: null,       // primary selection (most recently clicked) — used by Inspector / popovers
+  selectedIds: [],        // full selection set for multi-select actions (duplicate, mirror, delete)
   transformMode: "translate",
   snapEnabled: true,
   snapTranslate: 1,
@@ -109,6 +110,7 @@ export const useScene = create((set, get) => ({
       history: s.history.slice(0, -1),
       redoStack: [...s.redoStack, cur],
       selectedId: null,
+      selectedIds: [],
     });
   },
 
@@ -122,6 +124,7 @@ export const useScene = create((set, get) => ({
       redoStack: s.redoStack.slice(0, -1),
       history: [...s.history, cur],
       selectedId: null,
+      selectedIds: [],
     });
   },
 
@@ -166,7 +169,7 @@ export const useScene = create((set, get) => ({
   addPrimitive: (type, modifier = "positive") => {
     get().pushHistory();
     const obj = buildPrimitive(type, modifier);
-    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
   },
 
@@ -187,14 +190,14 @@ export const useScene = create((set, get) => ({
       originalBbox: originalBbox || undefined, // {x,y,z} in mm at scale 1
       geometry: { vertices, indices },
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
   },
 
   addRawObject: (obj) => {
     get().pushHistory();
     const withId = { ...obj, id: obj.id || newId(obj.type || "mesh") };
-    set((s) => ({ objects: [...s.objects, withId], selectedId: withId.id }));
+    set((s) => ({ objects: [...s.objects, withId], selectedId: withId.id, selectedIds: [withId.id] }));
     return withId.id;
   },
 
@@ -203,11 +206,29 @@ export const useScene = create((set, get) => ({
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
+      selectedIds: s.selectedIds.filter((x) => x !== id),
       measurements: s.measurements.filter((m) => m.objIdA !== id && m.objIdB !== id),
       pendingMeasurePoint:
         s.pendingMeasureObjId === id ? null : s.pendingMeasurePoint,
       pendingMeasureObjId:
         s.pendingMeasureObjId === id ? null : s.pendingMeasureObjId,
+    }));
+  },
+
+  // Bulk-delete every currently-selected object. Used by the Delete key
+  // shortcut so the user can prune all mirrored copies at once if they
+  // don't like the result.
+  removeSelected: () => {
+    const ids = get().selectedIds.length
+      ? get().selectedIds
+      : (get().selectedId ? [get().selectedId] : []);
+    if (ids.length === 0) return;
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.filter((o) => !ids.includes(o.id)),
+      selectedId: null,
+      selectedIds: [],
+      measurements: s.measurements.filter((m) => !ids.includes(m.objIdA) && !ids.includes(m.objIdB)),
     }));
   },
 
@@ -243,7 +264,7 @@ export const useScene = create((set, get) => ({
         name: `${src.name} copy`,
         position: [src.position[0] + 5, src.position[1], src.position[2] + 5],
       };
-      return { objects: [...s.objects, copy], selectedId: copy.id };
+      return { objects: [...s.objects, copy], selectedId: copy.id, selectedIds: [copy.id] };
     });
   },
 
@@ -344,8 +365,83 @@ export const useScene = create((set, get) => ({
     }));
   },
 
-  selectObject: (id) => set({ selectedId: id }),
-  clearSelection: () => set({ selectedId: null }),
+  // selectObject:
+  //   - default (no `mode`): single-selection — replaces the set with [id]
+  //   - mode='toggle' (Ctrl/Cmd-click): adds id if absent, removes if present
+  //   - mode='add'    (Shift-click)   : adds id if absent (range select TODO)
+  selectObject: (id, mode = null) => {
+    set((s) => {
+      if (id === null) return { selectedId: null, selectedIds: [] };
+      if (!mode) return { selectedId: id, selectedIds: [id] };
+      const current = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
+      const has = current.includes(id);
+      let next;
+      if (mode === "toggle") {
+        next = has ? current.filter((x) => x !== id) : [...current, id];
+      } else {
+        // 'add'
+        next = has ? current : [...current, id];
+      }
+      return {
+        selectedIds: next,
+        selectedId: next.length ? (has && mode === "toggle" ? next[next.length - 1] || null : id) : null,
+      };
+    });
+  },
+  clearSelection: () => set({ selectedId: null, selectedIds: [] }),
+
+  // Duplicate every currently-selected object. Optionally mirror each copy
+  // along a world axis (x/y/z) by negating that scale component and reflecting
+  // the position about the bed center on that axis. The newly created copies
+  // become the new selection so subsequent transforms operate on them.
+  duplicateSelected: ({ mirrorAxis = null, offset = 5 } = {}) => {
+    const s = get();
+    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
+    if (ids.length === 0) return;
+    get().pushHistory();
+    const axisIdx = { x: 0, y: 1, z: 2 }[mirrorAxis] ?? -1;
+    set((st) => {
+      const copies = [];
+      for (const id of ids) {
+        const src = st.objects.find((o) => o.id === id);
+        if (!src) continue;
+        const copy = {
+          ...src,
+          id: newId(src.type),
+          name: src.name + (mirrorAxis ? ` (mirror ${mirrorAxis.toUpperCase()})` : " copy"),
+          position: [...src.position],
+          rotation: [...src.rotation],
+          scale: [...src.scale],
+          dims: { ...src.dims },
+          originalBbox: src.originalBbox ? { ...src.originalBbox } : undefined,
+          geometry: src.geometry ? {
+            vertices: src.geometry.vertices,
+            indices: src.geometry.indices,
+          } : undefined,
+        };
+        if (axisIdx >= 0) {
+          // Mirror about the origin plane of that axis. Negative scale flips
+          // the geometry; flipping position keeps the copy "across" from the
+          // original. For Y mirrors we additionally clamp to the build plate
+          // afterwards so the mirrored copy doesn't end up underground.
+          copy.scale[axisIdx] = -copy.scale[axisIdx];
+          copy.position[axisIdx] = -copy.position[axisIdx];
+          if (mirrorAxis === "y") copy.position[1] = Math.max(0, copy.position[1]);
+        } else {
+          // Plain duplicate — shift slightly so it's visible.
+          copy.position[0] += offset;
+          copy.position[2] += offset;
+        }
+        copies.push(copy);
+      }
+      const newIds = copies.map((c) => c.id);
+      return {
+        objects: [...st.objects, ...copies],
+        selectedIds: newIds,
+        selectedId: newIds[newIds.length - 1] || st.selectedId,
+      };
+    });
+  },
 
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapEnabled: (v) => set({ snapEnabled: v }),

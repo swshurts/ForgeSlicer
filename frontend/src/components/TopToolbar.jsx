@@ -3,7 +3,7 @@ import { useScene } from "../lib/store";
 import {
   Move3D, RotateCw, Scale3D, Grid3x3, Magnet, Combine, PlusSquare, MinusSquare,
   FileUp, FileDown, Save, Upload, Layers, Globe, Printer, Hexagon, FilePlus2,
-  Undo2, Redo2, Ruler, MapPin, Maximize, Sliders,
+  Undo2, Redo2, Ruler, MapPin, Maximize, Sliders, Copy,
 } from "lucide-react";
 import {
   saveProjectJSON, openFileDialog,
@@ -15,7 +15,7 @@ import { galleryApi } from "../lib/api";
 import { getSlicersForPrinter } from "../lib/presets";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
-import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover } from "./ActionPopovers";
+import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, DuplicatePopover } from "./ActionPopovers";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -72,12 +72,15 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
 
   const [busyMsg, setBusyMsg] = useState("");
-  const [openPopover, setOpenPopover] = useState(null); // 'position' | 'rotation' | 'scale' | 'slicer' | null
+  const [openPopover, setOpenPopover] = useState(null); // 'position' | 'rotation' | 'scale' | 'slicer' | 'duplicate' | null
   const posBtnRef = useRef(null);
   const rotBtnRef = useRef(null);
   const sclBtnRef = useRef(null);
   const slcBtnRef = useRef(null);
+  const dupBtnRef = useRef(null);
   const togglePopover = (name) => setOpenPopover((cur) => (cur === name ? null : name));
+  const selectedIds = useScene((s) => s.selectedIds);
+  const selectionCount = selectedIds && selectedIds.length ? selectedIds.length : (selectedId ? 1 : 0);
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -354,6 +357,23 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
         <Maximize size={12} /> Size
       </button>
       <button
+        ref={dupBtnRef}
+        data-testid="menu-duplicate-btn"
+        onClick={() => togglePopover("duplicate")}
+        disabled={selectionCount === 0}
+        title={selectionCount > 1 ? `Duplicate ${selectionCount} selected components (with optional mirror)` : "Duplicate selected component (with optional mirror)"}
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          openPopover === "duplicate"
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+      >
+        <Copy size={12} />
+        {selectionCount > 1
+          ? <>Duplicate <span className="ml-0.5 text-[10px] text-orange-300">({selectionCount})</span></>
+          : "Duplicate"}
+      </button>
+      <button
         ref={slcBtnRef}
         data-testid="menu-slicer-btn"
         onClick={() => togglePopover("slicer")}
@@ -444,6 +464,9 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       )}
       {openPopover === "slicer" && (
         <SlicerPopover anchor={slcBtnRef.current} onClose={() => setOpenPopover(null)} />
+      )}
+      {openPopover === "duplicate" && (
+        <DuplicatePopover anchor={dupBtnRef.current} onClose={() => setOpenPopover(null)} />
       )}
     </div>
   );
