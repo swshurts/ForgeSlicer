@@ -182,7 +182,7 @@ function MeasurementLine({ measurement, onRemove }) {
         <sphereGeometry args={[1.2, 16, 16]} />
         <meshBasicMaterial color="#22C55E" depthTest={false} />
       </mesh>
-      <Html position={mid} center zIndexRange={[100, 0]} sprite={false}>
+      <Html position={mid} center zIndexRange={[50, 0]} sprite={false}>
         <div
           data-testid={`measurement-label-${id}`}
           className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-950 border border-green-500/70 text-green-300 text-sm font-mono rounded-md shadow-lg whitespace-nowrap select-none"
@@ -235,7 +235,7 @@ function BBoxOverlay() {
     (box.min.z + box.max.z) / 2
   );
   return (
-    <Html position={top} center zIndexRange={[80, 0]}>
+    <Html position={top} center zIndexRange={[40, 0]}>
       <div className="px-2 py-1 bg-black/80 border border-orange-500/40 rounded text-[10px] font-mono text-orange-300 whitespace-nowrap pointer-events-none"
         data-testid="bbox-overlay">
         {size.x.toFixed(1)} × {size.z.toFixed(1)} × {size.y.toFixed(1)} mm

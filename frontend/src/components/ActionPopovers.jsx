@@ -52,25 +52,16 @@ function NumberField({ label, value, onChange, step = 1, suffix, testid, disable
 function PopoverShell({ title, icon: Icon, onClose, anchor, children, testid, width = 280 }) {
   const ref = useRef(null);
 
+  // Only close on Esc or the explicit X. The previous outside-click handler
+  // was removed because it interfered with the user switching between
+  // scene-tree components while a popover stays open (which is the
+  // expected behavior — the popover should refresh its values for the
+  // newly selected object).
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    const onClick = (e) => {
-      if (!ref.current) return;
-      if (ref.current.contains(e.target)) return;
-      // Clicks on the originating toolbar button shouldn't immediately close;
-      // anchor element is forwarded so we can ignore it explicitly.
-      if (anchor && anchor.contains && anchor.contains(e.target)) return;
-      onClose();
-    };
     window.addEventListener("keydown", onKey);
-    // Use a delay so the click that opens us doesn't close us in the same tick.
-    const t = setTimeout(() => window.addEventListener("mousedown", onClick), 0);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onClick);
-      clearTimeout(t);
-    };
-  }, [onClose, anchor]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // Position the popover under its anchor.
   const [pos, setPos] = useState({ top: 56, left: 16 });
@@ -88,7 +79,7 @@ function PopoverShell({ title, icon: Icon, onClose, anchor, children, testid, wi
     <div
       ref={ref}
       data-testid={testid}
-      className="fixed z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
+      className="fixed z-[120] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
       style={{ top: pos.top, left: pos.left, width }}
     >
       <div className="h-9 px-3 flex items-center justify-between bg-slate-900/80 border-b border-slate-800">
@@ -178,12 +169,24 @@ export function RotationPopover({ anchor, onClose }) {
 }
 
 // ---------- Scale / Real Size ----------
+const SCALE_LOCK_KEY = "forgeslicer.scaleLockAspect";
+function readLockPref() {
+  try {
+    const v = localStorage.getItem(SCALE_LOCK_KEY);
+    return v === null ? true : v === "1";
+  } catch { return true; }
+}
+function writeLockPref(v) {
+  try { localStorage.setItem(SCALE_LOCK_KEY, v ? "1" : "0"); } catch {}
+}
+
 export function ScalePopover({ anchor, onClose }) {
   const selectedId = useScene((s) => s.selectedId);
   const objects = useScene((s) => s.objects);
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
   const obj = objects.find((o) => o.id === selectedId);
-  const [locked, setLocked] = useState(true);
+  const [locked, setLockedState] = useState(readLockPref);
+  const setLocked = (v) => { setLockedState(v); writeLockPref(v); };
 
   const base = obj ? getBaseSize(obj) : { x: 1, y: 1, z: 1 };
   const baseArr = [base.x || 1, base.y || 1, base.z || 1];

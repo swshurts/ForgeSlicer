@@ -52,7 +52,7 @@ export function ShareDialog({ open, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="share-dialog">
+    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="share-dialog">
       <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl">
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -169,7 +169,7 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="orca-dialog">
+    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="orca-dialog">
       <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl">
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -319,7 +319,7 @@ export function SavePrinterDialog({ open, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="save-printer-dialog">
+    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="save-printer-dialog">
       <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-lg shadow-2xl">
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
