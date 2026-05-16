@@ -26,14 +26,15 @@ export function buildGeometry(obj) {
   }
   if (t === "imported" && obj.geometry) {
     const g = new THREE.BufferGeometry();
-    const verts = obj.geometry.vertices instanceof Float32Array
-      ? obj.geometry.vertices
-      : new Float32Array(obj.geometry.vertices);
+    // IMPORTANT: clone the vertex array so consumers like dropToBed and CSG
+    // (which call `applyMatrix4` to bake transforms) don't mutate the
+    // canonical copy stored in our Zustand state. Without this clone, every
+    // rotation+drop-to-bed cycle would permanently corrupt the imported
+    // geometry — eventually moving it off-screen.
+    const verts = new Float32Array(obj.geometry.vertices);
     g.setAttribute("position", new THREE.BufferAttribute(verts, 3));
     if (obj.geometry.indices) {
-      const idx = obj.geometry.indices instanceof Uint32Array
-        ? obj.geometry.indices
-        : new Uint32Array(obj.geometry.indices);
+      const idx = new Uint32Array(obj.geometry.indices);
       g.setIndex(new THREE.BufferAttribute(idx, 1));
     }
     g.computeVertexNormals();
