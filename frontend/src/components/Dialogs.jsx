@@ -155,6 +155,9 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
       setDownloaded(true);
       // After the file lands, try to launch the slicer optimistically.
       attemptProtocolLaunch();
+      // Auto-close so the user doesn't have to hunt for the X. Leaves ~1.5s
+      // for the OS save-as / protocol prompt to take focus first.
+      setTimeout(() => onClose(), 1500);
     } catch (e) {
       alert(e.message);
     } finally { setBusy(false); }
