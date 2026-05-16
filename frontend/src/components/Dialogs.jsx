@@ -2,8 +2,8 @@ import React, { useState } from "react";
 import { useScene } from "../lib/store";
 import { bytesToBase64, downloadBlob } from "../lib/exporters";
 import { exportSTLBytesAsync, export3MFBytesAsync } from "../lib/workerClient";
-import { galleryApi, printersApi } from "../lib/api";
-import { X, Globe, CheckCircle2, Loader2, Printer, Download, Factory } from "lucide-react";
+import { galleryApi, printersApi, componentsApi } from "../lib/api";
+import { X, Globe, CheckCircle2, Loader2, Printer, Download, Factory, Library, PlusSquare, MinusSquare } from "lucide-react";
 
 export function ShareDialog({ open, onClose }) {
   const objects = useScene((s) => s.objects);
@@ -407,6 +407,180 @@ export function SavePrinterDialog({ open, onClose }) {
             <h3 className="text-base font-semibold text-white">Profile published!</h3>
             <p className="text-xs text-slate-400">
               "{done.brand} {done.name}" is now in the Community group and selected for this project.
+            </p>
+            <button onClick={onClose} className="mt-2 h-9 px-4 bg-slate-800 hover:bg-slate-700 text-white text-sm rounded">Close</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+const COMPONENT_CATEGORIES = [
+  { key: "mechanical", label: "Mechanical" },
+  { key: "rack",       label: "Rack / Enclosure" },
+  { key: "mounting",   label: "Mounting" },
+  { key: "misc",       label: "Misc" },
+];
+
+export function SaveComponentDialog({ open, onClose }) {
+  const objects = useScene((s) => s.objects);
+  const projectName = useScene((s) => s.projectName);
+  const [name, setName] = useState(projectName);
+  const [author, setAuthor] = useState("");
+  const [description, setDescription] = useState("");
+  // Default the component-modifier flag to whatever the user's scene is
+  // mostly made of — saves a click when packaging a "negative screw hole".
+  const defaultModifier = React.useMemo(() => {
+    if (!objects.length) return "positive";
+    const neg = objects.filter((o) => o.modifier === "negative").length;
+    return neg > objects.length / 2 ? "negative" : "positive";
+  }, [objects]);
+  const [modifier, setModifier] = useState(defaultModifier);
+  const [category, setCategory] = useState("misc");
+  const [tags, setTags] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [error, setError] = useState("");
+
+  React.useEffect(() => {
+    if (!open) return;
+    setName(projectName);
+    setModifier(defaultModifier);
+    setDone(null);
+    setError("");
+  }, [open, projectName, defaultModifier]);
+
+  if (!open) return null;
+
+  const captureThumb = () => {
+    const canvas = document.querySelector("canvas");
+    if (!canvas) return "";
+    try { return canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""); }
+    catch { return ""; }
+  };
+
+  const handleSave = async () => {
+    setError(""); setBusy(true); setDone(null);
+    try {
+      const { bytes, triangleCount } = await exportSTLBytesAsync(objects);
+      const stlB64 = bytesToBase64(bytes);
+      // Serialize the editable project JSON so "Add to Scene" can restore
+      // primitive types/dims/colorIndex on import. We strip raw geometry
+      // buffers (already covered by the STL fallback) to keep the payload
+      // size sensible.
+      const projectObjects = objects.map((o) => {
+        const { geometry, ...rest } = o;
+        return rest;
+      });
+      const projectJson = JSON.stringify({ objects: projectObjects });
+      const created = await componentsApi.create({
+        name: name || "Untitled Component",
+        author: author || "Anonymous",
+        description,
+        modifier,
+        category,
+        tags,
+        stl_base64: stlB64,
+        project_json: projectJson,
+        thumbnail_base64: captureThumb(),
+        triangle_count: Math.floor(triangleCount),
+        object_count: objects.length,
+      });
+      setDone(created);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || String(e));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="save-component-dialog">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Library size={16} className="text-orange-400" />
+            <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Save as Component</h2>
+          </div>
+          <button onClick={onClose} data-testid="save-component-close-btn" className="text-slate-400 hover:text-white">
+            <X size={16} />
+          </button>
+        </div>
+        {!done ? (
+          <div className="p-4 flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400">Name</span>
+              <input data-testid="component-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. U1 blank panel" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400">Author</span>
+                <input data-testid="component-author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Anonymous" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400">Category</span>
+                <select data-testid="component-category" value={category} onChange={(e) => setCategory(e.target.value)} className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none">
+                  {COMPONENT_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 mb-1 block">Type</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  data-testid="component-modifier-positive"
+                  onClick={() => setModifier("positive")}
+                  className={`h-10 rounded border text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2 ${
+                    modifier === "positive"
+                      ? "bg-orange-500/20 border-orange-500 text-orange-200"
+                      : "bg-slate-900 border-slate-700 text-slate-400"
+                  }`}
+                >
+                  <PlusSquare size={13} /> Positive
+                </button>
+                <button
+                  type="button"
+                  data-testid="component-modifier-negative"
+                  onClick={() => setModifier("negative")}
+                  className={`h-10 rounded border text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2 ${
+                    modifier === "negative"
+                      ? "bg-cyan-500/20 border-cyan-500 text-cyan-200"
+                      : "bg-slate-900 border-slate-700 text-slate-400"
+                  }`}
+                >
+                  <MinusSquare size={13} /> Negative
+                </button>
+              </div>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400">Tags (comma-separated)</span>
+              <input data-testid="component-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="screw, M3, 10mm" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400">Description</span>
+              <textarea data-testid="component-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="bg-slate-950 border border-slate-700 rounded text-sm text-white p-2 focus:border-orange-500 outline-none resize-none" />
+            </label>
+            {error && <div className="text-xs text-red-400">{error}</div>}
+            <button
+              data-testid="component-save-btn"
+              onClick={handleSave}
+              disabled={busy || objects.length === 0}
+              className="h-10 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 text-white font-semibold rounded flex items-center justify-center gap-2 uppercase tracking-wider text-xs"
+            >
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Library size={16} />}
+              {busy ? "Saving…" : "Publish to Library"}
+            </button>
+            <p className="text-[10px] text-slate-500">
+              Components are added to a shared library where anyone can drop them into their own scene. Both the STL and the editable project JSON are saved.
+            </p>
+          </div>
+        ) : (
+          <div className="p-6 flex flex-col items-center text-center gap-3" data-testid="component-save-success">
+            <CheckCircle2 size={42} className="text-green-400" />
+            <h3 className="text-base font-semibold text-white">Saved to library!</h3>
+            <p className="text-xs text-slate-400">
+              <span className="text-orange-300">{done.name}</span> is now in the public component library.
             </p>
             <button onClick={onClose} className="mt-2 h-9 px-4 bg-slate-800 hover:bg-slate-700 text-white text-sm rounded">Close</button>
           </div>

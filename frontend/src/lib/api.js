@@ -42,3 +42,31 @@ export const printersApi = {
     return data;
   },
 };
+
+export const componentsApi = {
+  list: async ({ modifier, category, q } = {}) => {
+    const params = {};
+    if (modifier) params.modifier = modifier;
+    if (category) params.category = category;
+    if (q) params.q = q;
+    const { data } = await axios.get(`${API}/components`, { params });
+    return data;
+  },
+  create: async (payload) => {
+    const { data } = await axios.post(`${API}/components`, payload);
+    return data;
+  },
+  getProject: async (id) => {
+    const { data } = await axios.get(`${API}/components/${id}/project`);
+    return data;
+  },
+  upvote: async (id) => {
+    const { data } = await axios.post(`${API}/components/${id}/upvote`);
+    return data;
+  },
+  delete: async (id) => {
+    const { data } = await axios.delete(`${API}/components/${id}`);
+    return data;
+  },
+};
+

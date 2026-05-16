@@ -1,13 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { galleryApi } from "../lib/api";
-import { Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { galleryApi, componentsApi } from "../lib/api";
+import {
+  Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
+  PlusSquare, MinusSquare, Star, Search, Plus,
+} from "lucide-react";
 
 const PLACEHOLDERS = [
   "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
   "https://images.unsplash.com/photo-1709626011485-6fe000ea2dbc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHw0fHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
   "https://images.unsplash.com/photo-1622737133809-d95047b9e673?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwxfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
   "https://images.unsplash.com/photo-1702863361902-93c51bfbd923?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwzfHwzZCUyMHByaW50ZWQlMjBvYmplY3R8ZW58MHx8fHwxNzc4ODI0MjYyfDA&ixlib=rb-4.1.0&q=85",
+];
+
+const COMPONENT_CATEGORIES = [
+  { key: "all", label: "All categories" },
+  { key: "mechanical", label: "Mechanical" },
+  { key: "rack", label: "Rack / Enclosure" },
+  { key: "mounting", label: "Mounting" },
+  { key: "misc", label: "Misc" },
 ];
 
 function timeAgo(iso) {
@@ -48,14 +59,13 @@ function GalleryCard({ item, idx, onDelete }) {
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
         {item.description && (
-          <p className="text-[11px] text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
+          <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
         )}
-        <div className="flex gap-1 mt-2">
+        <div className="mt-3 flex items-center gap-2">
           <Link
-            data-testid={`gallery-remix-${item.id}`}
             to={`/workspace?remix=${item.id}`}
-            className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded flex items-center justify-center gap-1.5"
-            title="Open in workspace as remix"
+            data-testid={`gallery-remix-${item.id}`}
+            className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center justify-center gap-1"
           >
             <GitFork size={12} /> Remix
           </Link>
@@ -81,30 +91,236 @@ function GalleryCard({ item, idx, onDelete }) {
   );
 }
 
-export default function Gallery() {
+function ComponentCard({ item, idx, onAdd, onUpvote, onDelete }) {
+  const isNeg = item.modifier === "negative";
+  const thumb = item.thumbnail_base64
+    ? `data:image/png;base64,${item.thumbnail_base64}`
+    : PLACEHOLDERS[idx % PLACEHOLDERS.length];
+  return (
+    <div className="group bg-slate-900 border border-slate-800 rounded-lg overflow-hidden hover:border-orange-500/60 transition-all" data-testid={`component-card-${item.id}`}>
+      <div className="aspect-square bg-slate-950 overflow-hidden relative">
+        <img src={thumb} alt={item.name} className="w-full h-full object-cover" />
+        <div className="absolute top-2 right-2 bg-black/70 backdrop-blur text-[10px] font-mono text-orange-400 px-1.5 py-0.5 rounded">
+          {item.triangle_count.toLocaleString()} △
+        </div>
+        <div className={`absolute top-2 left-2 backdrop-blur text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
+          isNeg ? "bg-cyan-500/30 text-cyan-200 border border-cyan-500/40"
+                : "bg-orange-500/30 text-orange-200 border border-orange-500/40"
+        }`}>
+          {isNeg ? <><MinusSquare size={10} /> negative</> : <><PlusSquare size={10} /> positive</>}
+        </div>
+        <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur text-[10px] uppercase tracking-wider text-slate-300 px-1.5 py-0.5 rounded">
+          {item.category}
+        </div>
+      </div>
+      <div className="p-3">
+        <h3 className="text-sm font-semibold text-white truncate" title={item.name}>{item.name}</h3>
+        <div className="flex items-center justify-between mt-0.5">
+          <span className="text-[11px] text-slate-400">by {item.author}</span>
+          <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
+        </div>
+        {item.tags && (
+          <div className="text-[10px] text-slate-500 mt-1 truncate">{item.tags}</div>
+        )}
+        {item.description && (
+          <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
+        )}
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            data-testid={`component-add-${item.id}`}
+            onClick={() => onAdd(item)}
+            className={`flex-1 h-8 text-white text-xs font-semibold rounded flex items-center justify-center gap-1 ${
+              isNeg ? "bg-cyan-500 hover:bg-cyan-600" : "bg-orange-500 hover:bg-orange-600"
+            }`}
+            title="Add this component to your current workspace"
+          >
+            <Plus size={12} /> Add to Scene
+          </button>
+          <button
+            data-testid={`component-upvote-${item.id}`}
+            onClick={() => onUpvote(item.id)}
+            className="h-8 px-2 bg-slate-800 hover:bg-amber-500/20 hover:text-amber-300 text-slate-300 text-xs font-mono rounded flex items-center gap-1 border border-slate-700"
+            title="Upvote"
+          >
+            <Star size={11} /> {item.votes || 0}
+          </button>
+          <button
+            data-testid={`component-delete-${item.id}`}
+            onClick={() => onDelete(item.id)}
+            title="Remove component"
+            className="h-8 w-8 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-400 rounded flex items-center justify-center border border-slate-700"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DesignsTab() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true); setError("");
-    try {
-      const data = await galleryApi.list();
-      setItems(data);
-    } catch (e) {
-      setError(e.message);
-    } finally { setLoading(false); }
+    try { setItems(await galleryApi.list()); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
   };
-
   useEffect(() => { load(); }, []);
 
   const handleDelete = async (id) => {
     if (!confirm("Remove this design from the public gallery?")) return;
+    try { await galleryApi.delete(id); setItems((p) => p.filter((i) => i.id !== id)); }
+    catch (e) { alert(e.message); }
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-5">
+        <p className="text-sm text-slate-400">Community-shared models, free to download as STL.</p>
+        <button data-testid="gallery-refresh-btn" onClick={load} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700">
+          <RefreshCw size={14} /> Refresh
+        </button>
+      </div>
+      {loading && <div className="text-slate-400">Loading designs...</div>}
+      {error && <div className="text-red-400 text-sm">{error}</div>}
+      {!loading && items.length === 0 && (
+        <div className="border border-dashed border-slate-700 rounded-lg p-12 text-center" data-testid="gallery-empty">
+          <p className="text-slate-400 mb-1">No designs in the gallery yet.</p>
+          <p className="text-xs text-slate-500 mb-4">Be the first to share a creation from the workspace.</p>
+          <Link to="/workspace" className="inline-block h-9 px-4 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded leading-9">
+            Open Workspace
+          </Link>
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" data-testid="gallery-grid">
+        {items.map((it, i) => (<GalleryCard key={it.id} item={it} idx={i} onDelete={handleDelete} />))}
+      </div>
+    </>
+  );
+}
+
+function ComponentsTab() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [modifier, setModifier] = useState("all"); // all|positive|negative
+  const [category, setCategory] = useState("all");
+  const [q, setQ] = useState("");
+
+  const load = async () => {
+    setLoading(true); setError("");
     try {
-      await galleryApi.delete(id);
-      setItems((p) => p.filter((i) => i.id !== id));
+      setItems(await componentsApi.list({
+        modifier: modifier === "all" ? undefined : modifier,
+        category: category === "all" ? undefined : category,
+        q: q || undefined,
+      }));
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [modifier, category]);
+
+  const handleAdd = async (it) => {
+    try {
+      const proj = await componentsApi.getProject(it.id);
+      // Stash for the workspace to consume on mount via /workspace?addComponent=<id>
+      sessionStorage.setItem("forgeslicer.addComponent", JSON.stringify({
+        name: proj.name, modifier: proj.modifier,
+        project_json: proj.project_json,
+        stl_base64: proj.stl_base64,
+      }));
+      navigate("/workspace?addComponent=1");
     } catch (e) { alert(e.message); }
   };
+
+  const handleUpvote = async (id) => {
+    try {
+      const { votes } = await componentsApi.upvote(id);
+      setItems((p) => p.map((x) => x.id === id ? { ...x, votes } : x));
+    } catch (e) { alert(e.message); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Remove this component from the shared library?")) return;
+    try { await componentsApi.delete(id); setItems((p) => p.filter((i) => i.id !== id)); }
+    catch (e) { alert(e.message); }
+  };
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        <p className="text-sm text-slate-400 flex-1">
+          Drop-in parts (positives and negatives) you can add to any project.
+        </p>
+        <div className="relative">
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            data-testid="components-search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && load()}
+            placeholder="Search name, tag, author..."
+            className="h-9 w-56 bg-slate-900 border border-slate-700 rounded text-xs text-white pl-7 pr-2 focus:border-orange-500 outline-none"
+          />
+        </div>
+        <select
+          data-testid="components-filter-modifier"
+          value={modifier}
+          onChange={(e) => setModifier(e.target.value)}
+          className="h-9 bg-slate-900 border border-slate-700 rounded text-xs text-white px-2 focus:border-orange-500"
+        >
+          <option value="all">All types</option>
+          <option value="positive">Positives only</option>
+          <option value="negative">Negatives only</option>
+        </select>
+        <select
+          data-testid="components-filter-category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="h-9 bg-slate-900 border border-slate-700 rounded text-xs text-white px-2 focus:border-orange-500"
+        >
+          {COMPONENT_CATEGORIES.map((c) => (
+            <option key={c.key} value={c.key}>{c.label}</option>
+          ))}
+        </select>
+        <button data-testid="components-refresh-btn" onClick={load} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700">
+          <RefreshCw size={14} /> Refresh
+        </button>
+      </div>
+      {loading && <div className="text-slate-400">Loading components...</div>}
+      {error && <div className="text-red-400 text-sm">{error}</div>}
+      {!loading && items.length === 0 && (
+        <div className="border border-dashed border-slate-700 rounded-lg p-12 text-center" data-testid="components-empty">
+          <p className="text-slate-400 mb-1">No components match these filters.</p>
+          <p className="text-xs text-slate-500 mb-4">Build a part in the workspace, then click <span className="text-orange-300">Save as Component</span> in the toolbar.</p>
+          <Link to="/workspace" className="inline-block h-9 px-4 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded leading-9">
+            Open Workspace
+          </Link>
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" data-testid="components-grid">
+        {items.map((it, i) => (
+          <ComponentCard
+            key={it.id}
+            item={it}
+            idx={i}
+            onAdd={handleAdd}
+            onUpvote={handleUpvote}
+            onDelete={handleDelete}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+export default function Gallery() {
+  const [tab, setTab] = useState("designs"); // designs | components
 
   return (
     <div className="min-h-screen bg-slate-950 text-white" data-testid="gallery-page">
@@ -122,41 +338,31 @@ export default function Gallery() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10">
-        <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              Public Gallery
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Community-shared models, all free to download as STL and slice yourself.
-            </p>
-          </div>
-          <button
-            data-testid="gallery-refresh-btn"
-            onClick={load}
-            className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
-          >
-            <RefreshCw size={14} /> Refresh
-          </button>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            Public Library
+          </h1>
         </div>
-
-        {loading && <div className="text-slate-400">Loading designs...</div>}
-        {error && <div className="text-red-400 text-sm">{error}</div>}
-        {!loading && items.length === 0 && (
-          <div className="border border-dashed border-slate-700 rounded-lg p-12 text-center" data-testid="gallery-empty">
-            <p className="text-slate-400 mb-1">No designs in the gallery yet.</p>
-            <p className="text-xs text-slate-500 mb-4">Be the first to share a creation from the workspace.</p>
-            <Link to="/workspace" className="inline-block h-9 px-4 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded leading-9">
-              Open Workspace
-            </Link>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" data-testid="gallery-grid">
-          {items.map((it, i) => (
-            <GalleryCard key={it.id} item={it} idx={i} onDelete={handleDelete} />
+        <div className="flex items-center gap-1 mb-6 border-b border-slate-800">
+          {[
+            { key: "designs", label: "Designs", count: "" },
+            { key: "components", label: "Components", count: "" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              data-testid={`gallery-tab-${t.key}`}
+              onClick={() => setTab(t.key)}
+              className={`h-10 px-5 text-sm font-semibold uppercase tracking-wider border-b-2 -mb-px ${
+                tab === t.key
+                  ? "border-orange-500 text-orange-400"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              {t.label}
+            </button>
           ))}
         </div>
+        {tab === "designs" ? <DesignsTab /> : <ComponentsTab />}
       </main>
     </div>
   );

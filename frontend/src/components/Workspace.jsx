@@ -5,7 +5,7 @@ import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
 import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
-import { ShareDialog, OrcaDialog, SavePrinterDialog } from "./Dialogs";
+import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
 import { takePendingImport } from "../lib/pendingImport";
@@ -16,10 +16,13 @@ export default function Workspace() {
   const [orcaOpen, setOrcaOpen] = useState(false);
   const [targetSlicer, setTargetSlicer] = useState(null);
   const [savePrinterOpen, setSavePrinterOpen] = useState(false);
+  const [saveComponentOpen, setSaveComponentOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
   const remixId = searchParams.get("remix");
+  const addComponentParam = searchParams.get("addComponent");
   const addImportedMesh = useScene((s) => s.addImportedMesh);
+  const addRawObject = useScene((s) => s.addRawObject);
   const setProjectName = useScene((s) => s.setProjectName);
   const setRemixOf = useScene((s) => s.setRemixOf);
 
@@ -79,6 +82,65 @@ export default function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remixId]);
 
+  // Consume an "add component" handoff from the Gallery's Component tab.
+  useEffect(() => {
+    if (!addComponentParam) return;
+    try {
+      const raw = sessionStorage.getItem("forgeslicer.addComponent");
+      if (!raw) return;
+      sessionStorage.removeItem("forgeslicer.addComponent");
+      const payload = JSON.parse(raw);
+      let added = 0;
+      // Preferred path: editable project JSON — restores primitive types so
+      // the user can keep resizing the component via real-size after dropping
+      // it in. We force-override modifier so a "negative" library part stays
+      // negative even if the source author saved it as positive while
+      // designing.
+      let projectObjs = null;
+      if (payload.project_json) {
+        try {
+          const parsed = JSON.parse(payload.project_json);
+          projectObjs = parsed.objects || [];
+        } catch { /* fall through to STL */ }
+      }
+      if (projectObjs && projectObjs.length > 0) {
+        for (const o of projectObjs) {
+          const id = addRawObject({
+            ...o,
+            // Re-stamp id from addRawObject so it's unique in the host scene.
+            id: undefined,
+            modifier: payload.modifier || o.modifier || "positive",
+          });
+          if (id) added += 1;
+        }
+      } else if (payload.stl_base64) {
+        // Fallback path: import the STL bytes as a single mesh.
+        const bin = atob(payload.stl_base64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        const file = new File([buf], `${payload.name || "component"}.stl`, { type: "model/stl" });
+        importSTLFile(file).then((mesh) => {
+          addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+          // Tag it with the requested modifier (positive/negative).
+          const objs = useScene.getState().objects;
+          const last = objs[objs.length - 1];
+          if (last && payload.modifier === "negative") {
+            useScene.getState().flipModifier(last.id);
+          }
+        });
+      }
+      setImportBanner({
+        kind: "ok",
+        message: `Added "${payload.name}" (${payload.modifier || "positive"}) to scene${added > 0 ? ` — ${added} object${added === 1 ? "" : "s"}` : ""}.`,
+      });
+      setTimeout(() => setImportBanner(null), 4500);
+      setSearchParams({}, { replace: true });
+    } catch (e) {
+      setImportBanner({ kind: "err", message: `Could not add component: ${e.message || e}` });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addComponentParam]);
+
   const handleSendTo = (slicer) => {
     setTargetSlicer(slicer);
     setOrcaOpen(true);
@@ -90,7 +152,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
@@ -102,6 +164,7 @@ export default function Workspace() {
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       <OrcaDialog open={orcaOpen} onClose={() => setOrcaOpen(false)} targetSlicer={targetSlicer} />
       <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
+      <SaveComponentDialog open={saveComponentOpen} onClose={() => setSaveComponentOpen(false)} />
       {importBanner && (
         <div
           data-testid="import-banner"

@@ -266,6 +266,150 @@ async def delete_community_printer(printer_id: str):
     return {"deleted": True, "id": printer_id}
 
 
+# ---------- Component Library ----------
+# A separate collection from the gallery so we can filter/sort independently
+# and keep upvote semantics distinct (gallery items track downloads; library
+# components track upvotes + uses).
+COMPONENT_CATEGORIES = {"mechanical", "rack", "mounting", "misc"}
+
+
+class ComponentCreate(BaseModel):
+    name: str
+    author: str = "Anonymous"
+    description: str = ""
+    modifier: str = "positive"          # "positive" or "negative"
+    category: str = "misc"              # one of COMPONENT_CATEGORIES
+    tags: str = ""                      # free-text, comma-separated
+    stl_base64: str
+    project_json: str = ""              # ForgeSlicer project JSON for editable add-to-scene
+    thumbnail_base64: str = ""
+    triangle_count: int = 0
+    object_count: int = 0
+
+
+class ComponentMeta(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    name: str
+    author: str
+    description: str
+    modifier: str
+    category: str
+    tags: str
+    thumbnail_base64: str
+    triangle_count: int
+    object_count: int
+    created_at: datetime
+    uses: int = 0
+    votes: int = 0
+
+
+def _normalize_modifier(m: str) -> str:
+    return "negative" if (m or "").lower() == "negative" else "positive"
+
+
+def _normalize_category(c: str) -> str:
+    c = (c or "").lower().strip()
+    return c if c in COMPONENT_CATEGORIES else "misc"
+
+
+@api_router.post("/components", response_model=ComponentMeta)
+async def create_component(item: ComponentCreate):
+    item_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc)
+    doc = {
+        "id": item_id,
+        "name": (item.name or "Untitled").strip()[:80],
+        "author": (item.author or "Anonymous").strip()[:40],
+        "description": (item.description or "").strip()[:500],
+        "modifier": _normalize_modifier(item.modifier),
+        "category": _normalize_category(item.category),
+        "tags": (item.tags or "").strip()[:200],
+        "stl_base64": item.stl_base64,
+        "project_json": item.project_json or "",
+        "thumbnail_base64": item.thumbnail_base64 or "",
+        "triangle_count": int(item.triangle_count),
+        "object_count": int(item.object_count),
+        "created_at": created_at.isoformat(),
+        "uses": 0,
+        "votes": 0,
+    }
+    await db.components.insert_one(doc)
+    return ComponentMeta(**{**doc, "created_at": created_at})
+
+
+@api_router.get("/components", response_model=List[ComponentMeta])
+async def list_components(
+    modifier: Optional[str] = None,
+    category: Optional[str] = None,
+    q: Optional[str] = None,
+):
+    query = {}
+    if modifier:
+        query["modifier"] = _normalize_modifier(modifier)
+    if category:
+        query["category"] = _normalize_category(category)
+    if q:
+        # Case-insensitive substring search across name / description / tags / author.
+        regex = {"$regex": q.strip()[:80], "$options": "i"}
+        query["$or"] = [
+            {"name": regex}, {"description": regex},
+            {"tags": regex}, {"author": regex},
+        ]
+    cursor = db.components.find(
+        query,
+        {"_id": 0, "stl_base64": 0, "project_json": 0},
+    ).sort([("votes", -1), ("created_at", -1)])
+    items = await cursor.to_list(500)
+    out = []
+    for d in items:
+        ca = d.get("created_at")
+        if isinstance(ca, str):
+            try:
+                ca = datetime.fromisoformat(ca)
+            except Exception:
+                ca = datetime.now(timezone.utc)
+        out.append(ComponentMeta(**{**d, "created_at": ca}))
+    return out
+
+
+@api_router.get("/components/{cid}/project")
+async def get_component_project(cid: str):
+    """Return the editable ForgeSlicer JSON for a component (used by "Add to Scene")."""
+    doc = await db.components.find_one(
+        {"id": cid},
+        {"_id": 0, "project_json": 1, "name": 1, "modifier": 1, "stl_base64": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Component not found")
+    await db.components.update_one({"id": cid}, {"$inc": {"uses": 1}})
+    return {
+        "name": doc.get("name", "Component"),
+        "modifier": doc.get("modifier", "positive"),
+        "project_json": doc.get("project_json", ""),
+        # Fallback: STL bytes (b64) so the frontend can still import even if
+        # project_json is missing (older components).
+        "stl_base64": doc.get("stl_base64", ""),
+    }
+
+
+@api_router.post("/components/{cid}/upvote")
+async def upvote_component(cid: str):
+    res = await db.components.update_one({"id": cid}, {"$inc": {"votes": 1}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Component not found")
+    doc = await db.components.find_one({"id": cid}, {"_id": 0, "votes": 1})
+    return {"ok": True, "votes": doc.get("votes", 0)}
+
+
+@api_router.delete("/components/{cid}")
+async def delete_component(cid: str):
+    res = await db.components.delete_one({"id": cid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Component not found")
+    return {"deleted": True, "id": cid}
+
+
 app.include_router(api_router)
 
 app.add_middleware(

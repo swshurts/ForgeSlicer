@@ -16,6 +16,8 @@ import { getSlicersForPrinter } from "../lib/presets";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, DuplicatePopover } from "./ActionPopovers";
+import STLPreviewDialog from "./STLPreviewDialog";
+import { Eye, Library } from "lucide-react";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -42,7 +44,7 @@ function Divider() {
   return <div className="h-6 w-px bg-slate-800 mx-1" />;
 }
 
-export default function TopToolbar({ onShare, onSendToOrca }) {
+export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -81,6 +83,7 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
   const togglePopover = (name) => setOpenPopover((cur) => (cur === name ? null : name));
   const selectedIds = useScene((s) => s.selectedIds);
   const selectionCount = selectedIds && selectedIds.length ? selectedIds.length : (selectedId ? 1 : 0);
+  const [stlPreviewOpen, setStlPreviewOpen] = useState(false);
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -252,6 +255,9 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       <IconBtn testid="export-3mf-btn" onClick={handleExport3MF} title="Export 3MF">
         <Layers size={16} />
       </IconBtn>
+      <IconBtn testid="stl-preview-btn" onClick={() => setStlPreviewOpen(true)} title="Preview the export in 3D (verify carves before slicing)">
+        <Eye size={16} />
+      </IconBtn>
 
       <Divider />
 
@@ -412,6 +418,15 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
         <Globe size={14} /> Share
       </button>
       <button
+        data-testid="save-component-btn"
+        onClick={onSaveComponent}
+        disabled={objects.length === 0}
+        className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Save current scene as a reusable component to the public library"
+      >
+        <Library size={14} /> Component
+      </button>
+      <button
         data-testid="send-to-orcaslicer-btn"
         onClick={() => onSendToOrca(primarySlicer)}
         className="h-8 px-3 ml-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-l flex items-center gap-1.5 shadow"
@@ -468,6 +483,7 @@ export default function TopToolbar({ onShare, onSendToOrca }) {
       {openPopover === "duplicate" && (
         <DuplicatePopover anchor={dupBtnRef.current} onClose={() => setOpenPopover(null)} />
       )}
+      <STLPreviewDialog open={stlPreviewOpen} onClose={() => setStlPreviewOpen(false)} />
     </div>
   );
 }
