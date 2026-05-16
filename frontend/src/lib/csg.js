@@ -217,58 +217,120 @@ export function evaluateScene(objects) {
     return { geometry: new THREE.BufferGeometry(), triangleCount: 0, empty: true };
   }
 
-  // Bake each positive's transform into a world-space BufferGeometry.
-  const positiveWorldGeoms = positives.map((p) => bakeBrushToWorld(makeBrush(p)));
+  const evaluator = new Evaluator();
+  const mat = new THREE.MeshStandardMaterial();
 
-  let merged;
-  if (positiveWorldGeoms.length === 1) {
-    merged = positiveWorldGeoms[0];
+  // Step 1: build a single Brush that represents all positives.
+  // - For 1 positive: just makeBrush(positive).
+  // - For 2+ positives + 0 negatives: concatenate baked world geometries
+  //   (slicers handle multi-shell input natively; CSG Union of non-manifold
+  //   shells routinely produces a degenerate result whose attributes.position
+  //   is undefined and crashes downstream exporters).
+  // - For 2+ positives + negatives: try real Union so negatives can carve
+  //   across the joined volume; if Union returns an invalid geometry, fall
+  //   back to applying the negatives to each positive independently and
+  //   concatenating those.
+  let acc;
+  let positivesWereUnioned = true;
+  if (positives.length === 1) {
+    acc = makeBrush(positives[0]);
+  } else if (negatives.length === 0) {
+    acc = buildConcatBrush(positives, mat);
+    positivesWereUnioned = false;
   } else {
-    // Strip non-position attributes so mergeGeometries doesn't complain
-    // about mismatched attribute sets across primitives.
-    const stripped = positiveWorldGeoms.map(stripToPositionIndex);
-    merged = mergeGeometries(stripped, false) || positiveWorldGeoms[0];
-  }
-
-  // Apply negatives via Subtract. We turn the merged positives back into a
-  // Brush (with identity transform — the geometry is already in world space)
-  // and chain Subtract for each negative.
-  if (negatives.length > 0) {
-    const evaluator = new Evaluator();
-    const mat = new THREE.MeshStandardMaterial();
-    let acc = new Brush(merged, mat);
-    acc.updateMatrixWorld(true);
-    for (const n of negatives) {
-      const nb = makeBrush(n);
+    // Multi-positive + negatives. Attempt Union, fall back to per-positive.
+    let unionWorks = true;
+    let tryAcc = makeBrush(positives[0]);
+    for (let i = 1; i < positives.length; i++) {
       try {
-        const res = evaluator.evaluate(acc, nb, SUBTRACTION);
-        const baked = res.geometry.clone();
-        baked.applyMatrix4(res.matrixWorld);
-        baked.clearGroups();
-        if (isValidGeometry(baked)) {
-          acc = new Brush(baked, mat);
-          acc.updateMatrixWorld(true);
+        const res = evaluator.evaluate(tryAcc, makeBrush(positives[i]), ADDITION);
+        if (!res || !res.geometry || !isValidGeometry(res.geometry)) {
+          unionWorks = false; break;
         }
-        // If invalid, just skip this negative — keep the previous accumulator.
-      } catch (_) { /* swallow and keep accumulator */ }
+        tryAcc = res;
+      } catch (_) {
+        unionWorks = false; break;
+      }
     }
-    merged = bakeBrushToWorld(acc);
+    if (unionWorks) {
+      acc = tryAcc;
+    } else {
+      // Per-positive: subtract negatives from each positive, then concatenate.
+      const carved = positives.map((p) => subtractNegatives(makeBrush(p), negatives, evaluator, mat));
+      acc = buildConcatBrushFromBrushes(carved, mat);
+      positivesWereUnioned = false;
+      // Don't run the outer negative chain again.
+      negatives.length = 0;
+    }
   }
 
-  merged = cleanGeometry(merged);
+  // Step 2: apply negatives (only when we have a unified Brush — for the
+  // concat-only branches above the negatives were either absent or already
+  // applied per-positive).
+  if (positivesWereUnioned && negatives.length > 0) {
+    acc = subtractNegatives(acc, negatives, evaluator, mat);
+  }
 
-  const triCount = merged.index
-    ? merged.index.count / 3
-    : merged.attributes.position.count / 3;
-  const boundaryEdges = countBoundaryEdges(merged);
+  // Bake world matrix into final geometry.
+  let baked = acc.geometry.clone();
+  baked.applyMatrix4(acc.matrixWorld);
+  baked.clearGroups();
+  baked = cleanGeometry(baked);
+
+  const triCount = baked.index
+    ? baked.index.count / 3
+    : baked.attributes.position.count / 3;
+  const boundaryEdges = countBoundaryEdges(baked);
 
   return {
-    geometry: merged,
+    geometry: baked,
     triangleCount: Math.floor(triCount),
     empty: triCount === 0,
     boundaryEdges,
     manifold: boundaryEdges === 0,
   };
+}
+
+// Subtract every negative from `acc`. Each subtract is guarded so a single
+// failure doesn't nuke the rest of the chain.
+function subtractNegatives(acc, negatives, evaluator, mat) {
+  let current = acc;
+  for (const n of negatives) {
+    const nb = makeBrush(n);
+    try {
+      const res = evaluator.evaluate(current, nb, SUBTRACTION);
+      if (res && res.geometry && isValidGeometry(res.geometry)) {
+        current = res;
+      }
+      // If invalid, keep the previous accumulator. (Surface a warning?)
+    } catch (_) { /* keep current */ }
+  }
+  return current;
+}
+
+// Concatenate multiple positives' world-baked geometries into a single
+// Brush so the rest of evaluateScene can keep treating it as one accumulator.
+function buildConcatBrush(positives, mat) {
+  const worldGeoms = positives.map((p) => bakeBrushToWorld(makeBrush(p)));
+  return brushFromWorldGeoms(worldGeoms, mat);
+}
+
+function buildConcatBrushFromBrushes(brushes, mat) {
+  const worldGeoms = brushes.map(bakeBrushToWorld);
+  return brushFromWorldGeoms(worldGeoms, mat);
+}
+
+function brushFromWorldGeoms(worldGeoms, mat) {
+  let geom;
+  if (worldGeoms.length === 1) {
+    geom = worldGeoms[0];
+  } else {
+    const stripped = worldGeoms.map(stripToPositionIndex);
+    geom = mergeGeometries(stripped, false) || worldGeoms[0];
+  }
+  const b = new Brush(geom, mat);
+  b.updateMatrixWorld(true);
+  return b;
 }
 
 // Keep only position + index attributes — mergeGeometries requires all
@@ -307,44 +369,49 @@ export function evaluateSceneByColor(objects) {
   let total = 0;
   // Iterate colors in numeric order so 3MF object ids are stable across exports.
   const colorKeys = Array.from(byColor.keys()).sort((a, b) => a - b);
+  const evaluator = new Evaluator();
+  const mat = new THREE.MeshStandardMaterial();
   for (const colorIndex of colorKeys) {
     const colorPositives = byColor.get(colorIndex);
-    // Concatenate this color's positives (no Union — see evaluateScene
-    // for the rationale).
-    const worldGeoms = colorPositives.map((p) => bakeBrushToWorld(makeBrush(p)));
-    let merged;
-    if (worldGeoms.length === 1) {
-      merged = worldGeoms[0];
+    let acc;
+    let negsAlreadyCarved = false;
+    if (colorPositives.length === 1) {
+      acc = makeBrush(colorPositives[0]);
+    } else if (negatives.length === 0) {
+      acc = buildConcatBrush(colorPositives, mat);
     } else {
-      const stripped = worldGeoms.map(stripToPositionIndex);
-      merged = mergeGeometries(stripped, false) || worldGeoms[0];
-    }
-    if (negatives.length > 0) {
-      const evaluator = new Evaluator();
-      const mat = new THREE.MeshStandardMaterial();
-      let acc = new Brush(merged, mat);
-      acc.updateMatrixWorld(true);
-      for (const n of negatives) {
-        const nb = makeBrush(n);
+      // Union+fallback as in evaluateScene.
+      let unionWorks = true;
+      let tryAcc = makeBrush(colorPositives[0]);
+      for (let i = 1; i < colorPositives.length; i++) {
         try {
-          const res = evaluator.evaluate(acc, nb, SUBTRACTION);
-          const baked = res.geometry.clone();
-          baked.applyMatrix4(res.matrixWorld);
-          baked.clearGroups();
-          if (isValidGeometry(baked)) {
-            acc = new Brush(baked, mat);
-            acc.updateMatrixWorld(true);
+          const res = evaluator.evaluate(tryAcc, makeBrush(colorPositives[i]), ADDITION);
+          if (!res || !res.geometry || !isValidGeometry(res.geometry)) {
+            unionWorks = false; break;
           }
-        } catch (_) { /* skip this negative */ }
+          tryAcc = res;
+        } catch (_) { unionWorks = false; break; }
       }
-      merged = bakeBrushToWorld(acc);
+      if (unionWorks) {
+        acc = tryAcc;
+      } else {
+        const carved = colorPositives.map((p) => subtractNegatives(makeBrush(p), negatives, evaluator, mat));
+        acc = buildConcatBrushFromBrushes(carved, mat);
+        negsAlreadyCarved = true;
+      }
     }
-    merged = cleanGeometry(merged);
-    const tri = merged.index
-      ? merged.index.count / 3
-      : merged.attributes.position.count / 3;
+    if (!negsAlreadyCarved && negatives.length > 0) {
+      acc = subtractNegatives(acc, negatives, evaluator, mat);
+    }
+    let baked = acc.geometry.clone();
+    baked.applyMatrix4(acc.matrixWorld);
+    baked.clearGroups();
+    baked = cleanGeometry(baked);
+    const tri = baked.index
+      ? baked.index.count / 3
+      : baked.attributes.position.count / 3;
     if (tri > 0) {
-      groups.push({ colorIndex, geometry: merged, triangleCount: Math.floor(tri) });
+      groups.push({ colorIndex, geometry: baked, triangleCount: Math.floor(tri) });
       total += tri;
     }
   }
