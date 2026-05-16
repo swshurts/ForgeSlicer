@@ -1,15 +1,62 @@
 import * as THREE from "three";
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from "three-bvh-csg";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { buildGeometry, applyTransform } from "./geometry";
 
 const OP_MAP = { union: ADDITION, subtract: SUBTRACTION, intersect: INTERSECTION };
 
+// Bake any negative scale components into the geometry (flip vertex
+// positions on the affected axes AND flip triangle winding order so face
+// normals stay outward). three-bvh-csg's Evaluator computes a BVH on
+// the local geometry and applies the brush's world matrix on top; if the
+// matrix has a negative determinant (any odd count of negative scales)
+// the BVH's inside/outside tests fail and the resulting geometry has
+// no position attribute, which crashes downstream STL/3MF exporters.
+function bakeNegativeScale(geom, obj) {
+  const sx = obj.scale[0], sy = obj.scale[1], sz = obj.scale[2];
+  if (sx >= 0 && sy >= 0 && sz >= 0) return { geom, positiveScale: obj.scale };
+  const baked = geom.clone();
+  const pos = baked.attributes.position;
+  const arr = pos.array;
+  // Mutate positions on negative axes.
+  for (let i = 0; i < arr.length; i += 3) {
+    if (sx < 0) arr[i]     *= -1;
+    if (sy < 0) arr[i + 1] *= -1;
+    if (sz < 0) arr[i + 2] *= -1;
+  }
+  pos.needsUpdate = true;
+  // Flip winding if odd number of negations (determinant flipped).
+  const flipCount = (sx < 0 ? 1 : 0) + (sy < 0 ? 1 : 0) + (sz < 0 ? 1 : 0);
+  if (flipCount % 2 === 1) {
+    if (baked.index) {
+      const idx = baked.index.array;
+      for (let i = 0; i < idx.length; i += 3) {
+        const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp;
+      }
+      baked.index.needsUpdate = true;
+    } else {
+      // Non-indexed: swap vertex 1 and 2 in every triangle.
+      for (let i = 0; i < arr.length; i += 9) {
+        for (let k = 0; k < 3; k++) {
+          const a = i + 3 + k, b = i + 6 + k;
+          const tmp = arr[a]; arr[a] = arr[b]; arr[b] = tmp;
+        }
+      }
+      pos.needsUpdate = true;
+    }
+  }
+  baked.computeVertexNormals();
+  return { geom: baked, positiveScale: [Math.abs(sx), Math.abs(sy), Math.abs(sz)] };
+}
+
 function makeBrush(obj) {
-  const geom = buildGeometry(obj);
+  let geom = buildGeometry(obj);
+  const { geom: prepped, positiveScale } = bakeNegativeScale(geom, obj);
   const mat = new THREE.MeshStandardMaterial();
-  const b = new Brush(geom, mat);
-  applyTransform(b, obj);
+  const b = new Brush(prepped, mat);
+  // Apply transform with the all-positive scale (mirroring is now baked
+  // into the vertex data, so the matrix is a regular rigid transform).
+  applyTransform(b, { ...obj, scale: positiveScale });
   return b;
 }
 
@@ -121,10 +168,45 @@ function removeDegenerateTriangles(g) {
   return g;
 }
 
+// Bake the brush's world transform into its geometry — produces a plain
+// BufferGeometry in world space. Used as the safe-concatenation path when
+// CSG Union isn't necessary (no negatives) or would fail on non-manifold
+// inputs.
+function bakeBrushToWorld(brush) {
+  const g = brush.geometry.clone();
+  g.applyMatrix4(brush.matrixWorld);
+  g.clearGroups();
+  return g;
+}
+
+// Returns true if a geometry is "usable" (has at least one triangle).
+// three-bvh-csg can occasionally produce a result where attributes.position
+// is undefined when both inputs are non-manifold; that's our crash trigger.
+function isValidGeometry(g) {
+  return (
+    g && g.attributes && g.attributes.position &&
+    g.attributes.position.count > 0
+  );
+}
+
 /**
  * Apply scene modifiers to produce a single merged BufferGeometry.
- * Positives are unioned, negatives subtracted in order.
- * Returns: { geometry: BufferGeometry, triangleCount, empty:boolean }
+ *
+ * Strategy:
+ *  - If there are no negative components, **concatenate** the positives.
+ *    A pure Union of separate shells (which is what evaluateScene used to
+ *    do here) requires every input to be manifold; combining two
+ *    Boolean-derived shells routinely fails because three-bvh-csg
+ *    produces a tiny number of open edges along cut boundaries. Slicers
+ *    handle multi-shell STL/3MF natively, so concatenation is the right
+ *    behavior here.
+ *  - If negatives exist, do Subtract them from the concatenated positives.
+ *    Subtract is more tolerant than Union for non-manifold inputs and is
+ *    what users actually expect (carve negatives out of the build).
+ *  - Each Boolean step is guarded so a single failing operation falls back
+ *    to the previous result instead of nuking the entire export.
+ *
+ * Returns: { geometry: BufferGeometry, triangleCount, empty:boolean, ... }
  */
 export function evaluateScene(objects) {
   const visibles = objects.filter((o) => o.visible !== false);
@@ -135,41 +217,68 @@ export function evaluateScene(objects) {
     return { geometry: new THREE.BufferGeometry(), triangleCount: 0, empty: true };
   }
 
-  const evaluator = new Evaluator();
-  // Leave useGroups at its default (true) so three-bvh-csg's internal
-  // boundary handling stays intact; we'll merge groups ourselves.
+  // Bake each positive's transform into a world-space BufferGeometry.
+  const positiveWorldGeoms = positives.map((p) => bakeBrushToWorld(makeBrush(p)));
 
-  let result = makeBrush(positives[0]);
-
-  for (let i = 1; i < positives.length; i++) {
-    const b = makeBrush(positives[i]);
-    result = evaluator.evaluate(result, b, ADDITION);
+  let merged;
+  if (positiveWorldGeoms.length === 1) {
+    merged = positiveWorldGeoms[0];
+  } else {
+    // Strip non-position attributes so mergeGeometries doesn't complain
+    // about mismatched attribute sets across primitives.
+    const stripped = positiveWorldGeoms.map(stripToPositionIndex);
+    merged = mergeGeometries(stripped, false) || positiveWorldGeoms[0];
   }
 
-  for (const n of negatives) {
-    const b = makeBrush(n);
-    result = evaluator.evaluate(result, b, SUBTRACTION);
+  // Apply negatives via Subtract. We turn the merged positives back into a
+  // Brush (with identity transform — the geometry is already in world space)
+  // and chain Subtract for each negative.
+  if (negatives.length > 0) {
+    const evaluator = new Evaluator();
+    const mat = new THREE.MeshStandardMaterial();
+    let acc = new Brush(merged, mat);
+    acc.updateMatrixWorld(true);
+    for (const n of negatives) {
+      const nb = makeBrush(n);
+      try {
+        const res = evaluator.evaluate(acc, nb, SUBTRACTION);
+        const baked = res.geometry.clone();
+        baked.applyMatrix4(res.matrixWorld);
+        baked.clearGroups();
+        if (isValidGeometry(baked)) {
+          acc = new Brush(baked, mat);
+          acc.updateMatrixWorld(true);
+        }
+        // If invalid, just skip this negative — keep the previous accumulator.
+      } catch (_) { /* swallow and keep accumulator */ }
+    }
+    merged = bakeBrushToWorld(acc);
   }
 
-  // Bake world matrix into geometry
-  let baked = result.geometry.clone();
-  baked.applyMatrix4(result.matrixWorld);
-  // Drop multi-material groups so STL export merges everything into one shell.
-  baked.clearGroups();
-  baked = cleanGeometry(baked);
+  merged = cleanGeometry(merged);
 
-  const triCount = baked.index
-    ? baked.index.count / 3
-    : baked.attributes.position.count / 3;
-  const boundaryEdges = countBoundaryEdges(baked);
+  const triCount = merged.index
+    ? merged.index.count / 3
+    : merged.attributes.position.count / 3;
+  const boundaryEdges = countBoundaryEdges(merged);
 
   return {
-    geometry: baked,
+    geometry: merged,
     triangleCount: Math.floor(triCount),
-    empty: false,
+    empty: triCount === 0,
     boundaryEdges,
     manifold: boundaryEdges === 0,
   };
+}
+
+// Keep only position + index attributes — mergeGeometries requires all
+// input geometries to expose the same attribute set, and our primitives
+// vary (some have UVs, some don't).
+function stripToPositionIndex(g) {
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", g.attributes.position.clone());
+  if (g.index) out.setIndex(g.index.clone());
+  return out;
 }
 
 /**
@@ -194,29 +303,48 @@ export function evaluateSceneByColor(objects) {
     byColor.get(k).push(p);
   }
 
-  const evaluator = new Evaluator();
   const groups = [];
   let total = 0;
   // Iterate colors in numeric order so 3MF object ids are stable across exports.
   const colorKeys = Array.from(byColor.keys()).sort((a, b) => a - b);
   for (const colorIndex of colorKeys) {
     const colorPositives = byColor.get(colorIndex);
-    let result = makeBrush(colorPositives[0]);
-    for (let i = 1; i < colorPositives.length; i++) {
-      result = evaluator.evaluate(result, makeBrush(colorPositives[i]), ADDITION);
+    // Concatenate this color's positives (no Union — see evaluateScene
+    // for the rationale).
+    const worldGeoms = colorPositives.map((p) => bakeBrushToWorld(makeBrush(p)));
+    let merged;
+    if (worldGeoms.length === 1) {
+      merged = worldGeoms[0];
+    } else {
+      const stripped = worldGeoms.map(stripToPositionIndex);
+      merged = mergeGeometries(stripped, false) || worldGeoms[0];
     }
-    for (const n of negatives) {
-      result = evaluator.evaluate(result, makeBrush(n), SUBTRACTION);
+    if (negatives.length > 0) {
+      const evaluator = new Evaluator();
+      const mat = new THREE.MeshStandardMaterial();
+      let acc = new Brush(merged, mat);
+      acc.updateMatrixWorld(true);
+      for (const n of negatives) {
+        const nb = makeBrush(n);
+        try {
+          const res = evaluator.evaluate(acc, nb, SUBTRACTION);
+          const baked = res.geometry.clone();
+          baked.applyMatrix4(res.matrixWorld);
+          baked.clearGroups();
+          if (isValidGeometry(baked)) {
+            acc = new Brush(baked, mat);
+            acc.updateMatrixWorld(true);
+          }
+        } catch (_) { /* skip this negative */ }
+      }
+      merged = bakeBrushToWorld(acc);
     }
-    let baked = result.geometry.clone();
-    baked.applyMatrix4(result.matrixWorld);
-    baked.clearGroups();
-    baked = cleanGeometry(baked);
-    const tri = baked.index
-      ? baked.index.count / 3
-      : baked.attributes.position.count / 3;
+    merged = cleanGeometry(merged);
+    const tri = merged.index
+      ? merged.index.count / 3
+      : merged.attributes.position.count / 3;
     if (tri > 0) {
-      groups.push({ colorIndex, geometry: baked, triangleCount: Math.floor(tri) });
+      groups.push({ colorIndex, geometry: merged, triangleCount: Math.floor(tri) });
       total += tri;
     }
   }

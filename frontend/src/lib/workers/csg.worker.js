@@ -13,6 +13,18 @@ import { sliceToGCODE } from "../slicer";
 import { build3MFBytes, build3MFBytesMulti } from "../threemf";
 
 function geometryToSTLBytes(geometry) {
+  // Defensive: a degenerate CSG result can yield a geometry missing its
+  // position attribute. Surface a clear error instead of the cryptic
+  // "Cannot read properties of undefined (reading 'array')".
+  if (!geometry || !geometry.attributes || !geometry.attributes.position) {
+    throw new Error(
+      "Could not produce STL: the merged scene has no triangles. " +
+      "Check the Manifold warning and try non-overlapping booleans."
+    );
+  }
+  if (geometry.attributes.position.count === 0) {
+    throw new Error("Could not produce STL: merged scene is empty. Add a positive component.");
+  }
   const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
   const exporter = new STLExporter();
   const dv = exporter.parse(mesh, { binary: true });
