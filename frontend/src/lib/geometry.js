@@ -1,5 +1,37 @@
 import * as THREE from "three";
 
+// Build a flat Shape for the 2D primitives (used by ExtrudeGeometry).
+// All shapes are returned centered on (0, 0) in the X–Y plane; THREE's
+// ExtrudeGeometry then extrudes them along +Z, so we rotate the result
+// onto its side later so the wafer/extrusion lies flat on the build
+// plate (the user "stacks" along world Y).
+function buildShape2D(type, d) {
+  const shape = new THREE.Shape();
+  if (type === "triangle") {
+    const r = d.r || 12;
+    // Equilateral triangle inscribed in a circle of radius r,
+    // apex pointing along +Y so it reads naturally as a triangle.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      if (i === 0) shape.moveTo(x, y);
+      else shape.lineTo(x, y);
+    }
+    shape.closePath();
+  } else if (type === "polygon") {
+    const r = d.r || 12;
+    const sides = Math.max(3, Math.min(24, d.sides | 0 || 6));
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2 + Math.PI / 2;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      if (i === 0) shape.moveTo(x, y);
+      else shape.lineTo(x, y);
+    }
+    shape.closePath();
+  }
+  return shape;
+}
+
 /**
  * Build a three.js BufferGeometry for a primitive description.
  * Returns geometry centered at object origin so transforms apply correctly.
@@ -24,6 +56,32 @@ export function buildGeometry(obj) {
   if (t === "torus") {
     return new THREE.TorusGeometry(d.r || 12, d.tube || 4, 24, d.segments || 48);
   }
+
+  // ---- 2D shapes (extruded thin slabs that orient flat on the bed) ----
+  if (t === "circle") {
+    // A circle extruded along world-Y is just a thin cylinder.
+    return new THREE.CylinderGeometry(d.r || 10, d.r || 10, d.h || 1, 48);
+  }
+  if (t === "square2d") {
+    const s = d.side || 20;
+    return new THREE.BoxGeometry(s, d.h || 1, s);
+  }
+  if (t === "triangle" || t === "polygon") {
+    const shape = buildShape2D(t, d);
+    const g = new THREE.ExtrudeGeometry(shape, { depth: d.h || 1, bevelEnabled: false });
+    // ExtrudeGeometry extrudes along +Z; rotate so depth aligns with world Y
+    // and the shape's outline lies on the X–Z build plate.
+    g.rotateX(-Math.PI / 2);
+    // After the rotateX the extrusion runs along -Y; shift up so the
+    // base of the extrusion sits at Y = 0 in object space.
+    g.translate(0, d.h || 1, 0);
+    // Recenter Y so the centroid is at y = h/2 (matches how cylinder/box
+    // geometries are constructed) — this keeps Drop-to-Bed math consistent.
+    g.translate(0, -(d.h || 1) / 2, 0);
+    g.computeVertexNormals();
+    return g;
+  }
+
   if (t === "imported" && obj.geometry) {
     const g = new THREE.BufferGeometry();
     // IMPORTANT: clone the vertex array so consumers like dropToBed and CSG
@@ -61,6 +119,22 @@ export function getBaseSize(obj) {
   if (t === "torus") {
     const r = d.r || 12, tube = d.tube || 4;
     return { x: 2 * (r + tube), y: 2 * tube, z: 2 * (r + tube) };
+  }
+  if (t === "circle") {
+    const r = d.r || 10;
+    return { x: 2 * r, y: d.h || 1, z: 2 * r };
+  }
+  if (t === "square2d") {
+    const s = d.side || 20;
+    return { x: s, y: d.h || 1, z: s };
+  }
+  if (t === "triangle") {
+    const r = d.r || 12;
+    return { x: r * Math.sqrt(3), y: d.h || 1, z: r * 1.5 };
+  }
+  if (t === "polygon") {
+    const r = d.r || 12;
+    return { x: 2 * r, y: d.h || 1, z: 2 * r };
   }
   if (t === "imported" && obj.originalBbox) {
     return { x: obj.originalBbox.x, y: obj.originalBbox.y, z: obj.originalBbox.z };

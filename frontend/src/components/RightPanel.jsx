@@ -533,7 +533,123 @@ function Inspector() {
           </div>
         </div>
       )}
+
+      {(obj.type === "circle" || obj.type === "square2d" || obj.type === "triangle" || obj.type === "polygon") && (
+        <Shape2DControls obj={obj} updateDims={updateDims} />
+      )}
     </Section>
+  );
+}
+
+// ---------- 2D shape controls: dims + slider/number sides + Extrude ----------
+function Shape2DControls({ obj, updateDims }) {
+  const d = obj.dims || {};
+  const is2D = (d.h || 1) <= 1.01; // visually "still a 2D sketch"
+  return (
+    <div className="space-y-2" data-testid="shape2d-controls">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
+          <span>2D Dimensions (mm)</span>
+          <span
+            className={`text-[9px] normal-case px-1.5 py-0.5 rounded ${is2D ? "bg-purple-500/20 text-purple-300" : "bg-orange-500/20 text-orange-300"}`}
+            title={is2D ? "Currently a 2D sketch — set Extrude depth below" : "Already extruded"}
+          >
+            {is2D ? "2D sketch" : `extruded ${(d.h || 1).toFixed(1)}mm`}
+          </span>
+        </div>
+        {obj.type === "circle" && (
+          <div className="grid grid-cols-1 gap-2">
+            <NumberField testid="dim2d-r" label="Radius" value={d.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
+          </div>
+        )}
+        {obj.type === "square2d" && (
+          <div className="grid grid-cols-1 gap-2">
+            <NumberField testid="dim2d-side" label="Side" value={d.side} onChange={(v) => updateDims(obj.id, { side: v })} step={0.5} min={0.1} />
+          </div>
+        )}
+        {obj.type === "triangle" && (
+          <div className="grid grid-cols-1 gap-2">
+            <NumberField testid="dim2d-r" label="Circumradius" value={d.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
+          </div>
+        )}
+        {obj.type === "polygon" && (
+          <div className="space-y-2">
+            <NumberField testid="dim2d-r" label="Circumradius" value={d.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Sides</span>
+                <span data-testid="polygon-sides-readout" className="text-[10px] font-mono text-orange-400">{d.sides | 0}</span>
+              </div>
+              <input
+                data-testid="polygon-sides-slider"
+                type="range"
+                min={3}
+                max={24}
+                step={1}
+                value={d.sides | 0}
+                onChange={(e) => updateDims(obj.id, { sides: parseInt(e.target.value, 10) })}
+                className="w-full accent-orange-500"
+              />
+              <div className="mt-1">
+                <NumberField
+                  testid="polygon-sides-input"
+                  label=""
+                  value={d.sides | 0}
+                  onChange={(v) => updateDims(obj.id, { sides: Math.max(3, Math.min(24, Math.round(v))) })}
+                  step={1}
+                  min={3}
+                  suffix="sides"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <ExtrudePresets obj={obj} updateDims={updateDims} />
+    </div>
+  );
+}
+
+function ExtrudePresets({ obj, updateDims }) {
+  const dropToBed = useScene((s) => s.dropToBed);
+  const apply = (mm) => {
+    updateDims(obj.id, { h: mm });
+    // After extruding upward, keep the bottom flush with the bed.
+    setTimeout(() => dropToBed(obj.id, false), 0);
+  };
+  const presets = [1, 5, 10, 20];
+  return (
+    <div data-testid="extrude-controls" className="bg-slate-950/60 border border-purple-500/40 rounded p-2 space-y-2">
+      <div className="text-[10px] uppercase tracking-wider text-purple-300 font-semibold flex items-center justify-between">
+        <span>Extrude to depth</span>
+        <span className="text-[9px] normal-case text-slate-500">turns 2D → 3D</span>
+      </div>
+      <div className="grid grid-cols-4 gap-1">
+        {presets.map((mm) => (
+          <button
+            key={mm}
+            data-testid={`extrude-preset-${mm}`}
+            onClick={() => apply(mm)}
+            className={`h-7 text-[10px] font-mono rounded border ${
+              Math.abs((obj.dims.h || 0) - mm) < 0.01
+                ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                : "border-slate-700 bg-slate-900 text-slate-300 hover:border-orange-500/50"
+            }`}
+          >
+            {mm}mm
+          </button>
+        ))}
+      </div>
+      <NumberField
+        testid="extrude-custom-input"
+        label="Custom depth"
+        value={obj.dims.h}
+        onChange={(v) => v > 0 && apply(v)}
+        step={0.5}
+        min={0.1}
+        suffix="mm"
+      />
+    </div>
   );
 }
 

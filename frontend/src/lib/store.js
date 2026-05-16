@@ -8,6 +8,14 @@ const PRIMITIVE_DEFAULTS = {
   cylinder: { dims: { r: 10, h: 24, segments: 64 } },
   cone:     { dims: { r: 10, h: 24, segments: 64 } },
   torus:    { dims: { r: 14, tube: 4, segments: 48 } },
+  // ---- 2D shapes ----
+  // Stored as thin extrusions (h = 1 mm by default — a "2D wafer").
+  // The Extrude action in the inspector promotes them to 3D parts by
+  // bumping h to whatever depth the user wants.
+  circle:   { dims: { r: 10, h: 1 } },
+  square2d: { dims: { side: 20, h: 1 } },
+  triangle: { dims: { r: 12, h: 1 } },
+  polygon:  { dims: { r: 12, sides: 6, h: 1 } },
 };
 
 let nextId = 1;

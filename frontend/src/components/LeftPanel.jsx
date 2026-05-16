@@ -3,9 +3,10 @@ import { useScene } from "../lib/store";
 import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight,
+  Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon,
 } from "lucide-react";
 
-const PRIMS = [
+const PRIMS_3D = [
   { type: "cube", label: "Cube", icon: Box },
   { type: "sphere", label: "Sphere", icon: Circle },
   { type: "cylinder", label: "Cylinder", icon: Cylinder },
@@ -13,7 +14,16 @@ const PRIMS = [
   { type: "torus", label: "Torus", icon: Donut },
 ];
 
-function PrimitiveButton({ p, modifier }) {
+// 2D primitives — render as thin wafers; the user extrudes via the
+// inspector when the sketch is ready.
+const PRIMS_2D = [
+  { type: "circle", label: "Circle", icon: Circle },
+  { type: "square2d", label: "Square", icon: SquareIcon },
+  { type: "triangle", label: "Triangle", icon: TriangleIcon },
+  { type: "polygon", label: "Polygon", icon: HexagonIcon },
+];
+
+function PrimitiveButton({ p, modifier, compact = false }) {
   const Icon = p.icon;
   const addPrimitive = useScene((s) => s.addPrimitive);
   const isNeg = modifier === "negative";
@@ -21,15 +31,15 @@ function PrimitiveButton({ p, modifier }) {
     <button
       data-testid={`add-${p.type}-${modifier}-btn`}
       onClick={() => addPrimitive(p.type, modifier)}
-      className={`group flex flex-col items-center justify-center gap-1 h-16 rounded-md border transition-all ${
+      className={`group flex flex-col items-center justify-center gap-1 ${compact ? "h-12" : "h-16"} rounded-md border transition-all ${
         isNeg
           ? "border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400"
           : "border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400"
       }`}
       title={`Add ${isNeg ? "Negative" : "Positive"} ${p.label}`}
     >
-      <Icon size={18} strokeWidth={1.8} />
-      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">{p.label}</span>
+      <Icon size={compact ? 14 : 18} strokeWidth={1.8} />
+      <span className={`${compact ? "text-[8.5px]" : "text-[10px]"} uppercase tracking-wide font-medium text-slate-300`}>{p.label}</span>
     </button>
   );
 }
@@ -98,31 +108,53 @@ export default function LeftPanel() {
   const objects = useScene((s) => s.objects);
   return (
     <aside className="w-64 flex-shrink-0 border-r border-slate-800 bg-slate-900 flex flex-col h-full overflow-hidden">
-      <div className="px-3 py-2 border-b border-slate-800 flex items-center gap-2">
-        <PlusSquare size={14} className="text-orange-500" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-          Add Positive
-        </span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 p-3">
-        {PRIMS.map((p) => (
-          <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" />
-        ))}
+      <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "62%" }}>
+        <div className="px-3 py-2 border-b border-slate-800 flex items-center gap-2">
+          <PlusSquare size={14} className="text-orange-500" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Add Positive
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 p-3">
+          {PRIMS_3D.map((p) => (
+            <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" />
+          ))}
+        </div>
+
+        <div className="px-3 py-2 border-y border-slate-800 flex items-center gap-2">
+          <MinusSquare size={14} className="text-cyan-500" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Add Negative
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 p-3">
+          {PRIMS_3D.map((p) => (
+            <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" />
+          ))}
+        </div>
+
+        <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <SquareIcon size={14} className="text-purple-400" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              2D Shapes
+            </span>
+          </div>
+          <span className="text-[9px] uppercase tracking-wider text-slate-500" title="Add as positive or negative, then Extrude in the Inspector to give it depth">
+            extrude →
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-1.5 p-3">
+          {PRIMS_2D.map((p) => (
+            <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" compact />
+          ))}
+          {PRIMS_2D.map((p) => (
+            <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" compact />
+          ))}
+        </div>
       </div>
 
-      <div className="px-3 py-2 border-y border-slate-800 flex items-center gap-2">
-        <MinusSquare size={14} className="text-cyan-500" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-          Add Negative
-        </span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 p-3">
-        {PRIMS.map((p) => (
-          <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" />
-        ))}
-      </div>
-
-      <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between">
+      <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between flex-shrink-0">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
           <ChevronRight size={12} />Outliner
         </span>
