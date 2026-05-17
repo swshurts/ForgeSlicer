@@ -75,6 +75,7 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onC
 
 function SelectedTransform() {
   const selectedId = useScene((s) => s.selectedId);
+  const selectedIds = useScene((s) => s.selectedIds);
   const transformMode = useScene((s) => s.transformMode);
   const snapEnabled = useScene((s) => s.snapEnabled);
   const snapTranslate = useScene((s) => s.snapTranslate);
@@ -86,6 +87,10 @@ function SelectedTransform() {
   const objects = useScene((s) => s.objects);
   const { scene } = useThree();
   const draggingRef = useRef(false);
+  // Drag-start snapshot used to propagate the gizmo delta to ALL other
+  // selected objects (so moving a group / assembly moves every member, not
+  // just the primary that the gizmo is attached to).
+  const dragStartRef = useRef(null);
 
   const mesh = useMemo(() => {
     if (!selectedId) return null;
@@ -100,14 +105,68 @@ function SelectedTransform() {
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj || !mesh) return null;
 
+  const otherIds = (selectedIds || []).filter((id) => id !== selectedId);
+
+  const captureDragStart = () => {
+    const primary = objects.find((o) => o.id === selectedId);
+    if (!primary) return;
+    const others = new Map();
+    for (const id of otherIds) {
+      const o = objects.find((x) => x.id === id);
+      if (o) others.set(id, {
+        pos: [...o.position],
+        rot: [...o.rotation],
+        scl: [...o.scale],
+      });
+    }
+    dragStartRef.current = {
+      primary: { pos: [...primary.position], rot: [...primary.rotation], scl: [...primary.scale] },
+      others,
+    };
+  };
+
   const handleChange = () => {
-    setTransform(obj.id, "position", [mesh.position.x, mesh.position.y, mesh.position.z]);
-    setTransform(obj.id, "rotation", [
+    const newPos = [mesh.position.x, mesh.position.y, mesh.position.z];
+    const newRot = [
       THREE.MathUtils.radToDeg(mesh.rotation.x),
       THREE.MathUtils.radToDeg(mesh.rotation.y),
       THREE.MathUtils.radToDeg(mesh.rotation.z),
-    ]);
-    setTransform(obj.id, "scale", [mesh.scale.x, mesh.scale.y, mesh.scale.z]);
+    ];
+    const newScl = [mesh.scale.x, mesh.scale.y, mesh.scale.z];
+    setTransform(obj.id, "position", newPos);
+    setTransform(obj.id, "rotation", newRot);
+    setTransform(obj.id, "scale", newScl);
+
+    // Propagate delta to every other selected object so the WHOLE group
+    // follows the gizmo. Translate uses additive delta; rotate uses additive
+    // Euler delta (rotates each member in place by the same amount); scale
+    // uses a multiplicative ratio relative to the primary's drag-start scale.
+    const start = dragStartRef.current;
+    if (!start || start.others.size === 0) return;
+    const dPos = [
+      newPos[0] - start.primary.pos[0],
+      newPos[1] - start.primary.pos[1],
+      newPos[2] - start.primary.pos[2],
+    ];
+    const dRot = [
+      newRot[0] - start.primary.rot[0],
+      newRot[1] - start.primary.rot[1],
+      newRot[2] - start.primary.rot[2],
+    ];
+    const sRatio = [
+      start.primary.scl[0] ? newScl[0] / start.primary.scl[0] : 1,
+      start.primary.scl[1] ? newScl[1] / start.primary.scl[1] : 1,
+      start.primary.scl[2] ? newScl[2] / start.primary.scl[2] : 1,
+    ];
+    start.others.forEach((s, id) => {
+      if (transformMode === "translate") {
+        setTransform(id, "position", [s.pos[0] + dPos[0], s.pos[1] + dPos[1], s.pos[2] + dPos[2]]);
+      } else if (transformMode === "rotate") {
+        setTransform(id, "rotation", [s.rot[0] + dRot[0], s.rot[1] + dRot[1], s.rot[2] + dRot[2]]);
+      } else if (transformMode === "scale") {
+        setTransform(id, "scale", [s.scl[0] * sRatio[0], s.scl[1] * sRatio[1], s.scl[2] * sRatio[2]]);
+      }
+    });
   };
 
   return (
@@ -118,14 +177,17 @@ function SelectedTransform() {
       rotationSnap={snapEnabled ? THREE.MathUtils.degToRad(snapRotate) : null}
       scaleSnap={snapEnabled ? 0.1 : null}
       onObjectChange={handleChange}
-      onMouseDown={beginTransform}
+      onMouseDown={() => { beginTransform(); captureDragStart(); }}
       onChange={(e) => {
         if (e && e.target && typeof e.target.dragging === "boolean") {
           const dragging = e.target.dragging;
           if (dragging && !draggingRef.current) {
             draggingRef.current = true;
+            // Some drei builds skip onMouseDown; ensure snapshot exists.
+            if (!dragStartRef.current) captureDragStart();
           } else if (!dragging && draggingRef.current) {
             draggingRef.current = false;
+            dragStartRef.current = null;
             // Auto-drop after rotation drag completes
             if (autoDropOnRotate && transformMode === "rotate") {
               // defer to next tick so latest rotation is committed
