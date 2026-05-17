@@ -1,0 +1,43 @@
+{
+  "summary": "Frontend-only testing of new ForgeSlicer features: marquee box-selection, keyboard shortcuts (Delete/Backspace/Ctrl+D/Escape), context menu (Group/Ungroup/Flatten/Duplicate/Mirror/Delete), grouping, and flatten-to-mesh. Marquee + keyboard + context menu render are all working. Two CRITICAL functional bugs found: (1) 'Group selected' via context menu does NOT actually create a group in the outliner (no group-<id> header appears, clicking one member does not expand selection to siblings); (2) 'Flatten to single mesh' does not remove the original primitives (count stays at 2 instead of becoming 1). Marquee overlay/hint, additive ctrl+shift drag, Delete key bulk delete, Ctrl+D duplicate, Esc clear, Delete-in-input ignore, right-click on outliner row, and all 8 context-menu items are confirmed present and wired.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Context Menu → Group selected",
+        "issue": "After marquee-selecting 2 cubes (verified by Duplicate button showing 'Duplicate (2)') and right-clicking → 'Group selected', NO group header appears in the outliner. Query for [data-testid^=\"group-\"] (excluding group-toggle-) returns 0. Subsequently clicking one of the cubes in the outliner shows Duplicate button as 'Duplicate' (single, not '(2)'), confirming the groupId was never written to the objects OR the group-expand-on-select logic is broken. Expected: both cubes nested under a Group header, and clicking one member selects the whole group.",
+        "affected_selectors": ["[data-testid=\"ctx-group-btn\"]", "[data-testid^=\"group-\"]"]
+      },
+      {
+        "flow": "Context Menu → Flatten to single mesh",
+        "issue": "Selected 1 positive cube + 1 negative cylinder (Duplicate (2) confirmed), right-clicked → 'Flatten to single mesh'. Scene count went from '2 objs' before to '2 objs' after (expected '1 objs'). Outliner still shows the original Cube and Cylinder items — the flatten either failed silently or added a baked mesh without removing the originals. ContextMenu.jsx doFlatten calls addImportedMesh() then useScene.setState filtering out ridsToRemove — one of the two state ops is being lost. No alert was raised, no console error captured.",
+        "affected_selectors": ["[data-testid=\"ctx-flatten-btn\"]", "[data-testid=\"scene-count\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_4.json"],
+  "action_items": [
+    "FIX CRITICAL — Group selected does not persist groupId. Verify (a) groupSelected() reads get().selectedIds correctly at the moment ctx-group-btn is clicked — selection may be getting cleared by an intervening event (e.g. mousedown listener inside ContextMenu or onPointerMissed from the Canvas). Suggest logging selectedIds inside groupSelected() and inside ContextMenu's onClick. (b) Confirm renderGroupedOutliner iterates obj.groupId correctly; could test by manually calling useScene.getState().groupSelected() from devtools to isolate UI vs store bug.",
+    "FIX CRITICAL — Flatten leaves originals in scene. In /app/frontend/src/components/ContextMenu.jsx doFlatten, after addImportedMesh() (which itself calls set(...)), the subsequent useScene.setState((s) => ({ objects: s.objects.filter(...) })) may be operating on a stale closure or the addImportedMesh push is being shadowed. Suggest combining into a single set() call: first compute new objects array (filtered minus selected) then push the new mesh, OR add the new mesh first then in the same setState pass filter the array. Also surface any thrown error to the UI (current try/catch only alerts; the empty-geometry path silently returns).",
+    "Add 'group-expand-on-single-click' behavior test: clicking any group member in outliner OR viewport should select all siblings (current code in store.selectObject does this via target.groupId — but cannot be exercised because groups never form)."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/src/components/ContextMenu.jsx doFlatten — two sequential state mutations (addImportedMesh, then setState filter). Race risk between zustand sync set and the closure of selectedObjs. Refactor to a single atomic setState.",
+    "/app/frontend/src/components/ContextMenu.jsx Item onClick — calls action then onClose() but action may rely on store state that the menu's outside-click handler could have nuked. Capture ids/selectedObjs at menu open time, not at click time.",
+    "Viewport.jsx onPointerMissed=() => { if (!measureMode && !marquee && !shiftHeld) clearSelection(); } — right-clicking on empty viewport may fire this and wipe selection BEFORE the context menu's action runs. Worth verifying with a console.log.",
+    "store.js groupSelected — early-returns null when ids.length < 2; if selection got cleared before group click that explains the bug silently. Add a console.warn in the early-return branch to make this visible."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (frontend-only per request)",
+    "frontend": "~75% — 11 of 14 review cases verified working. Group + Flatten broken. Mirror/Group-aware select untested because grouping never forms."
+  },
+  "test_credentials": "n/a",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use URL <REACT_APP_BACKEND_URL>/workspace (NOT /app — that's the landing). Repro: add 2 cubes via add-cube-positive-btn, mouse-move into viewport-container, keyboard.down('Shift'), drag mouse across the build plate (e.g. from container x+100,y+100 to x+w-100,y+h-100), keyboard.up('Shift') — duplicate-btn should now read 'Duplicate (2)'. Then mouse.click(center of viewport, button='right'), wait 500ms, click [data-testid=\"ctx-group-btn\"] (use force=True). Query [data-testid^=\"group-\"]:not([data-testid^=\"group-toggle-\"]) — currently returns 0 (BUG). For flatten: file-new-btn, add-cube-positive-btn, add-cylinder-negative-btn (note the cylinder is at y=12 with r=10 and the cube at y=10 with 20mm side — they overlap, so flatten should produce a non-empty mesh), marquee-select both, right-click viewport, click ctx-flatten-btn, wait 2.5s, expect scene-count='1 objs' — currently '2 objs' (BUG). Dialog handler must accept() any alerts. Marquee, Delete key (multi), Ctrl+D, Escape, Delete-in-input, additive Ctrl+Shift drag, and all 8 ctx menu items all VERIFIED.",
+  "rca of the issue": "Most-likely RCA for both bugs: ContextMenu mounts an outside-click 'mousedown' listener (setTimeout 0) and an Esc keydown listener. When the user moves the mouse to the menu item and clicks, the click triggers Item.onClick which (a) calls the store action and (b) calls onClose. Meanwhile Viewport's Canvas onPointerMissed may fire on the right-click's pointer-up cycle (the right-click hit no mesh OR hit a mesh whose onClick is button-0-only) and call clearSelection(). If clearSelection runs AFTER the ctx menu opens but BEFORE groupSelected reads selectedIds, the action sees [] and bails (groupSelected has 'if ids.length < 2 return null'; doFlatten has 'if count === 0 return'). For flatten the count check is at the start so if selection survives, flatten runs — but the originals not being removed is more likely a sequencing bug between addImportedMesh's set() and the subsequent useScene.setState filter. Quick fix candidate: in doFlatten, snapshot the IDs to remove BEFORE addImportedMesh, then merge into one setState: useScene.setState(s => ({ objects: [...s.objects.filter(o => !rids.includes(o.id)), newMesh], selectedId: newMesh.id, selectedIds: [newMesh.id] })) — bypassing addImportedMesh entirely."
+}

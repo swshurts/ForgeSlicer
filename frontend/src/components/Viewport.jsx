@@ -268,6 +268,16 @@ function MeasurementsLayer() {
   );
 }
 
+// Tiny bridge component placed INSIDE the Canvas so we can grab camera / gl
+// / scene refs and use them from the outer DOM (marquee picker).
+function CanvasBridge({ bridgeRef }) {
+  const { camera, gl, scene } = useThree();
+  useEffect(() => {
+    bridgeRef.current = { camera, gl, scene };
+  }, [bridgeRef, camera, gl, scene]);
+  return null;
+}
+
 export default function Viewport() {
   const objects = useScene((s) => s.objects);
   const selectedId = useScene((s) => s.selectedId);
@@ -280,6 +290,26 @@ export default function Viewport() {
   const measurementsCount = useScene((s) => s.measurements.length);
   const [ctxMenu, setCtxMenu] = React.useState(null);
 
+  // ---- Marquee (Shift + left-drag) box selection ----
+  const [shiftHeld, setShiftHeld] = React.useState(false);
+  const [marquee, setMarquee] = React.useState(null); // {x0,y0,x1,y1, additive}
+  const bridgeRef = React.useRef(null);
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const down = (e) => { if (e.key === "Shift") setShiftHeld(true); };
+    const up = (e) => { if (e.key === "Shift") setShiftHeld(false); };
+    const blur = () => setShiftHeld(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
+
   const handleContextMenu = (e, hitId) => {
     e.preventDefault();
     if (hitId) {
@@ -291,8 +321,88 @@ export default function Viewport() {
     setCtxMenu({ x: e.clientX, y: e.clientY });
   };
 
+  // Compute which scene meshes fall inside the final marquee rect by
+  // projecting their world bounding-box corners into screen space.
+  const finalizeMarquee = (rect, additive) => {
+    setMarquee(null);
+    if (!bridgeRef.current || !containerRef.current) return;
+    const w = Math.abs(rect.x1 - rect.x0);
+    const h = Math.abs(rect.y1 - rect.y0);
+    // Treat tiny drags as a "click on empty space" — clear selection unless
+    // additive — and don't run picking math.
+    if (w < 4 && h < 4) {
+      if (!additive) clearSelection();
+      return;
+    }
+    const { camera, gl, scene } = bridgeRef.current;
+    const canvasRect = gl.domElement.getBoundingClientRect();
+    const contRect = containerRef.current.getBoundingClientRect();
+    // Marquee rect is in container-local px; convert to canvas-local px.
+    const minX = Math.min(rect.x0, rect.x1) + (contRect.left - canvasRect.left);
+    const maxX = Math.max(rect.x0, rect.x1) + (contRect.left - canvasRect.left);
+    const minY = Math.min(rect.y0, rect.y1) + (contRect.top - canvasRect.top);
+    const maxY = Math.max(rect.y0, rect.y1) + (contRect.top - canvasRect.top);
+    const hits = [];
+    scene.traverse((c) => {
+      if (!c.isMesh || !c.userData || !c.userData.id) return;
+      if (c.visible === false) return;
+      const box = new THREE.Box3().setFromObject(c);
+      if (!isFinite(box.min.x)) return;
+      const corners = [
+        [box.min.x, box.min.y, box.min.z],
+        [box.max.x, box.min.y, box.min.z],
+        [box.min.x, box.max.y, box.min.z],
+        [box.max.x, box.max.y, box.min.z],
+        [box.min.x, box.min.y, box.max.z],
+        [box.max.x, box.min.y, box.max.z],
+        [box.min.x, box.max.y, box.max.z],
+        [box.max.x, box.max.y, box.max.z],
+      ];
+      let inside = false;
+      const v = new THREE.Vector3();
+      for (const [x, y, z] of corners) {
+        v.set(x, y, z).project(camera);
+        const sx = (v.x * 0.5 + 0.5) * canvasRect.width;
+        const sy = (-v.y * 0.5 + 0.5) * canvasRect.height;
+        if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+          inside = true;
+          break;
+        }
+      }
+      if (inside) hits.push(c.userData.id);
+    });
+    if (!additive) clearSelection();
+    for (const id of hits) selectObject(id, "add");
+  };
+
+  const onMarqueeDown = (e) => {
+    if (e.button !== 0) return;
+    if (measureMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    const additive = e.ctrlKey || e.metaKey;
+    setMarquee({ x0: x, y0: y, x1: x, y1: y, additive });
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+  };
+  const onMarqueeMove = (e) => {
+    if (!marquee) return;
+    const r = containerRef.current.getBoundingClientRect();
+    setMarquee((m) => m ? ({ ...m, x1: e.clientX - r.left, y1: e.clientY - r.top }) : null);
+  };
+  const onMarqueeUp = (e) => {
+    if (!marquee) return;
+    const r = containerRef.current.getBoundingClientRect();
+    const finalRect = { x0: marquee.x0, y0: marquee.y0, x1: e.clientX - r.left, y1: e.clientY - r.top };
+    finalizeMarquee(finalRect, marquee.additive);
+  };
+
+  const marqueeOverlayActive = (shiftHeld || marquee) && !measureMode;
+
   return (
-    <div className="w-full h-full relative" data-testid="viewport-container" onContextMenu={(e) => handleContextMenu(e, null)}>
+    <div ref={containerRef} className="w-full h-full relative" data-testid="viewport-container" onContextMenu={(e) => handleContextMenu(e, null)}>
       {measureMode && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-green-500/40 rounded text-[11px] font-mono text-green-300 pointer-events-none flex items-center gap-2" data-testid="measure-hint">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -302,11 +412,20 @@ export default function Viewport() {
           )}
         </div>
       )}
+      {marqueeOverlayActive && (
+        <div
+          data-testid="marquee-hint"
+          className="absolute top-3 right-3 z-10 px-2.5 py-1 bg-black/85 border border-orange-500/40 rounded text-[10px] font-mono text-orange-300 pointer-events-none flex items-center gap-1.5"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+          BOX SELECT — drag a rectangle (Ctrl to add)
+        </div>
+      )}
       <Canvas
         shadows
         camera={{ position: [0, 160, 280], fov: 45, near: 0.1, far: 5000 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
-        onPointerMissed={() => { if (!measureMode) clearSelection(); }}
+        onPointerMissed={() => { if (!measureMode && !marquee && !shiftHeld) clearSelection(); }}
         style={{ background: "#1E293B" }}
       >
         <color attach="background" args={["#1E293B"]} />
@@ -337,9 +456,11 @@ export default function Viewport() {
         {!measureMode && <SelectedTransform />}
         {!measureMode && <BBoxOverlay />}
         <MeasurementsLayer />
+        <CanvasBridge bridgeRef={bridgeRef} />
 
         <OrbitControls
           makeDefault
+          enabled={!marquee}
           enableDamping
           dampingFactor={0.08}
           target={[0, buildVolume.z / 4, 0]}
@@ -350,6 +471,37 @@ export default function Viewport() {
           <GizmoViewport axisColors={["#F97316", "#22C55E", "#06B6D4"]} labelColor="#F8FAFC" />
         </GizmoHelper>
       </Canvas>
+
+      {/* Transparent capture overlay: only visible while Shift is held OR a
+          marquee drag is in progress. Sits above the Canvas to intercept the
+          pointer events that would otherwise drive OrbitControls / mesh picks. */}
+      {marqueeOverlayActive && (
+        <div
+          data-testid="marquee-overlay"
+          className="absolute inset-0 z-20"
+          style={{ cursor: "crosshair" }}
+          onPointerDown={onMarqueeDown}
+          onPointerMove={onMarqueeMove}
+          onPointerUp={onMarqueeUp}
+          onContextMenu={(e) => { e.preventDefault(); }}
+        >
+          {marquee && (
+            <div
+              data-testid="marquee-rect"
+              style={{
+                position: "absolute",
+                left: Math.min(marquee.x0, marquee.x1),
+                top: Math.min(marquee.y0, marquee.y1),
+                width: Math.abs(marquee.x1 - marquee.x0),
+                height: Math.abs(marquee.y1 - marquee.y0),
+                border: "1px dashed #F97316",
+                background: "rgba(249,115,22,0.10)",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </div>
+      )}
       {ctxMenu && <ContextMenu position={ctxMenu} onClose={() => setCtxMenu(null)} />}
     </div>
   );

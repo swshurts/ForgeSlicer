@@ -83,6 +83,9 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
   const togglePopover = (name) => setOpenPopover((cur) => (cur === name ? null : name));
   const selectedIds = useScene((s) => s.selectedIds);
   const selectionCount = selectedIds && selectedIds.length ? selectedIds.length : (selectedId ? 1 : 0);
+  const removeSelected = useScene((s) => s.removeSelected);
+  const duplicateSelected = useScene((s) => s.duplicateSelected);
+  const clearSelection = useScene((s) => s.clearSelection);
   const [stlPreviewOpen, setStlPreviewOpen] = useState(false);
 
   // Keyboard shortcuts
@@ -97,6 +100,17 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
       } else if ((meta && e.key.toLowerCase() === "y") || (meta && e.shiftKey && e.key.toLowerCase() === "z")) {
         e.preventDefault();
         redo();
+      } else if (meta && e.key.toLowerCase() === "d") {
+        // Ctrl/Cmd+D — duplicate current selection (matches most DCC tools)
+        if (selectionCount > 0) {
+          e.preventDefault();
+          duplicateSelected({});
+        }
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectionCount > 0) {
+          e.preventDefault();
+          removeSelected();
+        }
       } else if (e.key.toLowerCase() === "m") {
         setMeasureMode(!measureMode);
       } else if (e.key.toLowerCase() === "g") {
@@ -107,11 +121,12 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
         setTransformMode("scale");
       } else if (e.key === "Escape") {
         if (measureMode) setMeasureMode(false);
+        else clearSelection();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, measureMode, setMeasureMode, setTransformMode]);
+  }, [undo, redo, measureMode, setMeasureMode, setTransformMode, removeSelected, duplicateSelected, clearSelection, selectionCount]);
 
   const doBool = async (op) => {
     // Take last 2 objects: prefer selected as base, last added as other.
