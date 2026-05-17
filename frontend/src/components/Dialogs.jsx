@@ -426,17 +426,28 @@ const COMPONENT_CATEGORIES = [
 
 export function SaveComponentDialog({ open, onClose }) {
   const objects = useScene((s) => s.objects);
+  const selectedIds = useScene((s) => s.selectedIds);
   const projectName = useScene((s) => s.projectName);
   const [name, setName] = useState(projectName);
   const [author, setAuthor] = useState("");
   const [description, setDescription] = useState("");
-  // Default the component-modifier flag to whatever the user's scene is
+  // If the user has a multi-selection (typically a freshly-grouped assembly)
+  // default the dialog to save just that subset — saves a click and matches
+  // the "build a U1 panel, then save it" workflow.
+  const hasSelection = selectedIds && selectedIds.length > 0;
+  const canScopeSelection = hasSelection && selectedIds.length < objects.length;
+  const [saveSelectionOnly, setSaveSelectionOnly] = useState(canScopeSelection);
+  const effectiveObjects = React.useMemo(
+    () => (saveSelectionOnly ? objects.filter((o) => selectedIds.includes(o.id)) : objects),
+    [objects, selectedIds, saveSelectionOnly],
+  );
+  // Default the component-modifier flag to whatever the user's scope is
   // mostly made of — saves a click when packaging a "negative screw hole".
   const defaultModifier = React.useMemo(() => {
-    if (!objects.length) return "positive";
-    const neg = objects.filter((o) => o.modifier === "negative").length;
-    return neg > objects.length / 2 ? "negative" : "positive";
-  }, [objects]);
+    if (!effectiveObjects.length) return "positive";
+    const neg = effectiveObjects.filter((o) => o.modifier === "negative").length;
+    return neg > effectiveObjects.length / 2 ? "negative" : "positive";
+  }, [effectiveObjects]);
   const [modifier, setModifier] = useState(defaultModifier);
   const [category, setCategory] = useState("misc");
   const [tags, setTags] = useState("");
@@ -464,13 +475,13 @@ export function SaveComponentDialog({ open, onClose }) {
   const handleSave = async () => {
     setError(""); setBusy(true); setDone(null);
     try {
-      const { bytes, triangleCount } = await exportSTLBytesAsync(objects);
+      const { bytes, triangleCount } = await exportSTLBytesAsync(effectiveObjects);
       const stlB64 = bytesToBase64(bytes);
       // Serialize the editable project JSON so "Add to Scene" can restore
       // primitive types/dims/colorIndex on import. We strip raw geometry
       // buffers (already covered by the STL fallback) to keep the payload
       // size sensible.
-      const projectObjects = objects.map((o) => {
+      const projectObjects = effectiveObjects.map((o) => {
         const { geometry, ...rest } = o;
         return rest;
       });
@@ -486,7 +497,7 @@ export function SaveComponentDialog({ open, onClose }) {
         project_json: projectJson,
         thumbnail_base64: captureThumb(),
         triangle_count: Math.floor(triangleCount),
-        object_count: objects.length,
+        object_count: effectiveObjects.length,
       });
       setDone(created);
     } catch (e) {
@@ -508,6 +519,21 @@ export function SaveComponentDialog({ open, onClose }) {
         </div>
         {!done ? (
           <div className="p-4 flex flex-col gap-3">
+            {canScopeSelection && (
+              <label className="flex items-center gap-2 text-[11px] text-slate-200 cursor-pointer select-none bg-purple-500/10 border border-purple-500/40 rounded px-3 py-2">
+                <input
+                  data-testid="component-scope-selection"
+                  type="checkbox"
+                  checked={saveSelectionOnly}
+                  onChange={(e) => setSaveSelectionOnly(e.target.checked)}
+                  className="accent-orange-500"
+                />
+                <span className="flex-1">
+                  Save <span className="text-orange-300 font-semibold">selected {selectedIds.length} components</span> only
+                  <span className="text-slate-500"> (otherwise the whole scene is saved)</span>
+                </span>
+              </label>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Name</span>
               <input data-testid="component-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. U1 blank panel" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />

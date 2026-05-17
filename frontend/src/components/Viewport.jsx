@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useScene } from "../lib/store";
 import { buildGeometry } from "../lib/geometry";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
+import ContextMenu from "./ContextMenu";
 
 const POSITIVE_COLOR = "#F97316";
 const NEGATIVE_COLOR = "#06B6D4";
@@ -18,7 +19,7 @@ function colorForObject(obj) {
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 
-function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit }) {
+function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onContextMenu }) {
   const meshRef = useRef();
   const geom = useMemo(
     () => buildGeometry(obj),
@@ -50,6 +51,11 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit }) {
           const mode = ne.ctrlKey || ne.metaKey ? "toggle" : ne.shiftKey ? "add" : null;
           onSelect(obj.id, mode);
         }
+      }}
+      onContextMenu={(e) => {
+        e.stopPropagation();
+        // R3F event wraps a real React MouseEvent at e.nativeEvent.
+        if (onContextMenu) onContextMenu(e.nativeEvent || e, obj.id);
       }}
       castShadow
       receiveShadow
@@ -272,9 +278,21 @@ export default function Viewport() {
   const measureMode = useScene((s) => s.measureMode);
   const handleMeasureClick = useScene((s) => s.handleMeasureClick);
   const measurementsCount = useScene((s) => s.measurements.length);
+  const [ctxMenu, setCtxMenu] = React.useState(null);
+
+  const handleContextMenu = (e, hitId) => {
+    e.preventDefault();
+    if (hitId) {
+      // Right-click on a mesh selects it (if not already in the selection)
+      // so the menu's "selected count" reflects what the user is pointing at.
+      const inSel = (selectedIds && selectedIds.includes(hitId)) || hitId === selectedId;
+      if (!inSel) selectObject(hitId);
+    }
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
 
   return (
-    <div className="w-full h-full relative" data-testid="viewport-container">
+    <div className="w-full h-full relative" data-testid="viewport-container" onContextMenu={(e) => handleContextMenu(e, null)}>
       {measureMode && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-green-500/40 rounded text-[11px] font-mono text-green-300 pointer-events-none flex items-center gap-2" data-testid="measure-hint">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -312,6 +330,7 @@ export default function Viewport() {
             onSelect={selectObject}
             measureMode={measureMode}
             onMeasureHit={handleMeasureClick}
+            onContextMenu={handleContextMenu}
           />
         ))}
 
@@ -331,6 +350,7 @@ export default function Viewport() {
           <GizmoViewport axisColors={["#F97316", "#22C55E", "#06B6D4"]} labelColor="#F8FAFC" />
         </GizmoHelper>
       </Canvas>
+      {ctxMenu && <ContextMenu position={ctxMenu} onClose={() => setCtxMenu(null)} />}
     </div>
   );
 }

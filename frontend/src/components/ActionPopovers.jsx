@@ -107,24 +107,47 @@ function EmptyMsg({ children }) {
 // ---------- Position ----------
 export function PositionPopover({ anchor, onClose }) {
   const selectedId = useScene((s) => s.selectedId);
+  const selectedIds = useScene((s) => s.selectedIds);
   const objects = useScene((s) => s.objects);
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
+  const translateSelected = useScene((s) => s.translateSelected);
   const obj = objects.find((o) => o.id === selectedId);
+  const multi = selectedIds && selectedIds.length > 1;
+
   const setPos = (i, v) => {
     if (!obj) return;
-    const p = [...obj.position]; p[i] = v;
-    setTransformWithHistory(obj.id, "position", p);
+    if (multi) {
+      // In multi-select mode, the displayed value is the primary's position
+      // and editing it shifts the whole assembly by the delta. This keeps
+      // group transforms intact while still letting the user type absolute
+      // coordinates for the leader.
+      const delta = [0, 0, 0]; delta[i] = v - obj.position[i];
+      translateSelected(delta);
+    } else {
+      const p = [...obj.position]; p[i] = v;
+      setTransformWithHistory(obj.id, "position", p);
+    }
   };
   return (
-    <PopoverShell title={obj ? `Position — ${obj.name}` : "Position"} icon={Move3D} onClose={onClose} anchor={anchor} testid="position-popover">
+    <PopoverShell
+      title={obj ? `Position — ${obj.name}${multi ? ` +${selectedIds.length - 1}` : ""}` : "Position"}
+      icon={Move3D} onClose={onClose} anchor={anchor} testid="position-popover"
+    >
       {!obj ? (
         <EmptyMsg>Select an object first.</EmptyMsg>
       ) : (
-        <div className="grid grid-cols-3 gap-2">
-          <NumberField testid="popover-pos-x" label="X" value={obj.position[0]} onChange={(v) => setPos(0, v)} step={0.5} suffix="mm" />
-          <NumberField testid="popover-pos-y" label="Y" value={obj.position[1]} onChange={(v) => setPos(1, v)} step={0.5} suffix="mm" />
-          <NumberField testid="popover-pos-z" label="Z" value={obj.position[2]} onChange={(v) => setPos(2, v)} step={0.5} suffix="mm" />
-        </div>
+        <>
+          {multi && (
+            <div className="text-[10px] text-purple-300 bg-purple-500/10 border border-purple-500/30 rounded px-2 py-1.5 leading-snug">
+              Moving the whole selection ({selectedIds.length}). Values shown are the leader; edits shift every selected component by the delta.
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <NumberField testid="popover-pos-x" label="X" value={obj.position[0]} onChange={(v) => setPos(0, v)} step={0.5} suffix="mm" />
+            <NumberField testid="popover-pos-y" label="Y" value={obj.position[1]} onChange={(v) => setPos(1, v)} step={0.5} suffix="mm" />
+            <NumberField testid="popover-pos-z" label="Z" value={obj.position[2]} onChange={(v) => setPos(2, v)} step={0.5} suffix="mm" />
+          </div>
+        </>
       )}
     </PopoverShell>
   );
@@ -133,23 +156,37 @@ export function PositionPopover({ anchor, onClose }) {
 // ---------- Rotation ----------
 export function RotationPopover({ anchor, onClose }) {
   const selectedId = useScene((s) => s.selectedId);
+  const selectedIds = useScene((s) => s.selectedIds);
   const objects = useScene((s) => s.objects);
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
+  const rotateSelected = useScene((s) => s.rotateSelected);
   const dropToBed = useScene((s) => s.dropToBed);
   const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const obj = objects.find((o) => o.id === selectedId);
+  const multi = selectedIds && selectedIds.length > 1;
   const setRot = (i, v) => {
     if (!obj) return;
-    const r = [...obj.rotation]; r[i] = v;
-    setTransformWithHistory(obj.id, "rotation", r);
-    if (autoDropOnRotate) setTimeout(() => dropToBed(obj.id, false), 0);
+    if (multi) {
+      const delta = [0, 0, 0]; delta[i] = v - obj.rotation[i];
+      rotateSelected(delta);
+      if (autoDropOnRotate) setTimeout(() => selectedIds.forEach((id) => dropToBed(id, false)), 0);
+    } else {
+      const r = [...obj.rotation]; r[i] = v;
+      setTransformWithHistory(obj.id, "rotation", r);
+      if (autoDropOnRotate) setTimeout(() => dropToBed(obj.id, false), 0);
+    }
   };
   return (
-    <PopoverShell title={obj ? `Rotation — ${obj.name}` : "Rotation"} icon={RotateCw} onClose={onClose} anchor={anchor} testid="rotation-popover">
+    <PopoverShell title={obj ? `Rotation — ${obj.name}${multi ? ` +${selectedIds.length - 1}` : ""}` : "Rotation"} icon={RotateCw} onClose={onClose} anchor={anchor} testid="rotation-popover">
       {!obj ? (
         <EmptyMsg>Select an object first.</EmptyMsg>
       ) : (
         <>
+          {multi && (
+            <div className="text-[10px] text-purple-300 bg-purple-500/10 border border-purple-500/30 rounded px-2 py-1.5 leading-snug">
+              Rotating the whole selection ({selectedIds.length}). Edits apply the delta to every selected component.
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-2">
             <NumberField testid="popover-rot-x" label="X" value={obj.rotation[0]} onChange={(v) => setRot(0, v)} step={5} suffix="°" />
             <NumberField testid="popover-rot-y" label="Y" value={obj.rotation[1]} onChange={(v) => setRot(1, v)} step={5} suffix="°" />
@@ -157,10 +194,10 @@ export function RotationPopover({ anchor, onClose }) {
           </div>
           <button
             data-testid="popover-drop-to-bed"
-            onClick={() => dropToBed(obj.id)}
+            onClick={() => (multi ? selectedIds.forEach((id) => dropToBed(id)) : dropToBed(obj.id))}
             className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-slate-700"
           >
-            <ArrowDownToLine size={13} /> Drop to Bed
+            <ArrowDownToLine size={13} /> Drop {multi ? "all" : ""} to Bed
           </button>
         </>
       )}

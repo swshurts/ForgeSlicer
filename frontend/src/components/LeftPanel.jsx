@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { useScene } from "../lib/store";
 import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
-  Trash2, Copy, PlusSquare, MinusSquare, ChevronRight,
+  Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon,
 } from "lucide-react";
+import ContextMenu from "./ContextMenu";
 
 const PRIMS_3D = [
   { type: "cube", label: "Cube", icon: Box },
@@ -71,6 +72,15 @@ function SceneTreeItem({ obj }) {
         const mode = e.ctrlKey || e.metaKey ? "toggle" : e.shiftKey ? "add" : null;
         select(obj.id, mode);
       }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const inSel = (typeof selectedIds !== "undefined" && selectedIds.includes(obj.id)) || obj.id === selectedId;
+        if (!inSel) select(obj.id);
+        // bubble up to outliner-level context handler via a CustomEvent so we
+        // don't need separate state per row.
+        window.dispatchEvent(new CustomEvent("forgeslicer:outliner-ctx", { detail: { x: e.clientX, y: e.clientY } }));
+      }}
     >
       <button
         data-testid={`tree-flip-${obj.id}`}
@@ -113,6 +123,12 @@ function SceneTreeItem({ obj }) {
 
 export default function LeftPanel() {
   const objects = useScene((s) => s.objects);
+  const [outlinerCtx, setOutlinerCtx] = useState(null);
+  React.useEffect(() => {
+    const handler = (e) => setOutlinerCtx({ x: e.detail.x, y: e.detail.y });
+    window.addEventListener("forgeslicer:outliner-ctx", handler);
+    return () => window.removeEventListener("forgeslicer:outliner-ctx", handler);
+  }, []);
   return (
     <aside className="w-64 flex-shrink-0 border-r border-slate-800 bg-slate-900 flex flex-col h-full overflow-hidden">
       <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "62%" }}>
@@ -169,15 +185,74 @@ export default function LeftPanel() {
           {objects.length} objs
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto px-1 py-1" data-testid="scene-tree">
+      <div className="flex-1 overflow-y-auto px-1 py-1" data-testid="scene-tree" onContextMenu={(e) => { e.preventDefault(); setOutlinerCtx({ x: e.clientX, y: e.clientY }); }}>
         {objects.length === 0 ? (
           <div className="px-3 py-6 text-xs text-slate-500 italic">
             No components yet. Add a primitive above.
           </div>
         ) : (
-          objects.map((o) => <SceneTreeItem key={o.id} obj={o} />)
+          renderGroupedOutliner(objects)
         )}
       </div>
+      {outlinerCtx && <ContextMenu position={outlinerCtx} onClose={() => setOutlinerCtx(null)} />}
     </aside>
+  );
+}
+
+// Render objects grouping members with the same `groupId` together under a
+// collapsible header. Ungrouped items appear at top level.
+function renderGroupedOutliner(objects) {
+  const rendered = [];
+  const seenGroups = new Set();
+  for (const o of objects) {
+    if (o.groupId) {
+      if (seenGroups.has(o.groupId)) continue;
+      seenGroups.add(o.groupId);
+      const members = objects.filter((x) => x.groupId === o.groupId);
+      rendered.push(
+        <GroupHeader key={`group-${o.groupId}`} groupId={o.groupId} name={o.groupName || "Group"} members={members} />
+      );
+    } else {
+      rendered.push(<SceneTreeItem key={o.id} obj={o} />);
+    }
+  }
+  return rendered;
+}
+
+function GroupHeader({ groupId, name, members }) {
+  const [expanded, setExpanded] = useState(true);
+  const selectObject = useScene((s) => s.selectObject);
+  const selectedIds = useScene((s) => s.selectedIds);
+  const groupSelected = members.every((m) => selectedIds.includes(m.id));
+  return (
+    <div className="mb-1" data-testid={`group-${groupId}`}>
+      <div
+        onClick={() => {
+          // Select all members; expand-toggle via the chevron only.
+          selectObject(members[0].id);
+        }}
+        className={`group flex items-center gap-1 px-1.5 py-1.5 rounded cursor-pointer text-[11px] uppercase tracking-wider font-semibold border-l-2 ${
+          groupSelected
+            ? "bg-orange-500/15 border-orange-500 text-orange-300"
+            : "border-purple-500/60 text-slate-300 hover:bg-slate-800/60"
+        }`}
+      >
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
+          className="text-slate-400 hover:text-white"
+          data-testid={`group-toggle-${groupId}`}
+        >
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        <Layers size={12} className="text-purple-400" />
+        <span className="flex-1 truncate">{name}</span>
+        <span className="text-[9px] font-mono text-slate-500">{members.length}</span>
+      </div>
+      {expanded && (
+        <div className="pl-3 border-l border-slate-800 ml-2">
+          {members.map((m) => <SceneTreeItem key={m.id} obj={m} />)}
+        </div>
+      )}
+    </div>
   );
 }

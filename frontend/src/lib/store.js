@@ -365,21 +365,99 @@ export const useScene = create((set, get) => ({
     }));
   },
 
+  // ---------- Groups (lightweight: parts share a `groupId` and move together) ----------
+  // Stamp every currently-selected object with a fresh groupId. Selecting any
+  // member afterward expands the selection to the whole group, so transforms
+  // and duplicate operate on the assembly as one unit. Children remain
+  // fully editable — this is *not* a baked merge (use `flattenSelected` for
+  // that).
+  groupSelected: (name = "Group") => {
+    const ids = get().selectedIds.length
+      ? get().selectedIds
+      : (get().selectedId ? [get().selectedId] : []);
+    if (ids.length < 2) return null;
+    get().pushHistory();
+    const gid = newId("group");
+    set((s) => ({
+      objects: s.objects.map((o) => (ids.includes(o.id) ? { ...o, groupId: gid, groupName: name } : o)),
+      selectedIds: ids,
+      selectedId: ids[ids.length - 1],
+    }));
+    return gid;
+  },
+  ungroupSelected: () => {
+    const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
+    if (ids.length === 0) return;
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) => {
+        if (!ids.includes(o.id)) return o;
+        const { groupId: _g, groupName: _gn, ...rest } = o;
+        return rest;
+      }),
+    }));
+  },
+
+  // Apply a positional delta to every currently-selected object. Used by
+  // the Position popover when the selection is multi (e.g. the user moved a
+  // grouped assembly). For single-select callers should keep using
+  // setTransformWithHistory which is precise.
+  translateSelected: (delta) => {
+    const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
+    if (ids.length === 0) return;
+    if (!delta || delta.every((v) => Math.abs(v) < 1e-6)) return;
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        ids.includes(o.id)
+          ? { ...o, position: [o.position[0] + delta[0], o.position[1] + delta[1], o.position[2] + delta[2]] }
+          : o
+      ),
+    }));
+  },
+  rotateSelected: (delta) => {
+    const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
+    if (ids.length === 0) return;
+    if (!delta || delta.every((v) => Math.abs(v) < 1e-6)) return;
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        ids.includes(o.id)
+          ? { ...o, rotation: [o.rotation[0] + delta[0], o.rotation[1] + delta[1], o.rotation[2] + delta[2]] }
+          : o
+      ),
+    }));
+  },
+
   // selectObject:
-  //   - default (no `mode`): single-selection — replaces the set with [id]
+  //   - default (no `mode`): single-selection — replaces the set with [id].
+  //     If the clicked object belongs to a group, the WHOLE group is
+  //     selected so transforms move it as a unit. Users can still drill in
+  //     to individual children via Ctrl-click (which uses mode='toggle').
   //   - mode='toggle' (Ctrl/Cmd-click): adds id if absent, removes if present
+  //     — operates on the single clicked object only, ignoring group siblings.
   //   - mode='add'    (Shift-click)   : adds id if absent (range select TODO)
+  //   - mode='exact'  (programmatic)  : exactly select [id] without group expansion.
   selectObject: (id, mode = null) => {
     set((s) => {
       if (id === null) return { selectedId: null, selectedIds: [] };
-      if (!mode) return { selectedId: id, selectedIds: [id] };
+      if (!mode) {
+        const target = s.objects.find((o) => o.id === id);
+        if (target && target.groupId) {
+          const groupMembers = s.objects.filter((o) => o.groupId === target.groupId).map((o) => o.id);
+          return { selectedId: id, selectedIds: groupMembers };
+        }
+        return { selectedId: id, selectedIds: [id] };
+      }
+      if (mode === "exact") {
+        return { selectedId: id, selectedIds: [id] };
+      }
       const current = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
       const has = current.includes(id);
       let next;
       if (mode === "toggle") {
         next = has ? current.filter((x) => x !== id) : [...current, id];
       } else {
-        // 'add'
         next = has ? current : [...current, id];
       }
       return {
