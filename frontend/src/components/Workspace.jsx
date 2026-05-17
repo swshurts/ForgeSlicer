@@ -125,7 +125,11 @@ export default function Workspace() {
             ...o,
             // Re-stamp id from addRawObject so it's unique in the host scene.
             id: undefined,
-            modifier: payload.modifier || o.modifier || "positive",
+            // Prefer the per-part modifier saved with the object so mixed
+            // assemblies (positive bracket + negative cutouts) round-trip
+            // correctly. Only fall back to the payload-level modifier when
+            // the saved part didn't record one.
+            modifier: o.modifier || payload.modifier || "positive",
           });
           if (id) { added += 1; newIds.push(id); }
         }
