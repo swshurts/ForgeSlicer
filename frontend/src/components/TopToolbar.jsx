@@ -81,7 +81,15 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
   const sclBtnRef = useRef(null);
   const slcBtnRef = useRef(null);
   const dupBtnRef = useRef(null);
-  const togglePopover = (name) => setOpenPopover((cur) => (cur === name ? null : name));
+  const togglePopover = (name) => {
+    setOpenPopover((cur) => (cur === name ? null : name));
+    // Keep the 3D gizmo in sync with the popover the user is editing — most
+    // people expect clicking POSITION to set the gizmo to translate (etc.)
+    // rather than only opening a numeric popup.
+    if (name === "position") setTransformMode("translate");
+    else if (name === "rotation") setTransformMode("rotate");
+    else if (name === "scale") setTransformMode("scale");
+  };
   const selectedIds = useScene((s) => s.selectedIds);
   const selectionCount = selectedIds && selectedIds.length ? selectedIds.length : (selectedId ? 1 : 0);
   const removeSelected = useScene((s) => s.removeSelected);
