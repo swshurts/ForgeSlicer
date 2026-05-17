@@ -132,26 +132,39 @@ export default function Workspace() {
         // Drop the WHOLE recalled assembly onto the bed (translate all
         // members down together) so users don't get parts floating above
         // Y=0 just because the original scene saved them mid-air.
+        // Note: computeRotatedBBox returns bbox in OBJECT-LOCAL space
+        // (centred at origin, ignoring obj.position). World-space minY is
+        // obj.position[1] + bb.min.y. We translate the WHOLE assembly by
+        // -worldMinY so the lowest point lands exactly on Y=0.
         try {
           const st = useScene.getState();
-          let minY = Infinity;
+          let worldMinY = Infinity;
           const newObjs = st.objects.filter((x) => newIds.includes(x.id));
           for (const o of newObjs) {
             try {
               const bb = computeRotatedBBox(o);
-              if (bb.min.y < minY) minY = bb.min.y;
-            } catch (_) { /* ignore */ }
+              const wy = (o.position?.[1] ?? 0) + bb.min.y;
+              if (wy < worldMinY) worldMinY = wy;
+            } catch (err) {
+              // Surface bbox-calc failures so future drops aren't silent.
+              // eslint-disable-next-line no-console
+              console.warn("drop-to-bed: bbox failed for", o.id, err);
+            }
           }
-          if (isFinite(minY) && Math.abs(minY) > 1e-3) {
+          if (isFinite(worldMinY) && Math.abs(worldMinY) > 1e-3) {
+            const dy = -worldMinY;
             useScene.setState((s) => ({
               objects: s.objects.map((o) =>
                 newIds.includes(o.id)
-                  ? { ...o, position: [o.position[0], o.position[1] - minY, o.position[2]] }
+                  ? { ...o, position: [o.position[0], o.position[1] + dy, o.position[2]] }
                   : o
               ),
             }));
           }
-        } catch (_) { /* non-fatal */ }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("drop-to-bed pass failed:", err);
+        }
       } else if (payload.stl_base64) {
         // Fallback path: import the STL bytes as a single mesh.
         const bin = atob(payload.stl_base64);
