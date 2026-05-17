@@ -475,7 +475,19 @@ export function SaveComponentDialog({ open, onClose }) {
   const handleSave = async () => {
     setError(""); setBusy(true); setDone(null);
     try {
-      const { bytes, triangleCount } = await exportSTLBytesAsync(effectiveObjects);
+      // CSG evaluator needs at least one POSITIVE shell to produce any STL
+      // geometry, so a pure-negative scope (e.g. a rack-mount screw-hole
+      // pattern, M3 bolt cutouts, a vent grille) would otherwise fail with
+      // "Scene is empty". Detect that case and bake a positives-only copy
+      // for the STL/thumbnail preview. The on-disk component JSON keeps
+      // each part's original modifier, so when a user drops the component
+      // back into a scene it still subtracts properly.
+      const allNegative = effectiveObjects.length > 0
+        && effectiveObjects.every((o) => o.modifier === "negative");
+      const stlScope = allNegative
+        ? effectiveObjects.map((o) => ({ ...o, modifier: "positive" }))
+        : effectiveObjects;
+      const { bytes, triangleCount } = await exportSTLBytesAsync(stlScope);
       const stlB64 = bytesToBase64(bytes);
       // Serialize the editable project JSON so "Add to Scene" can restore
       // primitive types/dims/colorIndex on import. We strip raw geometry
