@@ -80,6 +80,13 @@ export const useScene = create((set, get) => ({
   filamentId: defaultFilamentId,
   communityPrinters: [],         // [{ id, brand, name, build_x/y/z, max_*, default_*, submitter, uses }]
   autoDropOnRotate: true,
+  // Drop every new primitive / imported mesh so its bottom sits on Y=0
+  // (the build plate) right after it's added. Persisted to localStorage so
+  // the preference survives a reload — defaults to TRUE because that's the
+  // intuitive "lay it on the table" behaviour first-time users expect.
+  autoDropNew: typeof window !== "undefined" && window.localStorage
+    ? window.localStorage.getItem("forge.autoDropNew") !== "false"
+    : true,
 
   // ---- measurement ----
   measureMode: false,
@@ -156,6 +163,12 @@ export const useScene = create((set, get) => ({
   },
   setFilament: (id) => set({ filamentId: id }),
   setAutoDropOnRotate: (v) => set({ autoDropOnRotate: v }),
+  setAutoDropNew: (v) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try { window.localStorage.setItem("forge.autoDropNew", v ? "true" : "false"); } catch (_) {}
+    }
+    set({ autoDropNew: !!v });
+  },
   setCommunityPrinters: (list) => set({ communityPrinters: list }),
   addCommunityPrinter: (p) =>
     set((s) => ({ communityPrinters: [p, ...s.communityPrinters] })),
@@ -168,7 +181,19 @@ export const useScene = create((set, get) => ({
 
   addPrimitive: (type, modifier = "positive") => {
     get().pushHistory();
-    const obj = buildPrimitive(type, modifier);
+    let obj = buildPrimitive(type, modifier);
+    // Honour the "auto-drop new parts to bed" preference (default ON).
+    // We compute the rotated local bbox and offset position.y so the bottom
+    // touches Y=0. Wrapped in try/catch so a missing geometry helper for
+    // exotic types can't break primitive creation.
+    if (get().autoDropNew) {
+      try {
+        const bb = computeRotatedBBox(obj);
+        if (isFinite(bb.min.y)) {
+          obj = { ...obj, position: [obj.position[0], -bb.min.y, obj.position[2]] };
+        }
+      } catch (_) { /* keep default position */ }
+    }
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
   },
@@ -278,9 +303,29 @@ export const useScene = create((set, get) => ({
   updateDims: (id, dimsPatch) => {
     get().pushHistory();
     set((s) => ({
-      objects: s.objects.map((o) =>
-        o.id === id ? { ...o, dims: { ...o.dims, ...dimsPatch } } : o
-      ),
+      objects: s.objects.map((o) => {
+        if (o.id !== id) return o;
+        // Compute the bottom-Y BEFORE the dim change so we can pin it after.
+        // This stops a part from "floating" when the user shrinks its Y dim:
+        // e.g. default 20mm cube sits at position Y=10 (bottom on bed). If the
+        // user types Y=6 into the Inspector, the cube now spans Y=7..13 (still
+        // centred at 10). We snap it back so bottom stays on the bed instead.
+        let bottomY = null;
+        try {
+          const bbBefore = computeRotatedBBox(o);
+          bottomY = (o.position?.[1] ?? 0) + bbBefore.min.y;
+        } catch (_) { /* ignore */ }
+        const next = { ...o, dims: { ...o.dims, ...dimsPatch } };
+        if (bottomY !== null && bottomY > -1e-3 && bottomY < 1e-3) {
+          // Was sitting on/near the bed — keep it there after the resize.
+          try {
+            const bbAfter = computeRotatedBBox(next);
+            const newCenterY = -bbAfter.min.y;  // bottom = 0 ⇒ center = -min.y
+            next.position = [next.position[0], newCenterY, next.position[2]];
+          } catch (_) { /* ignore */ }
+        }
+        return next;
+      }),
     }));
   },
 

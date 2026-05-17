@@ -92,6 +92,8 @@ function ProfileSection({ onSavePrinter }) {
   const setS = useSliceSettings((s) => s.set);
   const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const setAutoDropOnRotate = useScene((s) => s.setAutoDropOnRotate);
+  const autoDropNew = useScene((s) => s.autoDropNew);
+  const setAutoDropNew = useScene((s) => s.setAutoDropNew);
   const [recents, setRecents] = useState(() => recentPrinters.list());
   const [upvoting, setUpvoting] = useState(false);
 
@@ -269,6 +271,18 @@ function ProfileSection({ onSavePrinter }) {
         </select>
       </label>
       <p className="text-[10px] text-slate-400 leading-snug">{filament.notes}</p>
+
+      <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+        <input
+          data-testid="auto-drop-new-toggle"
+          type="checkbox"
+          checked={autoDropNew}
+          onChange={(e) => setAutoDropNew(e.target.checked)}
+          className="accent-orange-500"
+        />
+        Drop new parts to bed on add
+        <span className="text-slate-500 text-[10px]">(beginner-friendly)</span>
+      </label>
 
       <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
         <input
@@ -517,7 +531,17 @@ function Inspector() {
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField testid="dim-r" label="Radius" value={obj.dims.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
+            {/* Display & edit DIAMETER for less ambiguity ("a 3mm bolt needs
+                a 3.2mm hole" = diameter, never radius). The store still
+                holds radius, so we convert at the boundary. */}
+            <NumberField
+              testid="dim-d"
+              label={`Diameter${typeof obj.dims.r === "number" ? `  (r=${(obj.dims.r).toFixed(1)})` : ""}`}
+              value={(obj.dims.r || 0) * 2}
+              onChange={(v) => updateDims(obj.id, { r: Math.max(0.05, v / 2) })}
+              step={0.5}
+              min={0.1}
+            />
             {obj.type !== "sphere" && (
               <NumberField testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
             )}
@@ -528,8 +552,14 @@ function Inspector() {
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField testid="dim-r" label="Radius" value={obj.dims.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} />
-            <NumberField testid="dim-tube" label="Tube" value={obj.dims.tube} onChange={(v) => updateDims(obj.id, { tube: v })} step={0.2} />
+            <NumberField
+              testid="dim-d"
+              label={`Diameter${typeof obj.dims.r === "number" ? `  (r=${(obj.dims.r).toFixed(1)})` : ""}`}
+              value={(obj.dims.r || 0) * 2}
+              onChange={(v) => updateDims(obj.id, { r: Math.max(0.05, v / 2) })}
+              step={0.5}
+            />
+            <NumberField testid="dim-tube" label="Tube ⌀" value={(obj.dims.tube || 0) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.05, v / 2) })} step={0.2} />
           </div>
         </div>
       )}
