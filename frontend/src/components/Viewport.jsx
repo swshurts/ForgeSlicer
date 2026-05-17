@@ -3,7 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edges, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { useScene } from "../lib/store";
-import { buildGeometry } from "../lib/geometry";
+import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import ContextMenu from "./ContextMenu";
 
@@ -221,34 +221,37 @@ function PendingMarker({ pt }) {
   );
 }
 
-function BBoxOverlay() {
+// Pinned dimension chip — renders OUTSIDE the Canvas (as a plain DOM
+// element in Viewport) so it never overlaps the geometry the user is
+// editing. It reads the active selection straight from the store and
+// computes a rotated/scaled bbox on the fly.
+function BBoxChip() {
   const selectedId = useScene((s) => s.selectedId);
   const objects = useScene((s) => s.objects);
-  const { scene } = useThree();
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj || !obj.visible) return null;
-
-  let mesh = null;
-  scene.traverse((c) => {
-    if (c.isMesh && c.userData && c.userData.id === selectedId) mesh = c;
-  });
-  if (!mesh) return null;
-  const box = new THREE.Box3().setFromObject(mesh);
-  if (!isFinite(box.min.x)) return null;
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const top = new THREE.Vector3(
-    (box.min.x + box.max.x) / 2,
-    box.max.y + 6,
-    (box.min.z + box.max.z) / 2
-  );
+  let size = null;
+  try {
+    const bb = computeRotatedBBox(obj);
+    size = {
+      x: bb.max.x - bb.min.x,
+      y: bb.max.y - bb.min.y,
+      z: bb.max.z - bb.min.z,
+    };
+  } catch (e) {
+    return null;
+  }
+  if (!size || !isFinite(size.x)) return null;
   return (
-    <Html position={top} center zIndexRange={[40, 0]}>
-      <div className="px-2 py-1 bg-black/80 border border-orange-500/40 rounded text-[10px] font-mono text-orange-300 whitespace-nowrap pointer-events-none"
-        data-testid="bbox-overlay">
-        {size.x.toFixed(1)} × {size.z.toFixed(1)} × {size.y.toFixed(1)} mm
-      </div>
-    </Html>
+    <div
+      data-testid="bbox-overlay"
+      className="absolute bottom-3 left-3 z-10 px-2.5 py-1.5 bg-black/85 border border-orange-500/40 rounded text-[10px] font-mono text-orange-300 whitespace-nowrap pointer-events-none flex items-center gap-2"
+    >
+      <span className="text-slate-500">SIZE</span>
+      <span>{size.x.toFixed(1)} × {size.z.toFixed(1)} × {size.y.toFixed(1)} mm</span>
+      <span className="text-slate-600">·</span>
+      <span className="text-slate-400">{obj.name}</span>
+    </div>
   );
 }
 
@@ -461,7 +464,6 @@ export default function Viewport() {
         ))}
 
         {!measureMode && <SelectedTransform />}
-        {!measureMode && <BBoxOverlay />}
         <MeasurementsLayer />
         <CanvasBridge bridgeRef={bridgeRef} />
 
@@ -510,6 +512,7 @@ export default function Viewport() {
         </div>
       )}
       {ctxMenu && <ContextMenu position={ctxMenu} onClose={() => setCtxMenu(null)} />}
+      {!measureMode && <BBoxChip />}
     </div>
   );
 }
