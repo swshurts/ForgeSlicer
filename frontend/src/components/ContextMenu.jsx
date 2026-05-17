@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2 } from "lucide-react";
+import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine } from "lucide-react";
 import { useScene } from "../lib/store";
 import { evaluateScene } from "../lib/csg";
+import { computeRotatedBBox } from "../lib/geometry";
 
 // A small right-click context menu shown for the viewport AND outliner.
 // Positioned at the page coordinates passed via `position`, auto-closes on
@@ -13,6 +14,50 @@ export default function ContextMenu({ position, onClose }) {
   const ungroupSelected = useScene((s) => s.ungroupSelected);
   const removeSelected = useScene((s) => s.removeSelected);
   const duplicateSelected = useScene((s) => s.duplicateSelected);
+  const dropToBed = useScene((s) => s.dropToBed);
+
+  // Drop every part in the snapshot to the bed AS A UNIT — i.e. translate
+  // the whole batch by the same dy so any spatial relationships between
+  // members are preserved (a grouped assembly stays together).
+  const doDropToBed = () => {
+    restoreSelection();
+    const ids = snapshot.ids;
+    if (ids.length === 0) { onClose(); return; }
+    if (ids.length === 1) {
+      // Single part — use the existing dedicated action which also pushes
+      // history and respects the user's snap settings.
+      dropToBed(ids[0], true);
+      onClose();
+      return;
+    }
+    // Multi-part: compute world-min-Y across all selected and translate
+    // every member down by that amount.
+    try {
+      const st = useScene.getState();
+      let worldMinY = Infinity;
+      for (const id of ids) {
+        const o = st.objects.find((x) => x.id === id);
+        if (!o) continue;
+        try {
+          const bb = computeRotatedBBox(o);
+          const wy = (o.position?.[1] ?? 0) + bb.min.y;
+          if (wy < worldMinY) worldMinY = wy;
+        } catch (_) { /* skip non-bbox-able parts */ }
+      }
+      if (isFinite(worldMinY) && Math.abs(worldMinY) > 1e-3) {
+        st.pushHistory();
+        const dy = -worldMinY;
+        useScene.setState((s) => ({
+          objects: s.objects.map((o) =>
+            ids.includes(o.id)
+              ? { ...o, position: [o.position[0], o.position[1] + dy, o.position[2]] }
+              : o
+          ),
+        }));
+      }
+    } catch (_) { /* non-fatal */ }
+    onClose();
+  };
 
   // ---- Snapshot selection at mount ---------------------------------------
   // We DO NOT subscribe to the store's selectedIds here. The menu represents
@@ -136,6 +181,15 @@ export default function ContextMenu({ position, onClose }) {
       <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-800 mb-1">
         {count === 0 ? "Nothing selected" : count === 1 ? selectedObjs[0]?.name || "Selection" : `${count} selected`}
       </div>
+      <Item
+        icon={ArrowDownToLine}
+        label={count > 1 ? "Drop to bed (as unit)" : "Drop to bed"}
+        hint="↓"
+        testid="ctx-drop-bed-btn"
+        disabled={count === 0}
+        onClick={doDropToBed}
+      />
+      <div className="h-px bg-slate-800 my-1" />
       <Item
         icon={Layers}
         label={allInSameGroup ? "Already in a group" : "Group selected"}
