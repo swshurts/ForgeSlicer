@@ -35,6 +35,11 @@ export function ShareDialog({ open, onClose }) {
       const b64 = bytesToBase64(bytes);
       const thumb = getThumbnail();
       const remixOf = useScene.getState().remixOf;
+      // Serialise the full editable project so anyone hitting Remix gets the
+      // ORIGINAL primitives — including every negative cylinder — instead of
+      // the baked STL (which permanently loses the modifier tag). This is
+      // what makes "Remix" actually remixable.
+      const projectJson = JSON.stringify(useScene.getState().serialize());
       const created = await galleryApi.create({
         name: name || "Untitled",
         author: author || "Anonymous",
@@ -44,6 +49,7 @@ export function ShareDialog({ open, onClose }) {
         triangle_count: Math.floor(triangleCount),
         object_count: objects.length,
         remix_of: remixOf || undefined,
+        data: projectJson,
       });
       setDone(created);
     } catch (e) {

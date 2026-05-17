@@ -34,6 +34,11 @@ class GalleryItemCreate(BaseModel):
     triangle_count: int = 0
     object_count: int = 0
     remix_of: Optional[str] = None  # id of the parent gallery item, if this is a remix
+    # Editable project JSON (serialized scene). When present, Remix restores
+    # the original parts/modifiers/groups instead of importing a flat STL.
+    # Stored as a string so the front-end can JSON.parse on load and avoid
+    # arbitrary-shape coupling between Pydantic and the scene schema.
+    data: Optional[str] = None
 
 
 class GalleryItemMeta(BaseModel):
@@ -107,6 +112,9 @@ async def create_gallery_item(item: GalleryItemCreate):
         "downloads": 0,
         "remix_of": item.remix_of,
         "remix_count": 0,
+        # Persist the editable project JSON so a future Remix can restore
+        # every primitive with its negative/positive modifier and dimensions.
+        "data": item.data or None,
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
@@ -176,6 +184,20 @@ async def download_gallery_stl(item_id: str):
         media_type="model/stl",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}.stl"'},
     )
+
+
+@api_router.get("/gallery/{item_id}")
+async def get_gallery_item(item_id: str):
+    """Return the full gallery record (including editable `data` JSON) so the
+    workspace can restore the original parts list when a user clicks Remix —
+    not just the baked STL, which would lose all negative/positive tagging."""
+    doc = await db.gallery.find_one(
+        {"id": item_id},
+        {"_id": 0, "stl_base64": 0, "thumbnail_base64": 0},  # strip heavy blobs
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Gallery item not found")
+    return doc
 
 
 @api_router.delete("/gallery/{item_id}")

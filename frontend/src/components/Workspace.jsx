@@ -40,6 +40,7 @@ export default function Workspace() {
   const addRawObject = useScene((s) => s.addRawObject);
   const setProjectName = useScene((s) => s.setProjectName);
   const setRemixOf = useScene((s) => s.setRemixOf);
+  const loadProject = useScene((s) => s.loadProject);
 
   // Load a file handed off from the Landing page (one-shot, survives
   // StrictMode double-mount because takePendingImport() is idempotent — once
@@ -76,6 +77,51 @@ export default function Workspace() {
     if (!remixId) return;
     (async () => {
       try {
+        // Prefer the SAVED PROJECT JSON if the gallery record has one — it
+        // restores every original primitive with its positive/negative tag,
+        // colors, dimensions, transforms and groups. Falling back to the
+        // STL would lose all of that (the STL is the *baked* result, so any
+        // negative cylinders that carved the panel are now permanently
+        // melted into the mesh and can no longer be removed/moved/edited).
+        const meta = await fetch(`${API}/gallery/${remixId}`);
+        let projectLoaded = false;
+        if (meta.ok) {
+          const rec = await meta.json();
+          const rawData = rec?.data;
+          if (rawData) {
+            try {
+              const project = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+              if (project && Array.isArray(project.objects) && project.objects.length > 0) {
+                if (cancelled) return;
+                // Reconstitute typed arrays for any imported meshes.
+                project.objects = project.objects.map((o) => {
+                  if (o.geometry && Array.isArray(o.geometry.vertices)) {
+                    return {
+                      ...o,
+                      geometry: {
+                        vertices: new Float32Array(o.geometry.vertices),
+                        indices: o.geometry.indices ? new Uint32Array(o.geometry.indices) : null,
+                      },
+                    };
+                  }
+                  return o;
+                });
+                loadProject(project);
+                setProjectName(`Remix of ${project.projectName || rec.name || "Design"}`);
+                setRemixOf(remixId);
+                setSearchParams({}, { replace: true });
+                projectLoaded = true;
+              }
+            } catch (jsonErr) {
+              // Fall through to STL fallback below if the project JSON is malformed.
+              // eslint-disable-next-line no-console
+              console.warn("Remix project JSON malformed; falling back to STL:", jsonErr);
+            }
+          }
+        }
+        if (projectLoaded) return;
+        // STL fallback (older gallery entries saved before project JSON
+        // round-trip was wired through). Imports a single baked mesh.
         const res = await fetch(`${API}/gallery/${remixId}/download`);
         if (!res.ok) throw new Error("Could not fetch remix source");
         const blob = await res.blob();
@@ -87,7 +133,6 @@ export default function Workspace() {
         addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
         setProjectName(`Remix of ${mesh.name}`);
         setRemixOf(remixId);
-        // Clear the query param so a refresh doesn't re-import
         setSearchParams({}, { replace: true });
       } catch (e) {
         console.warn("Remix load failed:", e);
