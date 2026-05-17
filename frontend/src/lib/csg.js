@@ -49,16 +49,28 @@ function bakeNegativeScale(geom, obj) {
   return { geom: baked, positiveScale: [Math.abs(sx), Math.abs(sy), Math.abs(sz)] };
 }
 
-function makeBrush(obj) {
+function makeBrush(obj, opts = {}) {
   let geom = buildGeometry(obj);
   const { geom: prepped, positiveScale } = bakeNegativeScale(geom, obj);
   const mat = new THREE.MeshStandardMaterial();
   const b = new Brush(prepped, mat);
-  // Apply transform with the all-positive scale (mirroring is now baked
-  // into the vertex data, so the matrix is a regular rigid transform).
-  applyTransform(b, { ...obj, scale: positiveScale });
+  // Inflate negatives by a tiny isotropic factor before the subtract so
+  // their surfaces NEVER end up coplanar with the positive they carve
+  // (coplanar faces are the #1 source of non-manifold output in CSG engines
+  // — they produce hairline zero-thickness walls that slicers reject).
+  // 0.1% (i.e. ~0.02mm on a 20mm part, ~0.006mm on a 6mm panel) is plenty
+  // to disambiguate the boolean without visibly changing hole geometry.
+  const inflate = opts.inflate || 1;
+  const adjScale = [
+    positiveScale[0] * inflate,
+    positiveScale[1] * inflate,
+    positiveScale[2] * inflate,
+  ];
+  applyTransform(b, { ...obj, scale: adjScale });
   return b;
 }
+
+const NEG_INFLATE = 1.001;
 
 // Robust manual vertex welder. Builds an indexed mesh by hashing vertex
 // positions quantized to `tol` precision. This is more reliable than
@@ -296,7 +308,7 @@ export function evaluateScene(objects) {
 function subtractNegatives(acc, negatives, evaluator, mat) {
   let current = acc;
   for (const n of negatives) {
-    const nb = makeBrush(n);
+    const nb = makeBrush(n, { inflate: NEG_INFLATE });
     try {
       const res = evaluator.evaluate(current, nb, SUBTRACTION);
       if (res && res.geometry && isValidGeometry(res.geometry)) {
@@ -425,7 +437,10 @@ export function evaluateSceneByColor(objects) {
 export function combineTwo(a, b, op) {
   const evaluator = new Evaluator();
   const ba = makeBrush(a);
-  const bb = makeBrush(b);
+  // When the user explicitly subtracts B from A via the toolbar, inflate B
+  // slightly to avoid coplanar artifacts (same trick we use for scene-level
+  // negatives in evaluateScene).
+  const bb = makeBrush(b, op === "subtract" ? { inflate: NEG_INFLATE } : {});
   const operation = OP_MAP[op] || ADDITION;
   const r = evaluator.evaluate(ba, bb, operation);
   let baked = r.geometry.clone();
