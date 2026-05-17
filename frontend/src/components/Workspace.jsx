@@ -165,16 +165,17 @@ export default function Workspace() {
       }
       if (projectObjs && projectObjs.length > 0) {
         const newIds = [];
+        // If MULTIPLE parts are being recalled, skip the per-object auto-drop
+        // inside addRawObject — it would translate each member independently
+        // and shred the assembly's relative spacing. We then do ONE batched
+        // world-space drop below so the whole group rests as a unit.
+        const multipart = projectObjs.length > 1;
         for (const o of projectObjs) {
           const id = addRawObject({
             ...o,
-            // Re-stamp id from addRawObject so it's unique in the host scene.
             id: undefined,
-            // Prefer the per-part modifier saved with the object so mixed
-            // assemblies (positive bracket + negative cutouts) round-trip
-            // correctly. Only fall back to the payload-level modifier when
-            // the saved part didn't record one.
             modifier: o.modifier || payload.modifier || "positive",
+            __skipAutoDrop: multipart,
           });
           if (id) { added += 1; newIds.push(id); }
         }

@@ -200,7 +200,7 @@ export const useScene = create((set, get) => ({
 
   addImportedMesh: (name, vertices, indices = null, originalBbox = null) => {
     get().pushHistory();
-    const obj = {
+    let obj = {
       id: newId("mesh"),
       name: name || "Imported Mesh",
       type: "imported",
@@ -215,13 +215,39 @@ export const useScene = create((set, get) => ({
       originalBbox: originalBbox || undefined, // {x,y,z} in mm at scale 1
       geometry: { vertices, indices },
     };
+    // Honour the "auto-drop new parts" preference — typical STL imports
+    // come centred on the origin, which puts half the geometry under the
+    // build plate. Drop so the lowest point sits on Y=0.
+    if (get().autoDropNew) {
+      try {
+        const bb = computeRotatedBBox(obj);
+        if (isFinite(bb.min.y)) {
+          obj = { ...obj, position: [obj.position[0], -bb.min.y, obj.position[2]] };
+        }
+      } catch (_) { /* keep at origin */ }
+    }
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
   },
 
   addRawObject: (obj) => {
     get().pushHistory();
-    const withId = { ...obj, id: obj.id || newId(obj.type || "mesh") };
+    let withId = { ...obj, id: obj.id || newId(obj.type || "mesh") };
+    // Auto-drop applies here too so single-part component recall plants
+    // on the bed. Multi-part assembly recall is handled separately in
+    // Workspace.jsx (which translates the whole batch by a single dy so
+    // members keep their relative positions).
+    if (get().autoDropNew && !obj.__skipAutoDrop) {
+      try {
+        const bb = computeRotatedBBox(withId);
+        if (isFinite(bb.min.y)) {
+          const wy = (withId.position?.[1] ?? 0) + bb.min.y;
+          if (Math.abs(wy) > 1e-3) {
+            withId = { ...withId, position: [withId.position[0], withId.position[1] - wy, withId.position[2]] };
+          }
+        }
+      } catch (_) { /* keep input position */ }
+    }
     set((s) => ({ objects: [...s.objects, withId], selectedId: withId.id, selectedIds: [withId.id] }));
     return withId.id;
   },

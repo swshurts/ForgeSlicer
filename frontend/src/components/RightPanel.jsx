@@ -4,6 +4,7 @@ import { useSliceSettings } from "../lib/store";
 import { getPrinter, getFilament } from "../lib/presets";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { evaluateSceneStatsAsync } from "../lib/workerClient";
+import { computeRotatedBBox } from "../lib/geometry";
 import { printersApi } from "../lib/api";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
@@ -506,6 +507,31 @@ function Inspector() {
           <span className="col-span-2 text-slate-200 text-right truncate">
             {obj.position[0].toFixed(1)}, {obj.position[1].toFixed(1)}, {obj.position[2].toFixed(1)}
           </span>
+          {(() => {
+            // Show the bottom-Y of the actual rotated/scaled bbox so the user
+            // can see at a glance whether the part is sitting on the bed
+            // (bottom=0) or floating. "Pos" is the CENTER which trips up
+            // first-time CAD users who think Y means "above the table".
+            let bottomY = null;
+            try {
+              const bb = computeRotatedBBox(obj);
+              if (isFinite(bb.min.y)) bottomY = (obj.position?.[1] ?? 0) + bb.min.y;
+            } catch (_) { /* ignore */ }
+            if (bottomY === null) return null;
+            const onBed = Math.abs(bottomY) < 0.05;
+            return (
+              <>
+                <span className="text-slate-500">Bottom Y</span>
+                <span
+                  data-testid="bottom-y"
+                  className={`col-span-2 text-right truncate ${onBed ? "text-green-400" : "text-orange-300"}`}
+                  title={onBed ? "Part is sitting on the bed" : "Part is floating or below the bed"}
+                >
+                  {bottomY.toFixed(2)} mm {onBed ? "✓ on bed" : ""}
+                </span>
+              </>
+            );
+          })()}
           <span className="text-slate-500">Rot</span>
           <span className="col-span-2 text-slate-200 text-right truncate">
             {obj.rotation[0].toFixed(0)}°, {obj.rotation[1].toFixed(0)}°, {obj.rotation[2].toFixed(0)}°
