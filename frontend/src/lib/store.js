@@ -478,6 +478,19 @@ export const useScene = create((set, get) => ({
     if (ids.length === 0) return;
     get().pushHistory();
     const axisIdx = { x: 0, y: 1, z: 2 }[mirrorAxis] ?? -1;
+    // If ANY source object is in a group, the whole duplication batch gets a
+    // SINGLE fresh groupId so the copies form their OWN assembly (rather than
+    // joining the original assembly and bloating it on every duplicate). When
+    // none of the sources are grouped, leave groupId undefined so copies are
+    // top-level. The new group name is the source group name + " copy" so
+    // the outliner header reads sensibly.
+    const sourceObjs = ids.map((id) => s.objects.find((o) => o.id === id)).filter(Boolean);
+    const anyGrouped = sourceObjs.some((o) => o.groupId);
+    const newGroupId = anyGrouped ? newId("group") : null;
+    const seedGroupName = sourceObjs.find((o) => o.groupName)?.groupName;
+    const newGroupName = anyGrouped
+      ? `${seedGroupName || "Assembly"} ${mirrorAxis ? `(mirror ${mirrorAxis.toUpperCase()})` : "copy"}`
+      : undefined;
     set((st) => {
       const copies = [];
       for (const id of ids) {
@@ -496,6 +509,10 @@ export const useScene = create((set, get) => ({
             vertices: src.geometry.vertices,
             indices: src.geometry.indices,
           } : undefined,
+          // Override the spread-inherited groupId: copies form their own new
+          // assembly (or none, if sources weren't grouped).
+          groupId: newGroupId || undefined,
+          groupName: newGroupName,
         };
         if (axisIdx >= 0) {
           // Mirror about the origin plane of that axis. Negative scale flips
