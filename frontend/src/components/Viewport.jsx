@@ -425,7 +425,14 @@ export default function Viewport() {
         shadows
         camera={{ position: [0, 160, 280], fov: 45, near: 0.1, far: 5000 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
-        onPointerMissed={() => { if (!measureMode && !marquee && !shiftHeld) clearSelection(); }}
+        onPointerMissed={(e) => {
+          if (measureMode || marquee || shiftHeld) return;
+          // Right-click is reserved for the context menu — DON'T wipe the
+          // selection on its pointerup, otherwise the menu's actions
+          // (Group, Flatten, …) read an empty selection set.
+          if (e && (e.button === 2 || e.which === 3)) return;
+          clearSelection();
+        }}
         style={{ background: "#1E293B" }}
       >
         <color attach="background" args={["#1E293B"]} />

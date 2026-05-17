@@ -1,7 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2 } from "lucide-react";
 import { useScene } from "../lib/store";
-import { evaluateSceneStatsAsync, exportSTLBytesAsync } from "../lib/workerClient";
 import { evaluateScene } from "../lib/csg";
 
 // A small right-click context menu shown for the viewport AND outliner.
@@ -10,20 +9,41 @@ import { evaluateScene } from "../lib/csg";
 // the current selection so users get the right affordances at a glance.
 export default function ContextMenu({ position, onClose }) {
   const ref = useRef(null);
-  const selectedIds = useScene((s) => s.selectedIds);
-  const selectedId = useScene((s) => s.selectedId);
-  const objects = useScene((s) => s.objects);
   const groupSelected = useScene((s) => s.groupSelected);
   const ungroupSelected = useScene((s) => s.ungroupSelected);
   const removeSelected = useScene((s) => s.removeSelected);
   const duplicateSelected = useScene((s) => s.duplicateSelected);
-  const addImportedMesh = useScene((s) => s.addImportedMesh);
-  const ids = selectedIds.length ? selectedIds : (selectedId ? [selectedId] : []);
-  const count = ids.length;
-  const selectedObjs = ids.map((id) => objects.find((o) => o.id === id)).filter(Boolean);
+
+  // ---- Snapshot selection at mount ---------------------------------------
+  // We DO NOT subscribe to the store's selectedIds here. The menu represents
+  // a frozen moment in time (the right-click). Any transient external
+  // selection change (e.g. an onPointerMissed event from the canvas right
+  // before the menu opens) MUST NOT toggle the menu items to disabled —
+  // that was the source of the "Group selected does nothing" bug.
+  const [snapshot] = useState(() => {
+    const s = useScene.getState();
+    const ids = (s.selectedIds && s.selectedIds.length)
+      ? s.selectedIds.slice()
+      : (s.selectedId ? [s.selectedId] : []);
+    const objs = ids.map((id) => s.objects.find((o) => o.id === id)).filter(Boolean);
+    return { ids, primary: s.selectedId, objs };
+  });
+  const count = snapshot.ids.length;
+  const selectedObjs = snapshot.objs;
   const someGrouped = selectedObjs.some((o) => o.groupId);
   const allInSameGroup = selectedObjs.length > 0 &&
     selectedObjs.every((o) => o.groupId === selectedObjs[0].groupId && o.groupId);
+
+  // Re-assert the captured selection into the store immediately before any
+  // mutating action runs, so reducers reading get().selectedIds see the
+  // intended set even after a transient clear.
+  const restoreSelection = () => {
+    if (snapshot.ids.length === 0) return;
+    useScene.setState({
+      selectedIds: snapshot.ids.slice(),
+      selectedId: snapshot.primary || snapshot.ids[snapshot.ids.length - 1],
+    });
+  };
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -34,35 +54,51 @@ export default function ContextMenu({ position, onClose }) {
   }, [onClose]);
 
   const doFlatten = async () => {
-    if (count === 0) return;
+    restoreSelection();
+    const targetIds = snapshot.ids;
+    if (targetIds.length === 0) { onClose(); return; }
     try {
-      // Run CSG on JUST the selection — same logic the export pipeline uses,
-      // but scoped to selected objects. Returns one BufferGeometry that bakes
-      // any positive/negative interactions inside the selection.
-      const subset = selectedObjs;
+      // Resolve fresh objects from current store (post restore).
+      const subset = targetIds
+        .map((id) => useScene.getState().objects.find((o) => o.id === id))
+        .filter(Boolean);
+      if (subset.length === 0) { onClose(); return; }
       const r = evaluateScene(subset);
       if (r.empty || !r.geometry.attributes || !r.geometry.attributes.position) {
         alert("Could not flatten: the merged selection is empty.");
+        onClose();
         return;
       }
       const pos = r.geometry.attributes.position.array;
       const verts = pos instanceof Float32Array ? pos.slice() : new Float32Array(pos);
       const idx = r.geometry.index ? new Uint32Array(r.geometry.index.array) : null;
-      // Capture bbox so the resulting imported mesh has correct base size.
       const bb = r.geometry.boundingBox || (() => { r.geometry.computeBoundingBox(); return r.geometry.boundingBox; })();
-      // Snapshot a representative name + modifier from the selection.
-      const name = selectedObjs[0].groupName || (selectedObjs[0].name + " (flattened)");
-      const newId = addImportedMesh(name, verts, idx, {
-        x: bb.max.x - bb.min.x,
-        y: bb.max.y - bb.min.y,
-        z: bb.max.z - bb.min.z,
-      });
-      // Remove originals (after addImportedMesh so its history push wins).
-      const ridsToRemove = selectedObjs.map((o) => o.id);
+      const name = subset[0].groupName || (subset[0].name + " (flattened)");
+      // Build the new imported mesh object inline (mirrors store.addImportedMesh)
+      // so we can do EVERYTHING in a single atomic setState — no race between
+      // an add + filter pair.
+      const baked = {
+        id: `mesh-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+        name,
+        type: "imported",
+        modifier: "positive",
+        visible: true,
+        locked: false,
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        dims: {},
+        colorIndex: 0,
+        originalBbox: { x: bb.max.x - bb.min.x, y: bb.max.y - bb.min.y, z: bb.max.z - bb.min.z },
+        geometry: { vertices: verts, indices: idx },
+      };
+      // Push history BEFORE mutating so undo restores both the originals and
+      // wipes the baked mesh.
+      useScene.getState().pushHistory();
       useScene.setState((s) => ({
-        objects: s.objects.filter((o) => !ridsToRemove.includes(o.id)),
-        selectedId: newId,
-        selectedIds: [newId],
+        objects: [...s.objects.filter((o) => !targetIds.includes(o.id)), baked],
+        selectedId: baked.id,
+        selectedIds: [baked.id],
       }));
     } catch (e) {
       alert("Flatten failed: " + (e.message || e));
@@ -105,14 +141,14 @@ export default function ContextMenu({ position, onClose }) {
         label={allInSameGroup ? "Already in a group" : "Group selected"}
         testid="ctx-group-btn"
         disabled={count < 2 || allInSameGroup}
-        onClick={() => { groupSelected("Assembly"); onClose(); }}
+        onClick={() => { restoreSelection(); groupSelected("Assembly"); onClose(); }}
       />
       <Item
         icon={SquareIcon}
         label="Ungroup"
         testid="ctx-ungroup-btn"
         disabled={!someGrouped}
-        onClick={() => { ungroupSelected(); onClose(); }}
+        onClick={() => { restoreSelection(); ungroupSelected(); onClose(); }}
       />
       <Item
         icon={GitMerge}
@@ -128,28 +164,28 @@ export default function ContextMenu({ position, onClose }) {
         label="Duplicate"
         testid="ctx-duplicate-btn"
         disabled={count === 0}
-        onClick={() => { duplicateSelected({}); onClose(); }}
+        onClick={() => { restoreSelection(); duplicateSelected({}); onClose(); }}
       />
       <Item
         icon={FlipHorizontal}
         label="Duplicate + Mirror X"
         testid="ctx-mirror-x-btn"
         disabled={count === 0}
-        onClick={() => { duplicateSelected({ mirrorAxis: "x" }); onClose(); }}
+        onClick={() => { restoreSelection(); duplicateSelected({ mirrorAxis: "x" }); onClose(); }}
       />
       <Item
         icon={FlipVertical}
         label="Duplicate + Mirror Y"
         testid="ctx-mirror-y-btn"
         disabled={count === 0}
-        onClick={() => { duplicateSelected({ mirrorAxis: "y" }); onClose(); }}
+        onClick={() => { restoreSelection(); duplicateSelected({ mirrorAxis: "y" }); onClose(); }}
       />
       <Item
         icon={FlipHorizontal2}
         label="Duplicate + Mirror Z"
         testid="ctx-mirror-z-btn"
         disabled={count === 0}
-        onClick={() => { duplicateSelected({ mirrorAxis: "z" }); onClose(); }}
+        onClick={() => { restoreSelection(); duplicateSelected({ mirrorAxis: "z" }); onClose(); }}
       />
       <div className="h-px bg-slate-800 my-1" />
       <Item
@@ -159,7 +195,7 @@ export default function ContextMenu({ position, onClose }) {
         testid="ctx-delete-btn"
         disabled={count === 0}
         danger
-        onClick={() => { removeSelected(); onClose(); }}
+        onClick={() => { restoreSelection(); removeSelected(); onClose(); }}
       />
     </div>
   );
