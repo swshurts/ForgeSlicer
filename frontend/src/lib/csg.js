@@ -54,14 +54,11 @@ function makeBrush(obj, opts = {}) {
   const { geom: prepped, positiveScale } = bakeNegativeScale(geom, obj);
   const mat = new THREE.MeshStandardMaterial();
   const b = new Brush(prepped, mat);
-  // Inflate negatives by a tiny isotropic factor before the subtract so
-  // their surfaces NEVER end up coplanar with the positive they carve
-  // (coplanar faces are the #1 source of non-manifold output in CSG engines
-  // — they produce hairline zero-thickness walls that slicers reject).
-  // 0.1% (i.e. ~0.02mm on a 20mm part, ~0.006mm on a 6mm panel) is plenty
-  // to disambiguate the boolean without visibly changing hole geometry.
+  // Optional epsilon inflate for negatives, used by subtract callers to
+  // avoid coplanar artifacts. Kept at 1.0 unless explicitly requested so it
+  // doesn't change export geometry for non-subtract codepaths.
   const inflate = opts.inflate || 1;
-  const adjScale = [
+  const adjScale = inflate === 1 ? positiveScale : [
     positiveScale[0] * inflate,
     positiveScale[1] * inflate,
     positiveScale[2] * inflate,
@@ -70,7 +67,7 @@ function makeBrush(obj, opts = {}) {
   return b;
 }
 
-const NEG_INFLATE = 1.001;
+const NEG_INFLATE = 1.0;
 
 // Robust manual vertex welder. Builds an indexed mesh by hashing vertex
 // positions quantized to `tol` precision. This is more reliable than
