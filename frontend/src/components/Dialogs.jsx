@@ -437,18 +437,28 @@ export function SaveComponentDialog({ open, onClose }) {
   const hasSelection = selectedIds && selectedIds.length > 0;
   const canScopeSelection = hasSelection && selectedIds.length < objects.length;
   const [saveSelectionOnly, setSaveSelectionOnly] = useState(canScopeSelection);
-  const effectiveObjects = React.useMemo(
+  // Default the component-modifier flag to whatever the user's scope is
+  // mostly made of — saves a click when packaging a "negative screw hole".
+  const scopeObjects = React.useMemo(
     () => (saveSelectionOnly ? objects.filter((o) => selectedIds.includes(o.id)) : objects),
     [objects, selectedIds, saveSelectionOnly],
   );
-  // Default the component-modifier flag to whatever the user's scope is
-  // mostly made of — saves a click when packaging a "negative screw hole".
   const defaultModifier = React.useMemo(() => {
-    if (!effectiveObjects.length) return "positive";
-    const neg = effectiveObjects.filter((o) => o.modifier === "negative").length;
-    return neg > effectiveObjects.length / 2 ? "negative" : "positive";
-  }, [effectiveObjects]);
+    if (!scopeObjects.length) return "positive";
+    const neg = scopeObjects.filter((o) => o.modifier === "negative").length;
+    return neg > scopeObjects.length / 2 ? "negative" : "positive";
+  }, [scopeObjects]);
   const [modifier, setModifier] = useState(defaultModifier);
+  const [matchModifier, setMatchModifier] = useState(true);
+  // When the user picks NEGATIVE / POSITIVE we strip the scope down to ONLY
+  // those parts so re-adding the component doesn't drag along the host plate
+  // or unrelated geometry. The "Include all parts" checkbox below lets them
+  // override (e.g. when saving a positive bracket with built-in negative
+  // mounting cutouts).
+  const effectiveObjects = React.useMemo(() => {
+    if (!matchModifier) return scopeObjects;
+    return scopeObjects.filter((o) => (o.modifier || "positive") === modifier);
+  }, [scopeObjects, matchModifier, modifier]);
   const [category, setCategory] = useState("misc");
   const [tags, setTags] = useState("");
   const [busy, setBusy] = useState(false);
@@ -605,6 +615,26 @@ export function SaveComponentDialog({ open, onClose }) {
                   <MinusSquare size={13} /> Negative
                 </button>
               </div>
+              <label className="mt-2 flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+                <input
+                  data-testid="component-include-all"
+                  type="checkbox"
+                  checked={!matchModifier}
+                  onChange={(e) => setMatchModifier(!e.target.checked)}
+                  className="accent-orange-500"
+                />
+                Include parts of the opposite modifier
+                <span className="text-slate-500">(e.g. a positive bracket with built-in negative cutouts)</span>
+              </label>
+              <div data-testid="component-scope-summary" className="mt-2 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-[11px] font-mono text-slate-400 flex items-center gap-2">
+                <Library size={12} className="text-orange-400" />
+                <span>Saving</span>
+                <span className="text-white font-semibold">{effectiveObjects.length}</span>
+                <span>{effectiveObjects.length === 1 ? "part" : "parts"}</span>
+                {effectiveObjects.length !== scopeObjects.length && (
+                  <span className="text-slate-500">· {scopeObjects.length - effectiveObjects.length} skipped (not {modifier})</span>
+                )}
+              </div>
             </div>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Tags (comma-separated)</span>
@@ -618,7 +648,7 @@ export function SaveComponentDialog({ open, onClose }) {
             <button
               data-testid="component-save-btn"
               onClick={handleSave}
-              disabled={busy || objects.length === 0}
+              disabled={busy || effectiveObjects.length === 0}
               className="h-10 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 text-white font-semibold rounded flex items-center justify-center gap-2 uppercase tracking-wider text-xs"
             >
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Library size={16} />}
