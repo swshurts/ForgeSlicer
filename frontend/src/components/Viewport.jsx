@@ -375,7 +375,20 @@ export default function Viewport() {
       if (inside) hits.push(c.userData.id);
     });
     if (!additive) clearSelection();
-    for (const id of hits) selectObject(id, "add");
+    // Expand any group hits to include all sibling members, so dragging a
+    // box around a grouped assembly grabs the whole thing (matches the
+    // "click any member selects the group" behaviour in selectObject).
+    const objects = useScene.getState().objects;
+    const expanded = new Set();
+    for (const id of hits) {
+      const o = objects.find((x) => x.id === id);
+      if (o && o.groupId) {
+        objects.filter((x) => x.groupId === o.groupId).forEach((m) => expanded.add(m.id));
+      } else {
+        expanded.add(id);
+      }
+    }
+    for (const id of expanded) selectObject(id, "add");
   };
 
   const onMarqueeDown = (e) => {

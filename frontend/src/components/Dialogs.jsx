@@ -513,7 +513,22 @@ export function SaveComponentDialog({ open, onClose }) {
       });
       setDone(created);
     } catch (e) {
-      setError(e?.response?.data?.detail || e.message || String(e));
+      // Surface server status + URL so 404 / 413 / 500 mysteries are easy to
+      // diagnose (axios hides them behind "Request failed with status code N"
+      // by default).
+      const resp = e?.response;
+      let msg = resp?.data?.detail || resp?.data || e.message || String(e);
+      if (resp) {
+        const u = resp.config?.url || "";
+        msg = `${msg} (HTTP ${resp.status}${u ? " · " + u : ""})`;
+      }
+      try {
+        const approx = (stlB64 ? stlB64.length : 0) + (captureThumb()?.length || 0);
+        if (approx > 8 * 1024 * 1024) {
+          msg += ` — payload is ~${(approx / (1024 * 1024)).toFixed(1)} MB; try checking 'Save selected only' or reducing mesh complexity.`;
+        }
+      } catch (_) {}
+      setError(typeof msg === "string" ? msg : JSON.stringify(msg));
     } finally { setBusy(false); }
   };
 
