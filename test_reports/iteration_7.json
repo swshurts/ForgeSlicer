@@ -1,0 +1,43 @@
+{
+  "summary": "Tested ForgeSlicer Voice Command API + frontend Voice button presence + Drop-to-bed on component recall. Backend: 13/13 pytest cases passed including all 9 voice transcripts (cube w/ dims, translate, rotate Y, boolean subtract, delete, export STL, save_component dialog, nonsense->unknown, empty->400) and regression GETs for /api/gallery, /api/components, /api/printers, /api/. Frontend: Voice button renders in TopToolbar with data-testid='voice-btn', text 'Voice', enabled, not disabled in Chromium (Web Speech API shim verified path). BUG FOUND: Drop-to-bed on component recall does NOT actually drop the part onto the bed. A fresh cube spawns at Pos (0, 10, 0) (bottom = Y=0, correctly on bed). After saving that cube as a component and re-adding via /gallery → Components tab → 'Add to Scene', the recalled cube lands at Pos (0, 20, 0) with bbox 20x20x20 — i.e. its bottom is at Y=10, FLOATING 10mm above the bed. Expected Pos.y = 10 (center.y = h/2 so bottom rests at Y=0).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Component recall via Gallery -> Components -> 'Add to Scene'",
+        "issue": "Drop-to-bed logic in Workspace.jsx (lines 135-153) does not land the recalled part on the bed. Observed: recalled cube ended at Pos (0, 20, 0) with dims 20x20x20 (bottom at Y=10, 10mm above bed). A freshly-added cube via add-cube-positive-btn correctly spawns at Pos (0, 10, 0) (bottom at Y=0). Likely root causes (in order of likelihood): (1) the project_json saved by save-component-btn serializes the cube with a transformed/offset position so when restored, position[1] effectively doubles (default 10 + addRawObject auto-elevation 10 = 20); (2) computeRotatedBBox(o) may be returning local-space (origin-centered) bbox so minY = -h/2 = -10, then `o.position[1] - minY` = 20 - (-10) = 30 — but observed is 20, suggesting drop-to-bed early-returned (Math.abs(minY) <= 1e-3) which means minY ≈ 0 in the bbox calc i.e. it sees the part as already on the bed when it is not; (3) computeRotatedBBox is called BEFORE the addRawObject's position has been re-elevated by addRawObject itself, so the bbox is computed against the stored-not-final position. Net effect: end-users get parts hanging 10mm above the bed when recalling a component.",
+        "affected_selectors": ["[data-testid=\"bbox-overlay\"]", "[data-testid=\"inspector\"]"],
+        "priority": "HIGH"
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_voice_command.py",
+    "/app/test_reports/pytest/voice_results.xml"
+  ],
+  "action_items": [
+    "Fix drop-to-bed on component recall (Workspace.jsx lines 135-153). Suggested fix: instead of relying on computeRotatedBBox(o) at the moment of addRawObject (where stored position may not yet have been finalized), re-read each newly-added object from useScene.getState().objects AFTER the loop completes, compute world-space minY using each obj's CURRENT position + rotated-bbox extent, then translate the group by -minY (or +(0 - minY)) so the group's lowest point lands at Y=0. Alternatively, call dropToBed(id, false) on the first newId and translate the rest by the same delta so the assembly maintains its relative offsets. Add an automated regression: spawn cube (pos.y=10), save component, recall, assert recalled obj's pos.y == 10 (or its bbox.minY ≈ 0).",
+    "Optional: expose window.useScene in dev/test builds (or a __forgeslicer_state hook) so future E2E can read scene state without depending solely on Inspector text parsing — this would have made this RCA much faster."
+  ],
+  "critical_code_review_comments": [
+    "server.py — voice endpoint correctly strips ```json fences, falls back to action='unknown' for malformed JSON, validates EMERGENT_LLM_KEY, returns 400 on empty transcript, returns 500 only on unexpected exceptions. Pydantic model VoiceCommandResponse enforces shape. Good defensive design.",
+    "voiceCommands.js executeCommand — switch is exhaustive across the documented schema. Boolean op pulls a/b from last two objects when no selection; this is risky UX (silent picking of objects user didn't intend). Consider requiring an explicit 2-object selection before invoking boolean.",
+    "VoiceButton.jsx — has graceful fallback when SpeechRecognition is missing (disabled button with title hint). 6-second feedback auto-dismiss is reasonable.",
+    "Workspace.jsx drop-to-bed block (lines 135-153) — has the described bug, and additionally swallows exceptions silently (`catch (_) { /* ignore */ }`) which made this hard to diagnose. Add a console.warn so future regressions surface in DevTools."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_voice_command.py (new test file — 13 pytest cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13)",
+    "frontend": "67% — voice button renders correctly; voice command schema validated end-to-end via backend; drop-to-bed on component recall is BROKEN (recalled cube floats 10mm above bed)"
+  },
+  "test_credentials": "n/a",
+  "seed_data_creation": "Created one TEST_DropBed_<timestamp> component in db.components during the UI flow test. Safe to leave; can be cleaned via DELETE /api/components/<id> if desired.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend voice command endpoint is solid (100% pass). The frontend regression to retest after main agent fixes drop-to-bed: (1) /workspace add a cube via [data-testid=add-cube-positive-btn] — confirm Inspector Pos shows '0.0, 10.0, 0.0'. (2) Click [data-testid=save-component-btn], fill [data-testid=component-name] with TEST_<unique>, click 'Publish to Library'. (3) Navigate to /gallery, click [data-testid=gallery-tab-components], find the TEST_ card, click its 'Add to Scene' button. (4) After landing back at /workspace verify Inspector Pos for the recalled cube shows '0.0, 10.0, 0.0' (bottom on bed), NOT 20.0. Use page.evaluate on [data-testid=inspector] text and regex /Pos\\s+([-\\d.]+),\\s*([-\\d.]+),\\s*([-\\d.]+)/.",
+  "rca of the issue": "Recall flow path (Workspace.jsx line 121-153): when payload.project_json is present and parses, each saved object is re-added via addRawObject({...o, id: undefined, modifier}). The new ids are collected, then for each new obj computeRotatedBBox(o) is called against o (the source-loop element) NOT the actual stored scene object that addRawObject just inserted. This means minY is computed from stale data. Empirically, a saved cube originally at pos.y=10 ends up at scene pos.y=20 after recall, then the bbox calc against the stale `o` returns minY ≈ 0 (since `o.position[1] - h/2` was 10-10=0 in the saved view), drop-to-bed early-returns (Math.abs(minY) <= 1e-3), and the actual floating cube is never translated down. Fix: after the for-loop, re-read st.objects, filter by newIds, run computeRotatedBBox on those LIVE objects (which now have whatever position addRawObject finalized), THEN translate down by minY."
+}

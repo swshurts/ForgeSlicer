@@ -410,6 +410,125 @@ async def delete_component(cid: str):
     return {"deleted": True, "id": cid}
 
 
+# ---------- Voice Command Parser ----------
+# Browser does speech-to-text via Web Speech API; we receive the transcript
+# here and use GPT-5.2 to convert it into a strict JSON command the frontend
+# can execute. Keeping the LLM call server-side lets us keep the API key
+# secret and reuse the prompt across UI surfaces.
+from emergentintegrations.llm.chat import LlmChat, UserMessage  # noqa: E402
+import json as _json                                              # noqa: E402
+
+VOICE_SYSTEM_PROMPT = """You are ForgeSlicer's voice command parser. The user speaks
+CAD commands; you MUST respond with ONLY a JSON object (no prose, no markdown
+fences) describing the action. If the user says something you cannot map to a
+valid command, return {"action":"unknown","speech":"<echo of input>"}.
+
+ALLOWED ACTIONS and their schemas:
+
+1. Add a primitive:
+   {"action":"add","type":"cube"|"sphere"|"cylinder"|"cone"|"torus"|"circle"|"square2d"|"triangle"|"polygon",
+    "modifier":"positive"|"negative",
+    "dims":{ ... see per-type below ... }}
+   dims by type (all values in millimetres unless noted):
+     cube     : {x,y,z}
+     sphere   : {r}
+     cylinder : {r,h}
+     cone     : {r,h}
+     torus    : {r,tube}
+     circle   : {r,h}            # h = thin wafer height
+     square2d : {side,h}
+     triangle : {r,h}
+     polygon  : {r,sides,h}
+
+2. Transform the current selection:
+   {"action":"translate","delta":{x,y,z}}      # mm, additive
+   {"action":"rotate","delta":{x,y,z}}          # degrees, additive Euler
+   {"action":"scale","factor":{x,y,z}}          # multiplicative ratio
+   {"action":"resize","dims":{x?,y?,z?,r?,h?,side?,tube?,sides?}}  # set primitive dims
+   {"action":"position","pos":{x,y,z}}          # absolute mm
+   {"action":"drop"}                            # drop selection to bed (Y=0)
+
+3. Selection / scene management:
+   {"action":"delete"}                  # delete selection
+   {"action":"duplicate","mirror":null|"x"|"y"|"z"}
+   {"action":"group"}                   # group current multi-selection
+   {"action":"ungroup"}
+   {"action":"select_all"}
+   {"action":"clear_selection"}
+   {"action":"undo"}
+   {"action":"redo"}
+
+4. Boolean ops on current selection (need 2+ objects):
+   {"action":"boolean","op":"union"|"subtract"|"intersect"}
+
+5. Mode switch:
+   {"action":"mode","mode":"translate"|"rotate"|"scale"}
+
+6. Open named dialog:
+   {"action":"open","dialog":"save_component"|"share_gallery"|"slicer"|"position"|"rotation"|"size"}
+
+7. Export:
+   {"action":"export","format":"stl"|"3mf"|"gcode"|"project"}
+
+RULES:
+- Output MUST be valid JSON, no markdown.
+- Omit keys you cannot determine instead of guessing.
+- Default modifier is "positive" unless the user says "hole", "cutout", "subtract", "negative".
+- If the user gives X×Y×Z but says "cylinder" infer cylinder with r = max(x,y)/2 and h = z.
+- "make it 50mm wide" => resize with x=50 (when current selection exists).
+- Always prefer the schema; if in doubt, use action="unknown".
+"""
+
+
+class VoiceCommandRequest(BaseModel):
+    transcript: str
+    model: Optional[str] = "gpt-5.2"
+
+
+class VoiceCommandResponse(BaseModel):
+    action: str
+    raw: dict
+    transcript: str
+
+
+@api_router.post("/voice/command", response_model=VoiceCommandResponse)
+async def parse_voice_command(req: VoiceCommandRequest):
+    """Parse a free-form voice transcript into a structured CAD command."""
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="EMERGENT_LLM_KEY not configured")
+    text = (req.transcript or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty transcript")
+    try:
+        chat = LlmChat(
+            api_key=key,
+            session_id=f"voice-{uuid.uuid4().hex[:8]}",
+            system_message=VOICE_SYSTEM_PROMPT,
+        ).with_model("openai", req.model or "gpt-5.2")
+        response = await chat.send_message(UserMessage(text=text))
+        # Strip any accidental code fences
+        body = (response or "").strip()
+        if body.startswith("```"):
+            # Remove first fence line + optional language hint, then trailing fence
+            body = body.split("\n", 1)[1] if "\n" in body else body
+            if body.endswith("```"):
+                body = body[: -3]
+            body = body.strip()
+        try:
+            data = _json.loads(body)
+        except Exception:
+            data = {"action": "unknown", "speech": text, "_raw": body[:400]}
+        if not isinstance(data, dict) or "action" not in data:
+            data = {"action": "unknown", "speech": text}
+        return VoiceCommandResponse(action=data["action"], raw=data, transcript=text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Voice command parse failed")
+        raise HTTPException(status_code=500, detail=f"LLM error: {e}")
+
+
 app.include_router(api_router)
 
 app.add_middleware(

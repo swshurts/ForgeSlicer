@@ -8,6 +8,7 @@ import Viewport from "./Viewport";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
+import { computeRotatedBBox } from "../lib/geometry";
 import { takePendingImport } from "../lib/pendingImport";
 import { API } from "../lib/api";
 
@@ -19,6 +20,20 @@ export default function Workspace() {
   const [saveComponentOpen, setSaveComponentOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Voice command may emit a "forgeslicer:open-dialog" event to open a named
+  // dialog (e.g. user says "save as component").
+  useEffect(() => {
+    const handler = (e) => {
+      const name = e?.detail?.name;
+      if (name === "save_component") setSaveComponentOpen(true);
+      else if (name === "share_gallery") setShareOpen(true);
+      else if (name === "slicer") setOrcaOpen(true);
+    };
+    window.addEventListener("forgeslicer:open-dialog", handler);
+    return () => window.removeEventListener("forgeslicer:open-dialog", handler);
+  }, []);
+
   const remixId = searchParams.get("remix");
   const addComponentParam = searchParams.get("addComponent");
   const addImportedMesh = useScene((s) => s.addImportedMesh);
@@ -104,6 +119,7 @@ export default function Workspace() {
         } catch { /* fall through to STL */ }
       }
       if (projectObjs && projectObjs.length > 0) {
+        const newIds = [];
         for (const o of projectObjs) {
           const id = addRawObject({
             ...o,
@@ -111,8 +127,31 @@ export default function Workspace() {
             id: undefined,
             modifier: payload.modifier || o.modifier || "positive",
           });
-          if (id) added += 1;
+          if (id) { added += 1; newIds.push(id); }
         }
+        // Drop the WHOLE recalled assembly onto the bed (translate all
+        // members down together) so users don't get parts floating above
+        // Y=0 just because the original scene saved them mid-air.
+        try {
+          const st = useScene.getState();
+          let minY = Infinity;
+          const newObjs = st.objects.filter((x) => newIds.includes(x.id));
+          for (const o of newObjs) {
+            try {
+              const bb = computeRotatedBBox(o);
+              if (bb.min.y < minY) minY = bb.min.y;
+            } catch (_) { /* ignore */ }
+          }
+          if (isFinite(minY) && Math.abs(minY) > 1e-3) {
+            useScene.setState((s) => ({
+              objects: s.objects.map((o) =>
+                newIds.includes(o.id)
+                  ? { ...o, position: [o.position[0], o.position[1] - minY, o.position[2]] }
+                  : o
+              ),
+            }));
+          }
+        } catch (_) { /* non-fatal */ }
       } else if (payload.stl_base64) {
         // Fallback path: import the STL bytes as a single mesh.
         const bin = atob(payload.stl_base64);

@@ -17,6 +17,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, DuplicatePopover } from "./ActionPopovers";
 import STLPreviewDialog from "./STLPreviewDialog";
+import VoiceButton from "./VoiceButton";
 import { Eye, Library } from "lucide-react";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
@@ -409,6 +410,8 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
       </button>
 
       <div className="flex-1" />
+
+      <VoiceButton />
 
       <input
         data-testid="project-name-input"
