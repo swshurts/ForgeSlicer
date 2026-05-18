@@ -92,15 +92,19 @@ function SelectedTransform() {
   // just the primary that the gizmo is attached to).
   const dragStartRef = useRef(null);
 
-  const mesh = useMemo(() => {
-    if (!selectedId) return null;
-    let found = null;
+  // Resolve the THREE.Mesh for the current selection on EVERY render. We
+  // used to memoize this on [selectedId, objects.length] but when geometry
+  // rebuilds (e.g. user changes a primitive's dimensions or modifier flag)
+  // R3F swaps the underlying mesh instance without changing those deps, so
+  // TransformControls ended up bound to a stale Object3D — causing the
+  // gizmo to feel "spotty" / require toggling Position↔Size to recover.
+  // Scene traversal is O(n) with tiny n, well under one frame.
+  let mesh = null;
+  if (selectedId) {
     scene.traverse((c) => {
-      if (c.isMesh && c.userData && c.userData.id === selectedId) found = c;
+      if (c.isMesh && c.userData && c.userData.id === selectedId) mesh = c;
     });
-    return found;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, objects.length, scene]);
+  }
 
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj || !mesh) return null;

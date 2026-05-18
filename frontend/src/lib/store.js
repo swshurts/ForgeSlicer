@@ -79,7 +79,9 @@ export const useScene = create((set, get) => ({
   printerId: defaultPrinterId,
   filamentId: defaultFilamentId,
   communityPrinters: [],         // [{ id, brand, name, build_x/y/z, max_*, default_*, submitter, uses }]
-  autoDropOnRotate: true,
+  autoDropOnRotate: typeof window !== "undefined" && window.localStorage
+    ? window.localStorage.getItem("forge.autoDropOnRotate") === "true"
+    : false,
   // Drop every new primitive / imported mesh so its bottom sits on Y=0
   // (the build plate) right after it's added. Persisted to localStorage so
   // the preference survives a reload — defaults to TRUE because that's the
@@ -162,7 +164,12 @@ export const useScene = create((set, get) => ({
     });
   },
   setFilament: (id) => set({ filamentId: id }),
-  setAutoDropOnRotate: (v) => set({ autoDropOnRotate: v }),
+  setAutoDropOnRotate: (v) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try { window.localStorage.setItem("forge.autoDropOnRotate", v ? "true" : "false"); } catch (_) {}
+    }
+    set({ autoDropOnRotate: !!v });
+  },
   setAutoDropNew: (v) => {
     if (typeof window !== "undefined" && window.localStorage) {
       try { window.localStorage.setItem("forge.autoDropNew", v ? "true" : "false"); } catch (_) {}
