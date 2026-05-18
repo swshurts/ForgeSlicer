@@ -170,11 +170,27 @@ export default function Workspace() {
         // and shred the assembly's relative spacing. We then do ONE batched
         // world-space drop below so the whole group rests as a unit.
         const multipart = projectObjs.length > 1;
+        // Re-stamp a FRESH groupId for the recalled assembly so dropping the
+        // same component twice produces two independent assemblies that can
+        // be moved separately. Without this, both copies share the saved
+        // component's original groupId and selecting one would also grab the
+        // other.
+        const savedGroupIds = new Set();
+        for (const o of projectObjs) if (o.groupId) savedGroupIds.add(o.groupId);
+        const groupIdRemap = {};
+        for (const gid of savedGroupIds) {
+          groupIdRemap[gid] = `cmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+        }
         for (const o of projectObjs) {
+          const newGroupId = o.groupId ? groupIdRemap[o.groupId] : undefined;
           const id = addRawObject({
             ...o,
             id: undefined,
             modifier: o.modifier || payload.modifier || "positive",
+            groupId: newGroupId,
+            // Carry the saved groupName forward so the Outliner header reads
+            // the component's name. Fall back to the payload name if absent.
+            groupName: o.groupName || (newGroupId ? (payload.name || "Assembly") : undefined),
             __skipAutoDrop: multipart,
           });
           if (id) { added += 1; newIds.push(id); }

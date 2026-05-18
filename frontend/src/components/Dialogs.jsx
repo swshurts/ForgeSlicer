@@ -526,13 +526,28 @@ export function SaveComponentDialog({ open, onClose }) {
       // primitive types/dims/colorIndex on import. We strip raw geometry
       // buffers (already covered by the STL fallback) to keep the payload
       // size sensible.
+      //
+      // If the user is saving 2+ parts, stamp them with a fresh shared
+      // groupId so the recalled component arrives in the host scene as ONE
+      // already-grouped assembly. Otherwise each part would land as an
+      // independent item and the user would have to re-marquee + re-group
+      // every time they drop the component. The existing per-part groupId
+      // (if any) is overridden so a "block within a block" lineage doesn't
+      // accidentally re-bind to the source project's old group.
+      const componentName = name || "Untitled Component";
+      const isAssembly = effectiveObjects.length > 1;
+      const sharedGroupId = isAssembly ? `cmp-${Math.random().toString(36).slice(2, 11)}` : null;
       const projectObjects = effectiveObjects.map((o) => {
         const { geometry, ...rest } = o;
+        if (sharedGroupId) {
+          rest.groupId = sharedGroupId;
+          rest.groupName = componentName;
+        }
         return rest;
       });
       const projectJson = JSON.stringify({ objects: projectObjects });
       const created = await componentsApi.create({
-        name: name || "Untitled Component",
+        name: componentName,
         author: author || "Anonymous",
         description,
         modifier,
