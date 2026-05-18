@@ -42,7 +42,15 @@ export default function VoiceButton() {
     };
     r.onend = () => { setListening(false); };
     recogRef.current = r;
-    return () => { try { r.abort(); } catch (_) {} };
+    return () => {
+      try { r.abort(); }
+      catch (err) {
+        // SpeechRecognition.abort() throws InvalidStateError if already
+        // stopped — safe to ignore but log once for traceability.
+        // eslint-disable-next-line no-console
+        console.debug("SpeechRecognition.abort() ignored:", err?.message || err);
+      }
+    };
   }, [supported]);
 
   const start = () => {
@@ -53,7 +61,13 @@ export default function VoiceButton() {
     catch (e) { setFeedback({ kind: "err", text: e.message || String(e) }); }
   };
   const stop = () => {
-    try { recogRef.current && recogRef.current.stop(); } catch (_) {}
+    try { recogRef.current && recogRef.current.stop(); }
+    catch (err) {
+      // Common in browsers that throw when stopping an already-stopped
+      // recognizer. Non-fatal, just continue.
+      // eslint-disable-next-line no-console
+      console.debug("SpeechRecognition.stop() ignored:", err?.message || err);
+    }
     setListening(false);
   };
 

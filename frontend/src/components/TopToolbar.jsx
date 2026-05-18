@@ -97,45 +97,50 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
   const clearSelection = useScene((s) => s.clearSelection);
   const [stlPreviewOpen, setStlPreviewOpen] = useState(false);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts. We deliberately read store state INSIDE the
+  // handler via useScene.getState() so the effect only mounts/unmounts
+  // once (no stale closure issues + only one listener on window). The
+  // alternative — listing every store action as a dependency — generated a
+  // 9-deps lint warning AND caused the effect to re-attach on every render.
   React.useEffect(() => {
     const handler = (e) => {
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       const meta = e.ctrlKey || e.metaKey;
+      const s = useScene.getState();
+      const count = (s.selectedIds && s.selectedIds.length) ? s.selectedIds.length : (s.selectedId ? 1 : 0);
       if (meta && !e.shiftKey && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        undo();
+        s.undo();
       } else if ((meta && e.key.toLowerCase() === "y") || (meta && e.shiftKey && e.key.toLowerCase() === "z")) {
         e.preventDefault();
-        redo();
+        s.redo();
       } else if (meta && e.key.toLowerCase() === "d") {
-        // Ctrl/Cmd+D — duplicate current selection (matches most DCC tools)
-        if (selectionCount > 0) {
+        if (count > 0) {
           e.preventDefault();
-          duplicateSelected({});
+          s.duplicateSelected({});
         }
       } else if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectionCount > 0) {
+        if (count > 0) {
           e.preventDefault();
-          removeSelected();
+          s.removeSelected();
         }
       } else if (e.key.toLowerCase() === "m") {
-        setMeasureMode(!measureMode);
+        s.setMeasureMode(!s.measureMode);
       } else if (e.key.toLowerCase() === "g") {
-        setTransformMode("translate");
+        s.setTransformMode("translate");
       } else if (e.key.toLowerCase() === "r") {
-        setTransformMode("rotate");
+        s.setTransformMode("rotate");
       } else if (e.key.toLowerCase() === "s") {
-        setTransformMode("scale");
+        s.setTransformMode("scale");
       } else if (e.key === "Escape") {
-        if (measureMode) setMeasureMode(false);
-        else clearSelection();
+        if (s.measureMode) s.setMeasureMode(false);
+        else s.clearSelection();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, measureMode, setMeasureMode, setTransformMode, removeSelected, duplicateSelected, clearSelection, selectionCount]);
+  }, []);
 
   const doBool = async (op) => {
     // Take last 2 objects: prefer selected as base, last added as other.

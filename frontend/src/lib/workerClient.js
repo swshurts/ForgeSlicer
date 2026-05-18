@@ -40,7 +40,11 @@ function getWorker() {
       for (const [, h] of _pending) h.reject(new Error(e.message || "Worker crashed"));
       _pending.clear();
       _progress.clear();
-      try { _worker.terminate(); } catch (_) { /* ignore */ }
+      try { _worker.terminate(); }
+      catch (terr) {
+        // eslint-disable-next-line no-console
+        console.warn("[ForgeSlicer] worker.terminate() failed:", terr);
+      }
       _worker = null;
     });
   } catch (err) {

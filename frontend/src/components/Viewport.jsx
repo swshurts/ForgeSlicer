@@ -215,7 +215,10 @@ function SelectedTransform() {
                     const bb = computeRotatedBBox(o2);
                     const wy = (o2.position?.[1] ?? 0) + bb.min.y;
                     if (wy < worldMinY) worldMinY = wy;
-                  } catch (_) { /* skip */ }
+                  } catch (err) {
+                    // eslint-disable-next-line no-console
+                    console.warn("auto-drop-on-rotate: bbox failed for", o2?.id, err);
+                  }
                 }
                 if (isFinite(worldMinY) && Math.abs(worldMinY) > 1e-3) {
                   st.pushHistory();
@@ -500,7 +503,13 @@ export default function Viewport() {
     const y = e.clientY - r.top;
     const additive = e.ctrlKey || e.metaKey;
     setMarquee({ x0: x, y0: y, x1: x, y1: y, additive });
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    // Pointer capture is best-effort; some browsers throw on synthetic
+    // pointer ids during automated testing. Marquee still works without it.
+    try { e.currentTarget.setPointerCapture(e.pointerId); }
+    catch (capErr) {
+      // eslint-disable-next-line no-console
+      console.debug("setPointerCapture not available:", capErr?.message || capErr);
+    }
   };
   const onMarqueeMove = (e) => {
     if (!marquee) return;

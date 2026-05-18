@@ -204,7 +204,12 @@ export default function Workspace() {
         try {
           const parsed = JSON.parse(payload.project_json);
           projectObjs = parsed.objects || [];
-        } catch { /* fall through to STL */ }
+        } catch (err) {
+          // Malformed project JSON — fall through to STL fallback below so
+          // the user still gets *something* on the build plate.
+          // eslint-disable-next-line no-console
+          console.warn("addComponent: project_json parse failed, using STL fallback:", err);
+        }
       }
       if (projectObjs && projectObjs.length > 0) {
         const newIds = [];

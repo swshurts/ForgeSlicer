@@ -31,7 +31,11 @@ export const printersApi = {
   use: async (id) => {
     try {
       await axios.post(`${API}/printers/${id}/use`);
-    } catch (_) { /* non-fatal */ }
+    } catch (err) {
+      // Non-fatal — analytics counter only. Surface for debugging anyway.
+      // eslint-disable-next-line no-console
+      console.warn("printersApi.use failed (non-fatal):", err);
+    }
   },
   upvote: async (id) => {
     const { data } = await axios.post(`${API}/printers/${id}/upvote`);
