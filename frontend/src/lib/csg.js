@@ -311,8 +311,13 @@ function subtractNegatives(acc, negatives, evaluator, mat) {
       if (res && res.geometry && isValidGeometry(res.geometry)) {
         current = res;
       }
-      // If invalid, keep the previous accumulator. (Surface a warning?)
-    } catch (_) { /* keep current */ }
+      // If invalid, keep the previous accumulator. The user-facing "carve
+      // health" surface (future) can flag these silently-dropped negatives;
+      // for now they just don't carve.
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(`CSG subtract threw on "${n.name}":`, e);
+    }
   }
   return current;
 }

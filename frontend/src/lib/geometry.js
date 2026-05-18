@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 // Build a flat Shape for the 2D primitives (used by ExtrudeGeometry).
 // All shapes are returned centered on (0, 0) in the X–Y plane; THREE's
@@ -84,11 +85,9 @@ export function buildGeometry(obj) {
 
   if (t === "imported" && obj.geometry) {
     const g = new THREE.BufferGeometry();
-    // IMPORTANT: clone the vertex array so consumers like dropToBed and CSG
-    // (which call `applyMatrix4` to bake transforms) don't mutate the
-    // canonical copy stored in our Zustand state. Without this clone, every
-    // rotation+drop-to-bed cycle would permanently corrupt the imported
-    // geometry — eventually moving it off-screen.
+    // Clone the vertex array so consumers like dropToBed and CSG (which
+    // call `applyMatrix4` to bake transforms) don't mutate the canonical
+    // copy stored in our Zustand state.
     const verts = new Float32Array(obj.geometry.vertices);
     g.setAttribute("position", new THREE.BufferAttribute(verts, 3));
     if (obj.geometry.indices) {
@@ -96,7 +95,27 @@ export function buildGeometry(obj) {
       g.setIndex(new THREE.BufferAttribute(idx, 1));
     }
     g.computeVertexNormals();
-    return g;
+    // three-bvh-csg's Brush expects position + normal + uv attributes
+    // (`GeometryBuilder.initFromGeometry` blindly reads `uv.array` and
+    // throws TypeError if absent). STL imports never carry UVs, so we
+    // synthesize a zero-filled uv buffer matching the vertex count. After
+    // merging, recompute everything so it matches the merged vertex count.
+    const ensureUV = (geom) => {
+      const posCount = geom.attributes.position?.count || 0;
+      if (!geom.attributes.uv && posCount > 0) {
+        geom.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(posCount * 2), 2));
+      }
+      return geom;
+    };
+    try {
+      const merged = mergeVertices(g, 1e-4);
+      merged.computeVertexNormals();
+      return ensureUV(merged);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("mergeVertices failed for imported mesh, CSG may misbehave:", err);
+      return ensureUV(g);
+    }
   }
   return new THREE.BoxGeometry(10, 10, 10);
 }
