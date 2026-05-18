@@ -455,7 +455,17 @@ export function SaveComponentDialog({ open, onClose }) {
     return neg > scopeObjects.length / 2 ? "negative" : "positive";
   }, [scopeObjects]);
   const [modifier, setModifier] = useState(defaultModifier);
-  const [matchModifier, setMatchModifier] = useState(true);
+  // Auto-enable "include opposite modifier" when the scope is intrinsically
+  // mixed — e.g. a standoff (positive shell + negative bolt hole) or a
+  // bracket with built-in cutouts. The user almost always wants the WHOLE
+  // assembly saved, not just one half of it.
+  const scopeIsMixed = React.useMemo(() => {
+    if (!scopeObjects.length) return false;
+    const hasPos = scopeObjects.some((o) => (o.modifier || "positive") === "positive");
+    const hasNeg = scopeObjects.some((o) => o.modifier === "negative");
+    return hasPos && hasNeg;
+  }, [scopeObjects]);
+  const [matchModifier, setMatchModifier] = useState(!scopeIsMixed);
   // When the user picks NEGATIVE / POSITIVE we strip the scope down to ONLY
   // those parts so re-adding the component doesn't drag along the host plate
   // or unrelated geometry. The "Include all parts" checkbox below lets them
@@ -475,9 +485,16 @@ export function SaveComponentDialog({ open, onClose }) {
     if (!open) return;
     setName(projectName);
     setModifier(defaultModifier);
+    // Re-evaluate "include opposite modifier" on every open — the dialog is
+    // long-lived (mounted with open=false) so the initial useState ran when
+    // selectedIds was empty and scopeIsMixed=false. Without this, opening
+    // the dialog on a standoff (positive shell + negative bolt hole) would
+    // skip the negative part.
+    setMatchModifier(!scopeIsMixed);
+    setSaveSelectionOnly(canScopeSelection);
     setDone(null);
     setError("");
-  }, [open, projectName, defaultModifier]);
+  }, [open, projectName, defaultModifier, scopeIsMixed, canScopeSelection]);
 
   if (!open) return null;
 

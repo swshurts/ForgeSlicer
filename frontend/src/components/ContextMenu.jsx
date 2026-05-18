@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine } from "lucide-react";
+import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library } from "lucide-react";
 import { useScene } from "../lib/store";
 import { evaluateScene } from "../lib/csg";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -188,6 +188,20 @@ export default function ContextMenu({ position, onClose }) {
         testid="ctx-drop-bed-btn"
         disabled={count === 0}
         onClick={doDropToBed}
+      />
+      <Item
+        icon={Library}
+        label={count > 1 ? "Save selection as Component…" : "Save as Component…"}
+        testid="ctx-save-component-btn"
+        disabled={count === 0}
+        onClick={() => {
+          restoreSelection();
+          // Open the SaveComponentDialog. It will detect the active sub-
+          // selection (snapshot.ids ⊊ all objects) and default the
+          // "Save selection only" checkbox to ON automatically.
+          window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", { detail: { name: "save_component" } }));
+          onClose();
+        }}
       />
       <div className="h-px bg-slate-800 my-1" />
       <Item
