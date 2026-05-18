@@ -176,8 +176,10 @@ async def download_gallery_stl(item_id: str):
     stl_b64 = doc.get("stl_base64", "")
     try:
         stl_bytes = base64.b64decode(stl_b64)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Corrupted STL data")
+    except Exception as e:
+        # Always raise here so we never fall through with an undefined
+        # `stl_bytes`. The 500 surfaces "DB blob is malformed" to the client.
+        raise HTTPException(status_code=500, detail=f"Corrupted STL data: {e}")
     safe_name = "".join(c for c in doc.get("name", "model") if c.isalnum() or c in ("-", "_")) or "model"
     return Response(
         content=stl_bytes,

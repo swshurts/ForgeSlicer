@@ -481,7 +481,7 @@ function CompatibilityWarning() {
         <AlertTriangle size={11} /> Compatibility
       </div>
       <ul className="text-[11px] text-amber-100/90 list-disc list-inside space-y-0.5">
-        {warnings.map((w, i) => <li key={i}>{w}</li>)}
+        {warnings.map((w) => <li key={w}>{w}</li>)}
       </ul>
     </div>
   );
@@ -573,7 +573,7 @@ function Inspector() {
               const active = (obj.colorIndex || 0) === i;
               return (
                 <button
-                  key={i}
+                  key={c.hex || c.name || i}
                   data-testid={`color-swatch-${i}`}
                   onClick={() => setColorIndex(obj.id, i)}
                   title={`${c.name} (T${i})`}

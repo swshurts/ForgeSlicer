@@ -57,7 +57,12 @@ export default function Workspace() {
         if (cancelled) return;
         if (!mod.getActiveAutoSaveLabel()) return;
         await mod.performAutoSave(serialize());
-      } catch (_) { /* surfaced inside performAutoSave */ }
+      } catch (err) {
+        // performAutoSave already logs the underlying cause; this outer
+        // catch just stops React from logging an unhandled-promise.
+        // eslint-disable-next-line no-console
+        console.warn("auto-save debounce failed:", err);
+      }
     }, 3000);
     return () => { cancelled = true; clearTimeout(t); };
     // Trigger when ANYTHING about the scene changes (object count, project
@@ -71,7 +76,10 @@ export default function Workspace() {
       try {
         const mod = await import("../lib/autoSave");
         if (mod.getActiveAutoSaveLabel()) await mod.performAutoSave(serialize());
-      } catch (_) { /* ignored */ }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("auto-save (immediate) failed:", err);
+      }
     };
     window.addEventListener("forgeslicer:auto-save-now", handler);
     return () => window.removeEventListener("forgeslicer:auto-save-now", handler);

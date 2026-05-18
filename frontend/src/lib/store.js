@@ -199,7 +199,10 @@ export const useScene = create((set, get) => ({
         if (isFinite(bb.min.y)) {
           obj = { ...obj, position: [obj.position[0], -bb.min.y, obj.position[2]] };
         }
-      } catch (_) { /* keep default position */ }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("addPrimitive auto-drop bbox failed for", obj.type, err);
+      }
     }
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
@@ -222,16 +225,16 @@ export const useScene = create((set, get) => ({
       originalBbox: originalBbox || undefined, // {x,y,z} in mm at scale 1
       geometry: { vertices, indices },
     };
-    // Honour the "auto-drop new parts" preference — typical STL imports
-    // come centred on the origin, which puts half the geometry under the
-    // build plate. Drop so the lowest point sits on Y=0.
     if (get().autoDropNew) {
       try {
         const bb = computeRotatedBBox(obj);
         if (isFinite(bb.min.y)) {
           obj = { ...obj, position: [obj.position[0], -bb.min.y, obj.position[2]] };
         }
-      } catch (_) { /* keep at origin */ }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("addImportedMesh auto-drop bbox failed:", err);
+      }
     }
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
@@ -240,10 +243,6 @@ export const useScene = create((set, get) => ({
   addRawObject: (obj) => {
     get().pushHistory();
     let withId = { ...obj, id: obj.id || newId(obj.type || "mesh") };
-    // Auto-drop applies here too so single-part component recall plants
-    // on the bed. Multi-part assembly recall is handled separately in
-    // Workspace.jsx (which translates the whole batch by a single dy so
-    // members keep their relative positions).
     if (get().autoDropNew && !obj.__skipAutoDrop) {
       try {
         const bb = computeRotatedBBox(withId);
@@ -253,7 +252,10 @@ export const useScene = create((set, get) => ({
             withId = { ...withId, position: [withId.position[0], withId.position[1] - wy, withId.position[2]] };
           }
         }
-      } catch (_) { /* keep input position */ }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("addRawObject auto-drop bbox failed:", err);
+      }
     }
     set((s) => ({ objects: [...s.objects, withId], selectedId: withId.id, selectedIds: [withId.id] }));
     return withId.id;
@@ -306,8 +308,11 @@ export const useScene = create((set, get) => ({
           o.id === id ? { ...o, position: [o.position[0], newY, o.position[2]] } : o
         ),
       }));
-    } catch (e) {
-      // ignore — geometry may not be ready
+    } catch (err) {
+      // Geometry may not be ready (rebuild mid-flight). Surface it so
+      // recurring failures are visible without breaking the action.
+      // eslint-disable-next-line no-console
+      console.warn("dropToBed: bbox failed", err);
     }
   },
 
@@ -347,7 +352,10 @@ export const useScene = create((set, get) => ({
         try {
           const bbBefore = computeRotatedBBox(o);
           bottomY = (o.position?.[1] ?? 0) + bbBefore.min.y;
-        } catch (_) { /* ignore */ }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("updateDims: pre-bbox failed", err);
+        }
         const next = { ...o, dims: { ...o.dims, ...dimsPatch } };
         if (bottomY !== null && bottomY > -1e-3 && bottomY < 1e-3) {
           // Was sitting on/near the bed — keep it there after the resize.
@@ -355,7 +363,10 @@ export const useScene = create((set, get) => ({
             const bbAfter = computeRotatedBBox(next);
             const newCenterY = -bbAfter.min.y;  // bottom = 0 ⇒ center = -min.y
             next.position = [next.position[0], newCenterY, next.position[2]];
-          } catch (_) { /* ignore */ }
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn("updateDims: post-bbox failed", err);
+          }
         }
         return next;
       }),

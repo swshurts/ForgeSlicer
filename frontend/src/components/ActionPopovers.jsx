@@ -211,13 +211,23 @@ function readLockPref() {
   // Default OFF — most users want per-axis editing. The lock surprises
   // people by silently updating Y/Z when X changes (and vice versa). They
   // can opt in via the checkbox; the choice is persisted to localStorage.
+  // Note: only a "0"/"1" UI pref — no sensitive data — so the generic
+  // "insecure localStorage" lint warning doesn't apply.
   try {
     const v = localStorage.getItem(SCALE_LOCK_KEY);
     return v === "1";
-  } catch { return false; }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("readLockPref failed:", err);
+    return false;
+  }
 }
 function writeLockPref(v) {
-  try { localStorage.setItem(SCALE_LOCK_KEY, v ? "1" : "0"); } catch {}
+  try { localStorage.setItem(SCALE_LOCK_KEY, v ? "1" : "0"); }
+  catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("writeLockPref failed:", err);
+  }
 }
 
 export function ScalePopover({ anchor, onClose }) {
