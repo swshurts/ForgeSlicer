@@ -208,10 +208,13 @@ export function RotationPopover({ anchor, onClose }) {
 // ---------- Scale / Real Size ----------
 const SCALE_LOCK_KEY = "forgeslicer.scaleLockAspect";
 function readLockPref() {
+  // Default OFF — most users want per-axis editing. The lock surprises
+  // people by silently updating Y/Z when X changes (and vice versa). They
+  // can opt in via the checkbox; the choice is persisted to localStorage.
   try {
     const v = localStorage.getItem(SCALE_LOCK_KEY);
-    return v === null ? true : v === "1";
-  } catch { return true; }
+    return v === "1";
+  } catch { return false; }
 }
 function writeLockPref(v) {
   try { localStorage.setItem(SCALE_LOCK_KEY, v ? "1" : "0"); } catch {}
@@ -270,7 +273,13 @@ export function ScalePopover({ anchor, onClose }) {
         <EmptyMsg>Select an object first.</EmptyMsg>
       ) : (
         <>
-          <label className="flex items-center gap-2 text-[11px] text-slate-200 cursor-pointer select-none px-1 py-1 rounded hover:bg-slate-800">
+          <label
+            className={`flex items-center gap-2 text-[11px] cursor-pointer select-none px-2 py-1.5 rounded border ${
+              locked
+                ? "bg-orange-500/15 border-orange-500/40 text-orange-200"
+                : "bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800"
+            }`}
+          >
             <input
               data-testid="scale-lock-toggle"
               type="checkbox"
@@ -279,7 +288,7 @@ export function ScalePopover({ anchor, onClose }) {
               className="accent-orange-500"
             />
             {locked
-              ? <><Lock size={11} className="text-orange-400" /> Lock aspect ratio</>
+              ? <><Lock size={11} className="text-orange-400" /> Aspect ratio locked — Y/Z auto-update when X changes (and vice versa)</>
               : <><Unlock size={11} className="text-slate-500" /> Free per-axis scaling</>}
           </label>
           <div className="grid grid-cols-[16px_1fr_1fr] gap-2 items-end">

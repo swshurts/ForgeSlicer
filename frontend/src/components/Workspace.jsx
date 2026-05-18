@@ -41,6 +41,41 @@ export default function Workspace() {
   const setProjectName = useScene((s) => s.setProjectName);
   const setRemixOf = useScene((s) => s.setRemixOf);
   const loadProject = useScene((s) => s.loadProject);
+  const objects = useScene((s) => s.objects);
+  const projectName = useScene((s) => s.projectName);
+  const serialize = useScene((s) => s.serialize);
+
+  // Auto-save the editable project JSON to the user's chosen file (if any).
+  // Debounced ~3s after the last change so rapid edits don't thrash the
+  // disk. The picker / toggle UI lives in the right panel; here we just run
+  // the writer when the scene changes.
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const mod = await import("../lib/autoSave");
+        if (cancelled) return;
+        if (!mod.getActiveAutoSaveLabel()) return;
+        await mod.performAutoSave(serialize());
+      } catch (_) { /* surfaced inside performAutoSave */ }
+    }, 3000);
+    return () => { cancelled = true; clearTimeout(t); };
+    // Trigger when ANYTHING about the scene changes (object count, project
+    // name, individual transform tweaks all bubble through `objects`).
+  }, [objects, projectName, serialize]);
+
+  // Manual "save now" triggered when the user first picks a destination —
+  // we don't want to wait 3s for the first write.
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const mod = await import("../lib/autoSave");
+        if (mod.getActiveAutoSaveLabel()) await mod.performAutoSave(serialize());
+      } catch (_) { /* ignored */ }
+    };
+    window.addEventListener("forgeslicer:auto-save-now", handler);
+    return () => window.removeEventListener("forgeslicer:auto-save-now", handler);
+  }, [serialize]);
 
   // Load a file handed off from the Landing page (one-shot, survives
   // StrictMode double-mount because takePendingImport() is idempotent — once
