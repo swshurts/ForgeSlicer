@@ -6,7 +6,8 @@ import { galleryApi } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { startLogin } from "../../lib/auth";
 import { LICENSES, DEFAULT_LICENSE_ID, getLicense } from "../../lib/licenses";
-import { X, Globe, CheckCircle2, Loader2, Lock, LogIn, Scale } from "lucide-react";
+import { MATERIALS } from "../../lib/materials";
+import { X, Globe, CheckCircle2, Loader2, Lock, LogIn, Scale, Layers } from "lucide-react";
 
 export function ShareDialog({ open, onClose }) {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export function ShareDialog({ open, onClose }) {
   const [name, setName] = useState(projectName);
   const [isPrivate, setIsPrivate] = useState(false);
   const [licenseId, setLicenseId] = useState(DEFAULT_LICENSE_ID);
+  const [materialId, setMaterialId] = useState("pla");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // gallery item
   const [error, setError] = useState("");
@@ -58,6 +60,7 @@ export function ShareDialog({ open, onClose }) {
         data: projectJson,
         private: user ? isPrivate : false,
         license: licenseId,
+        material: materialId,
       });
       setDone(created);
     } catch (e) {
@@ -120,6 +123,22 @@ export function ShareDialog({ open, onClose }) {
                 <span><span className="text-orange-300 font-semibold">Sign in</span> to save private designs and tie posts to your profile.</span>
               </button>
             )}
+            <label className="flex flex-col gap-1" data-testid="share-material-field">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Layers size={10} className="text-orange-400" /> Recommended material
+              </span>
+              <select
+                data-testid="share-material"
+                value={materialId}
+                onChange={(e) => setMaterialId(e.target.value)}
+                className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
+              >
+                {MATERIALS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+              <span className="text-[10px] text-slate-500">Helps other makers pick the right filament; defaults to PLA.</span>
+            </label>
             <label className="flex flex-col gap-1" data-testid="share-license-field">
               <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Scale size={10} className="text-orange-400" /> License

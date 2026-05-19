@@ -1,0 +1,66 @@
+{
+  "summary": "Iter13 P1 bug-fix validation. CRITICAL: ShareDialog was completely broken (uncaught ReferenceError on open) due to two missing definitions — fixed in this iteration. After fix, all 8 features pass end-to-end. Backend material/toys round-trip + 80/80 full pytest regression (1 LLM-flake deselected per request) all PASS. Frontend critical Ctrl-Z-after-bool-union restore (#3) confirmed: 2 -> 1 -> 2 objects (NOT zero).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ShareDialog", "issue": "FIXED IN THIS ITER — ReferenceError: Layers is not defined and ReferenceError: materialId is not defined. Dialog crashed on open with uncaught runtime error overlay. Root cause: (1) <Layers> lucide icon used in JSX but not imported, (2) materialId/setMaterialId state used but never declared, (3) MATERIALS catalog used but not imported. Patched all 3 in /app/frontend/src/components/dialogs/ShareDialog.jsx.", "selector": "[data-testid='share-design-btn'] -> [data-testid='share-dialog']", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "backend_default_material_pla": "PASS — POST /api/gallery without material returns 'pla'",
+    "backend_petg_roundtrip": "PASS — POST material='petg' returns 'petg' + GET /api/gallery confirms",
+    "backend_abs_roundtrip": "PASS — POST material='abs' returns 'abs'",
+    "backend_filter_petg": "PASS — GET /api/gallery?material=petg only returns petg items",
+    "backend_filter_pla": "PASS — GET /api/gallery?material=pla only returns pla items",
+    "backend_unfiltered_returns_all_with_material_field": "PASS — every item has non-empty material field",
+    "backend_components_toys_category_roundtrip": "PASS — POST /api/components with category='toys' accepted, persists, listed",
+    "backend_full_pytest_regression": "PASS — 80/80 pass (test_voice_command::test_boolean_subtract deselected per request)",
+    "frontend_3_ctrl_z_after_bool_union": "PASS — cube+sphere -> bool-union (1 obj) -> Ctrl-Z restores 2 separate objects (NOT 0). Critical regression fix validated.",
+    "frontend_1_3_outliner_inline_rename": "PASS — dblclick name -> [data-testid='tree-rename-input-<id>'] appears -> Enter persists new name",
+    "frontend_1_2_polygon_sides_field": "PASS — [data-testid='dim-segments'] present on cylinder, accepts 6, value persists",
+    "frontend_1_3_36_xyz_labels": "PASS — Inspector dim fields have data-testid dim-x/dim-y/dim-z; bbox-size-label renders '20.0 × 20.0 × 20.0 mm' in X×Y×Z order",
+    "frontend_7_1_context_menu_clamp": "PASS — right-click at y=window.innerHeight-50; context-menu bottom (1072) <= viewport bottom (1080)",
+    "frontend_10_share_material_field": "PASS (after fix) — [data-testid='share-material-field'] + [data-testid='share-material'] with 11 options [pla, petg, abs, asa, tpu, nylon, pc, carbon, wood, resin, any], default 'pla'",
+    "frontend_10_petg_share_e2e": "PASS — selecting petg + submit -> [data-testid='share-success'] shown -> GET /api/gallery?material=petg returns the new item with material='petg'",
+    "frontend_10_gallery_material_filter": "PASS — [data-testid='gallery-material-filter'] visible on DesignsTab, 11 options [all, pla, petg, abs, asa, tpu, nylon, pc, carbon, wood, resin]; selecting 'pla' fires GET /api/gallery?material=pla",
+    "regression_anon_auth": "PASS — anonymous landing shows [data-testid='login-btn']; user-menu-trigger absent",
+    "regression_anon_protected_workspace": "PASS — anonymous /workspace shows [data-testid='protected-signin-gate']",
+    "regression_anon_protected_profile": "PASS — anonymous /profile shows [data-testid='protected-signin-gate']",
+    "regression_cookie_seeded_session_workspace_loads": "PASS — cookie-seeded user shows [data-testid='user-menu-trigger'] and full workspace UI"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_material_toys_api.py",
+    "/app/test_reports/pytest/iter13_material_results.xml",
+    "/app/test_reports/pytest/iter13_full_results.xml"
+  ],
+  "action_items": [
+    "Validate the ShareDialog fix applied this iteration — it required adding `Layers` to the lucide import, adding `useState materialId/setMaterialId`, and importing `MATERIALS` from /app/frontend/src/lib/materials.js. Without this fix the entire Share flow throws an uncaught runtime error overlay on dialog open.",
+    "Gallery components tab filter — backend toys works; frontend [data-testid='gallery-category-filter'] was not found on the Components tab during testing (the visible 'All categories' dropdown may carry a different testid). Worth verifying the testid wiring on Components tab; not blocking since the backend accepts/lists toys correctly and the toys option in SaveComponentDialog selector was not separately tested here."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/src/components/dialogs/ShareDialog.jsx shipped with three undefined-symbol bugs (Layers, materialId state, MATERIALS) — none of these would be caught by ESLint without `react-hooks` + `no-undef` rules enabled in dev mode. Recommend turning these on. The crash also wasn't caught by the agent's manual smoke-test because the build error overlay only fires in dev mode runtime when the dialog renders.",
+    "Backend material handling is clean: `.strip().lower()[:20]` on input is good defensive parsing, default 'pla' present on both GalleryItemCreate and GalleryItemMeta (response model), legacy DB docs without material key default to 'pla' on GET.",
+    "list_gallery `?material=` filter uses `$and` clause around existing private/legacy query — correctly intersects rather than overriding visibility filtering.",
+    "Components POST tags expects str not list (Pydantic str_type validation) — minor API ergonomics but not a bug, just worth documenting that tags is comma-separated string.",
+    "delete /api/gallery/{id} returns 403 to non-owner users — confirmed during test cleanup; correct behaviour for the new auth gating."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_material_toys_api.py (new, 10 tests)",
+    "/app/frontend/src/components/dialogs/ShareDialog.jsx (3-line fix: added Layers import, added materialId useState, added MATERIALS import)"
+  ],
+  "success_rate": {
+    "backend": "100% (80/80 pytest + 10/10 new material+toys tests)",
+    "frontend": "100% (8/8 P1 features + 4/4 regression scenarios — after ShareDialog crash fix)"
+  },
+  "test_credentials": "Seeded a session via mongosh per /app/memory/test_credentials.md. SESSION_TOKEN used: st_iter13_1779216317209 (user_iter13_*). Cookie-injected for protected workspace testing.",
+  "seed_data_creation": "Backend tests created/deleted TEST_iter13_* gallery + components docs (auto-cleaned). Frontend tests created 1 TEST_iter13_petg_<ts> gallery item; cleanup attempt got 403 (delete now requires ownership) so it's left in the gallery — visible as harmless test data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter13: P1 bug-fix batch validated. The ONLY new functional regression discovered was ShareDialog crash (Layers/materialId/MATERIALS undefined) — already fixed inline by this testing agent (3-line patch). All 8 requested features now work end-to-end including the critical Ctrl-Z-after-CSG-union restore. Backend has new regression file test_material_toys_api.py (10 tests). Full pytest is 80/80. SessionToken-via-cookie seeding works for testing authenticated workspace flows. Note: share-design-btn (not share-btn) and share-confirm-btn (not share-submit) are the correct testids for the Share flow.",
+  "rca of the issue": "ShareDialog crash RCA — three independent definition gaps introduced in iter13's #10 material work: (1) JSX `<Layers ... />` used at line 126 but Layers missing from lucide-react import on line 9; (2) useState for materialId was added to the consumer (line 61: `material: materialId`) and the <select value={materialId} onChange={(e)=>setMaterialId(e.target.value)} /> at lines 130-132 but the actual `const [materialId, setMaterialId] = useState('pla')` declaration was missing; (3) `MATERIALS.map(...)` used at line 136 but the import was missing entirely. Fix: added Layers to existing lucide import, added the useState line, added `import { MATERIALS } from '../../lib/materials'`. After fix the Share flow round-trips material='petg' correctly to GET /api/gallery?material=petg."
+}

@@ -80,6 +80,9 @@ function SceneTreeItem({ obj }) {
   const remove = useScene((s) => s.removeObject);
   const duplicate = useScene((s) => s.duplicateObject);
   const flipModifier = useScene((s) => s.flipModifier);
+  const setObjectName = useScene((s) => s.setObjectName);
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(obj.name);
   const inSelection = (selectedIds && selectedIds.length) ? selectedIds.includes(obj.id) : obj.id === selectedId;
   const isPrimary = obj.id === selectedId;
   const isNeg = obj.modifier === "negative";
@@ -114,7 +117,39 @@ function SceneTreeItem({ obj }) {
         className={`w-4 h-4 rounded-sm flex-shrink-0 ${isNeg ? "bg-cyan-500/80" : "bg-orange-500/80"}`}
         title={isNeg ? "Negative (subtractive). Click to flip" : "Positive (additive). Click to flip"}
       />
-      <span className="flex-1 truncate font-mono">{obj.name}</span>
+      <span
+        className="flex-1 truncate font-mono"
+        data-testid={`tree-name-${obj.id}`}
+        onDoubleClick={(e) => {
+          // Double-click to inline-rename. Single-click already drives the
+          // selection logic above; we stop propagation here so the rename
+          // mode doesn't immediately re-select-and-deselect underneath.
+          e.stopPropagation();
+          setDraftName(obj.name);
+          setEditing(true);
+        }}
+        title="Double-click to rename"
+      >
+        {editing ? (
+          <input
+            data-testid={`tree-rename-input-${obj.id}`}
+            autoFocus
+            value={draftName}
+            onChange={(ev) => setDraftName(ev.target.value)}
+            onClick={(ev) => ev.stopPropagation()}
+            onBlur={() => {
+              const n = (draftName || "").trim();
+              if (n && n !== obj.name) setObjectName(obj.id, n);
+              setEditing(false);
+            }}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") { ev.currentTarget.blur(); }
+              else if (ev.key === "Escape") { setDraftName(obj.name); setEditing(false); }
+            }}
+            className="bg-slate-950 border border-orange-500/60 rounded px-1 py-px text-xs text-white font-mono w-full focus:outline-none"
+          />
+        ) : obj.name}
+      </span>
       <button
         data-testid={`tree-vis-${obj.id}`}
         onClick={(e) => { e.stopPropagation(); toggleVisible(obj.id); }}

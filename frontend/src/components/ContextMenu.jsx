@@ -168,15 +168,40 @@ export default function ContextMenu({ position, onClose }) {
     </button>
   );
 
-  const x = Math.min(position.x, window.innerWidth - 220);
-  const y = Math.min(position.y, window.innerHeight - 250);
+  // Provisional position — clamps the click coords so the menu can't open
+  // entirely off-screen. After the menu mounts we measure its actual size
+  // and re-clamp precisely (effect below) so a very tall menu (lots of
+  // group/ungroup/mirror options at once) doesn't get cut off the bottom
+  // and become unreachable. Without this, scrolling the page can't bring
+  // it back into view because the menu is `position: fixed`.
+  const [pos, setPos] = useState({
+    left: Math.min(Math.max(0, position.x), window.innerWidth - 240),
+    top: Math.min(Math.max(0, position.y), window.innerHeight - 100),
+  });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const margin = 8;
+    let left = position.x;
+    let top = position.y;
+    // If the menu would overflow the right edge, anchor it to the LEFT of
+    // the cursor instead. Same for the bottom.
+    if (left + rect.width + margin > window.innerWidth) {
+      left = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (top + rect.height + margin > window.innerHeight) {
+      top = Math.max(margin, window.innerHeight - rect.height - margin);
+    }
+    setPos({ left, top });
+  }, [position.x, position.y]);
 
   return (
     <div
       ref={ref}
       data-testid="context-menu"
-      className="fixed z-[300] w-56 bg-slate-900 border border-slate-700 rounded-md shadow-2xl py-1"
-      style={{ left: x, top: y }}
+      className="fixed z-[300] w-56 bg-slate-900 border border-slate-700 rounded-md shadow-2xl py-1 max-h-[85vh] overflow-y-auto"
+      style={{ left: pos.left, top: pos.top }}
     >
       <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-slate-500 font-semibold border-b border-slate-800 mb-1">
         {count === 0 ? "Nothing selected" : count === 1 ? selectedObjs[0]?.name || "Selection" : `${count} selected`}

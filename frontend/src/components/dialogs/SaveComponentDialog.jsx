@@ -22,6 +22,7 @@ const COMPONENT_CATEGORIES = [
   { key: "organizers", label: "Organizers" },
   { key: "miniatures", label: "Miniatures" },
   { key: "structural", label: "Structural" },
+  { key: "toys",       label: "Toys" },
   { key: "misc",       label: "Misc" },
 ];
 

@@ -636,11 +636,16 @@ function Inspector() {
 
       {obj.type === "cube" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
+            <span>Dimensions (mm)</span>
+            <span className="text-[9px] text-slate-500 normal-case font-normal" title="X = length, Y = width, Z = height">
+              X · Y · Z
+            </span>
+          </div>
           <div className="grid grid-cols-3 gap-2">
-            <NumberField testid="dim-x" label="W" value={obj.dims.x} onChange={(v) => updateDims(obj.id, { x: v })} step={1} min={0.1} />
-            <NumberField testid="dim-y" label="D" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
-            <NumberField testid="dim-z" label="H" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
+            <NumberField testid="dim-x" label="X" value={obj.dims.x} onChange={(v) => updateDims(obj.id, { x: v })} step={1} min={0.1} />
+            <NumberField testid="dim-y" label="Y" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
+            <NumberField testid="dim-z" label="Z" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
           </div>
         </div>
       )}
@@ -663,6 +668,38 @@ function Inspector() {
               <NumberField testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
             )}
           </div>
+          {/* Segment count — exposes the polygon resolution. Defaults are
+              48/64 (smooth-looking); dropping to e.g. 6 turns a cylinder
+              into a hex prism, 4 makes a square pillar, etc. This is how
+              users can "define the number of sides in a polygon" without a
+              separate primitive. */}
+          {(obj.type === "cylinder" || obj.type === "cone") && (
+            <div className="mt-2">
+              <NumberField
+                testid="dim-segments"
+                label={`Sides${(obj.dims.segments || 0) <= 12 ? `  (${obj.dims.segments || 64} = polygon)` : ""}`}
+                value={obj.dims.segments || 64}
+                onChange={(v) => updateDims(obj.id, { segments: Math.max(3, Math.min(256, Math.round(v))) })}
+                step={1}
+                min={3}
+              />
+              <div className="text-[10px] text-slate-500 mt-1 font-mono">
+                3=triangle · 4=square · 6=hex · 8=octagon · 32+=smooth circle
+              </div>
+            </div>
+          )}
+          {obj.type === "sphere" && (
+            <div className="mt-2">
+              <NumberField
+                testid="dim-segments"
+                label="Segments"
+                value={obj.dims.segments || 48}
+                onChange={(v) => updateDims(obj.id, { segments: Math.max(8, Math.min(128, Math.round(v))) })}
+                step={4}
+                min={8}
+              />
+            </div>
+          )}
         </div>
       )}
       {obj.type === "torus" && (

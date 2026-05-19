@@ -4,9 +4,10 @@ import { galleryApi, componentsApi, apiErrorMessage } from "../lib/api";
 import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
-  PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale,
+  PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale, Layers,
 } from "lucide-react";
 import { getLicense } from "../lib/licenses";
+import { MATERIALS, getMaterial } from "../lib/materials";
 
 const PLACEHOLDERS = [
   "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
@@ -29,6 +30,7 @@ const COMPONENT_CATEGORIES = [
   { key: "organizers", label: "Organizers" },
   { key: "miniatures", label: "Miniatures" },
   { key: "structural", label: "Structural" },
+  { key: "toys", label: "Toys" },
   { key: "misc", label: "Misc" },
 ];
 
@@ -113,6 +115,27 @@ function GalleryCard({ item, idx, onDelete }) {
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
         <LicenseBadge license={item.license} testid={`gallery-license-${item.id}`} className="mt-1.5" />
+        {item.material && (() => {
+          const m = getMaterial(item.material);
+          if (m.id === "any") return null;
+          const tintMap = {
+            emerald: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+            cyan: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40",
+            amber: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+            rose: "bg-rose-500/15 text-rose-300 border-rose-500/40",
+            violet: "bg-violet-500/15 text-violet-300 border-violet-500/40",
+            slate: "bg-slate-700/40 text-slate-300 border-slate-600",
+          };
+          return (
+            <span
+              data-testid={`gallery-material-${item.id}`}
+              title={m.description || `Suggested material: ${m.label}`}
+              className={`ml-1.5 inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${tintMap[m.tint] || tintMap.slate}`}
+            >
+              <Layers size={9} /> {m.label}
+            </span>
+          );
+        })()}
         {item.description && (
           <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
         )}
@@ -247,14 +270,17 @@ function DesignsTab() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [material, setMaterial] = useState("all");
 
-  const load = async () => {
+  const load = async (matOverride) => {
     setLoading(true); setError("");
-    try { setItems(await galleryApi.list()); }
-    catch (e) { setError(apiErrorMessage(e)); }
+    try {
+      const mat = matOverride !== undefined ? matOverride : material;
+      setItems(await galleryApi.list({ material: mat }));
+    } catch (e) { setError(apiErrorMessage(e)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [material]);
 
   const handleDelete = async (id) => {
     if (!confirm("Remove this design from the public gallery?")) return;
@@ -264,11 +290,27 @@ function DesignsTab() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
         <p className="text-sm text-slate-400">Community-shared models, free to download as STL.</p>
-        <button data-testid="gallery-refresh-btn" onClick={load} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-400" data-testid="gallery-material-filter-field">
+            <Layers size={12} className="text-orange-400" /> Material
+            <select
+              data-testid="gallery-material-filter"
+              value={material}
+              onChange={(e) => setMaterial(e.target.value)}
+              className="h-8 bg-slate-900 border border-slate-700 rounded text-xs text-white px-2 focus:border-orange-500 outline-none"
+            >
+              <option value="all">All</option>
+              {MATERIALS.filter((m) => m.id !== "any").map((m) => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </label>
+          <button data-testid="gallery-refresh-btn" onClick={() => load()} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
       {loading && <div className="text-slate-400" data-testid="gallery-loading">Loading designs…</div>}
       {!loading && error && (

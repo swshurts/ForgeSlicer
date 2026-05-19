@@ -131,10 +131,14 @@ function SelectedTransform() {
 
   const handleChange = () => {
     const newPos = [mesh.position.x, mesh.position.y, mesh.position.z];
+    // Strip floating-point noise from snapped rotations — `radToDeg(π/12)`
+    // returns 14.999999999999998, which the inspector popover would render
+    // as "14.99°" after snapping to 15° in the gizmo. Rounding to 4
+    // decimals preserves user-level precision while collapsing the noise.
     const newRot = [
-      THREE.MathUtils.radToDeg(mesh.rotation.x),
-      THREE.MathUtils.radToDeg(mesh.rotation.y),
-      THREE.MathUtils.radToDeg(mesh.rotation.z),
+      Math.round(THREE.MathUtils.radToDeg(mesh.rotation.x) * 1e4) / 1e4,
+      Math.round(THREE.MathUtils.radToDeg(mesh.rotation.y) * 1e4) / 1e4,
+      Math.round(THREE.MathUtils.radToDeg(mesh.rotation.z) * 1e4) / 1e4,
     ];
     const newScl = [mesh.scale.x, mesh.scale.y, mesh.scale.z];
     setTransform(obj.id, "position", newPos);
@@ -350,7 +354,9 @@ function BBoxChip() {
       className="absolute bottom-3 left-3 z-10 px-2.5 py-1.5 bg-black/85 border border-orange-500/40 rounded text-[10px] font-mono text-orange-300 whitespace-nowrap pointer-events-none flex items-center gap-2"
     >
       <span className="text-slate-500">SIZE</span>
-      <span>{size.x.toFixed(1)} × {size.z.toFixed(1)} × {size.y.toFixed(1)} mm</span>
+      <span data-testid="bbox-size-label">
+        {size.x.toFixed(1)} × {size.y.toFixed(1)} × {size.z.toFixed(1)} mm
+      </span>
       <span className="text-slate-600">·</span>
       <span className="text-slate-400">{obj.name}</span>
     </div>

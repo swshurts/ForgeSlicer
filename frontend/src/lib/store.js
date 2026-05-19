@@ -335,6 +335,44 @@ export const useScene = create((set, get) => ({
     return gid;
   },
 
+  // Atomic "boolean replace" — remove a set of objects AND insert one or more
+  // new objects in a single store mutation that pushes history exactly once.
+  // The old multi-step `removeObject; removeObject; addRawObject` flow each
+  // pushed its own history snapshot, so Ctrl-Z would restore the state
+  // *after* removals but *before* the insert → empty scene. This action
+  // exists so callers (boolean union/subtract/intersect, flatten, etc.) get
+  // a single, reversible step.
+  setObjectName: (id, name) => {
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) => (o.id === id ? { ...o, name: (name || "").slice(0, 80) || o.name } : o)),
+    }));
+  },
+
+  replaceObjects: (idsToRemove, newObjects = []) => {
+    const removeSet = new Set(idsToRemove || []);
+    const incoming = (Array.isArray(newObjects) ? newObjects : [newObjects])
+      .filter(Boolean)
+      .map((o) => ({ ...o, id: o.id || newId(o.type || "mesh") }));
+    get().pushHistory();
+    set((s) => {
+      const remaining = s.objects.filter((o) => !removeSet.has(o.id));
+      const next = [...remaining, ...incoming];
+      const newIds = incoming.map((o) => o.id);
+      return {
+        objects: next,
+        // Keep the last inserted object as the primary selection so the
+        // Inspector lights up the merged result, not nothing.
+        selectedId: newIds[newIds.length - 1] ?? (removeSet.has(s.selectedId) ? null : s.selectedId),
+        selectedIds: newIds.length ? newIds : s.selectedIds.filter((x) => !removeSet.has(x)),
+        measurements: s.measurements.filter((m) => !removeSet.has(m.objIdA) && !removeSet.has(m.objIdB)),
+        pendingMeasurePoint: removeSet.has(s.pendingMeasureObjId) ? null : s.pendingMeasurePoint,
+        pendingMeasureObjId: removeSet.has(s.pendingMeasureObjId) ? null : s.pendingMeasureObjId,
+      };
+    });
+    return incoming.map((o) => o.id);
+  },
+
   removeObject: (id) => {
     get().pushHistory();
     set((s) => ({
@@ -678,12 +716,24 @@ export const useScene = create((set, get) => ({
           groupName: newGroupName,
         };
         if (axisIdx >= 0) {
-          // Mirror about the origin plane of that axis. Negative scale flips
-          // the geometry; flipping position keeps the copy "across" from the
-          // original. For Y mirrors we additionally clamp to the build plate
-          // afterwards so the mirrored copy doesn't end up underground.
+          // Mirror the copy so it sits ADJACENT to the original along the
+          // chosen axis (not on top of it). Negating position only works
+          // when the source isn't centred on that axis — at position[ax]=0,
+          // -0 is still 0 and the copy stacks invisibly on the original.
+          // Computing the source's world-space extent on this axis and
+          // shifting the copy by that extent + a small gap guarantees a
+          // visible, non-overlapping mirror in every case.
+          const axisKey = ["x", "y", "z"][axisIdx];
+          let extent = 0;
+          try {
+            const bb = computeRotatedBBox(src);
+            extent = Math.abs((bb.max?.[axisKey] ?? 0) - (bb.min?.[axisKey] ?? 0));
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn("mirror bbox fallback:", err);
+          }
           copy.scale[axisIdx] = -copy.scale[axisIdx];
-          copy.position[axisIdx] = -copy.position[axisIdx];
+          copy.position[axisIdx] = src.position[axisIdx] + extent + offset;
           if (mirrorAxis === "y") copy.position[1] = Math.max(0, copy.position[1]);
         } else {
           // Plain duplicate — shift slightly so it's visible.

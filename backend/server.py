@@ -222,6 +222,10 @@ class GalleryItemCreate(BaseModel):
     # a free-text id so we can grow the catalog without DB migrations. The
     # frontend canonicalises against /app/frontend/src/lib/licenses.js.
     license: str = "cc-by-4.0"
+    # Suggested filament/material for the print (PLA default). Free-text so
+    # we can grow the option set without migrations; frontend canonicalises
+    # against /app/frontend/src/lib/materials.js.
+    material: str = "pla"
 
 
 class GalleryItemMeta(BaseModel):
@@ -242,6 +246,7 @@ class GalleryItemMeta(BaseModel):
     user_id: Optional[str] = None
     private: bool = False
     license: str = "cc-by-4.0"
+    material: str = "pla"
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -310,6 +315,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         "user_id": user["user_id"] if user else None,
         "private": bool(item.private) if user else False,
         "license": (item.license or "cc-by-4.0").strip()[:40],
+        "material": (item.material or "pla").strip().lower()[:20],
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
@@ -329,6 +335,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         user_id=doc["user_id"],
         private=doc["private"],
         license=doc["license"],
+        material=doc.get("material", "pla"),
     )
 
 
@@ -354,14 +361,19 @@ def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
         user_id=d.get("user_id"),
         private=bool(d.get("private", False)),
         license=d.get("license", "cc-by-4.0"),
+        material=d.get("material", "pla"),
     )
 
 
 @api_router.get("/gallery", response_model=List[GalleryItemMeta])
-async def list_gallery():
+async def list_gallery(material: Optional[str] = None):
     # Public listing — hide private items entirely.
+    query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
+    if material:
+        # Combine with the private filter via $and so we don't lose it.
+        query = {"$and": [query, {"material": material.strip().lower()[:20]}]}
     cursor = db.gallery.find(
-        {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]},
+        query,
         {"_id": 0, "stl_base64": 0},
     ).sort("created_at", -1)
     items = await cursor.to_list(500)
@@ -516,7 +528,7 @@ async def delete_community_printer(printer_id: str):
 COMPONENT_CATEGORIES = {
     "mechanical", "rack", "mounting", "fasteners", "electronics",
     "brackets", "hinges", "gears", "decorative", "organizers",
-    "miniatures", "structural", "misc",
+    "miniatures", "structural", "toys", "misc",
 }
 
 

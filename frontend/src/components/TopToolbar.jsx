@@ -63,6 +63,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
   const serialize = useScene((s) => s.serialize);
   const addRawObject = useScene((s) => s.addRawObject);
   const removeObject = useScene((s) => s.removeObject);
+  const replaceObjects = useScene((s) => s.replaceObjects);
   const undo = useScene((s) => s.undo);
   const redo = useScene((s) => s.redo);
   const historyLen = useScene((s) => s.history.length);
@@ -154,10 +155,9 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
     setBusyMsg("Computing...");
     try {
       const merged = await combineTwoAsync(a, b, op);
-      // remove both
-      removeObject(a.id);
-      removeObject(b.id);
-      addRawObject({
+      // Atomic remove-A + remove-B + add-merged in a single history step so
+      // Ctrl-Z restores the scene exactly as it was before the boolean.
+      replaceObjects([a.id, b.id], [{
         name: `${a.name} ${op === "union" ? "∪" : op === "subtract" ? "∖" : "∩"} ${b.name}`,
         type: "imported",
         modifier: "positive",
@@ -168,7 +168,11 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
         scale: [1, 1, 1],
         dims: {},
         geometry: merged,
-      });
+        // Skip auto-drop: the merged geometry is already in world space; we
+        // do NOT want to translate it back to the bed (that would offset all
+        // the carved features).
+        __skipAutoDrop: true,
+      }]);
     } catch (e) {
       alert("Boolean failed: " + (e.message || e));
     } finally {

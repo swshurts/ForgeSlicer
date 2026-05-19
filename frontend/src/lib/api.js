@@ -36,7 +36,11 @@ async function fetchHeavyList(url, { params } = {}) {
 }
 
 export const galleryApi = {
-  list: async () => fetchHeavyList(`${API}/gallery`),
+  list: async ({ material } = {}) => {
+    const params = {};
+    if (material && material !== "all") params.material = material;
+    return fetchHeavyList(`${API}/gallery`, { params });
+  },
   create: async (payload) => {
     const { data } = await axios.post(`${API}/gallery`, payload);
     return data;
