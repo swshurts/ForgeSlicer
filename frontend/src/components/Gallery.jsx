@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { galleryApi, componentsApi } from "../lib/api";
+import { galleryApi, componentsApi, apiErrorMessage } from "../lib/api";
 import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
@@ -251,7 +251,7 @@ function DesignsTab() {
   const load = async () => {
     setLoading(true); setError("");
     try { setItems(await galleryApi.list()); }
-    catch (e) { setError(e.message); }
+    catch (e) { setError(apiErrorMessage(e)); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -270,9 +270,21 @@ function DesignsTab() {
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
-      {loading && <div className="text-slate-400">Loading designs...</div>}
-      {error && <div className="text-red-400 text-sm">{error}</div>}
-      {!loading && items.length === 0 && (
+      {loading && <div className="text-slate-400" data-testid="gallery-loading">Loading designs…</div>}
+      {!loading && error && (
+        <div className="border border-red-500/40 bg-red-500/5 rounded-lg p-5 text-center" data-testid="gallery-error">
+          <p className="text-sm text-red-300 mb-1 font-semibold">Couldn't load the gallery</p>
+          <p className="text-xs text-slate-400 mb-3">{error}</p>
+          <button
+            data-testid="gallery-retry-btn"
+            onClick={load}
+            className="h-9 px-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded inline-flex items-center gap-1.5"
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        </div>
+      )}
+      {!loading && !error && items.length === 0 && (
         <div className="border border-dashed border-slate-700 rounded-lg p-12 text-center" data-testid="gallery-empty">
           <p className="text-slate-400 mb-1">No designs in the gallery yet.</p>
           <p className="text-xs text-slate-500 mb-4">Be the first to share a creation from the workspace.</p>
@@ -307,7 +319,7 @@ function ComponentsTab() {
         category: category === "all" ? undefined : category,
         q: (overrideQ !== undefined ? overrideQ : q) || undefined,
       }));
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(apiErrorMessage(e)); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [modifier, category]);
@@ -387,9 +399,21 @@ function ComponentsTab() {
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
-      {loading && <div className="text-slate-400">Loading components...</div>}
-      {error && <div className="text-red-400 text-sm">{error}</div>}
-      {!loading && items.length === 0 && (
+      {loading && <div className="text-slate-400" data-testid="components-loading">Loading components…</div>}
+      {!loading && error && (
+        <div className="border border-red-500/40 bg-red-500/5 rounded-lg p-5 text-center" data-testid="components-error">
+          <p className="text-sm text-red-300 mb-1 font-semibold">Couldn't load components</p>
+          <p className="text-xs text-slate-400 mb-3">{error}</p>
+          <button
+            data-testid="components-retry-btn"
+            onClick={() => load()}
+            className="h-9 px-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded inline-flex items-center gap-1.5"
+          >
+            <RefreshCw size={13} /> Retry
+          </button>
+        </div>
+      )}
+      {!loading && !error && items.length === 0 && (
         <div className="border border-dashed border-slate-700 rounded-lg p-12 text-center" data-testid="components-empty">
           <p className="text-slate-400 mb-1">No components match these filters.</p>
           <p className="text-xs text-slate-500 mb-4">Build a part in the workspace, then click <span className="text-orange-300">Save as Component</span> in the toolbar.</p>

@@ -13,12 +13,32 @@ axios.defaults.withCredentials = true;
 // Per-call wins are deterministic.
 const cfg = { withCredentials: true };
 
+// Where the user was before they clicked Sign in — we restore them there
+// after OAuth completes. Persisted in sessionStorage so it survives the
+// full external round-trip through auth.emergentagent.com → Google → back.
+const RETURN_PATH_KEY = "forgeslicer.auth.returnPath";
+
+export const setReturnPath = (path) => {
+  try { sessionStorage.setItem(RETURN_PATH_KEY, path || "/workspace"); } catch { /* private mode */ }
+};
+export const popReturnPath = (fallback = "/workspace") => {
+  try {
+    const v = sessionStorage.getItem(RETURN_PATH_KEY);
+    sessionStorage.removeItem(RETURN_PATH_KEY);
+    return v || fallback;
+  } catch { return fallback; }
+};
+
 export const authApi = {
   // Exchange a one-time Emergent OAuth session_id (received in the URL
   // fragment after Google sign-in) for our app's persistent session_token.
   // The backend sets the httpOnly cookie; we just need the user payload.
   exchange: async (sessionId) => {
-    const { data } = await axios.post(`${API}/auth/session`, { session_id: sessionId }, cfg);
+    const { data } = await axios.post(
+      `${API}/auth/session`,
+      { session_id: sessionId },
+      { ...cfg, timeout: 20000 },     // 20 s — server roundtrips to Emergent OAuth provider
+    );
     return data;
   },
   me: async () => {
@@ -35,6 +55,12 @@ export const authApi = {
 // signed in from (preview vs production domains differ).
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export const buildLoginUrl = (returnPath = "/workspace") => {
+  // Persist returnPath so AuthCallback can route us back to where we started
+  // (not always /workspace) after the external OAuth round-trip.
+  setReturnPath(returnPath);
+  // The OAuth provider only knows our origin — the path it sees is also the
+  // path it appends "#session_id=…" to, so we use origin + returnPath as the
+  // redirect target so AppRouter's hash-detect runs on the same page.
   const redirectUrl = window.location.origin + returnPath;
   return `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
 };
