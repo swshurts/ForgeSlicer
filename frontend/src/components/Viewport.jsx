@@ -13,9 +13,12 @@ const NEGATIVE_COLOR = "#06B6D4";
 function colorForObject(obj) {
   if (obj.modifier === "negative") return NEGATIVE_COLOR;
   const idx = obj.colorIndex | 0;
-  // colorIndex 0 keeps the default ForgeSlicer orange so single-color scenes
-  // look identical to before; any explicit slot picks from the palette.
-  if (!idx) return POSITIVE_COLOR;
+  // Map the picker swatch directly to the rendered colour. We used to special-
+  // case slot-0 to ForgeSlicer's house orange, which meant picking "White"
+  // visually rendered orange — confusing because the picker UI did show a
+  // white swatch. New positives now default to slot 7 (Orange) in the store
+  // so the historical "default = orange" behaviour is preserved without the
+  // 1:1 picker/render mismatch.
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 

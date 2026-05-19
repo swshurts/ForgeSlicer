@@ -34,7 +34,11 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     dims: { ...def.dims },
-    colorIndex: 0,
+    // Default a positive primitive to slot 7 (Orange) so the historical
+    // ForgeSlicer-house-orange look is preserved; negatives use the cyan
+    // outline so colorIndex is moot for them. Picking slot 0 (White) in the
+    // inspector now renders accurately as White.
+    colorIndex: modifier === "negative" ? 0 : 7,
     ...overrides,
   };
 };
@@ -300,7 +304,9 @@ export const useScene = create((set, get) => ({
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       dims: { x: width, y: middle, z: depth },
-      colorIndex: 0,
+      // Slot defaults to orange when positive; negative slots use the cyan
+      // negative tint so colorIndex doesn't matter visually.
+      colorIndex: modifier === "negative" ? 0 : 7,
       groupId: gid,
       groupName,
     };
@@ -321,7 +327,7 @@ export const useScene = create((set, get) => ({
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       dims: { r: radius, h: depth, segments: 48 },
-      colorIndex: 0,
+      colorIndex: modifier === "negative" ? 0 : 7,
       groupId: gid,
       groupName,
     };
