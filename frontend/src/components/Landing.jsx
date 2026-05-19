@@ -71,10 +71,32 @@ export default function Landing() {
             </div>
             <h1 className="mt-5 text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
               Model. Carve.<br />
-              <span className="text-orange-400">Slice.</span> Print.
+              <span
+                data-testid="hero-slice-tooltip"
+                className="relative group/slice inline-block cursor-help"
+              >
+                <span className="text-orange-400 underline decoration-dotted decoration-orange-500/60 underline-offset-[6px]">
+                  Slice (sort of...).
+                </span>
+                {/* Tooltip — hover-revealed via Tailwind's group-hover/slice variant.
+                    Explains that ForgeSlicer's GCODE output is a perimeter-only shell
+                    preview, not a production-ready slice. Positioned below the word so
+                    it doesn't clip the header above. */}
+                <span
+                  role="tooltip"
+                  data-testid="hero-slice-tooltip-body"
+                  className="invisible opacity-0 group-hover/slice:visible group-hover/slice:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-3 w-[320px] bg-slate-900 border border-orange-500/40 rounded-lg p-3 text-xs leading-relaxed text-slate-200 shadow-2xl z-20 normal-case tracking-normal font-normal"
+                >
+                  <span className="block text-orange-300 font-semibold mb-1 text-[10px] uppercase tracking-wider">
+                    What "sort of" means
+                  </span>
+                  ForgeSlicer's built-in GCODE output is an <span className="text-orange-300">outer-shell preview</span> — perimeter contours only, no solid infill, no support generation. Great for design verification on your printer; for a production print, hand it off to OrcaSlicer or another full slicer in one click.
+                </span>
+              </span>{" "}
+              Print.
             </h1>
             <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl">
-              A TinkerCAD-style 3D modeler with positive & negative parts, real boolean operations, and a built-in GCODE slicer — all in one browser tab. Export STL, 3MF, or hand off to OrcaSlicer in a click.
+              CAD for people who wish they could do CAD, but don't know how... 3D modeler with positive &amp; negative parts, real boolean operations, and a built-in GCODE slicer — all in one browser tab. Shared components and models for updating and improving your designs. Export STL, 3MF, or hand off to OrcaSlicer in a click.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/workspace" data-testid="hero-cta-workspace" className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2">

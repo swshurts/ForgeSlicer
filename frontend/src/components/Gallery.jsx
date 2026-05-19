@@ -4,8 +4,9 @@ import { galleryApi, componentsApi } from "../lib/api";
 import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
-  PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag,
+  PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale,
 } from "lucide-react";
+import { getLicense } from "../lib/licenses";
 
 const PLACEHOLDERS = [
   "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
@@ -40,6 +41,49 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+// Small license chip used on both gallery and component cards. Renders the
+// short license name as a clickable link to the canonical text when one is
+// available; falls back to a plain pill otherwise. Tints vary by category so
+// users can scan card grids and spot copyleft (emerald) vs commercial-friendly
+// (cyan) vs non-commercial (amber) licenses at a glance.
+function LicenseBadge({ license, testid, className = "" }) {
+  const meta = getLicense(license);
+  if (!meta) return null;
+  const tintMap = {
+    emerald: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25",
+    cyan:    "bg-cyan-500/15 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/25",
+    amber:   "bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25",
+    slate:   "bg-slate-700/40 text-slate-300 border-slate-600 hover:bg-slate-700/60",
+  };
+  const tint = tintMap[meta.tint] || tintMap.slate;
+  const content = (
+    <>
+      <Scale size={9} /> {meta.short}
+    </>
+  );
+  const common = `inline-flex items-center gap-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${tint} ${className}`;
+  if (meta.url) {
+    return (
+      <a
+        href={meta.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        data-testid={testid}
+        title={meta.name + " — " + meta.summary}
+        className={common}
+      >
+        {content}
+      </a>
+    );
+  }
+  return (
+    <span data-testid={testid} title={meta.name + " — " + meta.summary} className={common}>
+      {content}
+    </span>
+  );
+}
+
 function GalleryCard({ item, idx, onDelete }) {
   const thumb = item.thumbnail_base64
     ? `data:image/png;base64,${item.thumbnail_base64}`
@@ -68,6 +112,7 @@ function GalleryCard({ item, idx, onDelete }) {
           <span className="text-[11px] text-slate-400">by {item.author}</span>
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
+        <LicenseBadge license={item.license} testid={`gallery-license-${item.id}`} className="mt-1.5" />
         {item.description && (
           <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
         )}
@@ -145,6 +190,7 @@ function ComponentCard({ item, idx, onAdd, onUpvote, onDelete, onTagClick }) {
           <span className="text-[11px] text-slate-400">by {item.author}</span>
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
+        <LicenseBadge license={item.license} testid={`component-license-${item.id}`} className="mt-1.5" />
         {tagList.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1" data-testid={`component-tags-${item.id}`}>
             {tagList.map((t) => (

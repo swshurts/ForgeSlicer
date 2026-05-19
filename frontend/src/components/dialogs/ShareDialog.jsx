@@ -5,7 +5,8 @@ import { exportSTLBytesAsync } from "../../lib/workerClient";
 import { galleryApi } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { startLogin } from "../../lib/auth";
-import { X, Globe, CheckCircle2, Loader2, Lock, LogIn } from "lucide-react";
+import { LICENSES, DEFAULT_LICENSE_ID, getLicense } from "../../lib/licenses";
+import { X, Globe, CheckCircle2, Loader2, Lock, LogIn, Scale } from "lucide-react";
 
 export function ShareDialog({ open, onClose }) {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export function ShareDialog({ open, onClose }) {
   const [description, setDescription] = useState("");
   const [name, setName] = useState(projectName);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [licenseId, setLicenseId] = useState(DEFAULT_LICENSE_ID);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // gallery item
   const [error, setError] = useState("");
@@ -55,6 +57,7 @@ export function ShareDialog({ open, onClose }) {
         remix_of: remixOf || undefined,
         data: projectJson,
         private: user ? isPrivate : false,
+        license: licenseId,
       });
       setDone(created);
     } catch (e) {
@@ -117,6 +120,39 @@ export function ShareDialog({ open, onClose }) {
                 <span><span className="text-orange-300 font-semibold">Sign in</span> to save private designs and tie posts to your profile.</span>
               </button>
             )}
+            <label className="flex flex-col gap-1" data-testid="share-license-field">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Scale size={10} className="text-orange-400" /> License
+              </span>
+              <select
+                data-testid="share-license"
+                value={licenseId}
+                onChange={(e) => setLicenseId(e.target.value)}
+                className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
+              >
+                {LICENSES.map((l) => (
+                  <option key={l.id} value={l.id}>{l.short} — {l.name}</option>
+                ))}
+              </select>
+              {getLicense(licenseId)?.summary && (
+                <span className="text-[10px] text-slate-400 leading-snug mt-0.5">
+                  {getLicense(licenseId).summary}
+                  {getLicense(licenseId).url && (
+                    <>
+                      {" "}
+                      <a
+                        href={getLicense(licenseId).url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-orange-400 hover:underline"
+                      >
+                        full text →
+                      </a>
+                    </>
+                  )}
+                </span>
+              )}
+            </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Description</span>
               <textarea data-testid="share-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="bg-slate-950 border border-slate-700 rounded text-sm text-white p-2 focus:border-orange-500 outline-none resize-none" />

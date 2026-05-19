@@ -218,6 +218,10 @@ class GalleryItemCreate(BaseModel):
     # When true, the item is private to its owner — never returned by the
     # public list endpoint, only by /api/me/designs.
     private: bool = False
+    # SPDX-style license identifier (e.g. "cc-by-4.0", "agpl-3.0"). Stored as
+    # a free-text id so we can grow the catalog without DB migrations. The
+    # frontend canonicalises against /app/frontend/src/lib/licenses.js.
+    license: str = "cc-by-4.0"
 
 
 class GalleryItemMeta(BaseModel):
@@ -237,6 +241,7 @@ class GalleryItemMeta(BaseModel):
     # only on the user's own items and a "Private" badge on hidden ones.
     user_id: Optional[str] = None
     private: bool = False
+    license: str = "cc-by-4.0"
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -304,6 +309,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         "data": item.data or None,
         "user_id": user["user_id"] if user else None,
         "private": bool(item.private) if user else False,
+        "license": (item.license or "cc-by-4.0").strip()[:40],
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
@@ -322,6 +328,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         remix_count=0,
         user_id=doc["user_id"],
         private=doc["private"],
+        license=doc["license"],
     )
 
 
@@ -346,6 +353,7 @@ def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
         remix_count=d.get("remix_count", 0),
         user_id=d.get("user_id"),
         private=bool(d.get("private", False)),
+        license=d.get("license", "cc-by-4.0"),
     )
 
 
@@ -525,6 +533,7 @@ class ComponentCreate(BaseModel):
     triangle_count: int = 0
     object_count: int = 0
     private: bool = False               # owner-only when true
+    license: str = "cc-by-4.0"          # SPDX-style id; see frontend licenses catalog
 
 
 class ComponentMeta(BaseModel):
@@ -545,6 +554,7 @@ class ComponentMeta(BaseModel):
     user_id: Optional[str] = None
     private: bool = False
     verified: bool = False
+    license: str = "cc-by-4.0"
 
 
 def _normalize_modifier(m: str) -> str:
@@ -580,6 +590,8 @@ async def create_component(item: ComponentCreate, request: Request):
         "votes": 0,
         "user_id": user["user_id"] if user else None,
         "private": bool(item.private) if user else False,
+        "verified": False,
+        "license": (item.license or "cc-by-4.0").strip()[:40],
     }
     await db.components.insert_one(doc)
     return ComponentMeta(**{**doc, "created_at": created_at})

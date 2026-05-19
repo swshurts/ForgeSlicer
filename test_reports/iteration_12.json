@@ -1,0 +1,60 @@
+{
+  "summary": "Iter12: License system end-to-end testing — backend round-trip (gallery+components, agpl-3.0/mit/default cc-by-4.0/legacy items), Landing banner + tooltip + body copy, ShareDialog + SaveComponentDialog license selectors (12 opts, default cc-by-4.0), gallery+component license badge chips on both tabs with canonical URL anchors. Full pytest regression (71/71) including test_voice_command::test_boolean_subtract (still green, not skipped).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "backend_license_roundtrip_agpl_gallery": "PASS — POST /api/gallery with license='agpl-3.0' returns license='agpl-3.0' and GET /api/gallery confirms persistence",
+    "backend_license_roundtrip_mit_components": "PASS — POST /api/components with license='mit' returns license='mit' and GET /api/components confirms persistence",
+    "backend_license_default_cc_by_4_gallery": "PASS — omitting license in POST /api/gallery returns license='cc-by-4.0'",
+    "backend_license_default_cc_by_4_components": "PASS — omitting license in POST /api/components returns license='cc-by-4.0'",
+    "backend_get_listings_have_license_field": "PASS — every item in /api/gallery and /api/components has a non-empty license field (legacy items default to cc-by-4.0 via Pydantic default at response construction)",
+    "backend_full_regression": "PASS — 71/71 backend pytest pass (including test_voice_command::test_boolean_subtract; not deselected)",
+    "frontend_landing_h1_text": "PASS — H1 contains 'Model. Carve.', 'Slice (sort of...).', 'Print.'",
+    "frontend_landing_hero_tooltip": "PASS — [data-testid='hero-slice-tooltip'] present; hover reveals [data-testid='hero-slice-tooltip-body'] containing 'outer-shell preview' text",
+    "frontend_landing_body_copy": "PASS — body contains 'CAD for people who wish they could do CAD, but don't know how...'",
+    "frontend_share_license_field": "PASS — [data-testid='share-license-field'] + [data-testid='share-license'] present; exactly 12 <option> children; default cc-by-4.0",
+    "frontend_share_agpl_roundtrip": "PASS — select agpl-3.0 → submit → [data-testid='share-success'] shown → GET /api/gallery confirms new design has license='agpl-3.0'",
+    "frontend_component_license_field": "PASS — [data-testid='component-license-field'] + [data-testid='component-license'] present; 12 options; default cc-by-4.0",
+    "frontend_component_mit_roundtrip": "PASS — select mit → submit → GET /api/components confirms new component has license='mit'",
+    "frontend_gallery_designs_license_badges": "PASS — 9 [data-testid^='gallery-license-'] badges render on Designs tab",
+    "frontend_gallery_components_license_badges": "PASS — 15 [data-testid^='component-license-'] badges render on Components tab",
+    "frontend_license_badge_anchor_url": "PASS — license badges with canonical URL render as <a> with href + target='_blank' (9 verified on Designs tab)",
+    "regression_slot_composite": "PASS — [data-testid='add-slot-negative-btn'] adds 3 scene-tree-items + 1 group-slot-* node",
+    "regression_4_dialogs_open": "PASS — share-dialog, save-component-dialog, orca-dialog (via send-to-orcaslicer-btn), save-printer-dialog all open with their expected testids",
+    "regression_anon_auth": "PASS — login-btn present, user-menu-trigger absent on anonymous"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_license_api.py",
+    "/app/test_reports/pytest/iter12_license_results.xml",
+    "/app/test_reports/pytest/iter12_full_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Pydantic default `license: str = 'cc-by-4.0'` is applied at both GalleryItemCreate (request) and GalleryItemMeta (response) — clean two-sided default; legacy MongoDB docs without the key still emit cc-by-4.0 on GET as intended.",
+    "Length cap `.strip()[:40]` on persisted license id is good defensive input handling (prevents arbitrary-length junk strings).",
+    "ShareDialog + SaveComponentDialog correctly share the LICENSES catalog from /lib/licenses.js; no duplicated literal arrays.",
+    "LicenseBadge in Gallery.jsx renders as <a target='_blank' rel='noreferrer'> when meta.url is non-empty and falls back to a non-anchor chip for 'standard-digital' (which has no canonical URL) — correct behaviour.",
+    "Hydration console warning observed: 'In HTML, <span> cannot be a child of <option>'. ShareDialog/SaveComponentDialog wrap each option's label text in a <span data-ve-dynamic>, which is invalid HTML inside <option>. Non-blocking (browsers tolerate it; dropdown still works correctly with 12 options and round-trips), but worth cleaning up — likely a dev-mode wrapper from the editor tooling, not user-authored code. Recommend ignoring unless prod build also emits it.",
+    "Iter11 nit (components list sort missing 'verified' first key) still present in server.py — unchanged this iteration, low priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_license_api.py (new — 6 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (71/71 pytest + 6/6 new license tests)",
+    "frontend": "100% (18/18 targeted scenarios)"
+  },
+  "test_credentials": "Not needed for this iteration — all flows tested anonymously (gallery + components POST accept anonymous authors). Auth seeding (mongosh per /app/memory/test_credentials.md) was not exercised but the anon→login-btn / user-menu-trigger absence regression still passes.",
+  "seed_data_creation": "Backend pytest creates TEST_iter12_* gallery+component docs (left in DB; small, non-disruptive). Frontend live tests created TEST_iter12_share_<ts> in gallery and TEST_iter12_comp_<ts> in components — visible on /gallery as expected.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 phases of the license/landing/contributor-tier iteration verified at backend AND frontend levels. New regression file /app/backend/tests/test_license_api.py (6 tests) covers license persistence + defaults + legacy fallback for both /api/gallery and /api/components. Reuse for future iterations. One dev-mode hydration warning noted in critical_code_review_comments but not breaking. No action items.",
+  "rca of the issue": "N/A — no bugs found."
+}

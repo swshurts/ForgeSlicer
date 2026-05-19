@@ -5,7 +5,8 @@ import { exportSTLBytesAsync } from "../../lib/workerClient";
 import { componentsApi } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { startLogin } from "../../lib/auth";
-import { X, CheckCircle2, Loader2, Library, PlusSquare, MinusSquare, Lock, LogIn } from "lucide-react";
+import { LICENSES, DEFAULT_LICENSE_ID, getLicense } from "../../lib/licenses";
+import { X, CheckCircle2, Loader2, Library, PlusSquare, MinusSquare, Lock, LogIn, Scale } from "lucide-react";
 
 
 const COMPONENT_CATEGORIES = [
@@ -33,6 +34,7 @@ export function SaveComponentDialog({ open, onClose }) {
   const [author, setAuthor] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
+  const [licenseId, setLicenseId] = useState(DEFAULT_LICENSE_ID);
   // If the user has a multi-selection (typically a freshly-grouped assembly)
   // default the dialog to save just that subset — saves a click and matches
   // the "build a U1 panel, then save it" workflow.
@@ -155,6 +157,7 @@ export function SaveComponentDialog({ open, onClose }) {
         triangle_count: Math.floor(triangleCount),
         object_count: effectiveObjects.length,
         private: user ? isPrivate : false,
+        license: licenseId,
       });
       setDone(created);
     } catch (e) {
@@ -306,6 +309,39 @@ export function SaveComponentDialog({ open, onClose }) {
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Tags (comma-separated)</span>
               <input data-testid="component-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="screw, M3, 10mm" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+            </label>
+            <label className="flex flex-col gap-1" data-testid="component-license-field">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Scale size={10} className="text-orange-400" /> License
+              </span>
+              <select
+                data-testid="component-license"
+                value={licenseId}
+                onChange={(e) => setLicenseId(e.target.value)}
+                className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
+              >
+                {LICENSES.map((l) => (
+                  <option key={l.id} value={l.id}>{l.short} — {l.name}</option>
+                ))}
+              </select>
+              {getLicense(licenseId)?.summary && (
+                <span className="text-[10px] text-slate-400 leading-snug mt-0.5">
+                  {getLicense(licenseId).summary}
+                  {getLicense(licenseId).url && (
+                    <>
+                      {" "}
+                      <a
+                        href={getLicense(licenseId).url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-orange-400 hover:underline"
+                      >
+                        full text →
+                      </a>
+                    </>
+                  )}
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Description</span>

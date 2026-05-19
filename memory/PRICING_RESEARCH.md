@@ -75,6 +75,34 @@ Approximate monthly variable cost per active user, assuming current architecture
 - **First-month token**: Optional $1 first-month promo for the Hobbyist tier as a conversion accelerator (Stripe Coupons).
 - **No trial period for paid tiers**: Free is already the trial. Saves Stripe complexity.
 
+### Contributor Lifetime Tier (per user request, Feb 2026)
+
+A separate, *earned* tier that rewards open-source community contribution.
+Cannot be bought — it's unlocked automatically when the user crosses both
+thresholds with original, open-licensed work.
+
+| Tier                        | Price | How it's earned                                                                                                                                                              | What it includes                                                  |
+|-----------------------------|-------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------|
+| **Contributor (Lifetime)**  | $0    | • **100+** non-duplicated **public** components published by you AND<br>• **20+** non-duplicated **public** designs published by you<br>• **All** must be original work AND under an open-source license (CC-BY, CC-BY-SA, CC0, GPL/LGPL/AGPL, MIT, Apache 2.0). Standard Digital / CC-BY-NC / CC-BY-ND do NOT count toward the threshold. | Everything in **Maker Pro**, free for life, plus a "Contributor" badge on the user's profile and a green outline on their cards in the gallery. |
+
+**Enforcement mechanics (when Phase 3 ships):**
+1. Add `users.contributor_lifetime: bool` (default `false`).
+2. Nightly job (cron / Mongo `$facet`) recounts each user's published+public+open-licensed items:
+   - components → count unique `{name, triangle_count}` tuples to dedupe near-copies
+   - designs → same dedup heuristic on `gallery` collection
+3. On threshold cross, set `contributor_lifetime=true` and mail a congratulations note.
+4. The tier never demotes a user once granted (even if they later delete uploads) — this is intentional, so contributors feel safe pruning low-quality early work.
+5. Original-work verification is **trust + community report**: nothing programmatic until a credible report comes in. Reported items can be quarantined by an admin; the user's contributor count is recomputed and the badge revoked if the count falls below threshold.
+6. Visible counter on the Profile page — *"You've contributed N components and M designs. Reach 100/20 for free-forever access."* — turns the milestone into a clear, gamified upgrade path.
+
+### Updated pricing summary (Feb 2026 revision)
+
+- **Free** → $0
+- **Hobbyist** → $3/mo or $30/yr
+- **Maker Pro** → $7/mo or $70/yr
+- **Studio** → $19/mo (future)
+- **Contributor (Lifetime)** → $0, earned via 100 components + 20 designs of original open-source work
+
 ---
 
 ## 6. Recommendation
