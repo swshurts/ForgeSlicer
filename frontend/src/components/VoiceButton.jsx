@@ -1,74 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Loader2, Sparkles, X, Send } from "lucide-react";
-import { getSpeechRecognition, isVoiceSupported, parseTranscript, executeCommand } from "../lib/voiceCommands";
+import { parseTranscript, executeCommand } from "../lib/voiceCommands";
+import { isWhisperSupported, startRecorder, transcribeBlob } from "../lib/whisperStt";
 
-// Click → starts listening; click again to stop. While listening the button
-// glows red. After the user stops speaking, the transcript is shown for
-// confirmation/edit (so misrecognitions can be fixed before they fire). The
-// confirmed transcript is sent to GPT-5.2 and the resulting command is
-// executed against the scene. A small floating banner shows the heard
-// phrase + the action taken so the user knows what happened.
+// Voice command button. Primary path: record audio with MediaRecorder and
+// transcribe server-side via OpenAI Whisper (better accent / noise handling
+// than Chrome's Web Speech API). Transcript is then shown for review/edit
+// before being parsed by GPT-5.2 into a structured CAD command.
+//
+// Flow:
+//   idle  → click → recording (red pulse)
+//   recording → click → transcribing (orange spinner)
+//   transcribing → confirm banner (editable transcript + Run/Cancel/Retry)
+//   confirm → Run → busy (LLM parse) → feedback banner
 export default function VoiceButton() {
-  const supported = isVoiceSupported();
-  const [listening, setListening] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const supported = isWhisperSupported();
+  const [stage, setStage] = useState("idle"); // idle | recording | transcribing | parsing
   const [feedback, setFeedback] = useState(null); // { kind, text, heard }
-  const [livePartial, setLivePartial] = useState("");
-  // The transcript pending user confirmation. When non-empty, the banner
-  // shows an editable text box + "Execute" / "Cancel" buttons instead of
-  // auto-firing — gives users a chance to correct misrecognitions before
-  // GPT-5.2 commits to an action. This is the practical fix for accent /
-  // ambient-noise issues: the Web Speech API itself can't be "trained".
   const [pendingTranscript, setPendingTranscript] = useState("");
-  const recogRef = useRef(null);
+  const recRef = useRef(null);
   const editInputRef = useRef(null);
 
-  useEffect(() => {
-    if (!supported) return;
-    const SR = getSpeechRecognition();
-    const r = new SR();
-    r.lang = "en-US";
-    r.interimResults = true;
-    r.continuous = false;
-    // Request up to 3 candidates per utterance so we can offer alternatives
-    // when the top guess is clearly wrong. Cheap server-side; some browsers
-    // ignore the hint, which is fine.
-    r.maxAlternatives = 3;
-    r.onresult = (ev) => {
-      let interim = "";
-      let final = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        const res = ev.results[i];
-        if (res.isFinal) final += res[0].transcript;
-        else interim += res[0].transcript;
-      }
-      setLivePartial(interim || final);
-      if (final) {
-        setLivePartial("");
-        // Show the transcript in the editable confirm banner instead of
-        // firing immediately.
-        setPendingTranscript(final.trim());
-      }
-    };
-    r.onerror = (e) => {
-      setListening(false);
-      setFeedback({ kind: "err", text: `Mic error: ${e.error || "unknown"}` });
-    };
-    r.onend = () => { setListening(false); };
-    recogRef.current = r;
-    return () => {
-      try { r.abort(); }
-      catch (err) {
-        // SpeechRecognition.abort() throws InvalidStateError if already
-        // stopped — safe to ignore but log once for traceability.
-        // eslint-disable-next-line no-console
-        console.debug("SpeechRecognition.abort() ignored:", err?.message || err);
-      }
-    };
-  }, [supported]);
-
-  // When the confirm banner opens, focus the input so the user can correct
-  // typos immediately via keyboard.
   useEffect(() => {
     if (pendingTranscript && editInputRef.current) {
       editInputRef.current.focus();
@@ -76,29 +28,58 @@ export default function VoiceButton() {
     }
   }, [pendingTranscript]);
 
-  const start = () => {
-    if (!supported || listening || busy) return;
+  const startRecording = async () => {
+    if (!supported || stage !== "idle") return;
     setFeedback(null);
-    setLivePartial("");
     setPendingTranscript("");
-    try { recogRef.current.start(); setListening(true); }
-    catch (e) { setFeedback({ kind: "err", text: e.message || String(e) }); }
-  };
-  const stop = () => {
-    try { recogRef.current && recogRef.current.stop(); }
-    catch (err) {
-      // Common in browsers that throw when stopping an already-stopped
-      // recognizer. Non-fatal, just continue.
-      // eslint-disable-next-line no-console
-      console.debug("SpeechRecognition.stop() ignored:", err?.message || err);
+    try {
+      recRef.current = await startRecorder();
+      setStage("recording");
+    } catch (e) {
+      setFeedback({ kind: "err", text: e.message || String(e) });
     }
-    setListening(false);
+  };
+
+  const finishRecording = async () => {
+    if (stage !== "recording") return;
+    setStage("transcribing");
+    try {
+      const blob = await recRef.current.stop();
+      recRef.current = null;
+      if (!blob || blob.size < 500) {
+        setStage("idle");
+        setFeedback({ kind: "warn", text: "Recording too short — try again and speak for at least half a second." });
+        setTimeout(() => setFeedback(null), 6000);
+        return;
+      }
+      const text = await transcribeBlob(blob);
+      setStage("idle");
+      if (!text) {
+        setFeedback({ kind: "warn", text: "Whisper returned an empty transcript. Try speaking more clearly or in a quieter environment." });
+        setTimeout(() => setFeedback(null), 6000);
+        return;
+      }
+      setPendingTranscript(text);
+    } catch (e) {
+      setStage("idle");
+      const msg = e?.response?.data?.detail || e?.message || String(e);
+      setFeedback({ kind: "err", text: `Transcription failed: ${msg}` });
+      setTimeout(() => setFeedback(null), 8000);
+    }
+  };
+
+  const cancelRecording = () => {
+    if (recRef.current) {
+      try { recRef.current.cancel(); } catch { /* already stopped */ }
+      recRef.current = null;
+    }
+    setStage("idle");
+    setPendingTranscript("");
   };
 
   const handleExecute = async (transcript) => {
-    stop();
     setPendingTranscript("");
-    setBusy(true);
+    setStage("parsing");
     try {
       const cmd = await parseTranscript(transcript);
       const msg = await executeCommand(cmd);
@@ -110,21 +91,16 @@ export default function VoiceButton() {
         heard: transcript,
       });
     } finally {
-      setBusy(false);
+      setStage("idle");
       setTimeout(() => setFeedback(null), 6000);
     }
-  };
-
-  const handleCancel = () => {
-    setPendingTranscript("");
-    setLivePartial("");
   };
 
   if (!supported) {
     return (
       <button
         data-testid="voice-btn"
-        title="Voice commands require Chrome or Edge (Web Speech API)."
+        title="Voice commands require microphone access (MediaRecorder API)."
         disabled
         className="h-8 px-2.5 rounded text-[11px] font-semibold uppercase tracking-wider border bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed flex items-center gap-1.5"
       >
@@ -133,26 +109,42 @@ export default function VoiceButton() {
     );
   }
 
+  const onClick = () => {
+    if (stage === "idle") startRecording();
+    else if (stage === "recording") finishRecording();
+  };
+  const busy = stage === "transcribing" || stage === "parsing";
+
   return (
     <>
       <button
         data-testid="voice-btn"
-        onClick={listening ? stop : start}
+        onClick={onClick}
         disabled={busy}
-        title={listening ? "Listening… click to stop" : "Click to speak a CAD command (e.g. 'add a cube 20 by 20 by 20'). You'll get a chance to edit the transcript before it runs."}
+        title={
+          stage === "recording" ? "Click to stop recording" :
+          stage === "transcribing" ? "Transcribing with Whisper…" :
+          stage === "parsing" ? "Parsing command…" :
+          "Click to record a CAD command. Whisper transcribes it; you'll review the text before it runs."
+        }
         className={`h-8 px-2.5 rounded text-[11px] font-semibold uppercase tracking-wider border flex items-center gap-1.5 transition-colors ${
-          listening
+          stage === "recording"
             ? "bg-red-500/20 border-red-500/70 text-red-300 animate-pulse"
             : busy
               ? "bg-slate-800 border-slate-700 text-slate-400"
               : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
         }`}
       >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : listening ? <Mic size={12} /> : <Sparkles size={12} className="text-orange-400" />}
-        {busy ? "Thinking…" : listening ? "Listening" : "Voice"}
+        {busy ? <Loader2 size={12} className="animate-spin" />
+         : stage === "recording" ? <Mic size={12} />
+         : <Sparkles size={12} className="text-orange-400" />}
+        {stage === "transcribing" ? "Transcribing…"
+         : stage === "parsing" ? "Thinking…"
+         : stage === "recording" ? "Recording"
+         : "Voice"}
       </button>
 
-      {(listening || feedback || livePartial || pendingTranscript) && (
+      {(stage !== "idle" || feedback || pendingTranscript) && (
         <div
           data-testid="voice-feedback"
           className="fixed top-16 left-1/2 -translate-x-1/2 z-[200] min-w-[320px] max-w-[640px] px-4 py-3 rounded-md shadow-xl border bg-slate-950/95 backdrop-blur-sm flex items-start gap-3"
@@ -161,27 +153,38 @@ export default function VoiceButton() {
               feedback?.kind === "err" ? "#dc2626" :
               feedback?.kind === "warn" ? "#d97706" :
               pendingTranscript ? "#f97316" :
-              listening ? "#dc2626" :
+              stage === "recording" ? "#dc2626" :
+              busy ? "#f97316" :
               "#16a34a",
           }}
         >
-          {listening ? (
-            <Mic size={16} className="text-red-400 animate-pulse mt-0.5" />
-          ) : busy ? (
-            <Loader2 size={16} className="text-orange-400 animate-spin mt-0.5" />
-          ) : pendingTranscript ? (
-            <Sparkles size={16} className="text-orange-400 mt-0.5" />
-          ) : feedback?.kind === "err" ? (
-            <MicOff size={16} className="text-red-400 mt-0.5" />
-          ) : (
-            <Sparkles size={16} className={`mt-0.5 ${feedback?.kind === "warn" ? "text-yellow-400" : "text-green-400"}`} />
-          )}
+          {stage === "recording" ? <Mic size={16} className="text-red-400 animate-pulse mt-0.5" />
+            : busy ? <Loader2 size={16} className="text-orange-400 animate-spin mt-0.5" />
+            : pendingTranscript ? <Sparkles size={16} className="text-orange-400 mt-0.5" />
+            : feedback?.kind === "err" ? <MicOff size={16} className="text-red-400 mt-0.5" />
+            : <Sparkles size={16} className={`mt-0.5 ${feedback?.kind === "warn" ? "text-yellow-400" : "text-green-400"}`} />}
           <div className="flex-1 text-xs min-w-0">
-            {listening && (
+            {stage === "recording" && (
               <>
-                <div className="font-mono text-red-300">Listening…</div>
-                {livePartial && <div className="text-slate-300 mt-0.5 italic truncate">"{livePartial}"</div>}
+                <div className="font-mono text-red-300 mb-1">Recording — click the Voice button (or the button below) when done.</div>
+                <button
+                  data-testid="voice-stop-btn"
+                  onClick={finishRecording}
+                  className="h-7 px-3 bg-red-500 hover:bg-red-600 text-white text-[11px] font-semibold rounded inline-flex items-center gap-1.5 uppercase tracking-wider"
+                >
+                  <Mic size={11} /> Stop
+                </button>
+                <button
+                  data-testid="voice-cancel-recording-btn"
+                  onClick={cancelRecording}
+                  className="h-7 px-3 ml-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded inline-flex items-center gap-1.5 uppercase tracking-wider"
+                >
+                  <X size={11} /> Cancel
+                </button>
               </>
+            )}
+            {stage === "transcribing" && (
+              <div className="text-orange-300">Transcribing with Whisper…</div>
             )}
             {pendingTranscript && (
               <div data-testid="voice-confirm-row">
@@ -193,7 +196,7 @@ export default function VoiceButton() {
                   onChange={(e) => setPendingTranscript(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleExecute(pendingTranscript);
-                    else if (e.key === "Escape") handleCancel();
+                    else if (e.key === "Escape") setPendingTranscript("");
                   }}
                   className="w-full bg-slate-900 border border-orange-500/50 rounded text-sm text-white px-2 py-1.5 font-mono focus:outline-none focus:border-orange-400"
                 />
@@ -208,14 +211,14 @@ export default function VoiceButton() {
                   </button>
                   <button
                     data-testid="voice-confirm-cancel"
-                    onClick={handleCancel}
+                    onClick={() => setPendingTranscript("")}
                     className="h-7 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded flex items-center gap-1.5 uppercase tracking-wider"
                   >
                     <X size={11} /> Cancel
                   </button>
                   <button
                     data-testid="voice-confirm-retry"
-                    onClick={() => { handleCancel(); setTimeout(start, 60); }}
+                    onClick={() => { setPendingTranscript(""); setTimeout(startRecording, 60); }}
                     className="h-7 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded flex items-center gap-1.5 uppercase tracking-wider"
                     title="Discard and re-record"
                   >
@@ -224,7 +227,7 @@ export default function VoiceButton() {
                 </div>
               </div>
             )}
-            {!listening && !pendingTranscript && feedback && (
+            {stage === "idle" && !pendingTranscript && feedback && (
               <>
                 {feedback.heard && (
                   <div className="text-slate-400 mb-0.5">
@@ -235,9 +238,7 @@ export default function VoiceButton() {
                   feedback.kind === "err" ? "text-red-300" :
                   feedback.kind === "warn" ? "text-yellow-300" :
                   "text-green-300"
-                }`}>
-                  {feedback.text}
-                </div>
+                }`}>{feedback.text}</div>
               </>
             )}
           </div>

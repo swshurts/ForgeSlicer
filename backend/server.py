@@ -735,8 +735,16 @@ async def delete_component(cid: str, request: Request):
 # here and use GPT-5.2 to convert it into a strict JSON command the frontend
 # can execute. Keeping the LLM call server-side lets us keep the API key
 # secret and reuse the prompt across UI surfaces.
+#
+# Optional /api/voice/transcribe endpoint uses OpenAI Whisper-1 for cases
+# where the Web Speech API isn't available (Safari, Firefox) or produces
+# poor results for non-US-English accents. Browser records audio with
+# MediaRecorder and POSTs the blob; we transcribe and return text.
 from emergentintegrations.llm.chat import LlmChat, UserMessage  # noqa: E402
+from emergentintegrations.llm.openai import OpenAISpeechToText  # noqa: E402
+from fastapi import UploadFile, File                            # noqa: E402
 import json as _json                                              # noqa: E402
+import tempfile                                                   # noqa: E402
 
 VOICE_SYSTEM_PROMPT = """You are ForgeSlicer's voice command parser. The user speaks
 CAD commands; you MUST respond with ONLY a JSON object (no prose, no markdown
@@ -847,6 +855,74 @@ async def parse_voice_command(req: VoiceCommandRequest):
     except Exception as e:
         logger.exception("Voice command parse failed")
         raise HTTPException(status_code=500, detail=f"LLM error: {e}")
+
+
+# Vocabulary hint sent with every Whisper call. The CAD terms ForgeSlicer
+# uses ("cylinder", "cube", "union", "subtract", "millimetre", "degrees"...)
+# are over-represented in our transcripts, so seeding Whisper with that
+# vocab as a `prompt` parameter measurably improves rare-word accuracy
+# without slowing it down or constraining outputs.
+WHISPER_VOCAB_HINT = (
+    "CAD voice commands: add cube, add sphere, add cylinder, add cone, add torus, "
+    "positive, negative, union, subtract, intersect, mirror, group, ungroup, "
+    "rotate, scale, duplicate, delete, save, undo, redo, drop to bed, "
+    "millimetre, millimeters, mm, degrees, X axis, Y axis, Z axis."
+)
+
+
+@api_router.post("/voice/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Server-side STT via OpenAI Whisper. Browser records audio with
+    MediaRecorder and POSTs the blob as multipart/form-data. We hand it to
+    Whisper-1 and return `{transcript: str}`. Used as a fallback when the
+    browser's Web Speech API is unavailable or produces poor results for
+    non-US-English accents."""
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="EMERGENT_LLM_KEY not configured")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty audio upload")
+    if len(raw) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio file exceeds 25 MB limit")
+
+    # OpenAISpeechToText needs a file-like with a recognised extension. The
+    # browser typically uploads `audio/webm;codecs=opus` from MediaRecorder;
+    # we keep the original filename so Whisper picks the right decoder.
+    # Falls back to .webm because that's the most likely format from Chrome.
+    name = (file.filename or "audio.webm").lower()
+    if not any(name.endswith(ext) for ext in (".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm")):
+        name = "audio.webm"
+    suffix = "." + name.rsplit(".", 1)[-1]
+
+    # Use a tempfile so the SDK gets a real file handle (some browsers send
+    # streamed bodies that don't survive being re-opened).
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    try:
+        tmp.write(raw)
+        tmp.close()
+        stt = OpenAISpeechToText(api_key=key)
+        with open(tmp.name, "rb") as fh:
+            resp = await stt.transcribe(
+                file=fh,
+                model="whisper-1",
+                language="en",
+                prompt=WHISPER_VOCAB_HINT,
+                response_format="json",
+                temperature=0,
+            )
+        text = (getattr(resp, "text", None) or "").strip()
+        return {"transcript": text}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Whisper transcription failed")
+        raise HTTPException(status_code=500, detail=f"Whisper error: {e}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
 
 
 app.include_router(api_router)
