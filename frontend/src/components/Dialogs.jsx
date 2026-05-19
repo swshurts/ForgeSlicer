@@ -657,7 +657,14 @@ export function SaveComponentDialog({ open, onClose }) {
             <div className="grid grid-cols-2 gap-2">
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-wider text-slate-400">Author</span>
-                <input data-testid="component-author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Anonymous" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+                {user ? (
+                  <div data-testid="component-author-readonly" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-slate-300 px-3 flex items-center gap-2">
+                    {user.picture && <img src={user.picture} alt="" className="h-5 w-5 rounded-full" referrerPolicy="no-referrer" />}
+                    <span className="truncate">{user.name}</span>
+                  </div>
+                ) : (
+                  <input data-testid="component-author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Anonymous" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+                )}
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] uppercase tracking-wider text-slate-400">Category</span>
@@ -666,6 +673,31 @@ export function SaveComponentDialog({ open, onClose }) {
                 </select>
               </label>
             </div>
+            {user ? (
+              <label className="flex items-center gap-2 px-3 py-2 bg-cyan-500/10 border border-cyan-500/40 rounded text-[11px] text-slate-200 cursor-pointer select-none">
+                <input
+                  data-testid="component-private-toggle"
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                  className="accent-orange-500"
+                />
+                <Lock size={12} className="text-cyan-300" />
+                <span className="flex-1">
+                  <span className="text-cyan-200 font-semibold">Private</span> — only visible to you in <span className="text-orange-300">My Components</span>.
+                </span>
+              </label>
+            ) : (
+              <button
+                type="button"
+                data-testid="component-signin-cta"
+                onClick={() => startLogin("/workspace")}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-orange-500/40 hover:border-orange-500/70 rounded text-[11px] text-slate-300 text-left"
+              >
+                <LogIn size={12} className="text-orange-400" />
+                <span><span className="text-orange-300 font-semibold">Sign in</span> to save private components tied to your profile.</span>
+              </button>
+            )}
             <div>
               <span className="text-[10px] uppercase tracking-wider text-slate-400 mb-1 block">Type</span>
               <div className="grid grid-cols-2 gap-2">
