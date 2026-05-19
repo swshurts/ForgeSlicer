@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response as FastResponse
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -10,7 +10,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import httpx
 
 
 ROOT_DIR = Path(__file__).parent
@@ -22,6 +23,181 @@ db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="ForgeSlicer API")
 api_router = APIRouter(prefix="/api")
+
+
+# ---------- Auth (Emergent-managed Google OAuth) ----------
+# Flow: frontend redirects to https://auth.emergentagent.com/ with a redirect_url
+# that brings the user back to our app with #session_id=... in the URL fragment.
+# The frontend POSTs that session_id to /api/auth/session; we exchange it with
+# the Emergent auth service for a 7-day session_token, then set an httpOnly
+# cookie so subsequent requests are authenticated transparently.
+
+EMERGENT_AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+SESSION_TTL_DAYS = 7
+SESSION_COOKIE = "session_token"
+
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    email: str
+    name: str
+    picture: str = ""
+    created_at: datetime
+
+
+class SessionExchangeRequest(BaseModel):
+    session_id: str
+
+
+async def _upsert_user_from_emergent(profile: dict) -> dict:
+    """Find-or-create a user from the Emergent auth profile.
+    Returns the stored user document (without Mongo _id)."""
+    email = (profile.get("email") or "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Auth profile missing email")
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        # Refresh name/picture in case it changed in Google.
+        await db.users.update_one(
+            {"email": email},
+            {"$set": {
+                "name": profile.get("name") or existing.get("name", "User"),
+                "picture": profile.get("picture") or existing.get("picture", ""),
+                "last_login_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        existing["name"] = profile.get("name") or existing.get("name", "User")
+        existing["picture"] = profile.get("picture") or existing.get("picture", "")
+        return existing
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "user_id": user_id,
+        "email": email,
+        "name": profile.get("name") or email.split("@")[0],
+        "picture": profile.get("picture") or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_login_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(doc)
+    return doc
+
+
+async def _resolve_session_token(token: Optional[str]) -> Optional[dict]:
+    """Validate a session token, return the user dict or None."""
+    if not token:
+        return None
+    sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not sess:
+        return None
+    expires_at = sess.get("expires_at")
+    if isinstance(expires_at, str):
+        try:
+            expires_at = datetime.fromisoformat(expires_at)
+        except Exception:
+            return None
+    if expires_at is None:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        # Purge expired session opportunistically.
+        await db.user_sessions.delete_one({"session_token": token})
+        return None
+    user = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
+    return user
+
+
+def _extract_token(request: Request) -> Optional[str]:
+    """Prefer the httpOnly cookie; fall back to Authorization: Bearer for tools."""
+    tok = request.cookies.get(SESSION_COOKIE)
+    if tok:
+        return tok
+    auth = request.headers.get("Authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth.split(None, 1)[1].strip()
+    return None
+
+
+async def get_current_user(request: Request) -> dict:
+    """Require an authenticated user. Returns the user dict."""
+    user = await _resolve_session_token(_extract_token(request))
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+async def get_optional_user(request: Request) -> Optional[dict]:
+    """Return the user if authenticated, otherwise None. For endpoints that
+    work for anonymous visitors but enrich responses for logged-in users."""
+    return await _resolve_session_token(_extract_token(request))
+
+
+@api_router.post("/auth/session")
+async def exchange_session(req: SessionExchangeRequest, response: FastResponse):
+    """Exchange an Emergent OAuth session_id (one-time, from URL fragment)
+    for our app's persistent session_token. Sets an httpOnly cookie."""
+    sid = (req.session_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="Missing session_id")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cx:
+            r = await cx.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": sid})
+        if r.status_code != 200:
+            raise HTTPException(status_code=401, detail=f"Auth provider rejected session ({r.status_code})")
+        profile = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Auth provider unreachable: {e}")
+    user = await _upsert_user_from_emergent(profile)
+    session_token = profile.get("session_token") or f"st_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
+    await db.user_sessions.insert_one({
+        "user_id": user["user_id"],
+        "session_token": session_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    # httpOnly cookie so JS can't read it; SameSite=None+Secure because the
+    # preview frontend and backend live on different sub-paths via ingress.
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=session_token,
+        max_age=SESSION_TTL_DAYS * 24 * 3600,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+    )
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "name": user["name"],
+        "picture": user.get("picture", ""),
+    }
+
+
+@api_router.get("/auth/me")
+async def get_me(request: Request):
+    user = await _resolve_session_token(_extract_token(request))
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "name": user["name"],
+        "picture": user.get("picture", ""),
+    }
+
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, response: FastResponse):
+    tok = _extract_token(request)
+    if tok:
+        await db.user_sessions.delete_one({"session_token": tok})
+    response.delete_cookie(SESSION_COOKIE, path="/", samesite="none", secure=True)
+    return {"ok": True}
 
 
 # ---------- Models ----------
@@ -39,6 +215,9 @@ class GalleryItemCreate(BaseModel):
     # Stored as a string so the front-end can JSON.parse on load and avoid
     # arbitrary-shape coupling between Pydantic and the scene schema.
     data: Optional[str] = None
+    # When true, the item is private to its owner — never returned by the
+    # public list endpoint, only by /api/me/designs.
+    private: bool = False
 
 
 class GalleryItemMeta(BaseModel):
@@ -54,6 +233,10 @@ class GalleryItemMeta(BaseModel):
     downloads: int = 0
     remix_of: Optional[str] = None
     remix_count: int = 0
+    # Surfaces ownership + visibility so the UI can show edit/delete buttons
+    # only on the user's own items and a "Private" badge on hidden ones.
+    user_id: Optional[str] = None
+    private: bool = False
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -96,13 +279,17 @@ async def root():
 
 
 @api_router.post("/gallery", response_model=GalleryItemMeta)
-async def create_gallery_item(item: GalleryItemCreate):
+async def create_gallery_item(item: GalleryItemCreate, request: Request):
     item_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
+    user = await get_optional_user(request)
+    # Logged-in users get attribution from their profile name and own the
+    # item; anonymous users keep the free-text author field.
+    author = (user["name"] if user else (item.author or "Anonymous"))
     doc = {
         "id": item_id,
         "name": item.name,
-        "author": item.author or "Anonymous",
+        "author": author,
         "description": item.description or "",
         "stl_base64": item.stl_base64,
         "thumbnail_base64": item.thumbnail_base64 or "",
@@ -115,6 +302,8 @@ async def create_gallery_item(item: GalleryItemCreate):
         # Persist the editable project JSON so a future Remix can restore
         # every primitive with its negative/positive modifier and dimensions.
         "data": item.data or None,
+        "user_id": user["user_id"] if user else None,
+        "private": bool(item.private) if user else False,
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
@@ -131,40 +320,55 @@ async def create_gallery_item(item: GalleryItemCreate):
         downloads=0,
         remix_of=item.remix_of,
         remix_count=0,
+        user_id=doc["user_id"],
+        private=doc["private"],
+    )
+
+
+def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
+    ca = d.get("created_at")
+    if isinstance(ca, str):
+        try:
+            ca = datetime.fromisoformat(ca)
+        except Exception:
+            ca = datetime.now(timezone.utc)
+    return GalleryItemMeta(
+        id=d["id"],
+        name=d.get("name", "Untitled"),
+        author=d.get("author", "Anonymous"),
+        description=d.get("description", ""),
+        triangle_count=d.get("triangle_count", 0),
+        object_count=d.get("object_count", 0),
+        thumbnail_base64=d.get("thumbnail_base64", ""),
+        created_at=ca,
+        downloads=d.get("downloads", 0),
+        remix_of=d.get("remix_of"),
+        remix_count=d.get("remix_count", 0),
+        user_id=d.get("user_id"),
+        private=bool(d.get("private", False)),
     )
 
 
 @api_router.get("/gallery", response_model=List[GalleryItemMeta])
 async def list_gallery():
+    # Public listing — hide private items entirely.
     cursor = db.gallery.find(
-        {},
+        {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]},
         {"_id": 0, "stl_base64": 0},
     ).sort("created_at", -1)
     items = await cursor.to_list(500)
-    result = []
-    for d in items:
-        ca = d.get("created_at")
-        if isinstance(ca, str):
-            try:
-                ca = datetime.fromisoformat(ca)
-            except Exception:
-                ca = datetime.now(timezone.utc)
-        result.append(
-            GalleryItemMeta(
-                id=d["id"],
-                name=d.get("name", "Untitled"),
-                author=d.get("author", "Anonymous"),
-                description=d.get("description", ""),
-                triangle_count=d.get("triangle_count", 0),
-                object_count=d.get("object_count", 0),
-                thumbnail_base64=d.get("thumbnail_base64", ""),
-                created_at=ca,
-                downloads=d.get("downloads", 0),
-                remix_of=d.get("remix_of"),
-                remix_count=d.get("remix_count", 0),
-            )
-        )
-    return result
+    return [_gallery_meta_from_doc(d) for d in items]
+
+
+@api_router.get("/me/designs", response_model=List[GalleryItemMeta])
+async def list_my_designs(request: Request):
+    user = await get_current_user(request)
+    cursor = db.gallery.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "stl_base64": 0},
+    ).sort("created_at", -1)
+    items = await cursor.to_list(500)
+    return [_gallery_meta_from_doc(d) for d in items]
 
 
 @api_router.get("/gallery/{item_id}/download")
@@ -203,10 +407,17 @@ async def get_gallery_item(item_id: str):
 
 
 @api_router.delete("/gallery/{item_id}")
-async def delete_gallery_item(item_id: str):
-    res = await db.gallery.delete_one({"id": item_id})
-    if res.deleted_count == 0:
+async def delete_gallery_item(item_id: str, request: Request):
+    doc = await db.gallery.find_one({"id": item_id}, {"_id": 0, "user_id": 1})
+    if not doc:
         raise HTTPException(status_code=404, detail="Gallery item not found")
+    owner_id = doc.get("user_id")
+    if owner_id:
+        # Owner-only delete for items uploaded by authenticated users.
+        user = await get_current_user(request)
+        if user["user_id"] != owner_id:
+            raise HTTPException(status_code=403, detail="Not your design")
+    await db.gallery.delete_one({"id": item_id})
     return {"deleted": True, "id": item_id}
 
 
@@ -309,6 +520,7 @@ class ComponentCreate(BaseModel):
     thumbnail_base64: str = ""
     triangle_count: int = 0
     object_count: int = 0
+    private: bool = False               # owner-only when true
 
 
 class ComponentMeta(BaseModel):
@@ -326,6 +538,8 @@ class ComponentMeta(BaseModel):
     created_at: datetime
     uses: int = 0
     votes: int = 0
+    user_id: Optional[str] = None
+    private: bool = False
 
 
 def _normalize_modifier(m: str) -> str:
@@ -338,13 +552,15 @@ def _normalize_category(c: str) -> str:
 
 
 @api_router.post("/components", response_model=ComponentMeta)
-async def create_component(item: ComponentCreate):
+async def create_component(item: ComponentCreate, request: Request):
     item_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
+    user = await get_optional_user(request)
+    author = (user["name"] if user else ((item.author or "Anonymous").strip()[:40]))
     doc = {
         "id": item_id,
         "name": (item.name or "Untitled").strip()[:80],
-        "author": (item.author or "Anonymous").strip()[:40],
+        "author": author,
         "description": (item.description or "").strip()[:500],
         "modifier": _normalize_modifier(item.modifier),
         "category": _normalize_category(item.category),
@@ -357,6 +573,8 @@ async def create_component(item: ComponentCreate):
         "created_at": created_at.isoformat(),
         "uses": 0,
         "votes": 0,
+        "user_id": user["user_id"] if user else None,
+        "private": bool(item.private) if user else False,
     }
     await db.components.insert_one(doc)
     return ComponentMeta(**{**doc, "created_at": created_at})
@@ -368,7 +586,7 @@ async def list_components(
     category: Optional[str] = None,
     q: Optional[str] = None,
 ):
-    query = {}
+    query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
     if modifier:
         query["modifier"] = _normalize_modifier(modifier)
     if category:
@@ -376,14 +594,38 @@ async def list_components(
     if q:
         # Case-insensitive substring search across name / description / tags / author.
         regex = {"$regex": q.strip()[:80], "$options": "i"}
-        query["$or"] = [
-            {"name": regex}, {"description": regex},
-            {"tags": regex}, {"author": regex},
-        ]
+        # Combine with existing private filter using $and.
+        query = {"$and": [
+            query,
+            {"$or": [
+                {"name": regex}, {"description": regex},
+                {"tags": regex}, {"author": regex},
+            ]},
+        ]}
     cursor = db.components.find(
         query,
         {"_id": 0, "stl_base64": 0, "project_json": 0},
     ).sort([("votes", -1), ("created_at", -1)])
+    items = await cursor.to_list(500)
+    out = []
+    for d in items:
+        ca = d.get("created_at")
+        if isinstance(ca, str):
+            try:
+                ca = datetime.fromisoformat(ca)
+            except Exception:
+                ca = datetime.now(timezone.utc)
+        out.append(ComponentMeta(**{**d, "created_at": ca}))
+    return out
+
+
+@api_router.get("/me/components", response_model=List[ComponentMeta])
+async def list_my_components(request: Request):
+    user = await get_current_user(request)
+    cursor = db.components.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "stl_base64": 0, "project_json": 0},
+    ).sort("created_at", -1)
     items = await cursor.to_list(500)
     out = []
     for d in items:
@@ -427,10 +669,16 @@ async def upvote_component(cid: str):
 
 
 @api_router.delete("/components/{cid}")
-async def delete_component(cid: str):
-    res = await db.components.delete_one({"id": cid})
-    if res.deleted_count == 0:
+async def delete_component(cid: str, request: Request):
+    doc = await db.components.find_one({"id": cid}, {"_id": 0, "user_id": 1})
+    if not doc:
         raise HTTPException(status_code=404, detail="Component not found")
+    owner_id = doc.get("user_id")
+    if owner_id:
+        user = await get_current_user(request)
+        if user["user_id"] != owner_id:
+            raise HTTPException(status_code=403, detail="Not your component")
+    await db.components.delete_one({"id": cid})
     return {"deleted": True, "id": cid}
 
 
@@ -565,6 +813,48 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def migrate_legacy_authors():
+    """One-time migration: any gallery/components docs that pre-date the
+    auth system are tagged with a `user_id=None` + author="Legacy" so the
+    UI can clearly mark them as historical, orphaned uploads.
+
+    Idempotent: we only touch docs that don't yet have a `user_id` field —
+    rerunning is a no-op once everything has been migrated."""
+    try:
+        gres = await db.gallery.update_many(
+            {"user_id": {"$exists": False}},
+            {"$set": {"user_id": None, "private": False},
+             "$rename": {"author": "_legacy_author"}},
+        )
+        # The rename leaves _legacy_author intact for forensics; copy any
+        # missing author back as "Legacy" so the public list still labels them.
+        await db.gallery.update_many(
+            {"_legacy_author": {"$exists": True}},
+            [{"$set": {
+                "author": {"$concat": ["Legacy · ", {"$ifNull": ["$_legacy_author", "Anonymous"]}]},
+            }}],
+        )
+        cres = await db.components.update_many(
+            {"user_id": {"$exists": False}},
+            {"$set": {"user_id": None, "private": False},
+             "$rename": {"author": "_legacy_author"}},
+        )
+        await db.components.update_many(
+            {"_legacy_author": {"$exists": True}},
+            [{"$set": {
+                "author": {"$concat": ["Legacy · ", {"$ifNull": ["$_legacy_author", "Anonymous"]}]},
+            }}],
+        )
+        if gres.modified_count or cres.modified_count:
+            logger.info(
+                "Legacy migration: re-tagged %d gallery + %d components",
+                gres.modified_count, cres.modified_count,
+            )
+    except Exception as e:
+        logger.warning("Legacy migration skipped: %s", e)
 
 
 @app.on_event("shutdown")

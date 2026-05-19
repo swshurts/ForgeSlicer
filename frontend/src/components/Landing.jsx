@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Hexagon, Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
+import UserMenu from "./UserMenu";
 
 function Feature({ icon: Icon, title, desc, accent }) {
   return (
@@ -59,6 +60,7 @@ export default function Landing() {
         <Link to="/workspace" data-testid="landing-launch-btn" className="h-8 px-4 ml-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center gap-1.5">
           Launch Workspace <ChevronRight size={14} />
         </Link>
+        <UserMenu returnPath="/workspace" />
       </header>
 
       <main className="max-w-6xl mx-auto px-6 pt-16 pb-24">

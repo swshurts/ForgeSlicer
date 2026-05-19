@@ -3,14 +3,18 @@ import { useScene } from "../lib/store";
 import { bytesToBase64, downloadBlob } from "../lib/exporters";
 import { exportSTLBytesAsync, export3MFBytesAsync } from "../lib/workerClient";
 import { galleryApi, printersApi, componentsApi } from "../lib/api";
-import { X, Globe, CheckCircle2, Loader2, Printer, Download, Factory, Library, PlusSquare, MinusSquare } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
+import { startLogin } from "../lib/auth";
+import { X, Globe, CheckCircle2, Loader2, Printer, Download, Factory, Library, PlusSquare, MinusSquare, Lock, LogIn } from "lucide-react";
 
 export function ShareDialog({ open, onClose }) {
+  const { user } = useAuth();
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const [author, setAuthor] = useState("");
   const [description, setDescription] = useState("");
   const [name, setName] = useState(projectName);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // gallery item
   const [error, setError] = useState("");
@@ -50,6 +54,7 @@ export function ShareDialog({ open, onClose }) {
         object_count: objects.length,
         remix_of: remixOf || undefined,
         data: projectJson,
+        private: user ? isPrivate : false,
       });
       setDone(created);
     } catch (e) {
@@ -77,8 +82,41 @@ export function ShareDialog({ open, onClose }) {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Author</span>
-              <input data-testid="share-author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Anonymous" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+              {user ? (
+                <div data-testid="share-author-readonly" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-slate-300 px-3 flex items-center gap-2 font-medium">
+                  {user.picture && <img src={user.picture} alt="" className="h-5 w-5 rounded-full" referrerPolicy="no-referrer" />}
+                  <span>{user.name}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wider text-orange-400">signed in</span>
+                </div>
+              ) : (
+                <input data-testid="share-author" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Anonymous" className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none" />
+              )}
             </label>
+            {user ? (
+              <label className="flex items-center gap-2 px-3 py-2 bg-cyan-500/10 border border-cyan-500/40 rounded text-[11px] text-slate-200 cursor-pointer select-none">
+                <input
+                  data-testid="share-private-toggle"
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                  className="accent-orange-500"
+                />
+                <Lock size={12} className="text-cyan-300" />
+                <span className="flex-1">
+                  <span className="text-cyan-200 font-semibold">Private</span> — only visible to you in <span className="text-orange-300">My Designs</span>.
+                </span>
+              </label>
+            ) : (
+              <button
+                type="button"
+                data-testid="share-signin-cta"
+                onClick={() => startLogin("/workspace")}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-orange-500/40 hover:border-orange-500/70 rounded text-[11px] text-slate-300 text-left"
+              >
+                <LogIn size={12} className="text-orange-400" />
+                <span><span className="text-orange-300 font-semibold">Sign in</span> to save private designs and tie posts to your profile.</span>
+              </button>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-400">Description</span>
               <textarea data-testid="share-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="bg-slate-950 border border-slate-700 rounded text-sm text-white p-2 focus:border-orange-500 outline-none resize-none" />
@@ -431,12 +469,14 @@ const COMPONENT_CATEGORIES = [
 ];
 
 export function SaveComponentDialog({ open, onClose }) {
+  const { user } = useAuth();
   const objects = useScene((s) => s.objects);
   const selectedIds = useScene((s) => s.selectedIds);
   const projectName = useScene((s) => s.projectName);
   const [name, setName] = useState(projectName);
   const [author, setAuthor] = useState("");
   const [description, setDescription] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
   // If the user has a multi-selection (typically a freshly-grouped assembly)
   // default the dialog to save just that subset — saves a click and matches
   // the "build a U1 panel, then save it" workflow.
@@ -558,6 +598,7 @@ export function SaveComponentDialog({ open, onClose }) {
         thumbnail_base64: captureThumb(),
         triangle_count: Math.floor(triangleCount),
         object_count: effectiveObjects.length,
+        private: user ? isPrivate : false,
       });
       setDone(created);
     } catch (e) {

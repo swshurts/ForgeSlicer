@@ -18,6 +18,7 @@ import { ChevronDown } from "lucide-react";
 import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, DuplicatePopover } from "./ActionPopovers";
 import STLPreviewDialog from "./STLPreviewDialog";
 import VoiceButton from "./VoiceButton";
+import UserMenu from "./UserMenu";
 import { Eye, Library } from "lucide-react";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
@@ -499,6 +500,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
       {busyMsg && (
         <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
       )}
+      <UserMenu returnPath="/workspace" />
       {openPopover === "position" && (
         <PositionPopover anchor={posBtnRef.current} onClose={() => setOpenPopover(null)} />
       )}

@@ -1,0 +1,46 @@
+{
+  "summary": "Phase 2 (Emergent Google OAuth + private libraries + legacy migration) end-to-end test. Backend: 48/48 pytest (9 new auth + 7 new extra + 32 regression) PASSED. Frontend: anonymous flows (landing/workspace/gallery/profile login-btn + profile-anonymous), authed user-menu, /profile stat tiles + tabs, ShareDialog auth/anon variants, and logout all PASS. ONE CONFIRMED BUG: SaveComponentDialog does NOT render its auth-aware variant — even when logged in, the dialog still shows free-text `component-author` and NEVER renders `component-author-readonly`, `component-private-toggle`, or `component-signin-cta`. The anonymous variant also lacks the `component-signin-cta` hint.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "SaveComponentDialog (frontend/src/components/Dialogs.jsx ~lines 657-668)",
+        "issue": "Auth-aware variant is missing entirely. The dialog imports useAuth() and reads `user` (line 472) but the Author block at line 659-661 is unconditionally a free-text <input data-testid='component-author'>. Spec required: when `user` is truthy → render a <div data-testid='component-author-readonly'> showing user.name + a 'signed in' badge, plus a <input data-testid='component-private-toggle' type='checkbox'>; when anonymous → keep component-author input PLUS render a <button data-testid='component-signin-cta'>. Currently NEITHER readonly/private-toggle (authed) NOR signin-cta (anonymous) ever renders. Confirmed by querying all data-testids inside [data-testid='save-component-dialog']: only ['save-component-close-btn','component-name','component-author','component-category','component-modifier-positive','component-modifier-negative','component-include-all','component-scope-summary','component-tags','component-description','component-save-btn'] are present in BOTH anonymous and authenticated states.",
+        "selector": "[data-testid=\"save-component-dialog\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_api.py",
+    "/app/backend/tests/test_auth_components_extra.py",
+    "/app/test_reports/pytest/auth_results.xml",
+    "/app/test_reports/pytest/auth_extra_results.xml",
+    "/app/test_reports/pytest/full_results.xml"
+  ],
+  "action_items": [
+    "Fix SaveComponentDialog in /app/frontend/src/components/Dialogs.jsx (~lines 657-668): mirror ShareDialog's pattern — when `user` exists, replace the <input data-testid='component-author'> with a <div data-testid='component-author-readonly'> showing user.name (+ optional picture and 'signed in' badge) AND add a Private toggle <input data-testid='component-private-toggle' type='checkbox' /> bound to a `private` state passed in the POST /api/components body. When NOT logged in, keep the free-text input but also render a small <button data-testid='component-signin-cta'> linking to startLogin() to encourage attribution (parallel to ShareDialog's `share-signin-cta` at Dialogs.jsx:112). Backend already accepts `private:true` on POST /api/components — confirmed working by test_private_component_hidden_and_in_me."
+  ],
+  "critical_code_review_comments": [
+    "Dialogs.jsx: SaveComponentDialog already calls useAuth() (line 472) — the `user` value is read but never used to swap UI. Easy fix — copy the conditional block from ShareDialog (lines 85-118).",
+    "Backend /api/gallery correctly overrides client-supplied `author` with profile name when Bearer is provided (verified by test_logged_in_author_overrides_payload). Components endpoint does the same. Good.",
+    "Legacy migration is idempotent and only rewrites un-owned items — confirmed by repeated test runs. All un-owned items in /api/gallery now begin with 'Legacy · '.",
+    "Frontend AuthContext race-safe skip-on-fragment + AuthCallback synchronous consume look correct based on observed behavior: seeding cookie before first navigation made the workspace render UserMenu immediately, no flicker.",
+    "Minor: ShareDialog `share-author-readonly` text concatenates user name and 'signed in' with no whitespace ('UI Tester2signed in') — purely cosmetic, low priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_components_extra.py (new — 7 tests covering private components, author override, anon regression, /me auth gate)"
+  ],
+  "success_rate": {
+    "backend": "100% (48/48 pytest passed; the pre-existing voice/test_boolean_subtract LLM flake was deselected per main-agent instructions)",
+    "frontend": "92% — 11 of 12 testable scenarios passed; 1 confirmed bug (SaveComponentDialog auth-variant not implemented)"
+  },
+  "test_credentials": "Two MongoDB-seeded sessions used: st_uitest_1779157161179 (consumed by logout test) and st_uitest2_1779157373254 (still valid). Both users (UI Tester / UI Tester2) inserted into db.users + db.user_sessions in test_database. Safe to leave; can be cleaned via db.users.deleteMany({user_id:/user_uitest/}) and db.user_sessions.deleteMany({user_id:/user_uitest/}).",
+  "seed_data_creation": "Each pytest seeded_user fixture self-cleans. UI test created two seeded sessions + 1 cube in scene (no DB writes from Workspace until Publish was clicked, which I never did).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "When testing SaveComponentDialog after fix, seed a FRESH session token (the previous one is invalidated by logout). Use mongosh snippet in /app/memory/test_credentials.md. Be aware: (1) The Share button in TopToolbar uses data-testid='share-design-btn' (NOT 'share-btn') — the request brief calls it 'share-btn' but actual code is 'share-design-btn'. (2) After clicking a dialog open button while another dialog is closing (escape), the second click may be intercepted by the fading backdrop — always wait_for_timeout(500) after Escape, or page.goto fresh between dialog tests. (3) Anonymous SaveComponentDialog testids dumped (for reference): ['save-component-close-btn','component-name','component-author','component-category','component-modifier-positive','component-modifier-negative','component-include-all','component-scope-summary','component-tags','component-description','component-save-btn']. (4) Authenticated ShareDialog correctly renders share-author-readonly (text 'UI Tester2 signed in') + share-private-toggle.",
+  "rca of the issue": "SaveComponentDialog auth-variant missing: developer added `const { user } = useAuth();` at line 472 of Dialogs.jsx (preparing for the conditional render) but never converted the Author input block (~lines 657-668) to be conditional on `user`. ShareDialog (same file, ~lines 85-118) was completed correctly with the user ? <div data-testid='share-author-readonly'> : <input data-testid='share-author'> pattern + share-signin-cta + share-private-toggle. The fix is a straightforward copy-paste of that conditional structure into SaveComponentDialog and threading a `private` boolean into the POST /api/components body. Backend already accepts `private:true` (verified by test_private_component_hidden_and_in_me)."
+}

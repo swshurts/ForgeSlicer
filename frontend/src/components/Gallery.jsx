@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { galleryApi, componentsApi } from "../lib/api";
+import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
   PlusSquare, MinusSquare, Star, Search, Plus,
@@ -335,6 +336,7 @@ export default function Gallery() {
           </div>
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
+        <UserMenu returnPath="/gallery" />
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10">
