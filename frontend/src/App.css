@@ -1,7 +1,12 @@
+/* The `.App` container used to clip to viewport height + hide overflow so
+   the workspace 3D canvas couldn't scroll. That side-effect killed scrolling
+   on every other route (Gallery, Profile, Landing). The Workspace now sets
+   its own `h-screen overflow-hidden` at the component level, so this wrapper
+   just needs to be a minimum-height root that lets the page expand to its
+   natural content height and scroll. */
 .App {
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
+  min-height: 100vh;
+  width: 100%;
 }
 
 /* Custom scrollbars to match dark theme */
