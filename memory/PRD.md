@@ -14,7 +14,7 @@
 ## Architecture
 - **Frontend**: React 19 + react-three-fiber + drei + three.js 0.170 + three-bvh-csg + zustand + JSZip + react-router-dom + Tailwind.
 - **Backend**: FastAPI + Motor (async MongoDB), single `/api/gallery` resource collection.
-- **Routes**: `/` Landing, `/workspace` CAD editor, `/gallery` Public Gallery.
+- **Routes**: `/` Landing (public), `/gallery` Public Library (public), `/workspace` CAD editor (auth-gated), `/profile` User profile (auth-gated).
 
 ## Core Pages / Components
 | Component | Responsibility |
@@ -133,7 +133,18 @@
   - `ShareDialog` and `SaveComponentDialog` (`Dialogs.jsx`) gained auth-aware Author render: signed-in users see a readonly badge + a `share-private-toggle` / `component-private-toggle`; anonymous users keep the free-text input plus a `share-signin-cta` / `component-signin-cta` nudge.
 - ✅ **Tests** — 9 new auth pytest cases (`tests/test_auth_api.py`) + 7 reused private-library cases passed by testing agent. Frontend testing agent (iteration_10) confirmed both anonymous and authenticated variants of both dialogs.
 
-## Iteration 13 (2026-02-19) — P0 Auth Hardening + Login Gate + Gallery Network Resilience
+## Iteration 14 (2026-02-19) — P1 Bug-Fix Batch from User Test Report
+- ✅ **#3 Ctrl-Z destroying model after CSG ops** — root cause: `doBool` in TopToolbar called `removeObject` twice + `addRawObject` once, each pushing a separate history entry, so the latest snapshot captured the empty-scene state after removals but before insert. Added new atomic `replaceObjects(idsToRemove, newObjects)` action on the store that mutates objects in a single `set()` and pushes history exactly once. `doBool` now uses this. Confirmed via testing agent: cube + sphere → Union → 1 merged → Ctrl-Z → 2 separate objects (not zero).
+- ✅ **#7.1 Z-axis flip in place** — when source position was 0 on the mirror axis, `-0 == 0` and the copy stacked on the original. Fixed by `duplicateSelected` computing the source's rotated bounding-box extent on that axis and placing the copy at `source + extent + offset` so it's always adjacent and visibly mirrored.
+- ✅ **#1.3 Outliner rename** — new `setObjectName(id, name)` store action; OutlinerRow now supports double-click to enter inline rename, Enter to commit, Escape to cancel.
+- ✅ **#7.1 sidenote Right-click menu clipping** — ContextMenu measures itself with `getBoundingClientRect` post-mount and re-clamps so it never overflows the viewport bottom-right. Added `max-h-[85vh] overflow-y-auto` as a fallback for very tall menus.
+- ✅ **#1.2 Polygon sides** — Inspector now exposes a `Sides` NumberField for cylinder/cone primitives (3=triangle, 4=square, 6=hex, 8=octagon, 32+=smooth circle) and `Segments` for spheres.
+- ✅ **#2.2 15° snap precision** — `Viewport.handleChange` rounds `radToDeg` outputs to 1e-4 precision, eliminating the `14.999999999998°` floating-point noise after gizmo snap.
+- ✅ **#1.3.36 dimension order** — Inspector cube dim labels changed from `W / D / H` to `X / Y / Z` (matches storage keys + user's mental model: x=length, y=width, z=height). Viewport bbox label now renders `X × Y × Z` order instead of `X × Z × Y`. Added a tiny "X · Y · Z" hint to the Inspector header with a tooltip.
+- ✅ **#10 Toys category** — added to both backend `COMPONENT_CATEGORIES` set, SaveComponentDialog selector, and Gallery components filter dropdown.
+- ✅ **#10 Material field** — new `material:str = 'pla'` on gallery records; full materials catalog at `/app/frontend/src/lib/materials.js` (PLA, PETG, ABS, ASA, TPU, Nylon, PC, Carbon-fibre, Wood-filled, Resin, Any). ShareDialog has a Material selector; Gallery cards display a Material badge alongside the License badge; DesignsTab has a new Material filter dropdown that hits `GET /api/gallery?material=<id>`.
+- ✅ **ShareDialog crash hotfix** (caught by testing agent mid-iteration): three missing definitions (`Layers` import, `materialId` useState, `MATERIALS` import) — fixed in a 3-line patch before the dialog could ship.
+- ✅ **Tests** — 80/80 backend pytest pass (10 new in `tests/test_material_toys_api.py`); 8/8 P1 frontend scenarios + 4/4 regression scenarios.
 - ✅ **Auth ergonomics**: `lib/auth.js` now persists the `returnPath` (the page the user was on when they clicked Sign in) in `sessionStorage` so AuthCallback can route them back to where they started — not always `/workspace`. Added an explicit 20 s timeout on the `/api/auth/session` exchange and `console.info` breadcrumbs at each stage for diagnostics.
 - ✅ **AuthCallback rewrite**: 3-stage progress text (parsing → exchanging → success), expanded error UI with both "Home" and "Try again" buttons, full error string surfaced (no more silent failure).
 - ✅ **App.js hash detection**: now reads `window.location.hash` directly in addition to React Router's `useLocation().hash` — some routing configs strip the fragment on first mount.
