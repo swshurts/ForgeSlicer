@@ -9,7 +9,7 @@ import { Loader2, AlertCircle, RotateCw, Home } from "lucide-react";
 // then navigates the user back to the page they came from (or /workspace).
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { setUser, refresh } = useAuth();
+  const { setUser } = useAuth();
   const processed = useRef(false);
   const [error, setError] = useState("");
   const [stage, setStage] = useState("parsing"); // parsing | exchanging | success
@@ -42,11 +42,18 @@ export default function AuthCallback() {
         // eslint-disable-next-line no-console
         console.info("[auth] exchanging session_id with backend…");
         const user = await authApi.exchange(sessionId);
+        // Hand the user to AuthProvider authoritatively — do NOT fire a
+        // follow-up /auth/me here. The Set-Cookie response header has not
+        // always committed to the cookie jar by the time axios fires the
+        // next request, and a 401 on /me would clobber the user we just set,
+        // causing ProtectedRoute to immediately bounce the user back to the
+        // sign-in screen (which looks exactly like "the redirect never came
+        // back"). The exchange response is the source of truth.
         setUser(user);
-        // Belt-and-braces: also fire /auth/me so the AuthProvider picks up
-        // any server-side enrichment we didn't include in the exchange resp.
-        refresh().catch(() => {});
         setStage("success");
+        // Pass `user` via location state so ProtectedRoute can trust the
+        // brand-new user even if the AuthProvider's state hasn't propagated
+        // through context yet (sub-millisecond race in React 18 batching).
         // eslint-disable-next-line no-console
         console.info("[auth] sign-in complete → navigating to", returnPath);
         navigate(returnPath, { replace: true, state: { user } });
@@ -61,7 +68,7 @@ export default function AuthCallback() {
         setError(msg);
       }
     })();
-  }, [navigate, setUser, refresh]);
+  }, [navigate, setUser]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center" data-testid="auth-callback">

@@ -24,7 +24,14 @@ export default function ProtectedRoute({ children, label = "this page" }) {
     return null;
   }
 
-  if (loading) {
+  // AuthCallback hands the freshly-exchanged user object via `location.state`
+  // so we can pass-through immediately even if React hasn't propagated the
+  // AuthProvider state to this subtree yet (sub-ms race in React 18). Without
+  // this, the ProtectedRoute briefly sees `user === null` post-callback and
+  // bounces back to the sign-in card — looking like the redirect failed.
+  const stateUser = location.state?.user;
+
+  if (loading && !stateUser) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center" data-testid="protected-loading">
         <Loader2 size={28} className="text-orange-400 animate-spin" />
@@ -32,7 +39,7 @@ export default function ProtectedRoute({ children, label = "this page" }) {
     );
   }
 
-  if (user) return children;
+  if (user || stateUser) return children;
 
   const returnPath = location.pathname + (location.search || "");
   return (
