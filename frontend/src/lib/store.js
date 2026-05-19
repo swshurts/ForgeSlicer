@@ -261,6 +261,80 @@ export const useScene = create((set, get) => ({
     return withId.id;
   },
 
+  // ---------- Composite primitives ----------
+  // Slot / racetrack hole — a rectangular cube capped by two half-cylinders.
+  // Built as a real grouped assembly (1 cube + 2 cylinders) so the user can
+  // still edit individual radii/lengths after the fact instead of being
+  // locked into a baked single-mesh. Default is NEGATIVE so the slot carves
+  // a hole through a parent plate (the common rack-mount use-case).
+  // Parameters (all millimetres):
+  //   width  — short axis of the slot (matches bolt diameter family). 6 ≈ M5 clearance.
+  //   length — OAL of the slot, cap-to-cap. Must be >= width; the rectangular
+  //            middle has length (length - width).
+  //   depth  — slot height (i.e. plate thickness it carves through).
+  // Returns the assembly's groupId.
+  addSlot: (modifier = "negative", overrides = {}) => {
+    const width = Math.max(0.1, overrides.width ?? 6);
+    const length = Math.max(width, overrides.length ?? 10);
+    const depth = Math.max(0.1, overrides.depth ?? 6.5);
+    const middle = length - width;             // length of the rectangular core
+    const radius = width / 2;
+
+    get().pushHistory();
+    const gid = `slot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const groupName = `Slot ${width}×${length}×${depth}`;
+    const baseY = depth / 2;                   // half-height so bottom sits on Y=0
+
+    // Cube body: x = width, z (extrude depth in our convention) = depth,
+    // y (length) = middle. When middle === 0 (e.g. width==length, a round
+    // pill) we still emit a degenerate 0-length cube to keep the group's
+    // member count consistent; CSG handles 0-length boxes gracefully.
+    const cube = {
+      id: newId("cube"),
+      name: "Slot · core",
+      type: "cube",
+      modifier,
+      visible: true,
+      locked: false,
+      position: [0, baseY, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dims: { x: width, y: middle, z: depth },
+      colorIndex: 0,
+      groupId: gid,
+      groupName,
+    };
+    // Two cylinders at each end of the long (Z) axis. Cylinders default to
+    // axis = Y in three.js BoxGeometry/CylinderGeometry; rotate -90° about
+    // X so they sit flat (axis along world Y), matching the cube's depth.
+    // Cylinder z-position is +/- middle/2 so its centre lines up with the
+    // cube's end face.
+    const halfCap = middle / 2;
+    const capA = {
+      id: newId("cylinder"),
+      name: "Slot · cap A",
+      type: "cylinder",
+      modifier,
+      visible: true,
+      locked: false,
+      position: [0, baseY, +halfCap],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dims: { r: radius, h: depth, segments: 48 },
+      colorIndex: 0,
+      groupId: gid,
+      groupName,
+    };
+    const capB = { ...capA, id: newId("cylinder"), name: "Slot · cap B", position: [0, baseY, -halfCap] };
+
+    set((s) => ({
+      objects: [...s.objects, cube, capA, capB],
+      selectedId: cube.id,
+      selectedIds: [cube.id, capA.id, capB.id],
+    }));
+    return gid;
+  },
+
   removeObject: (id) => {
     get().pushHistory();
     set((s) => ({

@@ -3,7 +3,7 @@ import { useScene } from "../lib/store";
 import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
-  Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon,
+  Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 
@@ -41,6 +41,32 @@ function PrimitiveButton({ p, modifier, compact = false }) {
     >
       <Icon size={compact ? 14 : 18} strokeWidth={1.8} />
       <span className={`${compact ? "text-[8.5px]" : "text-[10px]"} uppercase tracking-wide font-medium text-slate-300`}>{p.label}</span>
+    </button>
+  );
+}
+
+// Single-click "Slot" composite — drops a 6×10×6.5 mm racetrack hole built
+// from 1 cube + 2 cylinders, already grouped so it moves as one unit. Default
+// modifier is negative (rack screw holes). The positive variant is useful as
+// a pill/key-shaped stud or button.
+function SlotButton({ modifier }) {
+  const addSlot = useScene((s) => s.addSlot);
+  const isNeg = modifier === "negative";
+  return (
+    <button
+      data-testid={`add-slot-${modifier}-btn`}
+      onClick={() => addSlot(modifier)}
+      className={`group flex flex-col items-center justify-center gap-1 h-16 rounded-md border transition-all ${
+        isNeg
+          ? "border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400"
+          : "border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400"
+      }`}
+      title={`Add ${isNeg ? "Negative" : "Positive"} Slot — 6×10×6.5 mm racetrack (rack-screw style). Each part stays editable.`}
+    >
+      <Pill size={18} strokeWidth={1.8} />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">
+        {isNeg ? "Slot ⌀" : "Slot"}
+      </span>
     </button>
   );
 }
@@ -174,6 +200,22 @@ export default function LeftPanel() {
           {PRIMS_2D.map((p) => (
             <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" compact />
           ))}
+        </div>
+
+        <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Pill size={14} className="text-amber-400" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Composites
+            </span>
+          </div>
+          <span className="text-[9px] uppercase tracking-wider text-slate-500" title="Pre-built assemblies of multiple primitives, dropped as one group">
+            grouped
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 p-3">
+          <SlotButton modifier="negative" />
+          <SlotButton modifier="positive" />
         </div>
       </div>
 

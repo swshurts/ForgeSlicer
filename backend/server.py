@@ -505,7 +505,11 @@ async def delete_community_printer(printer_id: str):
 # A separate collection from the gallery so we can filter/sort independently
 # and keep upvote semantics distinct (gallery items track downloads; library
 # components track upvotes + uses).
-COMPONENT_CATEGORIES = {"mechanical", "rack", "mounting", "misc"}
+COMPONENT_CATEGORIES = {
+    "mechanical", "rack", "mounting", "fasteners", "electronics",
+    "brackets", "hinges", "gears", "decorative", "organizers",
+    "miniatures", "structural", "misc",
+}
 
 
 class ComponentCreate(BaseModel):
@@ -540,6 +544,7 @@ class ComponentMeta(BaseModel):
     votes: int = 0
     user_id: Optional[str] = None
     private: bool = False
+    verified: bool = False
 
 
 def _normalize_modifier(m: str) -> str:
@@ -666,6 +671,25 @@ async def upvote_component(cid: str):
         raise HTTPException(status_code=404, detail="Component not found")
     doc = await db.components.find_one({"id": cid}, {"_id": 0, "votes": 1})
     return {"ok": True, "votes": doc.get("votes", 0)}
+
+
+@api_router.post("/components/{cid}/verify")
+async def toggle_verified(cid: str, request: Request):
+    """Admin-only toggle for the 'verified' badge on a component. Reads the
+    allowlist from ADMIN_EMAILS env (comma-separated). With no allowlist set,
+    the endpoint is disabled to prevent accidental abuse."""
+    admin_emails = [e.strip().lower() for e in (os.environ.get("ADMIN_EMAILS") or "").split(",") if e.strip()]
+    if not admin_emails:
+        raise HTTPException(status_code=403, detail="Admin allowlist not configured")
+    user = await get_current_user(request)
+    if (user.get("email") or "").lower() not in admin_emails:
+        raise HTTPException(status_code=403, detail="Not an admin")
+    doc = await db.components.find_one({"id": cid}, {"_id": 0, "verified": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Component not found")
+    new_state = not bool(doc.get("verified", False))
+    await db.components.update_one({"id": cid}, {"$set": {"verified": new_state}})
+    return {"ok": True, "id": cid, "verified": new_state}
 
 
 @api_router.delete("/components/{cid}")

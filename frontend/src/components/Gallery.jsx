@@ -4,7 +4,7 @@ import { galleryApi, componentsApi } from "../lib/api";
 import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
-  PlusSquare, MinusSquare, Star, Search, Plus,
+  PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag,
 } from "lucide-react";
 
 const PLACEHOLDERS = [
@@ -19,6 +19,15 @@ const COMPONENT_CATEGORIES = [
   { key: "mechanical", label: "Mechanical" },
   { key: "rack", label: "Rack / Enclosure" },
   { key: "mounting", label: "Mounting" },
+  { key: "fasteners", label: "Fasteners" },
+  { key: "electronics", label: "Electronics" },
+  { key: "brackets", label: "Brackets" },
+  { key: "hinges", label: "Hinges" },
+  { key: "gears", label: "Gears" },
+  { key: "decorative", label: "Decorative" },
+  { key: "organizers", label: "Organizers" },
+  { key: "miniatures", label: "Miniatures" },
+  { key: "structural", label: "Structural" },
   { key: "misc", label: "Misc" },
 ];
 
@@ -92,11 +101,18 @@ function GalleryCard({ item, idx, onDelete }) {
   );
 }
 
-function ComponentCard({ item, idx, onAdd, onUpvote, onDelete }) {
+function ComponentCard({ item, idx, onAdd, onUpvote, onDelete, onTagClick }) {
   const isNeg = item.modifier === "negative";
   const thumb = item.thumbnail_base64
     ? `data:image/png;base64,${item.thumbnail_base64}`
     : PLACEHOLDERS[idx % PLACEHOLDERS.length];
+  // Tags rendered as clickable pills. We split on commas and trim so a stored
+  // "screw, M3, 10mm" reads as three distinct chips. Empty strings filtered out.
+  const tagList = (item.tags || "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 6);
   return (
     <div className="group bg-slate-900 border border-slate-800 rounded-lg overflow-hidden hover:border-orange-500/60 transition-all" data-testid={`component-card-${item.id}`}>
       <div className="aspect-square bg-slate-950 overflow-hidden relative">
@@ -110,6 +126,15 @@ function ComponentCard({ item, idx, onAdd, onUpvote, onDelete }) {
         }`}>
           {isNeg ? <><MinusSquare size={10} /> negative</> : <><PlusSquare size={10} /> positive</>}
         </div>
+        {item.verified && (
+          <div
+            data-testid={`component-verified-${item.id}`}
+            className="absolute top-9 left-2 backdrop-blur text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 bg-emerald-500/30 text-emerald-200 border border-emerald-500/40"
+            title="Verified by ForgeSlicer — known to slice cleanly"
+          >
+            <BadgeCheck size={10} /> verified
+          </div>
+        )}
         <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur text-[10px] uppercase tracking-wider text-slate-300 px-1.5 py-0.5 rounded">
           {item.category}
         </div>
@@ -120,8 +145,21 @@ function ComponentCard({ item, idx, onAdd, onUpvote, onDelete }) {
           <span className="text-[11px] text-slate-400">by {item.author}</span>
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
-        {item.tags && (
-          <div className="text-[10px] text-slate-500 mt-1 truncate">{item.tags}</div>
+        {tagList.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1" data-testid={`component-tags-${item.id}`}>
+            {tagList.map((t) => (
+              <button
+                key={t}
+                type="button"
+                data-testid={`component-tag-pill-${item.id}-${t}`}
+                onClick={() => onTagClick && onTagClick(t)}
+                title={`Filter by "${t}"`}
+                className="text-[9px] uppercase tracking-wider bg-slate-800 hover:bg-orange-500/20 text-slate-300 hover:text-orange-300 px-1.5 py-0.5 rounded border border-slate-700 hover:border-orange-500/50 flex items-center gap-1"
+              >
+                <Tag size={8} /> {t}
+              </button>
+            ))}
+          </div>
         )}
         {item.description && (
           <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
@@ -213,18 +251,28 @@ function ComponentsTab() {
   const [category, setCategory] = useState("all");
   const [q, setQ] = useState("");
 
-  const load = async () => {
+  // Accept an explicit override so tag-click can pass in the new query
+  // without waiting for React's state batch to flush.
+  const load = async (overrideQ) => {
     setLoading(true); setError("");
     try {
       setItems(await componentsApi.list({
         modifier: modifier === "all" ? undefined : modifier,
         category: category === "all" ? undefined : category,
-        q: q || undefined,
+        q: (overrideQ !== undefined ? overrideQ : q) || undefined,
       }));
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [modifier, category]);
+
+  // Clicking a tag pill on a card replaces the search with that tag and
+  // re-queries immediately. Hands users a discovery loop ("show me everything
+  // tagged M3") without needing to type.
+  const handleTagClick = (tag) => {
+    setQ(tag);
+    load(tag);
+  };
 
   const handleAdd = async (it) => {
     try {
@@ -313,6 +361,7 @@ function ComponentsTab() {
             onAdd={handleAdd}
             onUpvote={handleUpvote}
             onDelete={handleDelete}
+            onTagClick={handleTagClick}
           />
         ))}
       </div>

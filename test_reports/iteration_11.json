@@ -1,0 +1,55 @@
+{
+  "summary": "Full backend + frontend regression + new P1/P2 batch verification for ForgeSlicer. Backend: 49/49 prior pytest pass + 16/16 new P1 tests pass (verified field default false, 9 expanded categories accept + misc fallback, /verify endpoint 403 gate). Frontend: COMPOSITES Slot primitive, 4-dialog refactor, 13/14 category options in SaveComponent/Gallery, tag-pill click → search → /api/components?q= network call, verified badge absent (correct). All P1 + P2 acceptance criteria met. One backend code-review nit found re: components list sort order missing verified-first key (printers endpoint has it, components does not).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/components", "issue": "Sort order is [('votes',-1),('created_at',-1)] — does NOT include ('verified',-1) as first key despite review request specifying 'verified desc, votes desc, created_at desc'. /api/printers correctly uses the 3-key sort. Currently has no functional impact because no items are verified, but will mis-order once admin verifies any component."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "backend_p1_verified_default_false": "PASS — POST /api/components returns verified:false; GET /api/components every item has verified:bool",
+    "backend_p1_expanded_categories": "PASS — all 9 new categories (fasteners, electronics, brackets, hinges, gears, decorative, organizers, miniatures, structural) accepted; unknown 'totallybogus_xyz' falls back to misc; legacy mechanical/rack/mounting/misc still work",
+    "backend_p1_verify_gate": "PASS — POST /api/components/{cid}/verify returns 403 'Admin allowlist not configured' both unauthenticated and with bogus Bearer token (gate runs before auth)",
+    "backend_regression_full_suite": "PASS — 49/49 existing tests still pass (test_voice_command::test_boolean_subtract is currently green; no deselect needed this run)",
+    "frontend_composites_slot": "PASS — COMPOSITES section visible; add-slot-negative-btn + add-slot-positive-btn present; click adds exactly 3 scene-tree-items (1 cube + 2 cylinders) + 1 group-slot-* node (group-slot-mpc3ufl5-xhpng observed)",
+    "frontend_dialogs_after_split": "PASS — all 4 dialogs open after Dialogs.jsx → dialogs/*.jsx refactor: share-dialog, save-component-dialog, orca-dialog, save-printer-dialog",
+    "frontend_save_component_13_categories": "PASS — exactly 13 options: ['Mechanical','Rack / Enclosure','Mounting','Fasteners','Electronics','Brackets','Hinges','Gears','Decorative','Organizers','Miniatures','Structural','Misc']",
+    "frontend_gallery_14_filter_options": "PASS — Components tab shows 14 options (All categories + 13 above)",
+    "frontend_tag_pills_and_search_wiring": "PASS — component-tags-* group present, component-tag-pill-* render (3 pills observed). Clicking pill populated search input to 'minirack' AND fired GET /api/components?q=minirack",
+    "frontend_verified_badge_absent": "PASS — component-verified-* count = 0 across all rendered cards (no items currently verified)",
+    "frontend_auth_anon_regression": "PASS — login-btn present, user-menu-trigger absent on anonymous"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_components_p1.py",
+    "/app/test_reports/pytest/iter11_results.xml",
+    "/app/test_reports/pytest/iter11_p1_results.xml"
+  ],
+  "action_items": [
+    "(Minor) Fix GET /api/components sort order in /app/backend/server.py line 613 — change `.sort([('votes',-1),('created_at',-1)])` to `.sort([('verified',-1),('votes',-1),('created_at',-1)])` to match the documented behaviour and the /api/printers pattern. Non-blocking because no items are verified yet."
+  ],
+  "critical_code_review_comments": [
+    "Components list sort mismatch (see action_items) — documentation/PR says verified-first but code does not include the verified key. Trivial 1-line fix.",
+    "ADMIN_EMAILS gate on POST /api/components/{cid}/verify correctly runs BEFORE auth check, so the endpoint 403s with the clear 'Admin allowlist not configured' message even for unauthenticated callers — good defensive default.",
+    "_normalize_category() with .lower().strip() + set membership cleanly handles the 9-new-category expansion and any unknown input drops to misc — works as advertised.",
+    "Dialogs.jsx refactor into 4 files preserves all existing data-testid IDs (share-dialog, save-component-dialog, orca-dialog, save-printer-dialog) — no regression. Note printer dialog testid is `save-printer-dialog` (review request mentioned both `printer-dialog` and `save-printer-dialog`; the actual testid is `save-printer-dialog`).",
+    "store.addSlot() creates 3 children + a single group with testid `group-slot-*` as advertised; clean composite implementation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_components_p1.py (new — 16 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (49/49 existing + 16/16 new P1 = 65/65)",
+    "frontend": "100% (11/11 targeted scenarios)"
+  },
+  "test_credentials": "Not needed for this iteration — all flows tested either anonymously or via direct API. Phase 2 auth seeding (mongosh per /app/memory/test_credentials.md) still works; confirmed login-btn shows for anon and user-menu-trigger is absent.",
+  "seed_data_creation": "Pytest creates and cleans up TEST_iter11_* components in /api/components (16 ephemeral docs, all deleted in same test).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All P1+P2 features verified working. The only outstanding nit is the minor /api/components sort order missing verified-first key — described in action_items. New regression file /app/backend/tests/test_components_p1.py (16 tests) covers verified default, 9 new categories, unknown→misc fallback, and the admin-gate. Reuse it for future iterations.",
+  "rca of the issue": "N/A — no bugs found; one minor spec-vs-code drift on the components sort order documented above."
+}
