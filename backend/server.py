@@ -610,7 +610,7 @@ async def list_components(
     cursor = db.components.find(
         query,
         {"_id": 0, "stl_base64": 0, "project_json": 0},
-    ).sort([("votes", -1), ("created_at", -1)])
+    ).sort([("verified", -1), ("votes", -1), ("created_at", -1)])
     items = await cursor.to_list(500)
     out = []
     for d in items:

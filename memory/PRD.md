@@ -133,19 +133,29 @@
   - `ShareDialog` and `SaveComponentDialog` (`Dialogs.jsx`) gained auth-aware Author render: signed-in users see a readonly badge + a `share-private-toggle` / `component-private-toggle`; anonymous users keep the free-text input plus a `share-signin-cta` / `component-signin-cta` nudge.
 - ✅ **Tests** — 9 new auth pytest cases (`tests/test_auth_api.py`) + 7 reused private-library cases passed by testing agent. Frontend testing agent (iteration_10) confirmed both anonymous and authenticated variants of both dialogs.
 
-## Phase 3 (P0 — next) — Subscription Monetization
-Roadmap captured in `/app/MONETIZATION_PLAN.md`. Three tiers planned:
-1. **Free**: 3–5 saved/exported models per week, public gallery browsing.
-2. **Hobbyist** (~$2/mo): unlimited gallery access + private library quota.
-3. **Pro** (~$7/mo): unlimited create/upload/download, custom components, advanced exports.
-Will be enforced by a new `users.tier` field + middleware counters; Stripe Checkout for upgrade flow.
+## Iteration 11 (2026-02-19) — P1 Composite Slot · Library Polish · P2 Dialog Refactor
+- ✅ **Slot / Racetrack composite primitive** — `store.addSlot(modifier, overrides)` builds an auto-grouped trio (1 cube core + 2 cylinder caps) sharing a fresh `groupId` + `groupName`. Defaults: width=6 mm, length=10 mm, depth=6.5 mm. New `COMPOSITES` section in `LeftPanel.jsx` exposes `add-slot-negative-btn` (default — for rack-screw holes) and `add-slot-positive-btn` (pill/key shape).
+- ✅ **Expanded categories (13)** — backend `COMPONENT_CATEGORIES` widened to: mechanical, rack, mounting, **fasteners, electronics, brackets, hinges, gears, decorative, organizers, miniatures, structural**, misc. Both Gallery filter dropdown and SaveComponentDialog selector list all 13 (Gallery adds "All categories" for a total of 14 options).
+- ✅ **Verified badge** — new `verified:bool` field on components; list endpoint sorts `(verified desc, votes desc, created_at desc)`; admin-only `POST /api/components/{cid}/verify` toggle is gated by `ADMIN_EMAILS` env var (returns 403 when unset for safety). Frontend renders a green `BadgeCheck` "verified" chip only when `item.verified === true`.
+- ✅ **Clickable tag pills** — component tag string (`"screw, M3, 10mm"`) is split into chips on each card; clicking a pill populates the search input and re-queries `/api/components?q=…` in one tap.
+- ✅ **P2 — Dialogs.jsx refactor** — original 786-line file split into focused files in `components/dialogs/`: `ShareDialog.jsx`, `OrcaDialog.jsx`, `SavePrinterDialog.jsx`, `SaveComponentDialog.jsx`. `Dialogs.jsx` is now a 7-line barrel re-export so all existing imports keep working with zero call-site changes.
+- ✅ **Pricing research** — `/app/memory/PRICING_RESEARCH.md` consolidates direct competitor pricing (Tinkercad/Onshape/Fusion 360/SelfCAD), 3D-model marketplace data (Thangs/Printables/MakerWorld), 2025 indie-SaaS conversion benchmarks, a cost-coverage floor (Stripe fees + hosting), and a recommended 3-tier draft ($0 / $3 / $7) to discuss before Phase 3.
+- ✅ **Tests** — testing agent ran 49 prior + 16 new P1 backend tests + 11 frontend scenarios, all PASS. New regression file: `/app/backend/tests/test_components_p1.py`.
+
+## Phase 3 (P0 — paused per user) — Subscription Monetization
+Pricing research now lives in `/app/memory/PRICING_RESEARCH.md`. Recommended starting tiers:
+1. **Free**: 3 saved designs / week + public gallery (cap is the upgrade trigger).
+2. **Hobbyist** (**$3/mo** or $30/yr): unlimited saves, 10 private designs, 100 voice commands/wk.
+3. **Maker Pro** (**$7/mo** or $70/yr): unlimited private library, voice, verified-creator badge.
+4. *(future)* **Studio** (~$19/mo): multi-user teams.
+Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign-off on the $3/$7 anchors before build.
 
 ## Backlog / Future Enhancements
-- P0: Phase 3 Stripe monetization (tiers, usage gating, checkout)
-- P1: Real solid infill in GCODE slicer
-- P1: Replace three-bvh-csg with manifold-3d
-- P1: Tier 1 Component Library polish — tag search UI, upvote/verified badges, expanded categories, pre-built "Slot/Racetrack" primitive
+- P1: Real solid infill in GCODE slicer (perimeter contours only today)
+- P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
+- P2: Further refactor `ContextMenu.jsx` + `TopToolbar.jsx` (Dialogs.jsx done)
 - P3: Sketch / 2D drawing mode
-- P3: AMS-aware preview — multi-color slice playback
+- P3: AMS-aware preview — visualize multi-color slices layer-by-layer with extruder swaps
+- P3: Remix activity feed on Profile (who remixed your designs, when)
