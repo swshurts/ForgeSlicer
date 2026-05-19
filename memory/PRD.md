@@ -120,12 +120,32 @@
   - `doFlatten` collapsed to a single atomic `setState` (originals filtered + baked mesh inserted in the same update) — previously two sequential `set()`s raced and left orphans.
 - ✅ Verified by `testing_agent_v3_fork` iteration_5.json — all 13 review cases pass (10 fully, 3 partial due to test selector mismatch only).
 
+## Iteration 9 (2026-02-19) — Phase 2: User Authentication
+- ✅ **Emergent-managed Google OAuth** — frontend `lib/auth.js` redirects to `https://auth.emergentagent.com/?redirect=…`; AuthCallback (`components/AuthCallback.jsx`) consumes the `#session_id=` fragment synchronously and exchanges it via backend `POST /api/auth/session` for a 7-day httpOnly cookie.
+- ✅ **Backend auth core** (`server.py`): `users` + `user_sessions` collections, `get_current_user` / `get_optional_user` dependencies (cookie OR Bearer), `POST /api/auth/session`, `GET /api/auth/me`, `POST /api/auth/logout`. CORS already allows `credentials=True`.
+- ✅ **Private libraries** — `gallery` & `components` records carry `user_id` + `private` flags. Public list endpoints filter out private items. New `GET /api/me/designs` and `GET /api/me/components` return the current user's full library (public + private). Owner-only DELETE enforced (anonymous still works for legacy items without `user_id`).
+- ✅ **Author attribution** — when logged-in users POST to `/api/gallery` or `/api/components`, the server overrides any client-supplied `author` with the profile name; anonymous users keep the free-text field.
+- ✅ **Legacy migration on startup** — idempotent renaming of pre-auth gallery+components: any doc missing `user_id` gets `author = "Legacy · <original_author>"` + `private:false`, with original kept under `_legacy_author` for forensics.
+- ✅ **Frontend AuthProvider** (`contexts/AuthContext.jsx`) — race-safe: skips `/auth/me` when URL hash contains `session_id=` so AuthCallback consumes the one-shot token first. axios `withCredentials:true` set globally AND per-call.
+- ✅ **UI surfaces**: 
+  - `UserMenu.jsx` in Landing, Workspace, Gallery headers. Anonymous → `login-btn` (Sign in). Authenticated → avatar dropdown with Profile / My Designs / My Components / Sign out.
+  - `Profile.jsx` at `/profile` — banner with picture/name/email + 4 StatTiles (Designs, Components, Total Remixes, Component Upvotes) + tabbed (`?tab=designs|components`) personal grids. Anonymous visit renders a sign-in gate.
+  - `ShareDialog` and `SaveComponentDialog` (`Dialogs.jsx`) gained auth-aware Author render: signed-in users see a readonly badge + a `share-private-toggle` / `component-private-toggle`; anonymous users keep the free-text input plus a `share-signin-cta` / `component-signin-cta` nudge.
+- ✅ **Tests** — 9 new auth pytest cases (`tests/test_auth_api.py`) + 7 reused private-library cases passed by testing agent. Frontend testing agent (iteration_10) confirmed both anonymous and authenticated variants of both dialogs.
+
+## Phase 3 (P0 — next) — Subscription Monetization
+Roadmap captured in `/app/MONETIZATION_PLAN.md`. Three tiers planned:
+1. **Free**: 3–5 saved/exported models per week, public gallery browsing.
+2. **Hobbyist** (~$2/mo): unlimited gallery access + private library quota.
+3. **Pro** (~$7/mo): unlimited create/upload/download, custom components, advanced exports.
+Will be enforced by a new `users.tier` field + middleware counters; Stripe Checkout for upgrade flow.
+
 ## Backlog / Future Enhancements
-- P1: Real solid infill in GCODE slicer (perimeter contours only today)
-- P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
-- P2: Multi-object multi-select & group transforms
+- P0: Phase 3 Stripe monetization (tiers, usage gating, checkout)
+- P1: Real solid infill in GCODE slicer
+- P1: Replace three-bvh-csg with manifold-3d
+- P1: Tier 1 Component Library polish — tag search UI, upvote/verified badges, expanded categories, pre-built "Slot/Racetrack" primitive
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
-- P3: Like/upvote on gallery designs (already shipped for community printers)
 - P3: Sketch / 2D drawing mode
-- P3: AMS-aware preview — visualize multi-color slices layer-by-layer with extruder swaps
+- P3: AMS-aware preview — multi-color slice playback
