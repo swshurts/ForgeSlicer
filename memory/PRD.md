@@ -198,6 +198,14 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Search** — sidebar nav has its own topic search.
 - Test IDs added: `help-btn`, `help-dialog`, `help-close-btn`, `help-nav-search`, `help-nav-<id>`, `help-card-<id>`, `help-section-<id>`, `voice-lexicon-search`, `voice-group-<category-slug>`.
 
+## Iteration 16 (2026-02-20) — "Try it" Voice + Contributor Tier
+- ✅ **"Try ▶" button on every voice example** — VoiceCommands section in the manual now renders a per-row Try button. Click pipes the literal phrase through the existing `parseTranscript` → `executeCommand` pipeline (same path the microphone uses), closes the help dialog, and surfaces the result in the bottom-of-screen banner. Verified live: clicking Try on `"Add a cube"` added a cube to the scene with toast `Voice: Added positive cube`.
+- ✅ **Contributor Lifetime Tier (P1)** — new `GET /api/me/contributor-status` endpoint counts published+open-licensed components and designs (deduped on case-insensitive name), grants the `users.contributor_lifetime` flag the moment thresholds are crossed (100 components + 20 designs), and never demotes. The `/api/auth/me` payload now includes `contributor_lifetime` so the badge can light up app-wide.
+  - Eligible licenses: CC0, CC-BY, CC-BY-SA, MIT, Apache 2.0, GPL/LGPL/AGPL. NC, ND, and Standard Digital excluded by design.
+  - Profile page renders a dedicated `ContributorCard` with progress bars (`contributor-components` / `contributor-designs`), an "Earned" emerald badge once the milestone is hit, and a plain-English explainer.
+  - Frontend uses `meApi.contributorStatus()` (lib/auth.js); failure is non-fatal (the rest of the profile still renders).
+- Test IDs: `contributor-card`, `contributor-badge`, `contributor-components`, `contributor-designs`, `voice-try-<phrase-slug>`.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

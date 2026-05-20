@@ -314,8 +314,14 @@ const VOICE_LEXICON = [
   },
 ];
 
-function VoiceCommands() {
+function VoiceCommands({ onTry }) {
   const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(null);
+  const handleTry = async (phrase) => {
+    if (!onTry) return;
+    setBusy(phrase);
+    try { await onTry(phrase); } finally { setBusy(null); }
+  };
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return VOICE_LEXICON;
@@ -351,13 +357,26 @@ function VoiceCommands() {
           <div className="text-[11px] uppercase tracking-wider text-orange-300 font-semibold mb-1.5">{group.category}</div>
           <table className="w-full text-sm border border-slate-800 rounded overflow-hidden">
             <thead className="text-left text-[10px] text-slate-500 uppercase tracking-wider bg-slate-900/60">
-              <tr><th className="px-2 py-1.5 w-1/3">Say…</th><th className="px-2 py-1.5">What happens</th></tr>
+              <tr><th className="px-2 py-1.5 w-1/3">Say…</th><th className="px-2 py-1.5">What happens</th>{onTry && <th className="px-2 py-1.5 w-16 text-right">Try</th>}</tr>
             </thead>
             <tbody>
               {group.items.map((it) => (
                 <tr key={it.phrase} className="border-t border-slate-800">
                   <td className="px-2 py-1.5 font-mono text-orange-300 italic">"{it.phrase}"</td>
                   <td className="px-2 py-1.5 text-slate-300">{it.desc}</td>
+                  {onTry && (
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        data-testid={`voice-try-${it.phrase.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
+                        onClick={() => handleTry(it.phrase)}
+                        disabled={busy === it.phrase}
+                        className="px-2 h-6 text-[10px] rounded border border-orange-500/40 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 disabled:opacity-50"
+                        title={`Run "${it.phrase}" on your scene`}
+                      >
+                        {busy === it.phrase ? "…" : "Try ▶"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -424,7 +443,7 @@ const SECTIONS = [
   { id: "shortcuts",  label: "Keyboard Shortcuts", icon: Keyboard,  Component: Shortcuts },
 ];
 
-export default function HelpDialog({ open, onClose }) {
+export default function HelpDialog({ open, onClose, onTryVoice }) {
   const [active, setActive] = useState("index");
   const [search, setSearch] = useState("");
 
@@ -522,6 +541,8 @@ export default function HelpDialog({ open, onClose }) {
           <section className="flex-1 overflow-y-auto p-6" data-testid="help-content">
             {active === "index" ? (
               <Index onJump={setActive} />
+            ) : active === "voice" ? (
+              <VoiceCommands onTry={onTryVoice} />
             ) : ActiveComponent ? (
               <ActiveComponent />
             ) : null}

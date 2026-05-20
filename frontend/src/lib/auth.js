@@ -79,4 +79,8 @@ export const meApi = {
     const { data } = await axios.get(`${API}/me/components`, cfg);
     return data;
   },
+  contributorStatus: async () => {
+    const { data } = await axios.get(`${API}/me/contributor-status`, cfg);
+    return data;
+  },
 };

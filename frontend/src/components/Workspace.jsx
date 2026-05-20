@@ -7,6 +7,7 @@ import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import HelpDialog from "./HelpDialog";
+import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -330,6 +331,23 @@ export default function Workspace() {
     setOrcaOpen(true);
   };
 
+  // Pipe a literal voice-phrase from the in-app manual through the existing
+  // command parser/executor — same path the microphone uses, just with the
+  // transcript handed in as text. Closes the help dialog so the user can
+  // see the effect.
+  const handleTryVoice = async (phrase) => {
+    setHelpOpen(false);
+    setImportBanner({ kind: "ok", message: `Voice: "${phrase}" — parsing…` });
+    try {
+      const cmd = await parseTranscript(phrase);
+      const result = await executeCommand(cmd);
+      setImportBanner({ kind: "ok", message: `Voice: ${result}` });
+      setTimeout(() => setImportBanner(null), 4000);
+    } catch (e) {
+      setImportBanner({ kind: "err", message: `Voice failed: ${e.message || e}` });
+    }
+  };
+
   return (
     <div
       className="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden"
@@ -349,7 +367,7 @@ export default function Workspace() {
       <OrcaDialog open={orcaOpen} onClose={() => setOrcaOpen(false)} targetSlicer={targetSlicer} />
       <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
       <SaveComponentDialog open={saveComponentOpen} onClose={() => setSaveComponentOpen(false)} />
-      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} onTryVoice={handleTryVoice} />
       {importBanner && (
         <div
           data-testid="import-banner"

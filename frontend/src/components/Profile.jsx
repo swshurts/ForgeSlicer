@@ -5,7 +5,7 @@ import { meApi, startLogin } from "../lib/auth";
 import { galleryApi, componentsApi } from "../lib/api";
 import {
   ArrowLeft, Hexagon, GitFork, Download, Trash2, RefreshCw,
-  PlusSquare, MinusSquare, Lock, Plus, Star,
+  PlusSquare, MinusSquare, Lock, Plus, Star, Award,
 } from "lucide-react";
 
 const PLACEHOLDER = "https://images.unsplash.com/photo-1702863361902-93c51bfbd923?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwzfHwzZCUyMHByaW50ZWQlMjBvYmplY3R8ZW58MHx8fHwxNzc4ODI0MjYyfDA&ixlib=rb-4.1.0&q=85";
@@ -15,6 +15,77 @@ function StatTile({ label, value, accent = "text-orange-400" }) {
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
       <div className={`text-2xl font-bold font-mono ${accent}`}>{value}</div>
       <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+// ---- Contributor Lifetime tier progress card ----
+// Counts open-source published designs & components and surfaces the
+// threshold the user needs to cross for free-forever access. The flag is
+// granted server-side the moment thresholds are met; this card mirrors the
+// state so it's visible.
+function ContributorCard({ status }) {
+  if (!status) return null;
+  const { components_count, designs_count, components_threshold, designs_threshold, contributor_lifetime } = status;
+  const compPct = Math.min(100, Math.round((components_count / components_threshold) * 100));
+  const desPct = Math.min(100, Math.round((designs_count / designs_threshold) * 100));
+  return (
+    <div
+      data-testid="contributor-card"
+      className={`rounded-lg p-5 mb-8 border ${
+        contributor_lifetime
+          ? "border-emerald-500/50 bg-emerald-500/5"
+          : "border-slate-800 bg-slate-900"
+      }`}
+    >
+      <div className="flex items-start gap-4">
+        <div
+          className={`h-12 w-12 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            contributor_lifetime ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-400"
+          }`}
+        >
+          <Award size={26} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white">Contributor Lifetime Tier</h3>
+            {contributor_lifetime && (
+              <span data-testid="contributor-badge" className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                ✓ Earned
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+            Publish {components_threshold} open-source components and {designs_threshold} open-source designs of original work to unlock <strong className="text-emerald-300">free-forever</strong> access — even after paid tiers launch.
+          </p>
+          <div className="mt-4 space-y-2">
+            <ProgressRow label="Components" value={components_count} max={components_threshold} pct={compPct} testid="contributor-components" />
+            <ProgressRow label="Designs"    value={designs_count}    max={designs_threshold}    pct={desPct}  testid="contributor-designs" />
+          </div>
+          <p className="text-[10px] text-slate-500 mt-3 leading-snug">
+            Eligible licenses: CC0, CC-BY, CC-BY-SA, MIT, Apache 2.0, GPL/LGPL/AGPL.
+            Non-commercial (NC), No-derivatives (ND), and Standard Digital don't count.
+            Duplicate names dedup to one item.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProgressRow({ label, value, max, pct, testid }) {
+  return (
+    <div data-testid={testid}>
+      <div className="flex items-center justify-between text-[11px] mb-1">
+        <span className="text-slate-300 font-medium">{label}</span>
+        <span className="font-mono text-slate-400">{value} / {max}</span>
+      </div>
+      <div className="h-1.5 rounded bg-slate-800 overflow-hidden">
+        <div
+          className={`h-full transition-all ${pct >= 100 ? "bg-emerald-400" : "bg-orange-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -124,6 +195,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const [designs, setDesigns] = useState([]);
   const [components, setComponents] = useState([]);
+  const [contributor, setContributor] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -131,8 +203,14 @@ export default function Profile() {
     if (!user) return;
     setBusy(true); setError("");
     try {
-      const [d, c] = await Promise.all([meApi.designs(), meApi.components()]);
-      setDesigns(d); setComponents(c);
+      const [d, c, contrib] = await Promise.all([
+        meApi.designs(),
+        meApi.components(),
+        // Contributor status is best-effort — if the endpoint hiccups we
+        // still want the rest of the profile to render.
+        meApi.contributorStatus().catch(() => null),
+      ]);
+      setDesigns(d); setComponents(c); setContributor(contrib);
     } catch (e) {
       setError(e?.response?.data?.detail || e.message);
     } finally { setBusy(false); }
@@ -226,12 +304,14 @@ export default function Profile() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <StatTile label="My Designs" value={designs.length} />
           <StatTile label="My Components" value={components.length} accent="text-cyan-400" />
           <StatTile label="Total Remixes" value={totalRemixes} accent="text-amber-400" />
           <StatTile label="Component Upvotes" value={totalUpvotes} accent="text-emerald-400" />
         </div>
+
+        <ContributorCard status={contributor} />
 
         <div className="flex items-center gap-1 mb-6 border-b border-slate-800">
           {[

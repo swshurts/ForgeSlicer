@@ -188,6 +188,7 @@ async def get_me(request: Request):
         "email": user["email"],
         "name": user["name"],
         "picture": user.get("picture", ""),
+        "contributor_lifetime": bool(user.get("contributor_lifetime", False)),
     }
 
 
@@ -198,6 +199,75 @@ async def logout(request: Request, response: FastResponse):
         await db.user_sessions.delete_one({"session_token": tok})
     response.delete_cookie(SESSION_COOKIE, path="/", samesite="none", secure=True)
     return {"ok": True}
+
+
+# ---------- Contributor tier ----------
+# Open-source licenses that count toward the Contributor Lifetime threshold.
+# Non-commercial (NC), no-derivatives (ND), and the ForgeSlicer Standard
+# Digital license are explicitly excluded because the deal is "lifetime free
+# in exchange for genuinely open work the community can build on".
+CONTRIB_OPEN_LICENSES = {
+    "cc-by-4.0", "cc-by-sa-4.0", "cc0-1.0",
+    "gpl-3.0", "lgpl-3.0", "agpl-3.0",
+    "mit", "apache-2.0",
+}
+CONTRIB_COMPONENT_THRESHOLD = 100
+CONTRIB_DESIGN_THRESHOLD = 20
+
+
+async def _count_open_contributions(user_id: str, collection) -> int:
+    """Count unique published+open-licensed items by `user_id`, deduplicated
+    on case-insensitive name so a "v1 / v2 / final" trio counts once. We
+    only consider items the author has made public — private uploads don't
+    earn the badge (the deal is about community contribution)."""
+    cursor = collection.find(
+        {
+            "user_id": user_id,
+            "$or": [{"private": False}, {"private": {"$exists": False}}],
+            "license": {"$in": list(CONTRIB_OPEN_LICENSES)},
+        },
+        {"_id": 0, "name": 1},
+    )
+    seen = set()
+    async for d in cursor:
+        n = (d.get("name") or "").strip().lower()
+        if n:
+            seen.add(n)
+    return len(seen)
+
+
+@api_router.get("/me/contributor-status")
+async def contributor_status(request: Request):
+    """Return the user's progress toward the Contributor Lifetime tier and
+    flip `users.contributor_lifetime` to True once the thresholds are met.
+    Per spec the flag never demotes — once granted, always granted."""
+    user = await get_current_user(request)
+    uid = user["user_id"]
+    components_count = await _count_open_contributions(uid, db.components)
+    designs_count = await _count_open_contributions(uid, db.gallery)
+    qualifies = (
+        components_count >= CONTRIB_COMPONENT_THRESHOLD
+        and designs_count >= CONTRIB_DESIGN_THRESHOLD
+    )
+    already = bool(user.get("contributor_lifetime", False))
+    if qualifies and not already:
+        await db.users.update_one(
+            {"user_id": uid},
+            {"$set": {
+                "contributor_lifetime": True,
+                "contributor_granted_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        already = True
+    return {
+        "user_id": uid,
+        "components_count": components_count,
+        "designs_count": designs_count,
+        "components_threshold": CONTRIB_COMPONENT_THRESHOLD,
+        "designs_threshold": CONTRIB_DESIGN_THRESHOLD,
+        "contributor_lifetime": already,
+        "qualifying_licenses": sorted(list(CONTRIB_OPEN_LICENSES)),
+    }
 
 
 # ---------- Models ----------
