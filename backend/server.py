@@ -201,6 +201,23 @@ async def logout(request: Request, response: FastResponse):
     return {"ok": True}
 
 
+# ---------- One-shot source-zip download ----------
+# Temporary helper while the user's GitHub OAuth flow is blocked. Serves
+# /app/forgeslicer-source.zip (which has node_modules, .git, and .env files
+# stripped) so they can push to GitHub locally. Remove once GitHub auth is
+# unblocked.
+@api_router.get("/download/source-zip")
+async def download_source_zip():
+    zip_path = Path("/app/forgeslicer-source.zip")
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="Source zip not generated")
+    return Response(
+        content=zip_path.read_bytes(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="forgeslicer-source.zip"'},
+    )
+
+
 # ---------- Contributor tier ----------
 # Open-source licenses that count toward the Contributor Lifetime threshold.
 # Non-commercial (NC), no-derivatives (ND), and the ForgeSlicer Standard
