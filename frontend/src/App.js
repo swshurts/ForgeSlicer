@@ -7,6 +7,7 @@ import Profile from "@/components/Profile";
 import AuthCallback from "@/components/AuthCallback";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { Toaster } from "@/components/ui/sonner";
 
 // Detect the OAuth fragment SYNCHRONOUSLY during render so AuthCallback runs
 // before any /api/auth/me race from a global provider would 401. We read
@@ -45,6 +46,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
+          <Toaster richColors closeButton position="top-center" />
         </AuthProvider>
       </BrowserRouter>
     </div>

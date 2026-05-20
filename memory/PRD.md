@@ -206,6 +206,13 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
   - Frontend uses `meApi.contributorStatus()` (lib/auth.js); failure is non-fatal (the rest of the profile still renders).
 - Test IDs: `contributor-card`, `contributor-badge`, `contributor-components`, `contributor-designs`, `voice-try-<phrase-slug>`.
 
+## Iteration 17 (2026-02-20) — Contributor Celebration Toast
+- ✅ **Celebration toast on Contributor threshold** — when the backend flips `users.contributor_lifetime` to `true`, the next `/api/auth/me` (or Profile refresh) triggers a rich sonner toast: *"🏆 You're a ForgeSlicer Contributor for life!"* with a 12-second duration. Persisted per-user in `localStorage` (`forge.contributor.celebrated`) so it only celebrates once.
+- ✅ Mounted shadcn `Toaster` in `App.js` (top-center, rich colors, dismiss button) so any component can `toast(...)` going forward.
+- ✅ `Profile.jsx` triggers `refresh()` from AuthContext the moment a contributor-status fetch flips the flag, so the celebration fires on the same visit that crosses the threshold (instead of waiting for next sign-in).
+- Verified live: forced `contributor_lifetime=true` in Mongo → Profile loaded → toast rendered at top-center with the trophy emoji.
+- Note: kept toast-only for now; an actual transactional email would require adding SendGrid/Resend integration which is a separate iteration.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

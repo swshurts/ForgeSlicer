@@ -188,7 +188,7 @@ function ComponentTile({ item, onDelete, onAdd }) {
 }
 
 export default function Profile() {
-  const { user, loading } = useAuth();
+  const { user, loading, refresh } = useAuth();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "designs";
   const setTab = (t) => setParams({ tab: t }, { replace: true });
@@ -211,6 +211,12 @@ export default function Profile() {
         meApi.contributorStatus().catch(() => null),
       ]);
       setDesigns(d); setComponents(c); setContributor(contrib);
+      // If the backend just flipped contributor_lifetime to true (because
+      // this fetch crossed the threshold), refresh the auth context so the
+      // celebration toast (driven by AuthContext.maybeCelebrate) fires.
+      if (contrib && contrib.contributor_lifetime && !user?.contributor_lifetime) {
+        refresh().catch(() => { /* non-fatal */ });
+      }
     } catch (e) {
       setError(e?.response?.data?.detail || e.message);
     } finally { setBusy(false); }
