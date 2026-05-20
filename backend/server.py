@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
 
+from email_service import send_contributor_celebration
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -201,23 +203,6 @@ async def logout(request: Request, response: FastResponse):
     return {"ok": True}
 
 
-# ---------- One-shot source-zip download ----------
-# Temporary helper while the user's GitHub OAuth flow is blocked. Serves
-# /app/forgeslicer-source.zip (which has node_modules, .git, and .env files
-# stripped) so they can push to GitHub locally. Remove once GitHub auth is
-# unblocked.
-@api_router.get("/download/source-zip")
-async def download_source_zip():
-    zip_path = Path("/app/forgeslicer-source.zip")
-    if not zip_path.exists():
-        raise HTTPException(status_code=404, detail="Source zip not generated")
-    return Response(
-        content=zip_path.read_bytes(),
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="forgeslicer-source.zip"'},
-    )
-
-
 # ---------- Contributor tier ----------
 # Open-source licenses that count toward the Contributor Lifetime threshold.
 # Non-commercial (NC), no-derivatives (ND), and the ForgeSlicer Standard
@@ -267,6 +252,7 @@ async def contributor_status(request: Request):
         and designs_count >= CONTRIB_DESIGN_THRESHOLD
     )
     already = bool(user.get("contributor_lifetime", False))
+    just_granted = False
     if qualifies and not already:
         await db.users.update_one(
             {"user_id": uid},
@@ -276,6 +262,15 @@ async def contributor_status(request: Request):
             }},
         )
         already = True
+        just_granted = True
+    # Fire the celebration email exactly once, when the threshold is crossed
+    # in *this* request. Send is async + non-blocking + best-effort: failures
+    # never affect the API response.
+    if just_granted:
+        try:
+            await send_contributor_celebration(user.get("email", ""), user.get("name", ""))
+        except Exception as e:  # noqa: BLE001 - email is best-effort
+            logging.getLogger(__name__).warning("contributor email dispatch failed: %s", e)
     return {
         "user_id": uid,
         "components_count": components_count,

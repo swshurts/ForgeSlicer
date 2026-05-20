@@ -213,6 +213,15 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - Verified live: forced `contributor_lifetime=true` in Mongo → Profile loaded → toast rendered at top-center with the trophy emoji.
 - Note: kept toast-only for now; an actual transactional email would require adding SendGrid/Resend integration which is a separate iteration.
 
+## Iteration 18 (2026-02-21) — Pre-Deploy Cleanup + Resend Email
+- ✅ **Contributor celebration email via Resend** — wired transactional email send. Triggers exactly once, at the moment `users.contributor_lifetime` flips to `true` in `GET /api/me/contributor-status`. Send runs in `asyncio.to_thread` (non-blocking) and is best-effort (logs warning, never breaks the API response).
+  - HTML email template with inline CSS (tables-based layout for max client compatibility), plain-text fallback, CTA back to `/profile`.
+  - `RESEND_API_KEY` + `SENDER_EMAIL` + `APP_PUBLIC_URL` in `backend/.env`.
+  - Currently using Resend's sandbox sender (`onboarding@resend.dev`); will switch to `contributor@forgeslicer.com` once DNS is verified post-launch.
+  - Verified live: forced threshold cross with seeded data → email delivered, Resend message id `ce29e40e-...` returned.
+- ✅ **Removed temporary `/api/download/source-zip` endpoint** + deleted `/app/forgeslicer-source.zip` (no longer needed; user is pushing via GitHub).
+- ✅ New module `backend/email_service.py` (143 lines, lint clean) — kept isolated so future emails can register here.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
