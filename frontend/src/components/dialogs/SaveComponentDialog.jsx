@@ -176,7 +176,12 @@ export function SaveComponentDialog({ open, onClose }) {
         if (approx > 8 * 1024 * 1024) {
           msg += ` — payload is ~${(approx / (1024 * 1024)).toFixed(1)} MB; try checking 'Save selected only' or reducing mesh complexity.`;
         }
-      } catch (_) {}
+      } catch (sizingErr) {
+        // Size hint is best-effort — if we couldn't estimate, fall back to
+        // the raw error message instead of failing the whole save flow.
+        // eslint-disable-next-line no-console
+        console.warn("save-component size-hint failed:", sizingErr);
+      }
       setError(typeof msg === "string" ? msg : JSON.stringify(msg));
     } finally { setBusy(false); }
   };

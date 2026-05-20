@@ -170,13 +170,21 @@ export const useScene = create((set, get) => ({
   setFilament: (id) => set({ filamentId: id }),
   setAutoDropOnRotate: (v) => {
     if (typeof window !== "undefined" && window.localStorage) {
-      try { window.localStorage.setItem("forge.autoDropOnRotate", v ? "true" : "false"); } catch (_) {}
+      try { window.localStorage.setItem("forge.autoDropOnRotate", v ? "true" : "false"); }
+      catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("persist autoDropOnRotate failed:", err);
+      }
     }
     set({ autoDropOnRotate: !!v });
   },
   setAutoDropNew: (v) => {
     if (typeof window !== "undefined" && window.localStorage) {
-      try { window.localStorage.setItem("forge.autoDropNew", v ? "true" : "false"); } catch (_) {}
+      try { window.localStorage.setItem("forge.autoDropNew", v ? "true" : "false"); }
+      catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("persist autoDropNew failed:", err);
+      }
     }
     set({ autoDropNew: !!v });
   },

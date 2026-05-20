@@ -42,8 +42,20 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
       iframe.style.display = "none";
       iframe.src = proto;
       document.body.appendChild(iframe);
-      setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 2000);
-    } catch (_) { /* nope */ }
+      setTimeout(() => {
+        try { document.body.removeChild(iframe); }
+        catch (err) {
+          // iframe already torn down (e.g. user navigated). Safe to ignore.
+          // eslint-disable-next-line no-console
+          console.debug("orca iframe cleanup:", err);
+        }
+      }, 2000);
+    } catch (err) {
+      // Browser blocked the custom-protocol iframe entirely. The user can
+      // still drag the downloaded 3MF into the slicer manually.
+      // eslint-disable-next-line no-console
+      console.warn("orca protocol launch failed:", err);
+    }
   };
 
   const handleDownload = async () => {
@@ -64,7 +76,11 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
   };
 
   const dontShowAgain = () => {
-    try { localStorage.setItem("forgeslicer.hideSlicerHelp", "1"); } catch {}
+    try { localStorage.setItem("forgeslicer.hideSlicerHelp", "1"); }
+    catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("persist hideSlicerHelp failed:", err);
+    }
     setShowHelp(false);
   };
 
