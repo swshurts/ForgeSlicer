@@ -19,7 +19,7 @@ import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, Duplicat
 import STLPreviewDialog from "./STLPreviewDialog";
 import VoiceButton from "./VoiceButton";
 import UserMenu from "./UserMenu";
-import { Eye, Library } from "lucide-react";
+import { Eye, Library, CircleHelp } from "lucide-react";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -46,7 +46,7 @@ function Divider() {
   return <div className="h-6 w-px bg-slate-800 mx-1" />;
 }
 
-export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
+export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onOpenHelp }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -504,6 +504,14 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent }) {
       {busyMsg && (
         <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
       )}
+      <button
+        data-testid="help-btn"
+        onClick={onOpenHelp}
+        title="Help & User Manual (?)"
+        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-orange-300 hover:bg-slate-800 flex items-center justify-center"
+      >
+        <CircleHelp size={16} />
+      </button>
       <UserMenu returnPath="/workspace" />
       {openPopover === "position" && (
         <PositionPopover anchor={posBtnRef.current} onClose={() => setOpenPopover(null)} />

@@ -6,6 +6,7 @@ import RightPanel from "./RightPanel";
 import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
+import HelpDialog from "./HelpDialog";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -18,6 +19,7 @@ export default function Workspace() {
   const [targetSlicer, setTargetSlicer] = useState(null);
   const [savePrinterOpen, setSavePrinterOpen] = useState(false);
   const [saveComponentOpen, setSaveComponentOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -29,9 +31,25 @@ export default function Workspace() {
       if (name === "save_component") setSaveComponentOpen(true);
       else if (name === "share_gallery") setShareOpen(true);
       else if (name === "slicer") setOrcaOpen(true);
+      else if (name === "help") setHelpOpen(true);
     };
     window.addEventListener("forgeslicer:open-dialog", handler);
     return () => window.removeEventListener("forgeslicer:open-dialog", handler);
+  }, []);
+
+  // Global "?" shortcut to open the Help manual from anywhere in the
+  // workspace. Skips when the user is typing in an input/textarea so we
+  // don't intercept a literal "?" they're trying to type.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "?" && !(e.shiftKey && e.key === "/")) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      setHelpOpen((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const remixId = searchParams.get("remix");
@@ -318,7 +336,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
@@ -331,6 +349,7 @@ export default function Workspace() {
       <OrcaDialog open={orcaOpen} onClose={() => setOrcaOpen(false)} targetSlicer={targetSlicer} />
       <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
       <SaveComponentDialog open={saveComponentOpen} onClose={() => setSaveComponentOpen(false)} />
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       {importBanner && (
         <div
           data-testid="import-banner"

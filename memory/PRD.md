@@ -190,6 +190,14 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - New test IDs: `edge-controls`, `edge-style-fillet`, `edge-style-chamfer`, `edge-radius-slider`, `edge-radius-readout`, `edge-radius-preset-{0|1|2|5}`.
 - Verified live with cube + cylinder + cone (positive and negative): chamfered cube shows clean 45° bevel; 5 mm fillet on cube rounds all 12 edges; cylinder chamfered/filleted top + bottom rims; cone base ring filleted and chamfered; negative cube exposes EDGE panel for counter-bore use.
 
+## Iteration 15 (2026-02-20) — Help / User Manual
+- ✅ **In-app User Manual** — new `HelpDialog.jsx` with a sidebar-nav + content layout reachable from a `?` icon in the top toolbar, the global <kbd>?</kbd> hotkey (anywhere in the workspace), or the voice event `open-dialog {name: "help"}`.
+- ✅ **12 sections**: Index, Quick Start, Primitives, Positive & Negative, Transforms, Snapping & Grid, Fillet & Chamfer, Boolean Operations, Import & Export, Gallery & Sharing, Component Library, Voice Commands, Keyboard Shortcuts. Index page presents the sections as a 2-column card grid for at-a-glance navigation.
+- ✅ **Voice Command Lexicon** — first-class section with hands-free flow walkthrough plus a 5-category × 28-entry phrase/effect table. Built-in search filter (`voice-lexicon-search` testid) narrows the table by phrase, action, or effect.
+- ✅ **Keyboard Shortcuts** — full table including the new `?` hotkey to reopen the manual.
+- ✅ **Search** — sidebar nav has its own topic search.
+- Test IDs added: `help-btn`, `help-dialog`, `help-close-btn`, `help-nav-search`, `help-nav-<id>`, `help-card-<id>`, `help-section-<id>`, `voice-lexicon-search`, `voice-group-<category-slug>`.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
