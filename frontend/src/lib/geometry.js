@@ -1,5 +1,58 @@
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+
+/**
+ * Build a cylinder with chamfered or filleted top/bottom edges by lathing
+ * a side-profile around the Y axis. When edgeRadius <= 0 we fall through to
+ * the regular CylinderGeometry caller.
+ *
+ *   edgeStyle: "fillet"  → quarter-arc (rounded)
+ *   edgeStyle: "chamfer" → single 45° bevel
+ */
+function buildLatheCylinder(r, h, edgeRadius, segments, edgeStyle) {
+  const er = Math.min(edgeRadius, r - 0.001, h / 2 - 0.001);
+  const half = h / 2;
+  const points = [];
+  // Start on the axis at the bottom so the bottom cap is closed.
+  points.push(new THREE.Vector2(0, -half));
+  points.push(new THREE.Vector2(r - er, -half));
+  if (edgeStyle === "chamfer") {
+    points.push(new THREE.Vector2(r, -half + er));
+  } else {
+    // Quarter-arc: from (r - er, -half) sweeping to (r, -half + er).
+    const arcSegs = Math.max(2, Math.min(16, Math.round(segments / 8)));
+    const cx = r - er, cy = -half + er;
+    for (let i = 1; i <= arcSegs; i++) {
+      const t = i / arcSegs;
+      const a = -Math.PI / 2 + t * (Math.PI / 2);
+      points.push(new THREE.Vector2(cx + Math.cos(a) * er, cy + Math.sin(a) * er));
+    }
+  }
+  // Straight side wall.
+  if (edgeStyle === "chamfer") {
+    points.push(new THREE.Vector2(r, half - er));
+  } else {
+    // (r, -half + er) already in the array — keep walking up the wall.
+    points.push(new THREE.Vector2(r, half - er));
+  }
+  if (edgeStyle === "chamfer") {
+    points.push(new THREE.Vector2(r - er, half));
+  } else {
+    const arcSegs = Math.max(2, Math.min(16, Math.round(segments / 8)));
+    const cx = r - er, cy = half - er;
+    for (let i = 1; i <= arcSegs; i++) {
+      const t = i / arcSegs;
+      const a = t * (Math.PI / 2);
+      points.push(new THREE.Vector2(cx + Math.cos(a) * er, cy + Math.sin(a) * er));
+    }
+  }
+  // Close the top cap by walking back to the axis.
+  points.push(new THREE.Vector2(0, half));
+  const g = new THREE.LatheGeometry(points, segments);
+  g.computeVertexNormals();
+  return g;
+}
 
 // Build a flat Shape for the 2D primitives (used by ExtrudeGeometry).
 // All shapes are returned centered on (0, 0) in the X–Y plane; THREE's
@@ -42,14 +95,27 @@ export function buildGeometry(obj) {
   const d = obj.dims || {};
 
   if (t === "cube") {
-    return new THREE.BoxGeometry(d.x || 20, d.z || 20, d.y || 20);
+    const w = d.x || 20, h = d.z || 20, dep = d.y || 20;
+    const er = Math.max(0, d.edgeRadius || 0);
+    if (er > 0.001) {
+      // segments=1 → chamfered (single bevel); 4 → fillet (smooth round).
+      const seg = (d.edgeStyle === "chamfer") ? 1 : 4;
+      const clamped = Math.min(er, w / 2 - 0.001, h / 2 - 0.001, dep / 2 - 0.001);
+      return new RoundedBoxGeometry(w, h, dep, seg, clamped);
+    }
+    return new THREE.BoxGeometry(w, h, dep);
     // Note: three.js Y is up; we map our z->Y (height) so that "z" dim feels like up
   }
   if (t === "sphere") {
     return new THREE.SphereGeometry(d.r || 10, d.segments || 48, Math.max(16, (d.segments || 48) / 2));
   }
   if (t === "cylinder") {
-    return new THREE.CylinderGeometry(d.r || 10, d.r || 10, d.h || 20, d.segments || 64);
+    const r = d.r || 10, h = d.h || 20, segs = d.segments || 64;
+    const er = Math.max(0, d.edgeRadius || 0);
+    if (er > 0.001) {
+      return buildLatheCylinder(r, h, er, segs, d.edgeStyle === "chamfer" ? "chamfer" : "fillet");
+    }
+    return new THREE.CylinderGeometry(r, r, h, segs);
   }
   if (t === "cone") {
     return new THREE.ConeGeometry(d.r || 10, d.h || 20, d.segments || 64);

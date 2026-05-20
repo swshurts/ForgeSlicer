@@ -647,6 +647,7 @@ function Inspector() {
             <NumberField testid="dim-y" label="Y" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
             <NumberField testid="dim-z" label="Z" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
           </div>
+          <EdgeControls obj={obj} updateDims={updateDims} />
         </div>
       )}
       {(obj.type === "sphere" || obj.type === "cylinder" || obj.type === "cone") && (
@@ -700,6 +701,9 @@ function Inspector() {
               />
             </div>
           )}
+          {obj.type === "cylinder" && (
+            <EdgeControls obj={obj} updateDims={updateDims} />
+          )}
         </div>
       )}
       {obj.type === "torus" && (
@@ -722,6 +726,98 @@ function Inspector() {
         <Shape2DControls obj={obj} updateDims={updateDims} />
       )}
     </Section>
+  );
+}
+
+// ---------- Edge controls: chamfer / fillet for cube + cylinder ----------
+function EdgeControls({ obj, updateDims }) {
+  const d = obj.dims || {};
+  const style = d.edgeStyle === "chamfer" ? "chamfer" : "fillet";
+  const er = Math.max(0, d.edgeRadius || 0);
+  // Max allowed edge radius depends on the primitive's shortest half-extent.
+  let maxR;
+  if (obj.type === "cube") {
+    maxR = Math.min(d.x || 20, d.y || 20, d.z || 20) / 2 - 0.001;
+  } else if (obj.type === "cylinder") {
+    maxR = Math.min(d.r || 10, (d.h || 20) / 2) - 0.001;
+  } else {
+    maxR = 10;
+  }
+  maxR = Math.max(0, maxR);
+  const setRadius = (v) => updateDims(obj.id, { edgeRadius: Math.max(0, Math.min(maxR, v)) });
+  const setStyle = (s) => updateDims(obj.id, { edgeStyle: s });
+  const off = er <= 0.001;
+  return (
+    <div className="mt-3 bg-slate-950/60 border border-orange-500/30 rounded p-2 space-y-2" data-testid="edge-controls">
+      <div className="text-[10px] uppercase tracking-wider text-orange-300 font-semibold flex items-center justify-between">
+        <span>Edge {style}</span>
+        <span className="text-[9px] normal-case text-slate-500">{off ? "sharp" : `${er.toFixed(2)} mm`}</span>
+      </div>
+      <div className="flex gap-1">
+        <button
+          data-testid="edge-style-fillet"
+          onClick={() => setStyle("fillet")}
+          className={`flex-1 h-7 rounded text-[10px] font-semibold border ${
+            style === "fillet"
+              ? "bg-orange-500/20 border-orange-500 text-orange-300"
+              : "bg-slate-900 border-slate-700 text-slate-400 hover:border-orange-500/50"
+          }`}
+          title="Round the edges"
+        >
+          ◜ Fillet
+        </button>
+        <button
+          data-testid="edge-style-chamfer"
+          onClick={() => setStyle("chamfer")}
+          className={`flex-1 h-7 rounded text-[10px] font-semibold border ${
+            style === "chamfer"
+              ? "bg-orange-500/20 border-orange-500 text-orange-300"
+              : "bg-slate-900 border-slate-700 text-slate-400 hover:border-orange-500/50"
+          }`}
+          title="Bevel the edges 45°"
+        >
+          ◢ Chamfer
+        </button>
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Radius</span>
+          <span data-testid="edge-radius-readout" className="text-[10px] font-mono text-orange-400">
+            {er.toFixed(2)} / {maxR.toFixed(1)} mm
+          </span>
+        </div>
+        <input
+          data-testid="edge-radius-slider"
+          type="range"
+          min={0}
+          max={Math.max(0.1, maxR)}
+          step={Math.max(0.05, maxR / 200)}
+          value={Math.min(er, maxR)}
+          onChange={(e) => setRadius(parseFloat(e.target.value))}
+          className="w-full accent-orange-500"
+        />
+        <div className="mt-1 grid grid-cols-4 gap-1">
+          {[0, 1, 2, 5].map((preset) => {
+            const v = Math.min(preset, maxR);
+            const active = Math.abs(er - v) < 0.05;
+            return (
+              <button
+                key={preset}
+                data-testid={`edge-radius-preset-${preset}`}
+                onClick={() => setRadius(v)}
+                className={`h-6 text-[10px] font-mono rounded border ${
+                  active
+                    ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-orange-500/50"
+                }`}
+              >
+                {preset === 0 ? "Off" : `${preset}mm`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
