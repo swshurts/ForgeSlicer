@@ -180,13 +180,15 @@ Pricing research now lives in `/app/memory/PRICING_RESEARCH.md`. Recommended sta
 Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign-off on the $3/$7 anchors before build.
 
 ## Iteration 14 (2026-02-20) — Edge Fillet & Chamfer
-- ✅ **Edge fillet / chamfer for primitives** — cube and cylinder now support filleted (rounded) or chamfered (45° beveled) edges through a new "EDGE" panel in the Inspector. Two-button style toggle (Fillet ◜ / Chamfer ◢), radius slider clamped to the primitive's shortest half-extent, plus 4 quick presets (Off / 1 mm / 2 mm / 5 mm).
+- ✅ **Edge fillet / chamfer for primitives** — cube, cylinder, and cone now support filleted (rounded) or chamfered (45° beveled) edges through a new "EDGE" panel in the Inspector. Two-button style toggle (Fillet ◜ / Chamfer ◢), radius slider clamped to the primitive's shortest half-extent, plus 4 quick presets (Off / 1 mm / 2 mm / 5 mm).
   - Stored on the object as `dims.edgeRadius` (number, mm) + `dims.edgeStyle` ("fillet"|"chamfer"). Defaults to 0 (sharp) so existing saved designs render unchanged.
   - Cube uses `RoundedBoxGeometry` (smoothness 1 → chamfer, 4 → fillet).
   - Cylinder uses a `LatheGeometry` built from a hand-rolled side profile so the top + bottom rims get a quarter-arc fillet or a single 45° chamfer.
+  - Cone uses the same lathe approach on the bottom edge (apex stays a point); slope walks straight from the inset ring to the apex.
+  - **Negatives included** — the Inspector UI isn't gated on modifier, so a filleted **negative** cube/cylinder/cone subtracts into the host model as a counter-bored pocket / chamfered recess in one shot (great for screw cup-points + heat-set inserts).
   - Picked up automatically by STL / 3MF / GCODE exports, CSG booleans, drop-to-bed, and the rotated-BBox compatibility checks because they all go through `buildGeometry`.
 - New test IDs: `edge-controls`, `edge-style-fillet`, `edge-style-chamfer`, `edge-radius-slider`, `edge-radius-readout`, `edge-radius-preset-{0|1|2|5}`.
-- Verified live with cube + cylinder: chamfered cube shows clean 45° bevel; 5 mm fillet on cube rounds all 12 edges; cylinder chamfered top/bottom rims and the filleted variant both render and respect the radius clamp.
+- Verified live with cube + cylinder + cone (positive and negative): chamfered cube shows clean 45° bevel; 5 mm fillet on cube rounds all 12 edges; cylinder chamfered/filleted top + bottom rims; cone base ring filleted and chamfered; negative cube exposes EDGE panel for counter-bore use.
 
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)

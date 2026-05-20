@@ -54,6 +54,35 @@ function buildLatheCylinder(r, h, edgeRadius, segments, edgeStyle) {
   return g;
 }
 
+/**
+ * Build a cone with a filleted or chamfered base edge by lathing a side
+ * profile. The apex is a point so only the bottom ring has an edge to
+ * round. When edgeRadius <= 0 the caller uses ConeGeometry directly.
+ */
+function buildLatheCone(r, h, edgeRadius, segments, edgeStyle) {
+  const er = Math.min(edgeRadius, r - 0.001, h - 0.001);
+  const half = h / 2;
+  const points = [];
+  points.push(new THREE.Vector2(0, -half));
+  points.push(new THREE.Vector2(r - er, -half));
+  if (edgeStyle === "chamfer") {
+    points.push(new THREE.Vector2(r, -half + er));
+  } else {
+    const arcSegs = Math.max(2, Math.min(16, Math.round(segments / 8)));
+    const cx = r - er, cy = -half + er;
+    for (let i = 1; i <= arcSegs; i++) {
+      const t = i / arcSegs;
+      const a = -Math.PI / 2 + t * (Math.PI / 2);
+      points.push(new THREE.Vector2(cx + Math.cos(a) * er, cy + Math.sin(a) * er));
+    }
+  }
+  // Up the slope to the apex.
+  points.push(new THREE.Vector2(0, half));
+  const g = new THREE.LatheGeometry(points, segments);
+  g.computeVertexNormals();
+  return g;
+}
+
 // Build a flat Shape for the 2D primitives (used by ExtrudeGeometry).
 // All shapes are returned centered on (0, 0) in the X–Y plane; THREE's
 // ExtrudeGeometry then extrudes them along +Z, so we rotate the result
@@ -118,7 +147,12 @@ export function buildGeometry(obj) {
     return new THREE.CylinderGeometry(r, r, h, segs);
   }
   if (t === "cone") {
-    return new THREE.ConeGeometry(d.r || 10, d.h || 20, d.segments || 64);
+    const r = d.r || 10, h = d.h || 20, segs = d.segments || 64;
+    const er = Math.max(0, d.edgeRadius || 0);
+    if (er > 0.001) {
+      return buildLatheCone(r, h, er, segs, d.edgeStyle === "chamfer" ? "chamfer" : "fillet");
+    }
+    return new THREE.ConeGeometry(r, h, segs);
   }
   if (t === "torus") {
     return new THREE.TorusGeometry(d.r || 12, d.tube || 4, 24, d.segments || 48);

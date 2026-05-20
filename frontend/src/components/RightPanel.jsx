@@ -704,6 +704,9 @@ function Inspector() {
           {obj.type === "cylinder" && (
             <EdgeControls obj={obj} updateDims={updateDims} />
           )}
+          {obj.type === "cone" && (
+            <EdgeControls obj={obj} updateDims={updateDims} />
+          )}
         </div>
       )}
       {obj.type === "torus" && (
@@ -740,6 +743,8 @@ function EdgeControls({ obj, updateDims }) {
     maxR = Math.min(d.x || 20, d.y || 20, d.z || 20) / 2 - 0.001;
   } else if (obj.type === "cylinder") {
     maxR = Math.min(d.r || 10, (d.h || 20) / 2) - 0.001;
+  } else if (obj.type === "cone") {
+    maxR = Math.min(d.r || 10, d.h || 20) - 0.001;
   } else {
     maxR = 10;
   }
