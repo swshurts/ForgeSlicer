@@ -273,6 +273,13 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Honest in-progress copy** — amber warning text now says: *"Please keep this window open until the mesh arrives. Closing it (or clicking outside) before completion still uses your credit but you'll lose the result."*
 - ✅ **Auto-resume on accidental close** — in-flight job_id + kind + poll deadline now persist in localStorage (`forge.ai.inflight`). If the dialog does close for any reason (browser crash, tab switch in mobile, etc.), reopening AI Generate auto-restores the job and resumes polling. Marker is cleared as soon as the job hits SUCCEEDED/FAILED.
 
+## Iteration 25 (2026-02-21) — Splash Screen + Sidebar Tabs
+- ✅ **Optional splash screen** — new `SplashScreen.jsx` fetches `/splash.html` on mount; if the file exists and the `<meta name="splash-version">` differs from the user's last-seen, displays the content for 30 s OR until OK click. Per-user localStorage so the same version doesn't pester returning users; bumping the version makes everyone see it again. Missing/empty splash file = no splash (graceful).
+  - The splash HTML lives at `frontend/public/splash.html` and is just a marked-up `[data-splash]` block — no inline CSS needed; `App.css` `.splash-body` rules style any `[data-splash-*]` data attributes (eyebrow, title, lede, features, highlight, footer, kbd).
+  - To edit: change the body content + bump the meta version string. To disable: empty the file.
+- ✅ **Sidebar tabs** — `LeftPanel.jsx` refactored from a long vertical scroll list into a 4-tab strip at the top (3D / 2D / Combo / AI) over a single-section viewport. Outliner stays as its own scrollable region below. Tab choice persists in localStorage. Empty-state message updated to reference the tabs.
+- Verified live: splash renders correctly with all data-attributes styled; OK button dismisses + records seen-version; tabs switch + persist across reload.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

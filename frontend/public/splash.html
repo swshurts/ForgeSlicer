@@ -1,0 +1,38 @@
+<!doctype html>
+<!--
+  ForgeSlicer splash announcement.
+
+  Edit this file to publish a new in-app announcement.
+  Whenever you change the message, BUMP the `splash-version` meta tag below.
+  Returning users only see a splash once per (version, browser); a new
+  version makes them see it again. New users always see the latest.
+
+  To disable the splash entirely without redeploying, just empty this file
+  (the app sees zero `[data-splash]` content and skips).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="splash-version" content="2026.02-launch" />
+    <title>ForgeSlicer</title>
+  </head>
+  <body>
+    <div data-splash>
+      <div data-splash-eyebrow>🎉 v1.0 launch</div>
+      <h1 data-splash-title>Welcome to ForgeSlicer</h1>
+      <p data-splash-lede>
+        A browser-based 3D CAD + slicer built for makers — no installs, no fuss.
+      </p>
+      <ul data-splash-features>
+        <li><strong>Design</strong> with primitives, booleans, fillet &amp; chamfer, and OrcaSlicer-style cut.</li>
+        <li><strong>Speak</strong> commands hands-free with Whisper + GPT.</li>
+        <li><strong>Generate</strong> meshes from text or images via Meshy AI.</li>
+        <li><strong>Share</strong> designs &amp; components to the public gallery — earn the
+          <span data-splash-highlight>Contributor for Life</span> badge for unlimited free access.</li>
+      </ul>
+      <p data-splash-footer>
+        Hit <span data-splash-kbd>?</span> any time in the workspace for the full manual.
+      </p>
+    </div>
+  </body>
+</html>

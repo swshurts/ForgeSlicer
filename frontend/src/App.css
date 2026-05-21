@@ -40,3 +40,78 @@ input[type="number"] {
   background: rgba(249, 115, 22, 0.35);
   color: white;
 }
+
+/* Splash screen content (announcement HTML rendered via dangerouslySetInnerHTML).
+   Scopes typography under .splash-body so the raw HTML from /splash.html
+   looks polished without needing to ship inline CSS in the file itself. */
+.splash-body [data-splash-eyebrow] {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fb923c;
+  margin-bottom: 8px;
+}
+.splash-body [data-splash-title] {
+  font-size: 22px;
+  font-weight: 700;
+  color: white;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.01em;
+}
+.splash-body [data-splash-lede] {
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 14px 0;
+}
+.splash-body [data-splash-features] {
+  margin: 0 0 14px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.splash-body [data-splash-features] li {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.5;
+  padding-left: 18px;
+  position: relative;
+}
+.splash-body [data-splash-features] li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: #fb923c;
+  font-weight: 700;
+}
+.splash-body [data-splash-features] strong {
+  color: white;
+}
+.splash-body [data-splash-highlight] {
+  background: linear-gradient(120deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.2));
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  padding: 0 6px;
+  border-radius: 4px;
+  color: #6ee7b7;
+  font-weight: 600;
+}
+.splash-body [data-splash-footer] {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 14px 0 0 0;
+  padding-top: 14px;
+  border-top: 1px solid #1e293b;
+}
+.splash-body [data-splash-kbd] {
+  display: inline-block;
+  padding: 0 6px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #f1f5f9;
+}

@@ -187,77 +187,66 @@ function SceneTreeItem({ obj }) {
 export default function LeftPanel() {
   const objects = useScene((s) => s.objects);
   const [outlinerCtx, setOutlinerCtx] = useState(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  // Tab persistence: remember the last picked palette so users coming back
+  // to a project don't have to re-find their workflow.
+  const [tab, setTab] = useState(() => {
+    try {
+      return window.localStorage.getItem("forge.leftpanel.tab") || "3d";
+    } catch { return "3d"; }
+  });
+  const pickTab = (t) => {
+    setTab(t);
+    try { window.localStorage.setItem("forge.leftpanel.tab", t); } catch { /* noop */ }
+  };
   React.useEffect(() => {
     const handler = (e) => setOutlinerCtx({ x: e.detail.x, y: e.detail.y });
     window.addEventListener("forgeslicer:outliner-ctx", handler);
     return () => window.removeEventListener("forgeslicer:outliner-ctx", handler);
   }, []);
+
+  const TABS = [
+    { id: "3d",         label: "3D",    icon: Box,       title: "3D primitives — cube, sphere, cylinder, cone, torus" },
+    { id: "2d",         label: "2D",    icon: SquareIcon, title: "2D shapes — extrude in the inspector to give them depth" },
+    { id: "composites", label: "Combo", icon: Pill,      title: "Pre-built composite assemblies (slots etc.)" },
+    { id: "ai",         label: "AI",    icon: Sparkles,  title: "AI generation — text or image to 3D mesh" },
+  ];
+
   return (
     <aside className="w-64 flex-shrink-0 border-r border-slate-800 bg-slate-900 flex flex-col h-full overflow-hidden">
-      <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "62%" }}>
-        <div className="px-3 py-2 border-b border-slate-800 flex items-center gap-2">
-          <PlusSquare size={14} className="text-orange-500" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            Add Positive
-          </span>
-        </div>
-        <div className="grid grid-cols-3 gap-2 p-3">
-          {PRIMS_3D.map((p) => (
-            <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" />
-          ))}
-        </div>
-
-        <div className="px-3 py-2 border-y border-slate-800 flex items-center gap-2">
-          <MinusSquare size={14} className="text-cyan-500" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            Add Negative
-          </span>
-        </div>
-        <div className="grid grid-cols-3 gap-2 p-3">
-          {PRIMS_3D.map((p) => (
-            <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" />
-          ))}
-        </div>
-
-        <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <SquareIcon size={14} className="text-purple-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              2D Shapes
-            </span>
-          </div>
-          <span className="text-[9px] uppercase tracking-wider text-slate-500" title="Add as positive or negative, then Extrude in the Inspector to give it depth">
-            extrude →
-          </span>
-        </div>
-        <div className="grid grid-cols-4 gap-1.5 p-3">
-          {PRIMS_2D.map((p) => (
-            <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" compact />
-          ))}
-          {PRIMS_2D.map((p) => (
-            <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" compact />
-          ))}
-        </div>
-
-        <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Pill size={14} className="text-amber-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Composites
-            </span>
-          </div>
-          <span className="text-[9px] uppercase tracking-wider text-slate-500" title="Pre-built assemblies of multiple primitives, dropped as one group">
-            grouped
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-2 p-3">
-          <SlotButton modifier="negative" />
-          <SlotButton modifier="positive" />
-        </div>
-
-        <AISection />
+      {/* ---- Palette tab strip ---- */}
+      <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-950/40" data-testid="leftpanel-tabs">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              data-testid={`leftpanel-tab-${t.id}`}
+              onClick={() => pickTab(t.id)}
+              title={t.title}
+              className={`flex-1 h-10 text-[10px] font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                active
+                  ? `${t.id === "ai" ? "border-fuchsia-500 text-fuchsia-300 bg-fuchsia-500/10" : "border-orange-500 text-orange-300 bg-orange-500/5"}`
+                  : "border-transparent text-slate-400 hover:text-white hover:bg-slate-800/40"
+              }`}
+            >
+              <Icon size={12} />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
+      {/* ---- Active palette body ---- */}
+      <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "55%" }}>
+        {tab === "3d" && <Tab3D />}
+        {tab === "2d" && <Tab2D />}
+        {tab === "composites" && <TabComposites />}
+        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} />}
+      </div>
+
+      {/* ---- Outliner (unchanged) ---- */}
       <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between flex-shrink-0">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
           <ChevronRight size={12} />Outliner
@@ -269,14 +258,121 @@ export default function LeftPanel() {
       <div className="flex-1 overflow-y-auto px-1 py-1" data-testid="scene-tree" onContextMenu={(e) => { e.preventDefault(); setOutlinerCtx({ x: e.clientX, y: e.clientY }); }}>
         {objects.length === 0 ? (
           <div className="px-3 py-6 text-xs text-slate-500 italic">
-            No components yet. Add a primitive above.
+            No components yet. Pick a palette tab above to add one.
           </div>
         ) : (
           renderGroupedOutliner(objects)
         )}
       </div>
       {outlinerCtx && <ContextMenu position={outlinerCtx} onClose={() => setOutlinerCtx(null)} />}
+      <AIGenerateDialog open={aiOpen} onClose={() => setAiOpen(false)} />
     </aside>
+  );
+}
+
+// ---------- Palette tab bodies ----------
+function SectionHeader({ icon: Icon, accent, label, right }) {
+  return (
+    <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <Icon size={14} className={accent} />
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          {label}
+        </span>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function Tab3D() {
+  return (
+    <>
+      <SectionHeader icon={PlusSquare} accent="text-orange-500" label="Add Positive" />
+      <div className="grid grid-cols-3 gap-2 p-3">
+        {PRIMS_3D.map((p) => (
+          <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" />
+        ))}
+      </div>
+      <SectionHeader icon={MinusSquare} accent="text-cyan-500" label="Add Negative" />
+      <div className="grid grid-cols-3 gap-2 p-3">
+        {PRIMS_3D.map((p) => (
+          <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Tab2D() {
+  return (
+    <>
+      <SectionHeader
+        icon={SquareIcon}
+        accent="text-purple-400"
+        label="2D Shapes"
+        right={<span className="text-[9px] uppercase tracking-wider text-slate-500" title="Add as positive or negative, then Extrude in the Inspector to give it depth">extrude →</span>}
+      />
+      <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-orange-300/80 font-semibold">Positive</div>
+      <div className="grid grid-cols-4 gap-1.5 px-3 pb-2">
+        {PRIMS_2D.map((p) => (
+          <PrimitiveButton key={`pos-${p.type}`} p={p} modifier="positive" compact />
+        ))}
+      </div>
+      <div className="px-3 pt-1 pb-1 text-[10px] uppercase tracking-wider text-cyan-300/80 font-semibold">Negative</div>
+      <div className="grid grid-cols-4 gap-1.5 px-3 pb-3">
+        {PRIMS_2D.map((p) => (
+          <PrimitiveButton key={`neg-${p.type}`} p={p} modifier="negative" compact />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function TabComposites() {
+  return (
+    <>
+      <SectionHeader
+        icon={Pill}
+        accent="text-amber-400"
+        label="Composites"
+        right={<span className="text-[9px] uppercase tracking-wider text-slate-500" title="Pre-built assemblies of multiple primitives, dropped as one group">grouped</span>}
+      />
+      <div className="grid grid-cols-2 gap-2 p-3">
+        <SlotButton modifier="negative" />
+        <SlotButton modifier="positive" />
+      </div>
+      <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
+        More composites coming soon — chamfered countersinks, gussets, hex pockets.
+      </p>
+    </>
+  );
+}
+
+function TabAI({ onOpenAi }) {
+  return (
+    <>
+      <SectionHeader
+        icon={Sparkles}
+        accent="text-fuchsia-400"
+        label="AI Generate"
+        right={<span className="text-[9px] uppercase tracking-wider text-fuchsia-400/80 border border-fuchsia-500/40 rounded px-1.5 py-0.5">beta</span>}
+      />
+      <div className="p-3">
+        <button
+          data-testid="ai-generate-btn"
+          onClick={onOpenAi}
+          className="w-full h-12 rounded-md border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-500/10 via-purple-500/10 to-orange-500/10 hover:border-fuchsia-500 hover:from-fuchsia-500/20 transition-all flex items-center justify-center gap-2 text-fuchsia-300 text-xs font-semibold tracking-wide"
+          title="Generate a 3D model from text or an image"
+        >
+          <Sparkles size={14} />
+          Generate from Text · Image
+        </button>
+        <p className="mt-2 text-[10px] text-slate-500 leading-snug">
+          Describe a shape or upload a picture — get a printable mesh you can carve &amp; slice.
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -300,40 +396,7 @@ function renderGroupedOutliner(objects) {
   return rendered;
 }
 
-// ---- AI generation entry point ----
-function AISection() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-fuchsia-400" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            AI Generate
-          </span>
-        </div>
-        <span className="text-[9px] uppercase tracking-wider text-fuchsia-400/80 border border-fuchsia-500/40 rounded px-1.5 py-0.5">
-          beta
-        </span>
-      </div>
-      <div className="p-3">
-        <button
-          data-testid="ai-generate-btn"
-          onClick={() => setOpen(true)}
-          className="w-full h-12 rounded-md border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-500/10 via-purple-500/10 to-orange-500/10 hover:border-fuchsia-500 hover:from-fuchsia-500/20 transition-all flex items-center justify-center gap-2 text-fuchsia-300 text-xs font-semibold tracking-wide"
-          title="Generate a 3D model from text or an image"
-        >
-          <Sparkles size={14} />
-          Generate from Text · Image
-        </button>
-        <p className="mt-2 text-[10px] text-slate-500 leading-snug">
-          Describe a shape or upload a picture — get a printable mesh you can carve & slice.
-        </p>
-      </div>
-      <AIGenerateDialog open={open} onClose={() => setOpen(false)} />
-    </>
-  );
-}
+// ---- (legacy AISection removed — tabbed UI lives in TabAI above) ----
 
 
 function GroupHeader({ groupId, name, members }) {
