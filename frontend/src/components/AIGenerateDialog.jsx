@@ -69,6 +69,12 @@ function SizingControls({ autoFit, setAutoFit, targetMaxMm, setTargetMaxMm, buil
   );
 }
 
+// LocalStorage key for "I have an in-flight Meshy job" recovery. Stores
+// the active job_id + kind so users can resume polling even if the dialog
+// closes unexpectedly (browser tab navigated away, accidental Close click
+// dismissed by the safety prompt, etc.).
+const INFLIGHT_KEY = "forge.ai.inflight";
+
 export default function AIGenerateDialog({ open, onClose }) {
   const [tab, setTab] = useState("text");      // "text" | "image"
   const [prompt, setPrompt] = useState("");
@@ -102,11 +108,51 @@ export default function AIGenerateDialog({ open, onClose }) {
       axios.get(`${API}/ai/usage`, { withCredentials: true })
         .then((r) => setUsage(r.data))
         .catch(() => setUsage(null));
+      // Recover an in-flight job if the dialog was closed mid-generation.
+      try {
+        const raw = window.localStorage.getItem(INFLIGHT_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          if (saved?.job_id) {
+            setJob({ job_id: saved.job_id, status: "PENDING", progress: 0, kind: saved.kind });
+            pollDeadline.current = (saved.deadline || (Date.now() + POLL_TIMEOUT_MS));
+            pollOnce(saved.job_id);
+          }
+        }
+      } catch (err) {
+        // Recovery is best-effort; never block the user.
+        // eslint-disable-next-line no-console
+        console.warn("AI job recovery failed:", err);
+      }
     }
     return () => {
       if (pollTimer.current) clearTimeout(pollTimer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Persist in-flight job state so it survives an accidental close. We
+  // clear the marker as soon as the job hits a terminal SUCCEEDED/FAILED.
+  useEffect(() => {
+    if (!job) {
+      try { window.localStorage.removeItem(INFLIGHT_KEY); } catch (err) { /* noop */ void err; }
+      return;
+    }
+    if (job.status === "SUCCEEDED" || job.status === "FAILED") {
+      try { window.localStorage.removeItem(INFLIGHT_KEY); } catch (err) { /* noop */ void err; }
+      return;
+    }
+    try {
+      window.localStorage.setItem(INFLIGHT_KEY, JSON.stringify({
+        job_id: job.job_id,
+        kind: job.kind,
+        deadline: pollDeadline.current,
+      }));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("AI job persist failed:", err);
+    }
+  }, [job]);
 
   const refreshUsage = () => {
     axios.get(`${API}/ai/usage`, { withCredentials: true })
@@ -243,16 +289,52 @@ export default function AIGenerateDialog({ open, onClose }) {
     }
   };
 
+  // Block Esc from closing during an in-flight job.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      const inFlight = job && job.status !== "SUCCEEDED" && job.status !== "FAILED";
+      if (inFlight) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      // Stop the global '?' handler in Workspace from also catching this.
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, job, onClose]);
+
   if (!open) return null;
   const done = job?.status === "SUCCEEDED";
   const failed = job?.status === "FAILED";
   const inProgress = job && !done && !failed;
 
+  // While a generation is in flight, refuse to close the dialog — the user
+  // already paid a credit for this job and losing the window means losing
+  // the result. The Close button is hidden during this state so the only
+  // way out is to wait, or to use the small "Run in background" link below.
+  const safeClose = () => {
+    if (inProgress) return;
+    onClose();
+  };
+
+  // Block backdrop click + Esc from closing during an in-flight job.
+  const backdropClick = (e) => {
+    // Only close if the click landed on the backdrop itself (not bubbled from
+    // the inner content) AND there's no in-flight job.
+    if (e.target !== e.currentTarget) return;
+    safeClose();
+  };
+
   return (
     <div
       data-testid="ai-generate-dialog"
       className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
+      onClick={backdropClick}
     >
       <div
         className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
@@ -266,9 +348,11 @@ export default function AIGenerateDialog({ open, onClose }) {
               {usage.remaining}/{usage.cap} left this month
             </span>
           )}
-          <button data-testid="ai-close-btn" onClick={onClose} className="ml-1 h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center">
-            <X size={16} />
-          </button>
+          {!inProgress && (
+            <button data-testid="ai-close-btn" onClick={safeClose} className="ml-1 h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center">
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         <div className="p-5 space-y-3">
@@ -365,7 +449,12 @@ export default function AIGenerateDialog({ open, onClose }) {
               <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
                 <div className="h-full bg-fuchsia-500 transition-all" style={{ width: `${job.progress || 5}%` }} />
               </div>
-              <p className="text-[10px] text-slate-500">Usually 30-90 seconds. The dialog stays open so you can keep working.</p>
+              <p className="text-[11px] text-amber-300/90 leading-snug">
+                <strong>Please keep this window open</strong> until the mesh arrives. Closing it (or clicking outside) before completion still uses your credit but you'll lose the result.
+              </p>
+              <p className="text-[10px] text-slate-500 leading-snug">
+                Typical generation time: 30–90 s. Your job has been saved — if the window does close, just reopen AI Generate and it will resume automatically.
+              </p>
             </div>
           )}
 
@@ -413,13 +502,19 @@ export default function AIGenerateDialog({ open, onClose }) {
 
         {/* Footer actions */}
         <div className="border-t border-slate-800 p-3 flex items-center justify-between gap-2 bg-slate-950/40">
-          <button
-            data-testid="ai-cancel-btn"
-            onClick={onClose}
-            className="h-9 px-3 text-xs font-medium text-slate-300 hover:bg-slate-800 rounded border border-slate-700"
-          >
-            Close
-          </button>
+          {inProgress ? (
+            <div className="text-[10px] text-amber-300 font-semibold flex items-center gap-1.5">
+              <Loader2 size={11} className="animate-spin" /> Working — please wait
+            </div>
+          ) : (
+            <button
+              data-testid="ai-cancel-btn"
+              onClick={safeClose}
+              className="h-9 px-3 text-xs font-medium text-slate-300 hover:bg-slate-800 rounded border border-slate-700"
+            >
+              Close
+            </button>
+          )}
           <div className="flex gap-2">
             {job && (failed || done) && (
               <button

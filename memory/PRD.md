@@ -267,6 +267,12 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
   - Manual mode has a clearer label + helper text ("The mesh's longest axis will be set to this size; other axes scale proportionally").
   - Extracted into a reusable `SizingControls` sub-component for DRY.
 
+## Iteration 24 (2026-02-21) — AI Dialog Modal Safety
+- ✅ **Fixed credit-loss bug** — user reported clicking outside the AI dialog or pressing Esc killed the in-flight Meshy job and burned the credit. Previous misleading copy ("The dialog stays open so you can keep working") implied the opposite.
+- ✅ **Modal-lock during generation** — backdrop click + Esc are blocked while a job's status is PENDING/IN_PROGRESS. Top X button is hidden; bottom Close button is replaced by a "Working — please wait" spinner.
+- ✅ **Honest in-progress copy** — amber warning text now says: *"Please keep this window open until the mesh arrives. Closing it (or clicking outside) before completion still uses your credit but you'll lose the result."*
+- ✅ **Auto-resume on accidental close** — in-flight job_id + kind + poll deadline now persist in localStorage (`forge.ai.inflight`). If the dialog does close for any reason (browser crash, tab switch in mobile, etc.), reopening AI Generate auto-restores the job and resumes polling. Marker is cleared as soon as the job hits SUCCEEDED/FAILED.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
