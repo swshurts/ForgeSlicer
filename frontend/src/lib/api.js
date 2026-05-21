@@ -1,6 +1,37 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Resolve the backend base URL at runtime.
+//
+// On the preview environment this is the same host as the page (the deploy
+// preview URL), so REACT_APP_BACKEND_URL works as-is.
+//
+// On production with a CUSTOM DOMAIN (e.g. https://forgeslicer.com pointing
+// at the Emergent deployment), REACT_APP_BACKEND_URL was baked at deploy
+// time to the original *.emergent.host URL. Using it directly causes API
+// calls to go cross-origin, which means the httpOnly `session_token` cookie
+// (set on forgeslicer.com after sign-in) is NEVER sent — every /me call
+// 401s and the auth state collapses, bouncing the user back to sign-in.
+//
+// Detect that case and prefer the page's own origin so cookies stay
+// first-party. We still fall back to the env var when running in Node /
+// SSR contexts where `window` doesn't exist.
+const ENV_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
+function resolveBackendUrl() {
+  if (typeof window === "undefined") return ENV_BACKEND_URL;
+  if (!ENV_BACKEND_URL) return window.location.origin;
+  try {
+    const envHost = new URL(ENV_BACKEND_URL).host;
+    if (envHost === window.location.host) return ENV_BACKEND_URL;
+    // Page is being served from a different host than the env var — use
+    // the page's origin so cookies stay first-party. The Emergent ingress
+    // routes /api/* on the custom domain to the same backend.
+    return window.location.origin;
+  } catch {
+    return window.location.origin;
+  }
+}
+
+const BACKEND_URL = resolveBackendUrl();
 export const API = `${BACKEND_URL}/api`;
 
 // Heavy list endpoints (gallery + components) currently ship a large JSON

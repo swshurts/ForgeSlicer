@@ -227,6 +227,11 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ Verified live with a fake session_id → 4 retry attempts logged with `auth-provider attempt N returned M; retrying`, then proper 401 surfaced.
 - Note: this is a **production-only bug** (preview didn't reproduce it because preview deployments use the same upstream provider but the user's session was already established). Production needs **redeploy** for the fix to take effect.
 
+## Iteration 20 (2026-02-21) — Custom-Domain Cross-Origin Cookie Fix
+- ✅ **Fixed the "signed in for a few seconds then loops back" production bug** on `forgeslicer.com`. Root cause: `REACT_APP_BACKEND_URL` was baked into the production bundle as the original `*.emergent.host` URL. When users browse `forgeslicer.com`, the auth cookie is set on `forgeslicer.com` but every API call (including `/api/auth/me`) was hitting `emergent.host` — a different origin — so the browser never sent the cookie. Result: post-sign-in `/me` returns 401, AuthContext nulls the user, ProtectedRoute bounces, loop.
+- ✅ `frontend/src/lib/api.js` now resolves the backend URL at runtime: if the page is being served from a different host than `REACT_APP_BACKEND_URL`, it uses `window.location.origin` instead (keeps cookies first-party). Preview behavior unchanged (env host matches page host).
+- Verified preview still renders cleanly. Production needs **redeploy**.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
