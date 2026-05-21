@@ -681,11 +681,20 @@ def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
 
 
 @api_router.get("/gallery", response_model=List[GalleryItemMeta])
-async def list_gallery(material: Optional[str] = None):
-    # Public listing — hide private items entirely.
-    query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
+async def list_gallery(request: Request, material: Optional[str] = None, mine: bool = False):
+    # Public listing — hide private items entirely. When `mine=true` the
+    # caller wants their own designs (public + private) instead; we resolve
+    # the user from the cookie and switch the query accordingly so users
+    # can find their private items from the same gallery import flow.
+    if mine:
+        user = await get_optional_user(request)
+        if not user:
+            return []
+        query: dict = {"user_id": user["user_id"]}
+    else:
+        query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
     if material:
-        # Combine with the private filter via $and so we don't lose it.
+        # Combine with the existing filter via $and so we don't lose it.
         query = {"$and": [query, {"material": material.strip().lower()[:20]}]}
     cursor = db.gallery.find(
         query,
@@ -926,11 +935,22 @@ async def create_component(item: ComponentCreate, request: Request):
 
 @api_router.get("/components", response_model=List[ComponentMeta])
 async def list_components(
+    request: Request,
     modifier: Optional[str] = None,
     category: Optional[str] = None,
     q: Optional[str] = None,
+    mine: bool = False,
 ):
-    query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
+    # When `mine=true`, return the caller's own components (public + private)
+    # so they can find/import items they saved as private. Otherwise show
+    # only public items.
+    if mine:
+        user = await get_optional_user(request)
+        if not user:
+            return []
+        query: dict = {"user_id": user["user_id"]}
+    else:
+        query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
     if modifier:
         query["modifier"] = _normalize_modifier(modifier)
     if category:
@@ -938,7 +958,7 @@ async def list_components(
     if q:
         # Case-insensitive substring search across name / description / tags / author.
         regex = {"$regex": q.strip()[:80], "$options": "i"}
-        # Combine with existing private filter using $and.
+        # Combine with existing filter using $and.
         query = {"$and": [
             query,
             {"$or": [

@@ -45,11 +45,21 @@ def _headers() -> Dict[str, str]:
 
 
 async def create_text_to_3d(prompt: str, art_style: str = "realistic") -> str:
-    """Submit a text-to-3D preview task; returns Meshy task_id."""
+    """Submit a text-to-3D preview task; returns Meshy task_id.
+
+    Meshy text-to-3d v2 only accepts ``art_style`` values of ``realistic``
+    or ``sculpture`` — anything else (e.g. ``low_poly``) returns 400. For
+    sculpture, the docs explicitly require ``enable_pbr: false`` because
+    that style generates its own PBR maps. We disable PBR unconditionally
+    since we're geometry-only for 3D printing anyway.
+    """
+    if art_style not in ("realistic", "sculpture"):
+        art_style = "realistic"
     payload = {
         "mode": "preview",
         "prompt": prompt[:600],  # API hard-limits prompt length
         "art_style": art_style,
+        "enable_pbr": False,
         "should_remesh": True,
         "target_formats": TARGET_FORMATS,
     }
@@ -80,20 +90,60 @@ async def create_image_to_3d(image_data_url: str) -> str:
 
 
 async def get_task(task_id: str, kind: str) -> Dict[str, Any]:
-    """Fetch task status. `kind` is 'text' or 'image' — picks the right endpoint."""
+    """Fetch task status. `kind` is 'text' or 'image' — picks the right endpoint.
+
+    Retries transient 5xx responses up to 3 times with exponential backoff
+    so a single Meshy hiccup mid-generation doesn't bubble up as a 502 to
+    the user (and ditch their in-flight job).
+    """
     endpoint = TEXT_ENDPOINT if kind == "text" else IMAGE_ENDPOINT
+    last_err: Optional[httpx.HTTPStatusError] = None
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=30.0) as cx:
-        r = await cx.get(f"{endpoint}/{task_id}", headers=_headers())
-        r.raise_for_status()
-        return r.json()
+        for attempt in range(3):
+            try:
+                r = await cx.get(f"{endpoint}/{task_id}", headers=_headers())
+                r.raise_for_status()
+                return r.json()
+            except httpx.HTTPStatusError as e:
+                # Retry only transient upstream failures. 4xx is a real
+                # client error (auth/missing task) — bail immediately.
+                if e.response.status_code < 500:
+                    raise
+                last_err = e
+                logger.warning("Meshy poll attempt %d/3 failed: %s", attempt + 1, e)
+                await _sleep_backoff(attempt)
+        # Exhausted retries — re-raise the last upstream error.
+        assert last_err is not None
+        raise last_err
 
 
 async def download_mesh(url: str) -> bytes:
-    """Download the generated mesh binary."""
+    """Download the generated mesh binary.
+
+    Retries on transient 5xx from the Meshy CDN so a flaky download doesn't
+    waste the user's already-paid generation credit.
+    """
+    last_err: Optional[httpx.HTTPStatusError] = None
     async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as cx:
-        r = await cx.get(url)
-        r.raise_for_status()
-        return r.content
+        for attempt in range(3):
+            try:
+                r = await cx.get(url)
+                r.raise_for_status()
+                return r.content
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code < 500:
+                    raise
+                last_err = e
+                logger.warning("Meshy mesh download attempt %d/3 failed: %s", attempt + 1, e)
+                await _sleep_backoff(attempt)
+        assert last_err is not None
+        raise last_err
+
+
+async def _sleep_backoff(attempt: int) -> None:
+    """Exponential-ish backoff: 1s, 2s, 4s."""
+    import asyncio
+    await asyncio.sleep(2 ** attempt)
 
 
 def pick_model_url(task_obj: Dict[str, Any]) -> Optional[str]:

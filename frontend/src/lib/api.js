@@ -67,9 +67,10 @@ async function fetchHeavyList(url, { params } = {}) {
 }
 
 export const galleryApi = {
-  list: async ({ material } = {}) => {
+  list: async ({ material, mine } = {}) => {
     const params = {};
     if (material && material !== "all") params.material = material;
+    if (mine) params.mine = true;
     return fetchHeavyList(`${API}/gallery`, { params });
   },
   create: async (payload) => {
@@ -112,11 +113,12 @@ export const printersApi = {
 };
 
 export const componentsApi = {
-  list: async ({ modifier, category, q } = {}) => {
+  list: async ({ modifier, category, q, mine } = {}) => {
     const params = {};
     if (modifier) params.modifier = modifier;
     if (category) params.category = category;
     if (q) params.q = q;
+    if (mine) params.mine = true;
     return fetchHeavyList(`${API}/components`, { params });
   },
   create: async (payload) => {

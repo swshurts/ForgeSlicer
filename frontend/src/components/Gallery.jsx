@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { galleryApi, componentsApi, apiErrorMessage } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
   PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale, Layers,
+  Lock, Globe,
 } from "lucide-react";
 import { getLicense } from "../lib/licenses";
 import { MATERIALS, getMaterial } from "../lib/materials";
@@ -41,6 +43,36 @@ function timeAgo(iso) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// Segmented control letting signed-in users flip between the public listing
+// and their own library (which includes private items). Lives at the top of
+// each gallery tab so users can find a component they saved as private —
+// otherwise it never shows up here because /gallery and /components hide
+// private items by default.
+function SourceFilter({ value, onChange, testid }) {
+  const opts = [
+    { key: "public", label: "Public", Icon: Globe },
+    { key: "mine",   label: "Mine",   Icon: Lock  },
+  ];
+  return (
+    <div className="inline-flex bg-slate-900 border border-slate-700 rounded p-0.5" data-testid={testid}>
+      {opts.map(({ key, label, Icon }) => (
+        <button
+          key={key}
+          data-testid={`${testid}-${key}`}
+          onClick={() => onChange(key)}
+          className={`h-7 px-2.5 text-[11px] font-semibold rounded flex items-center gap-1 ${
+            value === key
+              ? "bg-orange-500/20 text-orange-300"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <Icon size={11} /> {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // Small license chip used on both gallery and component cards. Renders the
@@ -105,6 +137,15 @@ function GalleryCard({ item, idx, onDelete }) {
         {item.remix_count > 0 && (
           <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur text-[10px] font-mono text-orange-300 px-1.5 py-0.5 rounded flex items-center gap-1">
             <GitFork size={10} /> {item.remix_count}
+          </div>
+        )}
+        {item.private && (
+          <div
+            data-testid={`gallery-private-${item.id}`}
+            className="absolute bottom-2 right-2 backdrop-blur text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 bg-slate-900/80 text-slate-200 border border-slate-600"
+            title="Private — only visible to you"
+          >
+            <Lock size={10} /> private
           </div>
         )}
       </div>
@@ -203,6 +244,15 @@ function ComponentCard({ item, idx, onAdd, onUpvote, onDelete, onTagClick }) {
             <BadgeCheck size={10} /> verified
           </div>
         )}
+        {item.private && (
+          <div
+            data-testid={`component-private-${item.id}`}
+            className="absolute bottom-2 right-2 backdrop-blur text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 bg-slate-900/80 text-slate-200 border border-slate-600"
+            title="Private — only visible to you"
+          >
+            <Lock size={10} /> private
+          </div>
+        )}
         <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur text-[10px] uppercase tracking-wider text-slate-300 px-1.5 py-0.5 rounded">
           {item.category}
         </div>
@@ -267,20 +317,28 @@ function ComponentCard({ item, idx, onAdd, onUpvote, onDelete, onTagClick }) {
 }
 
 function DesignsTab() {
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [material, setMaterial] = useState("all");
+  const [source, setSource] = useState("public"); // "public" | "mine"
+
+  // If the user signs out, force back to public so we don't show a stale
+  // empty state with a hidden "Mine" filter the user can't see.
+  useEffect(() => {
+    if (!user && source === "mine") setSource("public");
+  }, [user, source]);
 
   const load = async (matOverride) => {
     setLoading(true); setError("");
     try {
       const mat = matOverride !== undefined ? matOverride : material;
-      setItems(await galleryApi.list({ material: mat }));
+      setItems(await galleryApi.list({ material: mat, mine: source === "mine" }));
     } catch (e) { setError(apiErrorMessage(e)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [material]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [material, source]);
 
   const handleDelete = async (id) => {
     if (!confirm("Remove this design from the public gallery?")) return;
@@ -291,8 +349,11 @@ function DesignsTab() {
   return (
     <>
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-        <p className="text-sm text-slate-400">Community-shared models, free to download as STL.</p>
+        <p className="text-sm text-slate-400">{source === "mine"
+          ? "Your designs (including private ones) — drop any into the workspace."
+          : "Community-shared models, free to download as STL."}</p>
         <div className="flex items-center gap-2">
+          {user && <SourceFilter value={source} onChange={setSource} testid="gallery-source-filter" />}
           <label className="flex items-center gap-1.5 text-[11px] text-slate-400" data-testid="gallery-material-filter-field">
             <Layers size={12} className="text-orange-400" /> Material
             <select
@@ -344,12 +405,19 @@ function DesignsTab() {
 
 function ComponentsTab() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modifier, setModifier] = useState("all"); // all|positive|negative
   const [category, setCategory] = useState("all");
   const [q, setQ] = useState("");
+  const [source, setSource] = useState("public"); // "public" | "mine"
+
+  // Reset to public if the user signs out mid-session.
+  useEffect(() => {
+    if (!user && source === "mine") setSource("public");
+  }, [user, source]);
 
   // Accept an explicit override so tag-click can pass in the new query
   // without waiting for React's state batch to flush.
@@ -360,11 +428,12 @@ function ComponentsTab() {
         modifier: modifier === "all" ? undefined : modifier,
         category: category === "all" ? undefined : category,
         q: (overrideQ !== undefined ? overrideQ : q) || undefined,
+        mine: source === "mine",
       }));
     } catch (e) { setError(apiErrorMessage(e)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [modifier, category]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [modifier, category, source]);
 
   // Clicking a tag pill on a card replaces the search with that tag and
   // re-queries immediately. Hands users a discovery loop ("show me everything
@@ -404,8 +473,11 @@ function ComponentsTab() {
     <>
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <p className="text-sm text-slate-400 flex-1">
-          Drop-in parts (positives and negatives) you can add to any project.
+          {source === "mine"
+            ? "Your saved components (including private ones)."
+            : "Drop-in parts (positives and negatives) you can add to any project."}
         </p>
+        {user && <SourceFilter value={source} onChange={setSource} testid="components-source-filter" />}
         <div className="relative">
           <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
           <input

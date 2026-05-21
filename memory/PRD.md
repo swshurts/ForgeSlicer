@@ -280,6 +280,13 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Sidebar tabs** — `LeftPanel.jsx` refactored from a long vertical scroll list into a 4-tab strip at the top (3D / 2D / Combo / AI) over a single-section viewport. Outliner stays as its own scrollable region below. Tab choice persists in localStorage. Empty-state message updated to reference the tabs.
 - Verified live: splash renders correctly with all data-attributes styled; OK button dismisses + records seen-version; tabs switch + persist across reload.
 
+## Iteration 26 (2026-02-21) — AI Bug Fixes + Private Discoverability
+- ✅ **Meshy 400 on Sculpture/Low-poly fixed** — text-to-3d v2 only accepts `art_style: "realistic" | "sculpture"`. `low_poly`/`low-poly` is invalid for text endpoint (it's an image-to-3d option). Removed "Low-poly" button (user can decimate in their slicer); added `enable_pbr: false` per Meshy docs (required for sculpture style). Backend `meshy_service.create_text_to_3d` now coerces unknown values to "realistic" so future UI mistakes can't hit a 400.
+- ✅ **Transient 502 mid-generation fixed** — both `meshy_service.get_task` and `download_mesh` now retry transient 5xx (1s/2s/4s backoff, 3 attempts) before bubbling up. Frontend `pollOnce` also keeps retrying its own backend on transient errors until the 5-minute deadline, so a single hiccup no longer ditches an already-paid generation.
+- ✅ **Private components/designs now discoverable** — Gallery's Designs + Components tabs gained a "Public / Mine" segmented filter (signed-in only). New backend `mine=true` query on `/api/gallery` and `/api/components` returns the caller's own items including private ones. Cards in "Mine" mode show a lock badge so users can tell at a glance what's private vs public. Closes the "saved private → can't find it later" loop the user reported.
+- ✅ **Regression coverage** — added `backend/tests/test_mine_filter.py` (5 tests) verifying unauthenticated `mine=true` returns empty + public listings remain unchanged. 73/73 backend tests pass.
+- Files: `meshy_service.py`, `server.py` (gallery+components list endpoints), `AIGenerateDialog.jsx`, `Gallery.jsx`, `lib/api.js`.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

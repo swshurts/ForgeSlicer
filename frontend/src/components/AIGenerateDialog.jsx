@@ -171,6 +171,17 @@ export default function AIGenerateDialog({ open, onClose }) {
       }
       pollTimer.current = setTimeout(() => pollOnce(jobId), POLL_MS);
     } catch (e) {
+      // Transient upstream/network hiccups (5xx, no-response) are common
+      // during long Meshy generations. Keep polling rather than dumping
+      // the user's already-paid job, until the deadline expires.
+      const status = e?.response?.status;
+      const isTransient = !status || status >= 500;
+      if (isTransient && Date.now() < pollDeadline.current) {
+        // eslint-disable-next-line no-console
+        console.warn("AI poll transient error — retrying:", e?.message || e);
+        pollTimer.current = setTimeout(() => pollOnce(jobId), POLL_MS);
+        return;
+      }
       setError(e?.response?.data?.detail || e.message || "Polling failed");
     }
   };
@@ -405,8 +416,8 @@ export default function AIGenerateDialog({ open, onClose }) {
               </div>
               <div>
                 <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Style</label>
-                <div className="grid grid-cols-3 gap-1">
-                  {["realistic", "sculpture", "low-poly"].map((s) => (
+                <div className="grid grid-cols-2 gap-1">
+                  {["realistic", "sculpture"].map((s) => (
                     <button
                       key={s}
                       data-testid={`ai-style-${s}`}
@@ -415,6 +426,7 @@ export default function AIGenerateDialog({ open, onClose }) {
                     >{s}</button>
                   ))}
                 </div>
+                <p className="text-[10px] text-slate-500 mt-1 leading-snug">Low-poly look? Most slicers can decimate the mesh on import — pick that there.</p>
               </div>
             </div>
           )}
