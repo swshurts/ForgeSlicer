@@ -222,6 +222,11 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Removed temporary `/api/download/source-zip` endpoint** + deleted `/app/forgeslicer-source.zip` (no longer needed; user is pushing via GitHub).
 - ✅ New module `backend/email_service.py` (143 lines, lint clean) — kept isolated so future emails can register here.
 
+## Iteration 19 (2026-02-21) — First-Sign-In Race Fix
+- ✅ **Fixed "first sign-in fails, second succeeds" production bug** — `exchange_session` now retries the upstream GET to Emergent's auth-provider with exponential backoff (0.4 / 0.9 / 1.6 / 2.5 s; ~5.4 s worst-case) on transient failures (401, 404, 408, 425, 429, 5xx). The root cause: Emergent's auth provider has an eventual-consistency window for newly-issued `session_id`s; the first redirect-back GET could land before propagation completes. Retries fully cover that window.
+- ✅ Verified live with a fake session_id → 4 retry attempts logged with `auth-provider attempt N returned M; retrying`, then proper 401 surfaced.
+- Note: this is a **production-only bug** (preview didn't reproduce it because preview deployments use the same upstream provider but the user's session was already established). Production needs **redeploy** for the fix to take effect.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

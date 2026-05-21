@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import asyncio
 import base64
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
@@ -138,16 +139,45 @@ async def get_optional_user(request: Request) -> Optional[dict]:
 @api_router.post("/auth/session")
 async def exchange_session(req: SessionExchangeRequest, response: FastResponse):
     """Exchange an Emergent OAuth session_id (one-time, from URL fragment)
-    for our app's persistent session_token. Sets an httpOnly cookie."""
+    for our app's persistent session_token. Sets an httpOnly cookie.
+
+    NOTE on retries: the upstream Emergent auth-provider has an eventual-
+    consistency window for newly-issued session_ids — the first GET after
+    redirect-back can return 401/404 because the session hasn't propagated
+    across their nodes yet. We retry up to 4 times with exponential backoff
+    (0.4 / 0.9 / 1.6 / 2.5 s; ~5.4 s total worst case) before giving up.
+    This entirely eliminates the "first sign-in fails, second succeeds"
+    UX bug reported by users on first OAuth attempt."""
     sid = (req.session_id or "").strip()
     if not sid:
         raise HTTPException(status_code=400, detail="Missing session_id")
+
+    # Retry only on the failure modes we've actually observed from the
+    # upstream provider's propagation lag. 400 = bad sid (don't retry);
+    # 200 = success (return immediately).
+    RETRY_STATUSES = {401, 404, 408, 425, 429, 500, 502, 503, 504}
+    backoffs = [0.4, 0.9, 1.6, 2.5]
+    last_status = None
+    profile = None
+    log = logging.getLogger(__name__)
     try:
         async with httpx.AsyncClient(timeout=15.0) as cx:
-            r = await cx.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": sid})
-        if r.status_code != 200:
-            raise HTTPException(status_code=401, detail=f"Auth provider rejected session ({r.status_code})")
-        profile = r.json()
+            for attempt, sleep_before in enumerate(backoffs):
+                if sleep_before:
+                    await asyncio.sleep(sleep_before)
+                r = await cx.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": sid})
+                last_status = r.status_code
+                if r.status_code == 200:
+                    profile = r.json()
+                    if attempt > 0:
+                        log.info("auth-provider succeeded on attempt %d (status %d)", attempt + 1, r.status_code)
+                    break
+                if r.status_code not in RETRY_STATUSES:
+                    # Definitive failure (e.g. 400) — don't waste retries.
+                    break
+                log.info("auth-provider attempt %d returned %d; retrying", attempt + 1, r.status_code)
+        if profile is None:
+            raise HTTPException(status_code=401, detail=f"Auth provider rejected session ({last_status})")
     except HTTPException:
         raise
     except Exception as e:
