@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
-  FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles,
+  FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles, Scissors,
 } from "lucide-react";
 
 // ---------- Section content ----------
@@ -16,6 +16,7 @@ function Index({ onJump }) {
     { id: "transforms",   icon: Move3D,    title: "Transforms",        desc: "Move, rotate, scale, drop-to-bed, mirror." },
     { id: "snapping",     icon: Magnet,    title: "Snapping & Grid",   desc: "Make parts click into place precisely." },
     { id: "edges",        icon: Wrench,    title: "Fillet & Chamfer",  desc: "Round or bevel the edges of cubes, cylinders, cones." },
+    { id: "cut",          icon: Scissors,  title: "Cut & Split",       desc: "Slice a model with an adjustable plane (OrcaSlicer-style)." },
     { id: "booleans",     icon: Combine,   title: "Boolean Operations", desc: "Union, subtract, intersect to combine geometry." },
     { id: "io",           icon: FileDown,  title: "Import & Export",   desc: "STL / OBJ / 3MF / GCODE / .forge.json." },
     { id: "gallery",      icon: Globe,     title: "Gallery & Sharing", desc: "Publish to the public library, remix others' work." },
@@ -177,6 +178,37 @@ function Edges() {
     </div>
   );
 }
+
+function CutTool() {
+  return (
+    <div data-testid="help-section-cut">
+      <H>Cut &amp; Split</H>
+      <P>The Cut tool slices a model with an adjustable plane — the same workflow as OrcaSlicer's Cut function. Use it to divide a tall model so each half fits separately on the build plate, or to remove an unwanted portion.</P>
+      <H>Workflow</H>
+      <ol className="mb-4">
+        <Step n="1">Select the object you want to cut.</Step>
+        <Step n="2">Click <Code>CUT</Code> in the top toolbar (next to Mirror). A yellow plane appears in the viewport with a gizmo, and the Cut HUD appears at the top of the workspace.</Step>
+        <Step n="3">Switch the gizmo between <strong>Move</strong> and <strong>Rotate</strong> in the HUD to position the plane exactly. Drag the gizmo handles — translate snaps to 0.5 mm; rotate snaps to 5°.</Step>
+        <Step n="4">Pick the result you want:
+          <ul className="list-disc list-inside ml-4 mt-1 text-[12px] space-y-0.5">
+            <li><strong>Keep Upper</strong> — discard everything below the plane.</li>
+            <li><strong>Split (both)</strong> — produce TWO new objects, one for each side.</li>
+            <li><strong>Keep Lower</strong> — discard everything above the plane.</li>
+          </ul>
+        </Step>
+        <Step n="5">The cut piece(s) replace the original. They're regular imported meshes — carve, scale, slice, and export them as normal.</Step>
+      </ol>
+      <H>Tips</H>
+      <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
+        <li>"Upper" = the side the plane's local +Y axis points toward. With a horizontal plane, that's literally up; once you rotate the plane, "upper" follows the rotation.</li>
+        <li>The cut is <strong>atomic in undo history</strong> — one <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> restores the original.</li>
+        <li>For tall AI-generated meshes that won't fit your printer, drop the plane at your printer's Z-max and split — print each half, glue together.</li>
+      </ul>
+      <P className="text-amber-200 text-xs italic">If a cut produces empty geometry (the plane is entirely outside the model), the empty side is silently skipped and you'll just get the non-empty half.</P>
+    </div>
+  );
+}
+
 
 function Booleans() {
   return (
@@ -462,6 +494,7 @@ const SECTIONS = [
   { id: "transforms", label: "Transforms",         icon: Move3D,    Component: Transforms },
   { id: "snapping",   label: "Snapping & Grid",    icon: Magnet,    Component: Snapping },
   { id: "edges",      label: "Fillet & Chamfer",   icon: Wrench,    Component: Edges },
+  { id: "cut",        label: "Cut & Split",        icon: Scissors,  Component: CutTool },
   { id: "booleans",   label: "Boolean Operations", icon: Combine,   Component: Booleans },
   { id: "io",         label: "Import & Export",    icon: FileDown,  Component: ImportExport },
   { id: "gallery",    label: "Gallery & Sharing",  icon: Globe,     Component: Gallery },

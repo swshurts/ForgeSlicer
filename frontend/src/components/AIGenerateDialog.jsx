@@ -24,9 +24,15 @@ export default function AIGenerateDialog({ open, onClose }) {
   const [job, setJob] = useState(null);        // { job_id, status, progress, model_url, error }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Import sizing. Default: auto-fit to ~80% of the printer's shortest
+  // build-volume axis so AI meshes don't land at silly sizes like the
+  // 1996mm test-fixture we saw during development.
+  const [autoFit, setAutoFit] = useState(true);
+  const [targetMaxMm, setTargetMaxMm] = useState(60);
   const pollTimer = useRef(null);
   const pollDeadline = useRef(0);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
+  const buildVolume = useScene((s) => s.buildVolume);
 
   // Cleanup on close
   useEffect(() => {
@@ -142,8 +148,36 @@ export default function AIGenerateDialog({ open, onClose }) {
       const filename = `ai-${(job.kind || "gen")}-${job.job_id.slice(0, 8)}.${ext}`;
       const file = new File([resp.data], filename, { type: resp.data.type || "application/octet-stream" });
       const mesh = await importAnyMeshFile(file);
+      // Determine target max-dimension. Auto-fit uses 80% of the shortest
+      // build-volume axis so the part always fits the print bed; manual
+      // override uses whatever the user typed.
+      const bbox = mesh.originalBbox || { x: 0, y: 0, z: 0 };
+      const currentMax = Math.max(bbox.x, bbox.y, bbox.z) || 1;
+      let scale = 1;
+      if (autoFit) {
+        const bedMin = Math.min(buildVolume?.x || 220, buildVolume?.y || 220, buildVolume?.z || 250);
+        scale = (bedMin * 0.8) / currentMax;
+      } else if (targetMaxMm > 0) {
+        scale = targetMaxMm / currentMax;
+      }
+      if (scale > 0 && Math.abs(scale - 1) > 0.001) {
+        // Scale vertices in-place. The bbox returned by importAnyMeshFile
+        // is in mesh-local space (post-translation to bed); scaling the
+        // vertex buffer keeps that property.
+        const v = new Float32Array(mesh.vertices.length);
+        for (let i = 0; i < mesh.vertices.length; i++) v[i] = mesh.vertices[i] * scale;
+        mesh.vertices = v;
+        mesh.originalBbox = {
+          x: bbox.x * scale,
+          y: bbox.y * scale,
+          z: bbox.z * scale,
+        };
+      }
       addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-      toast.success(`Imported: ${mesh.name}`, { description: "Drop, scale, or carve as normal." });
+      const finalMax = Math.max(mesh.originalBbox.x, mesh.originalBbox.y, mesh.originalBbox.z);
+      toast.success(`Imported: ${mesh.name}`, {
+        description: `Max dimension: ${finalMax.toFixed(1)} mm. Drop, scale, or carve as normal.`,
+      });
       onClose();
     } catch (e) {
       const detail = e?.response?.data?.detail || e.message;
@@ -270,7 +304,7 @@ export default function AIGenerateDialog({ open, onClose }) {
           )}
 
           {job && done && (
-            <div data-testid="ai-job-done" className="bg-emerald-500/5 border border-emerald-500/40 rounded p-3 space-y-2">
+            <div data-testid="ai-job-done" className="bg-emerald-500/5 border border-emerald-500/40 rounded p-3 space-y-3">
               <div className="text-sm text-emerald-300 font-semibold flex items-center gap-2">
                 <Sparkles size={14} /> Mesh ready!
               </div>
@@ -284,7 +318,34 @@ export default function AIGenerateDialog({ open, onClose }) {
                   Download raw from Meshy ↗
                 </a>
               )}
-              <p className="text-[10px] text-slate-400">Click "Add to scene" to drop it onto the build plate. You can then carve holes, fillet, scale, slice — all the usual tools.</p>
+              <div className="bg-slate-950/60 border border-emerald-500/30 rounded p-2 space-y-2">
+                <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                  <input
+                    data-testid="ai-autofit-toggle"
+                    type="checkbox"
+                    checked={autoFit}
+                    onChange={(e) => setAutoFit(e.target.checked)}
+                    className="accent-emerald-500"
+                  />
+                  <span><strong>Auto-fit to bed</strong> — scale so longest dim ≈ 80% of printer's shortest axis</span>
+                </label>
+                {!autoFit && (
+                  <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                    <span className="text-slate-400">Target max dimension</span>
+                    <input
+                      data-testid="ai-target-size-input"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={targetMaxMm}
+                      onChange={(e) => setTargetMaxMm(parseFloat(e.target.value) || 0)}
+                      className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[12px] font-mono focus:border-emerald-500 outline-none"
+                    />
+                    <span className="text-slate-500">mm</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400">Click "Add to scene" to drop it onto the build plate. You can then carve, fillet, scale, slice — all the usual tools.</p>
             </div>
           )}
 

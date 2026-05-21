@@ -76,6 +76,72 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onC
   );
 }
 
+// ---------- Cut Plane Gizmo ----------
+// Visible plane that the user can translate/rotate to position the cut.
+// Attaches TransformControls to the plane mesh so it reuses the same gizmo
+// the user already knows. The plane is double-sided + semi-transparent and
+// excluded from object raycasting (userData.cutPlane = true is the marker).
+function CutPlaneGizmo() {
+  const cutMode = useScene((s) => s.cutMode);
+  const cutPlane = useScene((s) => s.cutPlane);
+  const setCutPlane = useScene((s) => s.setCutPlane);
+  const transformMode = useScene((s) => s.transformMode);
+  const meshRef = useRef();
+  const lastPos = useRef([0, 25, 0]);
+  const lastRot = useRef([0, 0, 0]);
+  if (!cutMode) return null;
+  const size = cutPlane.size || 200;
+  return (
+    <>
+      <mesh
+        ref={meshRef}
+        position={cutPlane.position}
+        rotation={cutPlane.rotation}
+        userData={{ cutPlane: true }}
+        raycast={() => null}
+      >
+        <planeGeometry args={[size, size]} attach="geometry" />
+        <meshBasicMaterial
+          color="#fbbf24"
+          transparent
+          opacity={0.18}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          attach="material"
+        />
+      </mesh>
+      <lineSegments position={cutPlane.position} rotation={cutPlane.rotation} raycast={() => null}>
+        <edgesGeometry args={[new THREE.PlaneGeometry(size, size)]} attach="geometry" />
+        <lineBasicMaterial color="#f59e0b" attach="material" />
+      </lineSegments>
+      {meshRef.current && (
+        <TransformControls
+          object={meshRef.current}
+          mode={transformMode === "scale" ? "translate" : transformMode}
+          size={0.9}
+          translationSnap={0.5}
+          rotationSnap={Math.PI / 36}
+          onChange={() => {
+            if (!meshRef.current) return;
+            const m = meshRef.current;
+            const pos = [m.position.x, m.position.y, m.position.z];
+            const rot = [m.rotation.x, m.rotation.y, m.rotation.z];
+            if (
+              pos[0] !== lastPos.current[0] || pos[1] !== lastPos.current[1] || pos[2] !== lastPos.current[2] ||
+              rot[0] !== lastRot.current[0] || rot[1] !== lastRot.current[1] || rot[2] !== lastRot.current[2]
+            ) {
+              lastPos.current = pos;
+              lastRot.current = rot;
+              setCutPlane({ position: pos, rotation: rot });
+            }
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+
 function SelectedTransform() {
   const selectedId = useScene((s) => s.selectedId);
   const selectedIds = useScene((s) => s.selectedIds);
@@ -595,6 +661,7 @@ export default function Viewport() {
 
         {!measureMode && <SelectedTransform />}
         <MeasurementsLayer />
+        <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />
 
         <OrbitControls

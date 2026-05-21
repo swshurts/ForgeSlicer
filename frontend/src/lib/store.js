@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 import { computeRotatedBBox } from "./geometry";
+import { cutObjectByPlane } from "./csg";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -98,6 +99,17 @@ export const useScene = create((set, get) => ({
   measureMode: false,
   measurements: [], // [{id, a:[x,y,z], b:[x,y,z], objIdA, objIdB}]
   pendingMeasurePoint: null,
+
+  // ---- cut tool ----
+  // When cutMode is true, the viewport renders an adjustable cut plane that
+  // can be translated/rotated. The plane lives in world space; geometry is
+  // sliced when the user clicks Apply in the cut overlay.
+  cutMode: false,
+  cutPlane: {
+    position: [0, 25, 0],  // center of plane in world space
+    rotation: [0, 0, 0],   // Euler rotation (plane normal is local +Y after rotation)
+    size: 200,             // visual size of the plane gizmo
+  },
   pendingMeasureObjId: null,
 
   // ---- history ----
@@ -765,11 +777,105 @@ export const useScene = create((set, get) => ({
     });
   },
 
+  // In-place mirror: flip the selection on the given axis WITHOUT creating
+  // a duplicate. Useful for fixing asymmetric AI-generated meshes. Uses
+  // the bbox extent so the part stays put on the bed (its origin doesn't
+  // jump when scale flips sign).
+  mirrorSelectedInPlace: (axis) => {
+    const s = get();
+    const axisIdx = { x: 0, y: 1, z: 2 }[axis];
+    if (axisIdx === undefined) return;
+    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
+    if (ids.length === 0) return;
+    get().pushHistory();
+    set((st) => {
+      const updated = st.objects.map((o) => {
+        if (!ids.includes(o.id)) return o;
+        const next = {
+          ...o,
+          scale: [...o.scale],
+          position: [...o.position],
+          rotation: [...o.rotation],
+        };
+        next.scale[axisIdx] = -next.scale[axisIdx];
+        return next;
+      });
+      return { objects: updated };
+    });
+  },
+
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapEnabled: (v) => set({ snapEnabled: v }),
   setSnapTranslate: (v) => set({ snapTranslate: v }),
   setGridVisible: (v) => set({ gridVisible: v }),
   setBuildVolume: (v) => set({ buildVolume: v }),
+
+  setCutMode: (v) => set({ cutMode: !!v }),
+  setCutPlane: (patch) => set((st) => ({ cutPlane: { ...st.cutPlane, ...patch } })),
+
+  // Apply the current cut plane to the currently-selected object(s).
+  // `keep` is "both" | "upper" | "lower" — controls which piece(s) survive.
+  // For each selected object: subtract the appropriate half-space, replace
+  // the original with up to two new "imported mesh" objects representing
+  // the resulting pieces. History-atomic so Ctrl+Z restores everything in
+  // one step.
+  applyCut: (keep = "both") => {
+    const s = get();
+    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
+    if (ids.length === 0) return { ok: false, error: "Nothing selected" };
+    const plane = s.cutPlane;
+    const newObjects = [];
+    const errors = [];
+    for (const id of ids) {
+      const src = s.objects.find((o) => o.id === id);
+      if (!src) continue;
+      try {
+        const result = cutObjectByPlane(src, plane, {
+          upper: keep === "both" || keep === "upper",
+          lower: keep === "both" || keep === "lower",
+        });
+        const pieces = [];
+        if (result.upper) pieces.push({ part: result.upper, suffix: keep === "both" ? "upper" : "" });
+        if (result.lower) pieces.push({ part: result.lower, suffix: keep === "both" ? "lower" : "" });
+        if (pieces.length === 0) {
+          errors.push(`${src.name}: cut produced empty geometry`);
+          continue;
+        }
+        for (const { part, suffix } of pieces) {
+          newObjects.push({
+            id: newId("cut"),
+            name: suffix ? `${src.name} (${suffix})` : `${src.name} (cut)`,
+            type: "imported",
+            modifier: src.modifier || "positive",
+            visible: true,
+            position: [0, 0, 0],   // pieces stay in world space; their geom is already baked
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            dims: {},
+            color: src.color,
+            geometry: { vertices: part.vertices, indices: part.indices },
+            originalBbox: src.originalBbox,
+          });
+        }
+      } catch (e) {
+        errors.push(`${src.name}: ${e.message || e}`);
+      }
+    }
+    if (newObjects.length === 0) {
+      return { ok: false, error: errors.join("; ") || "Cut produced no geometry" };
+    }
+    get().pushHistory();
+    set((st) => {
+      const remaining = st.objects.filter((o) => !ids.includes(o.id));
+      return {
+        objects: [...remaining, ...newObjects],
+        selectedIds: newObjects.map((o) => o.id),
+        selectedId: newObjects[newObjects.length - 1].id,
+        cutMode: false,
+      };
+    });
+    return { ok: true, pieces: newObjects.length, errors };
+  },
 
   // ---- Measurement ----
   setMeasureMode: (on) =>

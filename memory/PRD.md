@@ -245,6 +245,18 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - Test-mode key `msy_dummy_api_key_for_test_mode_12345678` works for dev; production needs a real key from https://meshy.ai.
 - Verified live end-to-end: prompt → SUCCEEDED → STL imported (1996×1381×1735 mm test mesh from Meshy's test fixture) → inspector + scale + slice tools all attached correctly.
 
+## Iteration 22 (2026-02-21) — AI Sizing + In-Place Mirror + Cut Tool
+- ✅ **AI mesh import sizing** — AI dialog success state now has "Auto-fit to bed" checkbox (default on; scales longest dim to 80% of printer's shortest build-volume axis) + optional manual "Target max dimension" override in mm. No more 2-meter dragons.
+- ✅ **In-place Mirror** — new toolbar `MIRROR` button + popover with X/Y/Z axis choices. Flips the selected object(s) on the chosen axis by negating scale (no duplicate created). Useful for fixing asymmetric AI meshes. Atomic in undo history.
+- ✅ **Cut tool (OrcaSlicer-style)** — new toolbar `CUT` button activates a cut mode with:
+  - Yellow semi-transparent plane in the viewport with full transform-controls gizmo (move + rotate, 0.5mm + 5° snaps).
+  - Floating Cut HUD at top of viewport with mode switcher, Reset, and three apply buttons: Keep Upper / Split (both) / Keep Lower.
+  - CSG implementation in `csg.js#cutObjectByPlane` — builds two large half-space boxes positioned on the cutting plane and INTERSECTs each with the source. Handles arbitrary plane orientations (translates + rotates the half-space).
+  - `store.applyCut(keep)` action replaces the source with up to two new "imported" objects; atomic in undo history. Empty pieces are silently dropped.
+  - Toast on success/failure with piece count + per-object error details.
+- ✅ Help dialog: new "Cut & Split" section + updated AI section explaining the auto-fit behavior.
+- Verified live: cube → mirror X applied → cut HUD shown → Split (both) applied → "Cube (lower)" piece created.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

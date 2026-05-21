@@ -3,7 +3,7 @@ import { useScene } from "../lib/store";
 import {
   Move3D, RotateCw, Scale3D, Grid3x3, Magnet, Combine, PlusSquare, MinusSquare,
   FileUp, FileDown, Save, Upload, Layers, Globe, Printer, Hexagon, FilePlus2,
-  Undo2, Redo2, Ruler, MapPin, Maximize, Sliders, Copy,
+  Undo2, Redo2, Ruler, MapPin, Maximize, Sliders, Copy, FlipHorizontal2, Scissors,
 } from "lucide-react";
 import {
   saveProjectJSON, openFileDialog,
@@ -15,7 +15,7 @@ import { galleryApi } from "../lib/api";
 import { getSlicersForPrinter } from "../lib/presets";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
-import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, DuplicatePopover } from "./ActionPopovers";
+import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, DuplicatePopover, MirrorPopover } from "./ActionPopovers";
 import STLPreviewDialog from "./STLPreviewDialog";
 import VoiceButton from "./VoiceButton";
 import UserMenu from "./UserMenu";
@@ -77,12 +77,14 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
 
   const [busyMsg, setBusyMsg] = useState("");
-  const [openPopover, setOpenPopover] = useState(null); // 'position' | 'rotation' | 'scale' | 'slicer' | 'duplicate' | null
+  const [openPopover, setOpenPopover] = useState(null); // 'position' | 'rotation' | 'scale' | 'slicer' | 'duplicate' | 'mirror' | null
   const posBtnRef = useRef(null);
   const rotBtnRef = useRef(null);
   const sclBtnRef = useRef(null);
   const slcBtnRef = useRef(null);
   const dupBtnRef = useRef(null);
+  const mirBtnRef = useRef(null);
+  const cutBtnRef = useRef(null);
   const togglePopover = (name) => {
     setOpenPopover((cur) => (cur === name ? null : name));
     // Keep the 3D gizmo in sync with the popover the user is editing — most
@@ -94,6 +96,8 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
   };
   const selectedIds = useScene((s) => s.selectedIds);
   const selectionCount = selectedIds && selectedIds.length ? selectedIds.length : (selectedId ? 1 : 0);
+  const cutMode = useScene((s) => s.cutMode);
+  const setCutMode = useScene((s) => s.setCutMode);
   const removeSelected = useScene((s) => s.removeSelected);
   const duplicateSelected = useScene((s) => s.duplicateSelected);
   const clearSelection = useScene((s) => s.clearSelection);
@@ -414,6 +418,34 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
           : "Duplicate"}
       </button>
       <button
+        ref={mirBtnRef}
+        data-testid="menu-mirror-btn"
+        onClick={() => togglePopover("mirror")}
+        disabled={selectionCount === 0}
+        title="Mirror in-place on X / Y / Z (flips the selected object without duplicating)"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          openPopover === "mirror"
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+      >
+        <FlipHorizontal2 size={12} /> Mirror
+      </button>
+      <button
+        ref={cutBtnRef}
+        data-testid="menu-cut-btn"
+        onClick={() => setCutMode(!cutMode)}
+        disabled={selectionCount === 0}
+        title="Cut the selected object(s) with an adjustable plane (split into pieces)"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          cutMode
+            ? "bg-amber-500/20 border-amber-500/60 text-amber-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        } disabled:opacity-40 disabled:cursor-not-allowed`}
+      >
+        <Scissors size={12} /> Cut
+      </button>
+      <button
         ref={slcBtnRef}
         data-testid="menu-slicer-btn"
         onClick={() => togglePopover("slicer")}
@@ -527,6 +559,9 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       )}
       {openPopover === "duplicate" && (
         <DuplicatePopover anchor={dupBtnRef.current} onClose={() => setOpenPopover(null)} />
+      )}
+      {openPopover === "mirror" && (
+        <MirrorPopover anchor={mirBtnRef.current} onClose={() => setOpenPopover(null)} />
       )}
       <STLPreviewDialog open={stlPreviewOpen} onClose={() => setStlPreviewOpen(false)} />
     </div>

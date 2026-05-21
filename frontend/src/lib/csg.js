@@ -456,3 +456,84 @@ export function combineTwo(a, b, op) {
     indices: indices ? new Uint32Array(indices) : null,
   };
 }
+
+// ---------- Plane cut ----------
+// Slice an object by an infinite plane. Returns up to two pieces ({upper, lower})
+// representing the geometry on each side of the cut plane. Either side can be
+// null if the user chose "keep only one half" — caller decides which to keep.
+//
+// Implementation: we build a HUGE half-space box positioned so one face sits
+// exactly on the cutting plane, then INTERSECT the source with each box. The
+// box is rotated to match the plane's normal so the cut works for any
+// orientation. Using a box rather than a plane is necessary because three-bvh-csg
+// requires closed manifolds for both operands.
+//
+// `plane` is { position: [x,y,z], rotation: [rx,ry,rz] } in world space.
+// The "upper" half is the side the plane's local +Y axis points toward.
+export function cutObjectByPlane(obj, plane, options = {}) {
+  const wantUpper = options.upper !== false;
+  const wantLower = options.lower !== false;
+  // Half-space box: 1000mm cube (large enough to engulf any printable object).
+  // We position its CENTER 500mm along the chosen side so its near face sits
+  // exactly on the cutting plane. Then we apply the plane's world rotation.
+  const BOX = 1000;
+  const evaluator = new Evaluator();
+  const srcBrush = makeBrush(obj);
+
+  const makeHalfSpace = (signY) => {
+    const g = new THREE.BoxGeometry(BOX, BOX, BOX);
+    const mat = new THREE.MeshStandardMaterial();
+    const b = new Brush(g, mat);
+    // In the plane's LOCAL frame, the cut is the XZ plane at y=0. To make a
+    // half-space box, push its center to (0, ±BOX/2, 0) so its bottom (or top)
+    // face sits on y=0. Then rotate+translate the brush by the plane's world
+    // transform.
+    const planeMat = new THREE.Matrix4();
+    const planeEuler = new THREE.Euler(plane.rotation[0], plane.rotation[1], plane.rotation[2]);
+    const planeQuat = new THREE.Quaternion().setFromEuler(planeEuler);
+    const offsetLocal = new THREE.Vector3(0, signY * BOX / 2, 0);
+    const offsetWorld = offsetLocal.clone().applyQuaternion(planeQuat);
+    planeMat.compose(
+      new THREE.Vector3(
+        plane.position[0] + offsetWorld.x,
+        plane.position[1] + offsetWorld.y,
+        plane.position[2] + offsetWorld.z,
+      ),
+      planeQuat,
+      new THREE.Vector3(1, 1, 1),
+    );
+    b.matrix.copy(planeMat);
+    b.matrix.decompose(b.position, b.quaternion, b.scale);
+    b.updateMatrixWorld(true);
+    return b;
+  };
+
+  const result = { upper: null, lower: null };
+  const bake = (r) => {
+    let geom = r.geometry.clone();
+    geom.applyMatrix4(r.matrixWorld);
+    geom.clearGroups();
+    geom = cleanGeometry(geom);
+    if (!geom.attributes.position || geom.attributes.position.count === 0) return null;
+    const pos = geom.attributes.position.array;
+    const indices = geom.index ? geom.index.array : null;
+    return {
+      vertices: new Float32Array(pos),
+      indices: indices ? new Uint32Array(indices) : null,
+    };
+  };
+
+  if (wantUpper) {
+    const upperBox = makeHalfSpace(+1);
+    const r = evaluator.evaluate(srcBrush, upperBox, INTERSECTION);
+    result.upper = bake(r);
+  }
+  if (wantLower) {
+    // Need a fresh source brush — bvh-csg mutates internal state during evaluate.
+    const srcBrush2 = makeBrush(obj);
+    const lowerBox = makeHalfSpace(-1);
+    const r = evaluator.evaluate(srcBrush2, lowerBox, INTERSECTION);
+    result.lower = bake(r);
+  }
+  return result;
+}

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Scissors, X, Move3D, RotateCw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { toast } from "sonner";
 import TopToolbar from "./TopToolbar";
 import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
@@ -359,6 +361,7 @@ export default function Workspace() {
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
           <Viewport />
+          <CutHUD />
         </main>
         <RightPanel onSavePrinter={() => setSavePrinterOpen(true)} />
       </div>
@@ -392,3 +395,134 @@ export default function Workspace() {
     </div>
   );
 }
+
+// ---- Cut tool HUD ----
+// Floating overlay shown when cutMode is active. Lets the user pick
+// translate/rotate of the cut plane, then commits with one of three
+// keep-which-side buttons. Sits over the viewport so it doesn't take
+// dedicated screen real estate.
+function CutHUD() {
+  const cutMode = useScene((s) => s.cutMode);
+  const setCutMode = useScene((s) => s.setCutMode);
+  const cutPlane = useScene((s) => s.cutPlane);
+  const setCutPlane = useScene((s) => s.setCutPlane);
+  const transformMode = useScene((s) => s.transformMode);
+  const setTransformMode = useScene((s) => s.setTransformMode);
+  const applyCut = useScene((s) => s.applyCut);
+  const selectedIds = useScene((s) => s.selectedIds);
+  const selectedId = useScene((s) => s.selectedId);
+  const objects = useScene((s) => s.objects);
+  const [busy, setBusy] = useState(false);
+
+  if (!cutMode) return null;
+
+  const targetCount = selectedIds.length || (selectedId ? 1 : 0);
+  const target = objects.find((o) => o.id === (selectedIds[0] || selectedId));
+
+  const handleApply = (keep) => {
+    setBusy(true);
+    // Run on the next tick so the busy state flushes before the heavy CSG call.
+    setTimeout(() => {
+      const result = applyCut(keep);
+      setBusy(false);
+      if (result.ok) {
+        const pieces = result.pieces;
+        toast.success(`Cut applied: ${pieces} piece${pieces > 1 ? "s" : ""} created`);
+        if (result.errors && result.errors.length > 0) {
+          toast.warning("Some objects had issues", { description: result.errors.join("\n") });
+        }
+      } else {
+        toast.error("Cut failed", { description: result.error });
+      }
+    }, 50);
+  };
+
+  const handleReset = () => {
+    setCutPlane({ position: [0, target ? 25 : 25, 0], rotation: [0, 0, 0] });
+  };
+
+  return (
+    <div
+      data-testid="cut-hud"
+      className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 backdrop-blur-sm border border-amber-500/50 rounded-lg shadow-2xl px-4 py-3 flex items-center gap-3 min-w-[600px]"
+    >
+      <Scissors size={16} className="text-amber-400 flex-shrink-0" />
+      <div className="flex-1">
+        <div className="text-xs font-bold text-amber-300 uppercase tracking-wider">Cut Plane</div>
+        <div className="text-[10px] text-slate-400">
+          {targetCount === 0
+            ? "Select an object to cut, then position the plane below."
+            : `${targetCount} target${targetCount > 1 ? "s" : ""}: ${target?.name || ""}`}
+        </div>
+      </div>
+
+      <div className="flex gap-1 bg-slate-950 rounded p-0.5 border border-slate-700">
+        <button
+          data-testid="cut-mode-translate"
+          onClick={() => setTransformMode("translate")}
+          className={`px-2 h-7 rounded text-[10px] font-semibold flex items-center gap-1 ${transformMode === "translate" ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-white"}`}
+          title="Translate the plane"
+        >
+          <Move3D size={11} /> Move
+        </button>
+        <button
+          data-testid="cut-mode-rotate"
+          onClick={() => setTransformMode("rotate")}
+          className={`px-2 h-7 rounded text-[10px] font-semibold flex items-center gap-1 ${transformMode === "rotate" ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-white"}`}
+          title="Rotate the plane"
+        >
+          <RotateCw size={11} /> Rotate
+        </button>
+      </div>
+
+      <button
+        data-testid="cut-reset-btn"
+        onClick={handleReset}
+        className="h-7 px-2 text-[10px] text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded"
+        title="Reset plane to horizontal at center"
+      >
+        Reset
+      </button>
+
+      <div className="h-6 w-px bg-slate-700 mx-1" />
+
+      <button
+        data-testid="cut-apply-upper-btn"
+        onClick={() => handleApply("upper")}
+        disabled={busy || targetCount === 0}
+        className="h-8 px-2.5 text-[10px] font-bold rounded border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 disabled:opacity-50 flex items-center gap-1.5"
+        title="Keep only the upper half (above the plane)"
+      >
+        <ArrowUp size={11} /> Keep Upper
+      </button>
+      <button
+        data-testid="cut-apply-both-btn"
+        onClick={() => handleApply("both")}
+        disabled={busy || targetCount === 0}
+        className="h-8 px-3 text-[10px] font-bold rounded bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 flex items-center gap-1.5"
+        title="Split into two pieces (keep both halves)"
+      >
+        <ArrowUpDown size={11} /> Split (both)
+      </button>
+      <button
+        data-testid="cut-apply-lower-btn"
+        onClick={() => handleApply("lower")}
+        disabled={busy || targetCount === 0}
+        className="h-8 px-2.5 text-[10px] font-bold rounded border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 disabled:opacity-50 flex items-center gap-1.5"
+        title="Keep only the lower half (below the plane)"
+      >
+        <ArrowDown size={11} /> Keep Lower
+      </button>
+
+      <button
+        data-testid="cut-cancel-btn"
+        onClick={() => setCutMode(false)}
+        className="h-7 w-7 flex items-center justify-center text-slate-400 hover:text-white rounded hover:bg-slate-800"
+        title="Cancel"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
