@@ -4,8 +4,10 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
+  Sparkles,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
+import AIGenerateDialog from "./AIGenerateDialog";
 
 const PRIMS_3D = [
   { type: "cube", label: "Cube", icon: Box },
@@ -252,6 +254,8 @@ export default function LeftPanel() {
           <SlotButton modifier="negative" />
           <SlotButton modifier="positive" />
         </div>
+
+        <AISection />
       </div>
 
       <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between flex-shrink-0">
@@ -295,6 +299,42 @@ function renderGroupedOutliner(objects) {
   }
   return rendered;
 }
+
+// ---- AI generation entry point ----
+function AISection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="px-3 py-2 border-y border-slate-800 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Sparkles size={14} className="text-fuchsia-400" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            AI Generate
+          </span>
+        </div>
+        <span className="text-[9px] uppercase tracking-wider text-fuchsia-400/80 border border-fuchsia-500/40 rounded px-1.5 py-0.5">
+          beta
+        </span>
+      </div>
+      <div className="p-3">
+        <button
+          data-testid="ai-generate-btn"
+          onClick={() => setOpen(true)}
+          className="w-full h-12 rounded-md border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-500/10 via-purple-500/10 to-orange-500/10 hover:border-fuchsia-500 hover:from-fuchsia-500/20 transition-all flex items-center justify-center gap-2 text-fuchsia-300 text-xs font-semibold tracking-wide"
+          title="Generate a 3D model from text or an image"
+        >
+          <Sparkles size={14} />
+          Generate from Text · Image
+        </button>
+        <p className="mt-2 text-[10px] text-slate-500 leading-snug">
+          Describe a shape or upload a picture — get a printable mesh you can carve & slice.
+        </p>
+      </div>
+      <AIGenerateDialog open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
 
 function GroupHeader({ groupId, name, members }) {
   const [expanded, setExpanded] = useState(true);

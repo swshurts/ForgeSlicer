@@ -232,6 +232,19 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ `frontend/src/lib/api.js` now resolves the backend URL at runtime: if the page is being served from a different host than `REACT_APP_BACKEND_URL`, it uses `window.location.origin` instead (keeps cookies first-party). Preview behavior unchanged (env host matches page host).
 - Verified preview still renders cleanly. Production needs **redeploy**.
 
+## Iteration 21 (2026-02-21) — AI Mesh Generation (Meshy AI)
+- ✅ **Text-to-3D + Image-to-3D via Meshy AI** — new left-panel section "AI Generate" opens a beta dialog with two tabs:
+  - **From Text** — prompt textarea (up to 600 chars) + 3 styles (realistic / sculpture / low-poly).
+  - **From Image** — JPG/PNG/WebP upload up to 8 MB, base64-encoded and forwarded as data URL per Meshy spec.
+- ✅ **Per-user monthly cap** — 13 generations / calendar month (Contributor Lifetime users get 26). Atomic `$inc` upsert in MongoDB so concurrent requests can't race past the boundary; failed submissions refund the counter.
+- ✅ **Async job flow** — frontend polls `/api/ai/jobs/{id}` every 4 s with a 5-min timeout. Dialog shows live progress bar, success state with raw-Meshy download link, retry button, and clear error messages on failure or cap-reached.
+- ✅ **Mesh import** — proxied download through backend (auth + CDN), routed into the existing `importAnyMeshFile` pipeline so AI meshes get auto-centered on the bed, the bbox computed, and the imported-mesh registration; toast confirms import.
+- ✅ **GLB / GLTF import** added to `lib/exporters.js` (uses three.js GLTFLoader). Merges all sub-meshes into one geometry.
+- ✅ **Help dialog** — new "AI Generate" section with usage tips, monthly-cap explainer, and a heads-up about thin walls / non-manifold AI meshes.
+- 4 new backend endpoints: `GET /api/ai/usage`, `POST /api/ai/generate/text`, `POST /api/ai/generate/image`, `GET /api/ai/jobs/{id}`, `GET /api/ai/jobs/{id}/mesh`.
+- Test-mode key `msy_dummy_api_key_for_test_mode_12345678` works for dev; production needs a real key from https://meshy.ai.
+- Verified live end-to-end: prompt → SUCCEEDED → STL imported (1996×1381×1735 mm test mesh from Meshy's test fixture) → inspector + scale + slice tools all attached correctly.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

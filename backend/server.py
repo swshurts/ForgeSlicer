@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 import httpx
 
 from email_service import send_contributor_celebration
+import meshy_service
 
 
 ROOT_DIR = Path(__file__).parent
@@ -310,6 +311,208 @@ async def contributor_status(request: Request):
         "contributor_lifetime": already,
         "qualifying_licenses": sorted(list(CONTRIB_OPEN_LICENSES)),
     }
+
+
+# ---------- AI Mesh Generation (Meshy) ----------
+# Per-user monthly cap so a single user can't burn through the Meshy budget.
+# Contributor Lifetime users get 2× the cap as a "thanks" perk.
+AI_MONTHLY_CAP = 13
+AI_CONTRIB_MULTIPLIER = 2
+
+
+def _month_key(now: Optional[datetime] = None) -> str:
+    """Calendar-month bucket key for usage counting (UTC)."""
+    n = now or datetime.now(timezone.utc)
+    return f"{n.year:04d}-{n.month:02d}"
+
+
+async def _ai_cap_for(user: dict) -> int:
+    base = AI_MONTHLY_CAP
+    return base * AI_CONTRIB_MULTIPLIER if user.get("contributor_lifetime") else base
+
+
+async def _ai_increment_or_raise(user: dict) -> int:
+    """Atomically increment monthly AI usage; raise 429 if user is at cap.
+
+    Returns the count AFTER increment. Uses MongoDB's $inc + upsert so two
+    concurrent requests can't both squeak past the boundary."""
+    cap = await _ai_cap_for(user)
+    mkey = _month_key()
+    # Pre-check: cheap read so we don't waste a write if obviously capped.
+    cur = await db.ai_usage.find_one({"user_id": user["user_id"], "month_key": mkey})
+    if cur and (cur.get("count") or 0) >= cap:
+        raise HTTPException(status_code=429, detail=f"Monthly AI generation cap reached ({cap}/month). Resets on the 1st.")
+    # Atomic increment.
+    result = await db.ai_usage.find_one_and_update(
+        {"user_id": user["user_id"], "month_key": mkey},
+        {
+            "$inc": {"count": 1},
+            "$set": {"updated_at": datetime.now(timezone.utc).isoformat()},
+            "$setOnInsert": {"created_at": datetime.now(timezone.utc).isoformat()},
+        },
+        upsert=True,
+        return_document=True,  # return doc AFTER update (Motor: True == ReturnDocument.AFTER)
+    )
+    new_count = (result or {}).get("count", 1)
+    if new_count > cap:
+        # Race: roll back our increment so future caps stay correct.
+        await db.ai_usage.update_one(
+            {"user_id": user["user_id"], "month_key": mkey},
+            {"$inc": {"count": -1}},
+        )
+        raise HTTPException(status_code=429, detail=f"Monthly AI generation cap reached ({cap}/month).")
+    return new_count
+
+
+class AITextRequest(BaseModel):
+    prompt: str = Field(..., min_length=3, max_length=600)
+    art_style: str = Field("realistic", max_length=32)  # realistic | sculpture | low-poly
+
+
+@api_router.get("/ai/usage")
+async def ai_usage_for_user(request: Request):
+    """Tells the frontend how many gens the user has used this month + their cap."""
+    user = await get_current_user(request)
+    cap = await _ai_cap_for(user)
+    cur = await db.ai_usage.find_one({"user_id": user["user_id"], "month_key": _month_key()})
+    used = (cur or {}).get("count", 0)
+    return {
+        "used": used,
+        "cap": cap,
+        "remaining": max(0, cap - used),
+        "month": _month_key(),
+        "contributor_lifetime": bool(user.get("contributor_lifetime")),
+    }
+
+
+@api_router.post("/ai/generate/text")
+async def ai_generate_text(req: AITextRequest, request: Request):
+    user = await get_current_user(request)
+    if not meshy_service.is_configured():
+        raise HTTPException(status_code=503, detail="AI generation not configured")
+    await _ai_increment_or_raise(user)
+    try:
+        meshy_task_id = await meshy_service.create_text_to_3d(req.prompt, req.art_style)
+    except httpx.HTTPStatusError as e:
+        # Refund the usage counter — they didn't get a generation.
+        await db.ai_usage.update_one(
+            {"user_id": user["user_id"], "month_key": _month_key()},
+            {"$inc": {"count": -1}},
+        )
+        raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.ai_jobs.insert_one({
+        "job_id": job_id,
+        "user_id": user["user_id"],
+        "kind": "text",
+        "prompt": req.prompt,
+        "art_style": req.art_style,
+        "meshy_task_id": meshy_task_id,
+        "status": "PENDING",
+        "progress": 0,
+        "model_url": None,
+        "created_at": now,
+        "updated_at": now,
+    })
+    return {"job_id": job_id, "status": "PENDING"}
+
+
+@api_router.post("/ai/generate/image")
+async def ai_generate_image(request: Request):
+    user = await get_current_user(request)
+    if not meshy_service.is_configured():
+        raise HTTPException(status_code=503, detail="AI generation not configured")
+    # Body must be JSON: {image_b64, mime_type}. We accept base64 from the frontend
+    # rather than multipart because it's a tiny payload (~1MB) and keeps the
+    # backend symmetric with everywhere else we exchange image data.
+    body = await request.json()
+    image_b64 = (body.get("image_b64") or "").strip()
+    mime = (body.get("mime_type") or "image/png").strip()
+    if not image_b64:
+        raise HTTPException(status_code=400, detail="Missing image_b64")
+    if mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported image mime_type")
+    data_url = f"data:{mime};base64,{image_b64}"
+    await _ai_increment_or_raise(user)
+    try:
+        meshy_task_id = await meshy_service.create_image_to_3d(data_url)
+    except httpx.HTTPStatusError as e:
+        await db.ai_usage.update_one(
+            {"user_id": user["user_id"], "month_key": _month_key()},
+            {"$inc": {"count": -1}},
+        )
+        raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.ai_jobs.insert_one({
+        "job_id": job_id,
+        "user_id": user["user_id"],
+        "kind": "image",
+        "meshy_task_id": meshy_task_id,
+        "status": "PENDING",
+        "progress": 0,
+        "model_url": None,
+        "created_at": now,
+        "updated_at": now,
+    })
+    return {"job_id": job_id, "status": "PENDING"}
+
+
+@api_router.get("/ai/jobs/{job_id}")
+async def ai_job_status(job_id: str, request: Request):
+    """Pull the latest status from Meshy; cache result locally so repeated
+    polls don't smash the upstream API."""
+    user = await get_current_user(request)
+    job = await db.ai_jobs.find_one({"job_id": job_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    # If we already have a terminal SUCCEEDED/FAILED status, return cached.
+    if job["status"] in ("SUCCEEDED", "FAILED"):
+        return job
+    try:
+        task = await meshy_service.get_task(job["meshy_task_id"], job["kind"])
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Meshy poll failed: {e.response.status_code}")
+    status = task.get("status", "PENDING")
+    progress = task.get("progress", 0)
+    update: dict = {
+        "status": status,
+        "progress": progress,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if status == "SUCCEEDED":
+        update["model_url"] = meshy_service.pick_model_url(task)
+    elif status == "FAILED":
+        update["error"] = (task.get("task_error") or {}).get("message", "unknown")
+    await db.ai_jobs.update_one({"job_id": job_id}, {"$set": update})
+    job.update(update)
+    return job
+
+
+@api_router.get("/ai/jobs/{job_id}/mesh")
+async def ai_job_mesh(job_id: str, request: Request):
+    """Stream the generated mesh binary to the user. The frontend feeds this
+    directly into the existing STL/GLB import pipeline (no new code needed)."""
+    user = await get_current_user(request)
+    job = await db.ai_jobs.find_one({"job_id": job_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "SUCCEEDED" or not job.get("model_url"):
+        raise HTTPException(status_code=409, detail=f"Job not ready (status={job['status']})")
+    try:
+        data = await meshy_service.download_mesh(job["model_url"])
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Mesh download failed: {e.response.status_code}")
+    # Filename hint based on the URL's extension. Strip any query string
+    # (Meshy CDN URLs end with .stl?Expires=...) before checking.
+    url_path = job["model_url"].split("?")[0].lower()
+    ext = "stl" if url_path.endswith(".stl") else ("obj" if url_path.endswith(".obj") else "glb")
+    return Response(
+        content=data,
+        media_type=("model/stl" if ext == "stl" else ("model/obj" if ext == "obj" else "model/gltf-binary")),
+        headers={"Content-Disposition": f'attachment; filename="ai-mesh-{job_id[:8]}.{ext}"'},
+    )
 
 
 # ---------- Models ----------

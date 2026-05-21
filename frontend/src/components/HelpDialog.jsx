@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
-  FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench,
+  FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles,
 } from "lucide-react";
 
 // ---------- Section content ----------
@@ -21,6 +21,7 @@ function Index({ onJump }) {
     { id: "gallery",      icon: Globe,     title: "Gallery & Sharing", desc: "Publish to the public library, remix others' work." },
     { id: "components",   icon: Library,   title: "Component Library", desc: "Save reusable parts; recall with one click." },
     { id: "voice",        icon: Mic,       title: "Voice Commands",    desc: "Hands-free CAD. Lexicon + examples." },
+    { id: "ai",           icon: Sparkles,  title: "AI Generate",       desc: "Text-to-3D or image-to-3D via Meshy. 13 free gens/month." },
     { id: "shortcuts",    icon: Keyboard,  title: "Keyboard Shortcuts", desc: "Speed up the workflow." },
   ];
   return (
@@ -390,6 +391,32 @@ function VoiceCommands({ onTry }) {
   );
 }
 
+function AIGenerate() {
+  return (
+    <div data-testid="help-section-ai">
+      <H>AI Generate (Beta)</H>
+      <P>ForgeSlicer can turn text descriptions or reference images into 3D meshes using <strong>Meshy AI</strong>. The result lands on the build plate as a regular imported mesh — boolean carving, fillet, scale, slice, and export all work normally on top of it.</P>
+      <H>Where to find it</H>
+      <P>Left panel → bottom section labeled <Code>AI Generate</Code> → click <strong>"Generate from Text · Image"</strong>.</P>
+      <H>Two flows</H>
+      <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
+        <li><strong>From Text</strong> — type a description (e.g. <em>"a small articulated dragon for FDM printing"</em>) and pick a style: <strong>realistic</strong>, <strong>sculpture</strong>, or <strong>low-poly</strong>.</li>
+        <li><strong>From Image</strong> — upload a JPG/PNG/WebP (up to 8 MB). Works best with a single subject on a plain background. Great for translating your own artwork or photography into a printable form.</li>
+      </ul>
+      <H>Monthly cap</H>
+      <P>Free accounts get <strong>13 generations per calendar month</strong>; Contributor Lifetime users get double. The remaining count is shown in the dialog header. The cap resets on the 1st of each month.</P>
+      <H>Tips for better results</H>
+      <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
+        <li>Mention scale and use-case (e.g. <em>"FDM printable"</em>, <em>"miniature for tabletop gaming"</em>).</li>
+        <li>For image-to-3D, use a high-contrast photo with the subject filling most of the frame.</li>
+        <li>Generation takes 30–90 seconds — the dialog stays open so you can keep modeling while you wait.</li>
+        <li>Once the mesh arrives, click <Code>Add to scene →</Code> to drop it; click <Code>Try another</Code> to regenerate without using a new credit if you're unhappy with the geometry.</li>
+      </ul>
+      <P className="text-amber-200 text-xs italic">Heads-up: AI meshes often have thin walls or non-manifold edges. After import, use the dimension inspector to scale up to printable size and consider a "make manifold" pass in your slicer.</P>
+    </div>
+  );
+}
+
 function Shortcuts() {
   const rows = [
     ["Ctrl+Z / Cmd+Z",    "Undo"],
@@ -440,6 +467,7 @@ const SECTIONS = [
   { id: "gallery",    label: "Gallery & Sharing",  icon: Globe,     Component: Gallery },
   { id: "components", label: "Component Library",  icon: Library,   Component: Components },
   { id: "voice",      label: "Voice Commands",     icon: Mic,       Component: VoiceCommands },
+  { id: "ai",         label: "AI Generate",        icon: Sparkles,  Component: AIGenerate },
   { id: "shortcuts",  label: "Keyboard Shortcuts", icon: Keyboard,  Component: Shortcuts },
 ];
 

@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { evaluateScene } from "./csg";
 import { build3MFBytes } from "./threemf";
 
@@ -204,7 +205,55 @@ export async function importAnyMeshFile(file) {
   if (ext === "stl") return importSTLFile(file);
   if (ext === "obj") return importOBJFile(file);
   if (ext === "3mf") return import3MFFile(file);
-  throw new Error(`Unsupported file type: .${ext} (use .stl, .obj, or .3mf)`);
+  if (ext === "glb" || ext === "gltf") return importGLBFile(file);
+  throw new Error(`Unsupported file type: .${ext} (use .stl, .obj, .3mf, or .glb)`);
+}
+
+// GLB / GLTF import — primarily used by AI mesh generation (Meshy returns
+// GLB). We merge every mesh in the scene into a single geometry so it slots
+// into the same "imported mesh" pipeline as STL/OBJ.
+export async function importGLBFile(file) {
+  const buf = await readFileAsArrayBuffer(file);
+  const loader = new GLTFLoader();
+  const gltf = await new Promise((resolve, reject) => {
+    loader.parse(buf, "", resolve, reject);
+  });
+  const positions = [];
+  gltf.scene.updateMatrixWorld(true);
+  gltf.scene.traverse((child) => {
+    if (child.isMesh && child.geometry) {
+      const g = child.geometry.clone();
+      g.applyMatrix4(child.matrixWorld);
+      const p = g.attributes.position.array;
+      if (g.index) {
+        const idx = g.index.array;
+        for (let i = 0; i < idx.length; i++) {
+          positions.push(p[idx[i] * 3], p[idx[i] * 3 + 1], p[idx[i] * 3 + 2]);
+        }
+      } else {
+        for (let i = 0; i < p.length; i++) positions.push(p[i]);
+      }
+    }
+  });
+  if (positions.length === 0) throw new Error("GLB contained no mesh geometry");
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  geom.computeVertexNormals();
+  geom.computeBoundingBox();
+  const bb = geom.boundingBox;
+  geom.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+  geom.computeBoundingBox();
+  const bb2 = geom.boundingBox;
+  return {
+    name: file.name.replace(/\.[^.]+$/, ""),
+    vertices: new Float32Array(geom.attributes.position.array),
+    indices: null,
+    originalBbox: {
+      x: bb2.max.x - bb2.min.x,
+      y: bb2.max.y - bb2.min.y,
+      z: bb2.max.z - bb2.min.z,
+    },
+  };
 }
 
 export async function importSTLFile(file) {
