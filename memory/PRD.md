@@ -257,6 +257,16 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ Help dialog: new "Cut & Split" section + updated AI section explaining the auto-fit behavior.
 - Verified live: cube → mirror X applied → cut HUD shown → Split (both) applied → "Cube (lower)" piece created.
 
+## Iteration 23 (2026-02-21) — Cut Plane Bug Fix + AI Sizing UX
+- ✅ **Fixed Cut tool axis mismatch** — `PlaneGeometry`'s default normal is +Z (vertical plane), but `cutObjectByPlane` assumed normal +Y. User reported "cut happens on the original axis, not the adjusted plane." Fix: rotate the `PlaneGeometry` -90° around X at construction so the visible plane is horizontal (normal +Y) by default — matching both user expectation and the CSG code's assumption. User-applied rotations now correctly tilt the cut axis.
+- ✅ **Verified live**: 40mm cube + horizontal cut at Y=25 now produces **two** pieces (Cube upper 40×15×40 mm, Cube lower 40×25×40 mm). Previously only produced 1 piece due to the 90° mismatch.
+- ✅ **AI dialog sizing UX overhaul**:
+  - Moved sizing controls to BEFORE generation (in addition to the success state) so users know what size they'll get before pulling the trigger.
+  - Replaced the checkbox + conditional input with two clear toggle buttons: "Auto-fit to bed" / "Specify size".
+  - Auto-fit mode shows a live preview ("Longest dimension will be scaled to ~176 mm (80% of your printer's shortest axis: 220 mm)").
+  - Manual mode has a clearer label + helper text ("The mesh's longest axis will be set to this size; other axes scale proportionally").
+  - Extracted into a reusable `SizingControls` sub-component for DRY.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

@@ -13,6 +13,62 @@ const POLL_MS = 4000;
 // 30-90 seconds; if we're still waiting after 5 min something's wrong.
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Sizing controls — shown both BEFORE generation (so users know what scale
+// they'll get) and AFTER (so they can adjust before importing). The
+// "successStyle" variant just changes the border color to match the green
+// success card it lives inside.
+function SizingControls({ autoFit, setAutoFit, targetMaxMm, setTargetMaxMm, buildVolume, successStyle }) {
+  const bedMin = Math.min(buildVolume?.x || 220, buildVolume?.y || 220, buildVolume?.z || 250);
+  const autoFitTarget = (bedMin * 0.8).toFixed(0);
+  const border = successStyle ? "border-emerald-500/30" : "border-fuchsia-500/30";
+  return (
+    <div className={`bg-slate-950/60 border ${border} rounded p-2.5 space-y-2`}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Import size</span>
+        <span className="text-[10px] text-slate-500 font-mono">
+          {autoFit
+            ? `auto: ~${autoFitTarget} mm max`
+            : `manual: ${targetMaxMm} mm max`}
+        </span>
+      </div>
+      <div className="flex gap-1">
+        <button
+          data-testid="ai-size-mode-auto"
+          onClick={() => setAutoFit(true)}
+          className={`flex-1 h-7 rounded text-[10px] font-semibold border ${autoFit ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600"}`}
+        >Auto-fit to bed</button>
+        <button
+          data-testid="ai-size-mode-manual"
+          onClick={() => setAutoFit(false)}
+          className={`flex-1 h-7 rounded text-[10px] font-semibold border ${!autoFit ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600"}`}
+        >Specify size</button>
+      </div>
+      {autoFit ? (
+        <p className="text-[10px] text-slate-500 leading-snug">
+          Longest dimension will be scaled to <strong className="text-slate-300">~{autoFitTarget} mm</strong> (80% of your printer's shortest axis: {bedMin} mm).
+        </p>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-[11px]">
+            <label className="text-slate-400">Max dimension</label>
+            <input
+              data-testid="ai-target-size-input"
+              type="number"
+              min={1}
+              max={1000}
+              value={targetMaxMm}
+              onChange={(e) => setTargetMaxMm(parseFloat(e.target.value) || 0)}
+              className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white font-mono focus:border-emerald-500 outline-none"
+            />
+            <span className="text-slate-500">mm</span>
+          </div>
+          <p className="text-[10px] text-slate-500">The mesh's longest axis will be set to this size; other axes scale proportionally.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AIGenerateDialog({ open, onClose }) {
   const [tab, setTab] = useState("text");      // "text" | "image"
   const [prompt, setPrompt] = useState("");
@@ -235,6 +291,16 @@ export default function AIGenerateDialog({ open, onClose }) {
           </div>
 
           {/* Form body */}
+          {!job && (
+            <SizingControls
+              autoFit={autoFit}
+              setAutoFit={setAutoFit}
+              targetMaxMm={targetMaxMm}
+              setTargetMaxMm={setTargetMaxMm}
+              buildVolume={buildVolume}
+            />
+          )}
+
           {!job && tab === "text" && (
             <div className="space-y-3">
               <div>
@@ -318,33 +384,14 @@ export default function AIGenerateDialog({ open, onClose }) {
                   Download raw from Meshy ↗
                 </a>
               )}
-              <div className="bg-slate-950/60 border border-emerald-500/30 rounded p-2 space-y-2">
-                <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
-                  <input
-                    data-testid="ai-autofit-toggle"
-                    type="checkbox"
-                    checked={autoFit}
-                    onChange={(e) => setAutoFit(e.target.checked)}
-                    className="accent-emerald-500"
-                  />
-                  <span><strong>Auto-fit to bed</strong> — scale so longest dim ≈ 80% of printer's shortest axis</span>
-                </label>
-                {!autoFit && (
-                  <div className="flex items-center gap-2 text-[11px] text-slate-300">
-                    <span className="text-slate-400">Target max dimension</span>
-                    <input
-                      data-testid="ai-target-size-input"
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={targetMaxMm}
-                      onChange={(e) => setTargetMaxMm(parseFloat(e.target.value) || 0)}
-                      className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[12px] font-mono focus:border-emerald-500 outline-none"
-                    />
-                    <span className="text-slate-500">mm</span>
-                  </div>
-                )}
-              </div>
+              <SizingControls
+                autoFit={autoFit}
+                setAutoFit={setAutoFit}
+                targetMaxMm={targetMaxMm}
+                setTargetMaxMm={setTargetMaxMm}
+                buildVolume={buildVolume}
+                successStyle
+              />
               <p className="text-[10px] text-slate-400">Click "Add to scene" to drop it onto the build plate. You can then carve, fillet, scale, slice — all the usual tools.</p>
             </div>
           )}

@@ -89,8 +89,20 @@ function CutPlaneGizmo() {
   const meshRef = useRef();
   const lastPos = useRef([0, 25, 0]);
   const lastRot = useRef([0, 0, 0]);
+  const size = cutPlane?.size || 200;
+  // PlaneGeometry has its normal pointing along +Z by default, but the CSG
+  // cut code assumes the plane's local +Y is the cut "up" direction. Rotate
+  // the geometry once at construction so the visible plane is horizontal
+  // (normal = +Y) at zero rotation — this is what users expect from a "drop
+  // a cutting plane onto your model" tool. The mesh's own rotation prop
+  // then represents user-applied tilts on top of that horizontal default.
+  const planeGeom = useMemo(() => {
+    const g = new THREE.PlaneGeometry(size, size);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }, [size]);
+  const edgeGeom = useMemo(() => new THREE.EdgesGeometry(planeGeom), [planeGeom]);
   if (!cutMode) return null;
-  const size = cutPlane.size || 200;
   return (
     <>
       <mesh
@@ -99,8 +111,8 @@ function CutPlaneGizmo() {
         rotation={cutPlane.rotation}
         userData={{ cutPlane: true }}
         raycast={() => null}
+        geometry={planeGeom}
       >
-        <planeGeometry args={[size, size]} attach="geometry" />
         <meshBasicMaterial
           color="#fbbf24"
           transparent
@@ -110,8 +122,12 @@ function CutPlaneGizmo() {
           attach="material"
         />
       </mesh>
-      <lineSegments position={cutPlane.position} rotation={cutPlane.rotation} raycast={() => null}>
-        <edgesGeometry args={[new THREE.PlaneGeometry(size, size)]} attach="geometry" />
+      <lineSegments
+        position={cutPlane.position}
+        rotation={cutPlane.rotation}
+        raycast={() => null}
+        geometry={edgeGeom}
+      >
         <lineBasicMaterial color="#f59e0b" attach="material" />
       </lineSegments>
       {meshRef.current && (
