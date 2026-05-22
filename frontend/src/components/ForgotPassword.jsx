@@ -27,7 +27,8 @@ export default function ForgotPassword() {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      await authApi.forgotPassword(email.trim());
+      const clean = (email || "").trim().toLowerCase();
+      await authApi.forgotPassword(clean);
       setSent(true);
     } catch (err) {
       setError(errMsg(err?.response?.data?.detail, err.message));

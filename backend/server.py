@@ -256,6 +256,15 @@ async def logout(request: Request, response: FastResponse):
     return {"ok": True}
 
 
+@api_router.get("/auth/email-status")
+async def auth_email_status():
+    """Public — let the SignIn page tell users when magic-link / reset
+    emails won't actually be delivered (e.g. Resend key rotated and not
+    yet updated). No sensitive info exposed; just a yes/no + a short
+    user-facing message."""
+    return email_service.get_email_status()
+
+
 @api_router.put("/me/profile")
 async def update_my_profile(req: auth_local.ProfileUpdateRequest, request: Request):
     """Update the optional profile fields. Only supplied keys are touched —

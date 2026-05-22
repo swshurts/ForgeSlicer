@@ -24,6 +24,63 @@ import resend
 logger = logging.getLogger(__name__)
 
 
+# Track the most recent send failure so the UI can warn users when email
+# delivery is degraded (e.g. key was rotated/invalidated, domain not yet
+# verified, Resend outage). Cleared on the next successful send.
+# Tuple format: (iso_timestamp, error_message). None when last send was OK
+# OR we haven't sent anything yet this process.
+_last_email_error: Optional[tuple[str, str]] = None
+_last_email_success: Optional[str] = None
+
+
+def get_email_status() -> dict:
+    """Return a snapshot of Resend delivery health for the UI to surface.
+
+    Healthy states:
+    - configured + last attempt succeeded (or no attempts yet but key looks valid)
+    Degraded states:
+    - not configured (no API key)
+    - last attempt failed (key revoked / Resend outage / sandbox limit hit)
+    """
+    if not _configured():
+        return {
+            "configured": False,
+            "healthy": False,
+            "message": "Email delivery isn't configured on this deployment. Use Google sign-in or email + password for now.",
+            "last_error": None,
+            "last_success_at": None,
+        }
+    if _last_email_error:
+        when, what = _last_email_error
+        return {
+            "configured": True,
+            "healthy": False,
+            "message": "We couldn't deliver emails recently — please use Google sign-in or email + password until this is fixed.",
+            "last_error": {"at": when, "detail": what},
+            "last_success_at": _last_email_success,
+        }
+    return {
+        "configured": True,
+        "healthy": True,
+        "message": "",
+        "last_error": None,
+        "last_success_at": _last_email_success,
+    }
+
+
+def _record_success() -> None:
+    global _last_email_error, _last_email_success
+    from datetime import datetime, timezone
+    _last_email_error = None
+    _last_email_success = datetime.now(timezone.utc).isoformat()
+
+
+def _record_failure(err: Exception) -> None:
+    global _last_email_error
+    from datetime import datetime, timezone
+    _last_email_error = (datetime.now(timezone.utc).isoformat(), str(err)[:200])
+
+
 def _configured() -> bool:
     """True only when a real Resend API key is available."""
     key = os.environ.get("RESEND_API_KEY", "").strip()
@@ -153,9 +210,11 @@ Thanks for the work you publish under open licenses.
         result = await asyncio.to_thread(resend.Emails.send, params)
         msg_id = result.get("id") if isinstance(result, dict) else None
         logger.info("Contributor celebration email sent to %s (id=%s)", to_email, msg_id)
+        _record_success()
         return msg_id
     except Exception as e:  # noqa: BLE001 - we want to swallow ALL Resend failures
         logger.warning("Contributor celebration email failed for %s: %s", to_email, e)
+        _record_failure(e)
         return None
 
 
@@ -215,9 +274,11 @@ async def send_magic_link_email(to_email: str, to_name: str, link: str) -> Optio
         result = await asyncio.to_thread(resend.Emails.send, params)
         msg_id = result.get("id") if isinstance(result, dict) else None
         logger.info("Magic link sent to %s (id=%s)", to_email, msg_id)
+        _record_success()
         return msg_id
     except Exception as e:  # noqa: BLE001
         logger.warning("Magic link send failed for %s: %s", to_email, e)
+        _record_failure(e)
         return None
 
 
@@ -244,7 +305,9 @@ async def send_password_reset_email(to_email: str, to_name: str, link: str) -> O
         result = await asyncio.to_thread(resend.Emails.send, params)
         msg_id = result.get("id") if isinstance(result, dict) else None
         logger.info("Password reset sent to %s (id=%s)", to_email, msg_id)
+        _record_success()
         return msg_id
     except Exception as e:  # noqa: BLE001
         logger.warning("Password reset send failed for %s: %s", to_email, e)
+        _record_failure(e)
         return None

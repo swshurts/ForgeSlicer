@@ -1,12 +1,40 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { authApi, startLogin } from "../lib/auth";
+import { API } from "../lib/api";
 import { toast } from "sonner";
 import {
   Hexagon, ArrowLeft, Loader2, Mail, KeyRound, Wand2,
-  AlertCircle, CheckCircle2, LogIn,
+  AlertCircle, CheckCircle2, LogIn, AlertTriangle,
 } from "lucide-react";
+
+// Normalize email client-side so trivial typos (trailing spaces, mixed
+// case) don't get rejected by Pydantic's strict EmailStr validator with
+// the unhelpful generic "value is not a valid email address" message.
+function normalizeEmail(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+// Banner the SignIn page renders above the magic-link form when our last
+// Resend attempt failed (key rotated, sandbox limit hit, etc.). Without
+// this, users get a "we sent the link" success message and stare at an
+// empty inbox forever.
+function EmailHealthBanner({ status }) {
+  if (!status || status.healthy) return null;
+  return (
+    <div
+      data-testid="email-health-banner"
+      className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/40 rounded text-xs text-amber-200 p-2 mb-3"
+    >
+      <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+      <span>
+        <strong>Email delivery is degraded right now.</strong> {status.message || "Try Google sign-in or email + password instead."}
+      </span>
+    </div>
+  );
+}
 
 // FastAPI 422 returns {detail: [{msg, loc, ...}]} — flatten to a string so
 // React can render it. Plain-string detail (our 400/401/409) passes through.
@@ -62,9 +90,10 @@ function PasswordTab({ mode, setMode, returnPath, onSuccess }) {
     e.preventDefault();
     setBusy(true); setError("");
     try {
+      const cleanEmail = normalizeEmail(email);
       const user = mode === "register"
-        ? await authApi.register({ name: name.trim(), email: email.trim(), password })
-        : await authApi.login({ email: email.trim(), password });
+        ? await authApi.register({ name: name.trim(), email: cleanEmail, password })
+        : await authApi.login({ email: cleanEmail, password });
       onSuccess(user);
     } catch (err) {
       setError(errMsg(err?.response?.data?.detail, err.message));
@@ -156,7 +185,7 @@ function PasswordTab({ mode, setMode, returnPath, onSuccess }) {
 }
 
 // ---------- Tab: Magic Link ----------
-function MagicLinkTab() {
+function MagicLinkTab({ emailHealth }) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -166,7 +195,7 @@ function MagicLinkTab() {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      await authApi.requestMagicLink(email.trim());
+      await authApi.requestMagicLink(normalizeEmail(email));
       setSent(true);
     } catch (err) {
       setError(errMsg(err?.response?.data?.detail, err.message));
@@ -193,6 +222,7 @@ function MagicLinkTab() {
 
   return (
     <form onSubmit={submit} className="space-y-3" data-testid="magic-link-form">
+      <EmailHealthBanner status={emailHealth} />
       <p className="text-xs text-slate-400 leading-relaxed">
         We'll email you a one-time sign-in link — no password required.
       </p>
@@ -256,6 +286,15 @@ export default function SignIn() {
   const initialMode = params.get("mode") === "register" ? "register" : "login";
   const [tab, setTab] = useState(params.get("tab") || "password");
   const [pwMode, setPwMode] = useState(initialMode);
+  const [emailHealth, setEmailHealth] = useState(null);
+
+  useEffect(() => {
+    // Fire-and-forget — if it fails the banner just doesn't show. Better
+    // to keep the page snappy than block on a status check.
+    axios.get(`${API}/auth/email-status`)
+      .then((r) => setEmailHealth(r.data))
+      .catch(() => setEmailHealth(null));
+  }, []);
 
   const onSuccess = (user) => {
     setUser(user);
@@ -312,7 +351,7 @@ export default function SignIn() {
           {tab === "password" && (
             <PasswordTab mode={pwMode} setMode={setPwMode} returnPath={returnPath} onSuccess={onSuccess} />
           )}
-          {tab === "magic" && <MagicLinkTab />}
+          {tab === "magic" && <MagicLinkTab emailHealth={emailHealth} />}
           {tab === "google" && <GoogleTab returnPath={returnPath} />}
 
           <p className="text-[10px] text-slate-500 text-center mt-5 leading-relaxed">
