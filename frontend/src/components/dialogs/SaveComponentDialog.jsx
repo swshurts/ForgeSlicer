@@ -1,10 +1,10 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { useScene } from "../../lib/store";
 import { bytesToBase64 } from "../../lib/exporters";
 import { exportSTLBytesAsync } from "../../lib/workerClient";
 import { componentsApi } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
-import { startLogin } from "../../lib/auth";
 import { LICENSES, DEFAULT_LICENSE_ID, getLicense } from "../../lib/licenses";
 import { X, CheckCircle2, Loader2, Library, PlusSquare, MinusSquare, Lock, LogIn, Scale } from "lucide-react";
 
@@ -253,15 +253,14 @@ export function SaveComponentDialog({ open, onClose }) {
                 </span>
               </label>
             ) : (
-              <button
-                type="button"
+              <Link
                 data-testid="component-signin-cta"
-                onClick={() => startLogin("/workspace")}
+                to="/signin?return=%2Fworkspace"
                 className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-orange-500/40 hover:border-orange-500/70 rounded text-[11px] text-slate-300 text-left"
               >
                 <LogIn size={12} className="text-orange-400" />
                 <span><span className="text-orange-300 font-semibold">Sign in</span> to save private components tied to your profile.</span>
-              </button>
+              </Link>
             )}
             <div>
               <span className="text-[10px] uppercase tracking-wider text-slate-400 mb-1 block">Type</span>

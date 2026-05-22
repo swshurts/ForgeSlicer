@@ -1,18 +1,13 @@
 import React from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { startLogin } from "../lib/auth";
 import { Loader2, Lock, LogIn, Hexagon, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 
 // Gate that wraps protected routes. Renders the children only when the user
 // is logged in; otherwise shows a sign-in card that preserves the requested
-// path so the user lands back there after OAuth completes.
-//
-// We intentionally do NOT auto-redirect to the OAuth provider — we show a
-// branded sign-in screen first so the user has context and a "back home"
-// option, and so we don't loop them through Google when they hit a stale
-// link with an expired session.
+// path so the user lands back there after sign-in completes (regardless of
+// auth method used).
 export default function ProtectedRoute({ children, label = "this page" }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -65,20 +60,23 @@ export default function ProtectedRoute({ children, label = "this page" }) {
           <p className="text-xs text-slate-400 mt-2 leading-relaxed">
             Designing in the workspace and saving to your personal library require a free ForgeSlicer account. The public gallery is browsable without signing in.
           </p>
-          <button
+          <Link
             data-testid="protected-signin-btn"
-            onClick={() => startLogin(returnPath)}
+            to={`/signin?return=${encodeURIComponent(returnPath)}`}
             className="mt-6 w-full h-11 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded flex items-center justify-center gap-2"
           >
-            <LogIn size={16} /> Sign in with Google
-          </button>
+            <LogIn size={16} /> Sign in
+          </Link>
+          <Link
+            data-testid="protected-register-link"
+            to={`/signin?mode=register&return=${encodeURIComponent(returnPath)}`}
+            className="block mt-3 text-xs text-slate-400 hover:text-orange-400"
+          >…or create a free account →</Link>
           <Link
             to="/gallery"
             data-testid="protected-browse-gallery-link"
             className="block mt-3 text-xs text-slate-400 hover:text-orange-400"
-          >
-            …or browse the public gallery first →
-          </Link>
+          >…or browse the public gallery first →</Link>
         </div>
       </main>
     </div>

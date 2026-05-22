@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { startLogin } from "../lib/auth";
 import { LogIn, LogOut, User as UserIcon, FolderOpen, Library } from "lucide-react";
 
 // Compact auth widget for top-bar use. Anonymous => "Sign in" button;
@@ -26,14 +25,15 @@ export default function UserMenu({ returnPath }) {
   }
 
   if (!user) {
+    const target = returnPath || window.location.pathname;
     return (
-      <button
+      <Link
         data-testid="login-btn"
-        onClick={() => startLogin(returnPath || window.location.pathname)}
+        to={`/signin?return=${encodeURIComponent(target)}`}
         className="h-8 px-3 ml-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded flex items-center gap-1.5 border border-orange-500/40 hover:border-orange-500/70 transition-colors"
       >
         <LogIn size={14} className="text-orange-400" /> Sign in
-      </button>
+      </Link>
     );
   }
 

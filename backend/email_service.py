@@ -157,3 +157,94 @@ Thanks for the work you publish under open licenses.
     except Exception as e:  # noqa: BLE001 - we want to swallow ALL Resend failures
         logger.warning("Contributor celebration email failed for %s: %s", to_email, e)
         return None
+
+
+# ---------- Transactional auth emails ----------
+
+def _wrap_email(title: str, body_html: str, cta_text: str, cta_url: str, footer: str) -> str:
+    """Shared dark-themed transactional template — matches the ForgeSlicer
+    aesthetic so users immediately recognize the sender."""
+    return f"""\
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#0f172a;font-family:'IBM Plex Sans',Arial,sans-serif;color:#e2e8f0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:32px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#1e293b;border:1px solid #334155;border-radius:12px;overflow:hidden;">
+          <tr><td style="padding:28px 32px 0 32px;">
+            <h1 style="margin:0;color:#fb923c;font-size:22px;font-weight:700;letter-spacing:-0.5px;">{title}</h1>
+          </td></tr>
+          <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
+            {body_html}
+          </td></tr>
+          <tr><td align="center" style="padding:24px 32px 32px 32px;">
+            <a href="{cta_url}" style="display:inline-block;background:#f97316;color:#ffffff;font-weight:600;font-size:14px;text-decoration:none;padding:12px 24px;border-radius:6px;">{cta_text} →</a>
+            <p style="margin:16px 0 0 0;color:#64748b;font-size:11px;line-height:1.5;word-break:break-all;">If the button doesn't work, paste this URL into your browser:<br/>{cta_url}</p>
+          </td></tr>
+          <tr><td style="padding:0 32px 24px 32px;border-top:1px solid #334155;">
+            <p style="margin:16px 0 0 0;color:#64748b;font-size:12px;line-height:1.5;">{footer}</p>
+            <p style="margin:8px 0 0 0;color:#64748b;font-size:12px;line-height:1.5;">— The ForgeSlicer Team</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>"""
+
+
+async def send_magic_link_email(to_email: str, to_name: str, link: str) -> Optional[str]:
+    """Send a one-time sign-in link valid for 15 minutes."""
+    if not to_email or not _configured():
+        if not _configured():
+            logger.info("Resend not configured; magic link for %s would be: %s", to_email, link)
+        return None
+    name = (to_name or "Maker").strip()
+    subject = "Your ForgeSlicer sign-in link"
+    body_html = (
+        f"<p>Hey {name},</p>"
+        "<p>Click the button below to sign in to ForgeSlicer. This link expires in 15 minutes and can only be used once.</p>"
+        "<p>If you didn't request this, ignore this email — no one can access your account without the link.</p>"
+    )
+    html = _wrap_email(
+        "Sign in to ForgeSlicer", body_html, "Sign in now", link,
+        "Magic links never expose your password — just click the button when you want to sign in.",
+    )
+    text = f"Sign in to ForgeSlicer\n\nHi {name},\n\nClick this link to sign in (expires in 15 minutes, single-use):\n{link}\n\nIf you didn't request this, ignore this email.\n\n— The ForgeSlicer Team\n"
+    params = {"from": _sender(), "to": [to_email], "subject": subject, "html": html, "text": text}
+    try:
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        msg_id = result.get("id") if isinstance(result, dict) else None
+        logger.info("Magic link sent to %s (id=%s)", to_email, msg_id)
+        return msg_id
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Magic link send failed for %s: %s", to_email, e)
+        return None
+
+
+async def send_password_reset_email(to_email: str, to_name: str, link: str) -> Optional[str]:
+    """Send a password-reset link valid for 60 minutes."""
+    if not to_email or not _configured():
+        if not _configured():
+            logger.info("Resend not configured; password reset link for %s would be: %s", to_email, link)
+        return None
+    name = (to_name or "Maker").strip()
+    subject = "Reset your ForgeSlicer password"
+    body_html = (
+        f"<p>Hey {name},</p>"
+        "<p>Someone requested a password reset for your ForgeSlicer account. Click the button to choose a new password. This link expires in 60 minutes.</p>"
+        "<p>If you didn't request this, you can safely ignore this email — your password won't change.</p>"
+    )
+    html = _wrap_email(
+        "Reset your password", body_html, "Choose a new password", link,
+        "For your security, the link can only be used once. Resetting your password will sign you out everywhere.",
+    )
+    text = f"Reset your ForgeSlicer password\n\nHi {name},\n\nClick this link to reset (expires in 60 minutes, single-use):\n{link}\n\nIf you didn't request this, ignore this email.\n\n— The ForgeSlicer Team\n"
+    params = {"from": _sender(), "to": [to_email], "subject": subject, "html": html, "text": text}
+    try:
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        msg_id = result.get("id") if isinstance(result, dict) else None
+        logger.info("Password reset sent to %s (id=%s)", to_email, msg_id)
+        return msg_id
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Password reset send failed for %s: %s", to_email, e)
+        return None

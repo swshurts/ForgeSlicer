@@ -6,6 +6,10 @@ import Gallery from "@/components/Gallery";
 import Profile from "@/components/Profile";
 import AuthCallback from "@/components/AuthCallback";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import SignIn from "@/components/SignIn";
+import ForgotPassword from "@/components/ForgotPassword";
+import ResetPassword from "@/components/ResetPassword";
+import MagicLinkLanding from "@/components/MagicLinkLanding";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import SplashScreen from "@/components/SplashScreen";
@@ -24,6 +28,10 @@ function AppRouter() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/gallery" element={<Gallery />} />
+      <Route path="/signin" element={<SignIn />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/magic-link" element={<MagicLinkLanding />} />
       <Route
         path="/workspace"
         element={

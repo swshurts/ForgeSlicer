@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { meApi, startLogin } from "../lib/auth";
+import { meApi, authApi } from "../lib/auth";
 import { galleryApi, componentsApi } from "../lib/api";
+import { toast } from "sonner";
 import {
   ArrowLeft, Hexagon, GitFork, Download, Trash2, RefreshCw,
   PlusSquare, MinusSquare, Lock, Plus, Star, Award,
+  Globe, Save, Loader2, AlertCircle, MapPin, Link as LinkIcon, ImageIcon,
 } from "lucide-react";
 
 const PLACEHOLDER = "https://images.unsplash.com/photo-1702863361902-93c51bfbd923?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwzfHwzZCUyMHByaW50ZWQlMjBvYmplY3R8ZW58MHx8fHwxNzc4ODI0MjYyfDA&ixlib=rb-4.1.0&q=85";
@@ -86,6 +88,196 @@ function ProgressRow({ label, value, max, pct, testid }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+// ---- Profile editor (optional fields with per-field public/private toggle) ----
+// Each field can be filled in or left empty. The "share" checkbox right next
+// to each optional field controls whether other users see it on the public
+// author profile. Name + email are always shown to the owner; only `name`
+// is shown publicly (it's already how designs are attributed).
+function ShareableField({ label, icon: Icon, value, onChange, share, onToggleShare, testid, placeholder, multiline = false }) {
+  const Input = multiline ? "textarea" : "input";
+  return (
+    <div data-testid={`${testid}-field`}>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-[10px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1">
+          {Icon && <Icon size={11} className="text-orange-400" />} {label}
+        </label>
+        <label className="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer select-none">
+          <input
+            data-testid={`${testid}-share`}
+            type="checkbox"
+            checked={!!share}
+            onChange={(e) => onToggleShare(e.target.checked)}
+            className="accent-orange-500"
+          />
+          {share ? <span className="text-emerald-400 inline-flex items-center gap-1"><Globe size={10} /> Public</span> : <span className="inline-flex items-center gap-1"><Lock size={10} /> Private</span>}
+        </label>
+      </div>
+      <Input
+        data-testid={testid}
+        type={multiline ? undefined : "text"}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={multiline ? 2 : undefined}
+        className={`w-full ${multiline ? "p-2" : "h-9 px-3"} bg-slate-950 border border-slate-700 rounded text-sm text-white focus:border-orange-500 outline-none ${multiline ? "resize-none" : ""}`}
+      />
+    </div>
+  );
+}
+
+function ProfileEditor({ user, onSaved }) {
+  // Local form state initialized from props; never mutate the auth context
+  // user object directly. We only POST diffs on Save.
+  const [form, setForm] = useState(() => ({
+    name: user.name || "",
+    avatar_url: user.avatar_url || "",
+    contact_link: user.contact_link || "",
+    city: user.city || "",
+    state: user.state || "",
+    country: user.country || "",
+    share_avatar: !!user.share_avatar,
+    share_contact: !!user.share_contact,
+    share_location: !!user.share_location,
+  }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const dirty = (
+    form.name !== (user.name || "") ||
+    form.avatar_url !== (user.avatar_url || "") ||
+    form.contact_link !== (user.contact_link || "") ||
+    form.city !== (user.city || "") ||
+    form.state !== (user.state || "") ||
+    form.country !== (user.country || "") ||
+    form.share_avatar !== !!user.share_avatar ||
+    form.share_contact !== !!user.share_contact ||
+    form.share_location !== !!user.share_location
+  );
+
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      const updated = await authApi.updateProfile(form);
+      toast.success("Profile updated.");
+      onSaved(updated);
+    } catch (err) {
+      setError(err?.response?.data?.detail || err.message || "Couldn't update profile.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      data-testid="profile-editor"
+      className="rounded-lg border border-slate-800 bg-slate-900 mb-6 overflow-hidden"
+    >
+      <button
+        data-testid="profile-editor-toggle"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-800/40 transition-colors"
+      >
+        <div>
+          <h3 className="text-sm font-semibold text-white">Profile details</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Add optional details. Each field has a <span className="text-emerald-400">Public</span> / <span className="text-slate-300">Private</span> toggle.</p>
+        </div>
+        <span className="text-xs text-slate-500">{open ? "Hide" : "Edit"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-800 p-5 space-y-4">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Display name <span className="text-slate-500 normal-case">(always public — credits your designs)</span></label>
+            <input
+              data-testid="profile-name-input"
+              type="text"
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full h-9 px-3 bg-slate-950 border border-slate-700 rounded text-sm text-white focus:border-orange-500 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Email <span className="text-slate-500 normal-case">(never shown publicly)</span></label>
+            <input
+              data-testid="profile-email-display"
+              type="email"
+              disabled
+              value={user.email}
+              className="w-full h-9 px-3 bg-slate-950/50 border border-slate-800 rounded text-sm text-slate-400 cursor-not-allowed"
+            />
+          </div>
+          <ShareableField
+            label="Avatar URL"
+            icon={ImageIcon}
+            testid="profile-avatar"
+            value={form.avatar_url}
+            placeholder="https://…/me.jpg"
+            share={form.share_avatar}
+            onChange={(v) => setForm({ ...form, avatar_url: v })}
+            onToggleShare={(v) => setForm({ ...form, share_avatar: v })}
+          />
+          <ShareableField
+            label="Preferred contact link"
+            icon={LinkIcon}
+            testid="profile-contact"
+            value={form.contact_link}
+            placeholder="Personal site, Mastodon, X, Discord, GitHub — whatever you prefer"
+            share={form.share_contact}
+            onChange={(v) => setForm({ ...form, contact_link: v })}
+            onToggleShare={(v) => setForm({ ...form, share_contact: v })}
+          />
+          <div data-testid="profile-location-fields">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1">
+                <MapPin size={11} className="text-orange-400" /> Location
+              </label>
+              <label className="flex items-center gap-1.5 text-[10px] text-slate-400 cursor-pointer select-none">
+                <input
+                  data-testid="profile-location-share"
+                  type="checkbox"
+                  checked={form.share_location}
+                  onChange={(e) => setForm({ ...form, share_location: e.target.checked })}
+                  className="accent-orange-500"
+                />
+                {form.share_location ? <span className="text-emerald-400 inline-flex items-center gap-1"><Globe size={10} /> Public</span> : <span className="inline-flex items-center gap-1"><Lock size={10} /> Private</span>}
+              </label>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <input data-testid="profile-city-input" type="text" placeholder="City"
+                value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}
+                className="h-9 px-3 bg-slate-950 border border-slate-700 rounded text-sm text-white focus:border-orange-500 outline-none" />
+              <input data-testid="profile-state-input" type="text" placeholder="State / Region"
+                value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })}
+                className="h-9 px-3 bg-slate-950 border border-slate-700 rounded text-sm text-white focus:border-orange-500 outline-none" />
+              <input data-testid="profile-country-input" type="text" placeholder="Country"
+                value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })}
+                className="h-9 px-3 bg-slate-950 border border-slate-700 rounded text-sm text-white focus:border-orange-500 outline-none" />
+            </div>
+          </div>
+          {error && (
+            <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/40 rounded text-xs text-red-300 p-2" data-testid="profile-editor-error">
+              <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+              <span>{typeof error === "string" ? error : "Couldn't update profile."}</span>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              data-testid="profile-editor-save"
+              onClick={save}
+              disabled={busy || !dirty}
+              className="h-9 px-4 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded flex items-center gap-1.5"
+            >
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+              Save changes
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -188,7 +380,7 @@ function ComponentTile({ item, onDelete, onAdd }) {
 }
 
 export default function Profile() {
-  const { user, loading, refresh } = useAuth();
+  const { user, loading, refresh, setUser } = useAuth();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "designs";
   const setTab = (t) => setParams({ tab: t }, { replace: true });
@@ -237,13 +429,13 @@ export default function Profile() {
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-lg p-8 text-center">
           <h2 className="text-lg font-semibold">Sign in to view your profile</h2>
           <p className="text-xs text-slate-400 mt-1">Designs and components you save will land here.</p>
-          <button
+          <Link
             data-testid="profile-signin-btn"
-            onClick={() => startLogin("/profile")}
-            className="mt-5 h-10 px-5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded"
+            to="/signin?return=%2Fprofile"
+            className="mt-5 inline-block h-10 px-5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded leading-10"
           >
-            Sign in with Google
-          </button>
+            Sign in
+          </Link>
         </div>
       </div>
     );
@@ -318,6 +510,8 @@ export default function Profile() {
         </div>
 
         <ContributorCard status={contributor} />
+
+        <ProfileEditor user={user} onSaved={(u) => setUser(u)} />
 
         <div className="flex items-center gap-1 mb-6 border-b border-slate-800">
           {[

@@ -48,6 +48,35 @@ export const authApi = {
   logout: async () => {
     await axios.post(`${API}/auth/logout`, null, cfg);
   },
+  // ---- Local auth (email/password + magic link + password reset) ----
+  register: async ({ name, email, password }) => {
+    const { data } = await axios.post(`${API}/auth/register`, { name, email, password }, cfg);
+    return data;
+  },
+  login: async ({ email, password }) => {
+    const { data } = await axios.post(`${API}/auth/login`, { email, password }, cfg);
+    return data;
+  },
+  requestMagicLink: async (email) => {
+    const { data } = await axios.post(`${API}/auth/magic-link/request`, { email }, cfg);
+    return data;
+  },
+  consumeMagicLink: async (token) => {
+    const { data } = await axios.post(`${API}/auth/magic-link/consume`, { token }, cfg);
+    return data;
+  },
+  forgotPassword: async (email) => {
+    const { data } = await axios.post(`${API}/auth/password/forgot`, { email }, cfg);
+    return data;
+  },
+  resetPassword: async ({ token, new_password }) => {
+    const { data } = await axios.post(`${API}/auth/password/reset`, { token, new_password }, cfg);
+    return data;
+  },
+  updateProfile: async (patch) => {
+    const { data } = await axios.put(`${API}/me/profile`, patch, cfg);
+    return data;
+  },
 };
 
 // Build the Emergent OAuth redirect URL. The redirect target MUST be derived

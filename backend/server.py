@@ -16,6 +16,8 @@ import httpx
 
 from email_service import send_contributor_celebration
 import meshy_service
+import email_service
+import auth_local
 
 
 ROOT_DIR = Path(__file__).parent
@@ -137,6 +139,45 @@ async def get_optional_user(request: Request) -> Optional[dict]:
     return await _resolve_session_token(_extract_token(request))
 
 
+def _set_session_cookie(response: FastResponse, session_token: str) -> None:
+    """Single source of truth for the httpOnly session cookie. Used by the
+    Google OAuth exchange AND the local-auth (email/password, magic link,
+    password reset) endpoints so both methods produce identical cookies."""
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=session_token,
+        max_age=SESSION_TTL_DAYS * 24 * 3600,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+    )
+
+
+def _public_user(user: dict) -> dict:
+    """Public-facing user payload. Optional fields default to "" / False
+    so the frontend never has to guard against `undefined`. Share toggles
+    determine what's exposed to OTHER users on author profiles — but the
+    OWNER always sees their own data via this endpoint."""
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "name": user.get("name", "User"),
+        "picture": user.get("picture", ""),
+        "avatar_url": user.get("avatar_url", ""),
+        "contact_link": user.get("contact_link", ""),
+        "city": user.get("city", ""),
+        "state": user.get("state", ""),
+        "country": user.get("country", ""),
+        "share_contact": bool(user.get("share_contact", False)),
+        "share_avatar": bool(user.get("share_avatar", False)),
+        "share_location": bool(user.get("share_location", False)),
+        "auth_methods": user.get("auth_methods", ["google"]),
+        "has_password": bool(user.get("password_hash")),
+        "contributor_lifetime": bool(user.get("contributor_lifetime", False)),
+    }
+
+
 @api_router.post("/auth/session")
 async def exchange_session(req: SessionExchangeRequest, response: FastResponse):
     """Exchange an Emergent OAuth session_id (one-time, from URL fragment)
@@ -194,21 +235,8 @@ async def exchange_session(req: SessionExchangeRequest, response: FastResponse):
     })
     # httpOnly cookie so JS can't read it; SameSite=None+Secure because the
     # preview frontend and backend live on different sub-paths via ingress.
-    response.set_cookie(
-        key=SESSION_COOKIE,
-        value=session_token,
-        max_age=SESSION_TTL_DAYS * 24 * 3600,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        path="/",
-    )
-    return {
-        "user_id": user["user_id"],
-        "email": user["email"],
-        "name": user["name"],
-        "picture": user.get("picture", ""),
-    }
+    _set_session_cookie(response, session_token)
+    return _public_user(user)
 
 
 @api_router.get("/auth/me")
@@ -216,13 +244,7 @@ async def get_me(request: Request):
     user = await _resolve_session_token(_extract_token(request))
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return {
-        "user_id": user["user_id"],
-        "email": user["email"],
-        "name": user["name"],
-        "picture": user.get("picture", ""),
-        "contributor_lifetime": bool(user.get("contributor_lifetime", False)),
-    }
+    return _public_user(user)
 
 
 @api_router.post("/auth/logout")
@@ -232,6 +254,46 @@ async def logout(request: Request, response: FastResponse):
         await db.user_sessions.delete_one({"session_token": tok})
     response.delete_cookie(SESSION_COOKIE, path="/", samesite="none", secure=True)
     return {"ok": True}
+
+
+@api_router.put("/me/profile")
+async def update_my_profile(req: auth_local.ProfileUpdateRequest, request: Request):
+    """Update the optional profile fields. Only supplied keys are touched —
+    sending `{share_contact: true}` won't wipe the user's avatar.
+
+    Each `share_*` boolean is the user's explicit consent to show the
+    corresponding field on PUBLIC author pages. The owner always sees
+    everything via /auth/me regardless of the toggles."""
+    user = await get_current_user(request)
+    updates: dict = {}
+    payload = req.model_dump(exclude_unset=True)
+    # Whitelist exactly what we'll write — never pass through Pydantic
+    # extras (the model already forbids them, this is belt-and-suspenders).
+    for key in (
+        "name", "contact_link", "avatar_url", "city", "state", "country",
+        "share_contact", "share_avatar", "share_location",
+    ):
+        if key in payload and payload[key] is not None:
+            updates[key] = payload[key]
+    if not updates:
+        return _public_user(user)
+    # Light sanitisation for the string fields — strip + length-clamp.
+    for k in ("name", "contact_link", "avatar_url", "city", "state", "country"):
+        if k in updates and isinstance(updates[k], str):
+            updates[k] = updates[k].strip()
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
+    refreshed = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    return _public_user(refreshed or user)
+
+
+# Mount the local auth router (email/password + magic link + reset).
+# Lives at /api/auth/* alongside the existing Google session exchange.
+api_router.include_router(auth_local.build_auth_router(
+    db=db,
+    email_service=email_service,
+    set_session_cookie=_set_session_cookie,
+    public_user=_public_user,
+))
 
 
 # ---------- Contributor tier ----------
@@ -1314,6 +1376,15 @@ async def migrate_legacy_authors():
             )
     except Exception as e:
         logger.warning("Legacy migration skipped: %s", e)
+
+
+@app.on_event("startup")
+async def ensure_auth_indexes():
+    """Create MongoDB indexes for the local-auth collections. Idempotent."""
+    try:
+        await auth_local.ensure_indexes(db)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Auth index creation skipped: %s", e)
 
 
 @app.on_event("shutdown")

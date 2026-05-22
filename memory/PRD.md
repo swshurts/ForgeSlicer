@@ -287,12 +287,27 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Regression coverage** — added `backend/tests/test_mine_filter.py` (5 tests) verifying unauthenticated `mine=true` returns empty + public listings remain unchanged. 73/73 backend tests pass.
 - Files: `meshy_service.py`, `server.py` (gallery+components list endpoints), `AIGenerateDialog.jsx`, `Gallery.jsx`, `lib/api.js`.
 
+## Iteration 27 (2026-02-22) — Multi-method Auth (Email/Password + Magic Link + Reset)
+- ✅ **Three sign-in methods now available** alongside the existing Google OAuth flow — all produce identical `session_token` httpOnly cookies + `user_sessions` rows, so every downstream endpoint works regardless of how the user signed in.
+  - **Email + password** with bcrypt(12) hashing, 8+ char policy (letter + digit), brute-force lockout (5 fails / 15 min) on `<ip>:<email>`.
+  - **Magic link** — passwordless one-time-use signed token, 15 min TTL, delivered via Resend.
+  - **Forgot password** — Resend email with 60 min single-use token; reset invalidates ALL existing sessions (defense-in-depth).
+- ✅ **Same-account merging**: Google users can attach a password by hitting `/register` with their existing Google email; `auth_methods` tracks which methods are wired up.
+- ✅ **Profile editor with per-field privacy** (Profile.jsx) — optional `avatar_url`, `contact_link`, `city/state/country` each have an independent **Public / Private** checkbox. Defaults to PRIVATE; the user must explicitly opt-in per field. Owner always sees their own data via `/api/auth/me`.
+- ✅ **Unified `/signin` page** with 3 tabs (Email · Magic link · Google). New aux routes: `/forgot-password`, `/reset-password?token=…`, `/magic-link?token=…`.
+- ✅ **Security posture**: tokens stored as SHA-256 hash in MongoDB (DB dump can't take over accounts); no email enumeration on forgot/magic endpoints (always 200); explicit `auth_local.PASSWORD_RE` enforces server-side policy.
+- ✅ **Test coverage**: 16 new tests (12 unit + 4 round-trip including session invalidation on password change). Total 89/89 backend tests pass.
+- Files added: `backend/auth_local.py`, `backend/tests/test_local_auth*.py`, `frontend/src/components/SignIn.jsx`, `ForgotPassword.jsx`, `ResetPassword.jsx`, `MagicLinkLanding.jsx`.
+- Files modified: `backend/server.py` (extracted `_set_session_cookie` + `_public_user`, mounted local-auth router, added `/api/me/profile`), `backend/email_service.py`, `frontend/src/components/Profile.jsx` (ProfileEditor), `App.js`, `ProtectedRoute.jsx`, `UserMenu.jsx`, `dialogs/SaveComponentDialog.jsx`, `dialogs/ShareDialog.jsx` (CTAs now point to `/signin`).
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
+- P1: Public author profile pages (display each user's `share_*=true` fields)
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
 - P2: Further refactor `ContextMenu.jsx` + `TopToolbar.jsx` (Dialogs.jsx done)
+- P2: Stripe subscription tiers (PRICING_RESEARCH.md ready) — on hold per user request
 - P3: Sketch / 2D drawing mode
 - P3: AMS-aware preview — visualize multi-color slices layer-by-layer with extruder swaps
 - P3: Remix activity feed on Profile (who remixed your designs, when)
