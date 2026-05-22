@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
   FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles, Scissors,
+  UserCircle,
 } from "lucide-react";
 
 // ---------- Section content ----------
@@ -23,6 +24,7 @@ function Index({ onJump }) {
     { id: "components",   icon: Library,   title: "Component Library", desc: "Save reusable parts; recall with one click." },
     { id: "voice",        icon: Mic,       title: "Voice Commands",    desc: "Hands-free CAD. Lexicon + examples." },
     { id: "ai",           icon: Sparkles,  title: "AI Generate",       desc: "Text-to-3D or image-to-3D via Meshy. 13 free gens/month." },
+    { id: "account",      icon: UserCircle,title: "Account & Sign-in", desc: "Three sign-in options, profile editor, per-field privacy." },
     { id: "shortcuts",    icon: Keyboard,  title: "Keyboard Shortcuts", desc: "Speed up the workflow." },
   ];
   return (
@@ -258,8 +260,10 @@ function Gallery() {
         <li><strong>Share Design</strong> in the toolbar publishes the current project with thumbnail, STL, editable project JSON, license, and material.</li>
         <li><strong>Remix</strong> on any gallery card loads the original editable project — every primitive, every negative, every group preserved.</li>
         <li><strong>Filter</strong> by category, material, license, or text search.</li>
-        <li><strong>Private toggle</strong> in the Share dialog keeps a design visible only to you under Profile → My Designs.</li>
+        <li><strong>Private toggle</strong> in the Share dialog keeps a design visible only to you.</li>
       </ul>
+      <H>Finding your private items — the "Mine" filter</H>
+      <P>When you publish something with the Private toggle on, it's hidden from the public gallery (by design). To find it again, sign in and use the <Code>Public / Mine</Code> segmented control at the top of the Designs and Components tabs. Switching to <strong>Mine</strong> shows everything you've saved — public and private together. Private cards display a small lock badge so you can tell them apart at a glance.</P>
       <H>Licensing</H>
       <P>Pick a license when you publish: CC-BY (default), CC0, MIT, Apache 2.0, GPL/LGPL/AGPL, CC-BY-SA/NC/ND, or ForgeSlicer Standard Digital. Each gallery card shows a chip you can click to read the full text.</P>
     </div>
@@ -275,9 +279,41 @@ function Components() {
         <li><strong>Save</strong> — toolbar → <Code>Component</Code> button captures the current scene (or selection) with a name, category, tags, and license.</li>
         <li><strong>Browse</strong> — Gallery → Components tab. Verified ✓ badges mark community-vetted parts; clickable tag pills make searching fast.</li>
         <li><strong>Add to project</strong> — opens it back in your workspace as either a positive or negative assembly, dropped flush to the bed.</li>
+        <li><strong>Public / Mine</strong> filter (signed-in only) — flip to <strong>Mine</strong> to see your saved components, including private ones. A small lock badge appears on private cards.</li>
       </ul>
       <H>Slot / Racetrack composite</H>
       <P>Click the Slot button under <strong>Composites</strong> in the left panel. You get a pre-grouped pill shape (cube + 2 caps) — perfect for rack-screw clearance slots.</P>
+    </div>
+  );
+}
+
+// ---------- Account & Sign-in (new in v1.1) ----------
+function Account() {
+  return (
+    <div data-testid="help-section-account">
+      <H>Three ways to sign in</H>
+      <P>Browsing the gallery is anonymous. Designing in the workspace and saving items to your library both require a free account. From the <Code>/signin</Code> page you can pick any of three methods — they all create the same account, so you can mix and match across devices:</P>
+      <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-4">
+        <li><strong>Email + password</strong> — fastest if you don't like third-party providers. Password must be at least 8 characters with at least one letter and one number.</li>
+        <li><strong>Magic link</strong> — passwordless. We email a one-time sign-in link that's valid for 15 minutes and only usable once.</li>
+        <li><strong>Continue with Google</strong> — uses Emergent-managed Google OAuth; we only see your name, email, and profile picture.</li>
+      </ul>
+      <P><strong>Tip:</strong> if you started with Google and later want a password (for offline access or family members on the same device), just hit <em>Create an account</em> on the sign-in page with the same email — the password attaches to your existing account.</P>
+
+      <H>Forgot your password?</H>
+      <P>Click <em>Forgot password?</em> on the sign-in page. We email a reset link valid for 60 minutes. Using a reset link signs out every other session for safety.</P>
+
+      <H>Profile editor (optional fields)</H>
+      <P>Open <Code>/profile</Code> and click <strong>Profile details → Edit</strong>. Each optional field has its own <span className="text-emerald-400 font-semibold">Public</span> / <span className="text-slate-300 font-semibold">Private</span> checkbox — you decide one-by-one what (if anything) gets shown to other users:</P>
+      <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
+        <li><strong>Avatar URL</strong> — link to a profile picture.</li>
+        <li><strong>Preferred contact link</strong> — Mastodon, X, GitHub, personal site, Discord — whatever you prefer.</li>
+        <li><strong>Location</strong> — City / State / Country, shown as one group with one share toggle.</li>
+      </ul>
+      <P>Display name is always shown publicly (it credits your designs). Email is never shown publicly. Everything else defaults to private — you have to explicitly tick a box to share it.</P>
+
+      <H>Email delivery</H>
+      <P>If you request a magic link or password reset and don't see the email, check your spam folder first. We use Resend for transactional email — if delivery is degraded (e.g. our key is being rotated), an amber banner will appear on the magic-link tab telling you to use Google or email + password instead.</P>
     </div>
   );
 }
@@ -432,7 +468,7 @@ function AIGenerate() {
       <P>Left panel → bottom section labeled <Code>AI Generate</Code> → click <strong>"Generate from Text · Image"</strong>.</P>
       <H>Two flows</H>
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
-        <li><strong>From Text</strong> — type a description (e.g. <em>"a small articulated dragon for FDM printing"</em>) and pick a style: <strong>realistic</strong>, <strong>sculpture</strong>, or <strong>low-poly</strong>.</li>
+        <li><strong>From Text</strong> — type a description (e.g. <em>"a small articulated dragon for FDM printing"</em>) and pick a style: <strong>realistic</strong> or <strong>sculpture</strong>. Need low-poly geometry? Most slicers can decimate on import — just bring the realistic mesh in and reduce face count there.</li>
         <li><strong>From Image</strong> — upload a JPG/PNG/WebP (up to 8 MB). Works best with a single subject on a plain background. Great for translating your own artwork or photography into a printable form.</li>
       </ul>
       <H>Monthly cap</H>
@@ -441,7 +477,7 @@ function AIGenerate() {
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
         <li>Mention scale and use-case (e.g. <em>"FDM printable"</em>, <em>"miniature for tabletop gaming"</em>).</li>
         <li>For image-to-3D, use a high-contrast photo with the subject filling most of the frame.</li>
-        <li>Generation takes 30–90 seconds — the dialog stays open so you can keep modeling while you wait.</li>
+        <li>Generation takes 30–90 seconds — the dialog stays open so you can keep modeling while you wait. A transient hiccup from Meshy won't lose your job; we automatically retry up to the 5-minute deadline.</li>
         <li>Once the mesh arrives, click <Code>Add to scene →</Code> to drop it; click <Code>Try another</Code> to regenerate without using a new credit if you're unhappy with the geometry.</li>
       </ul>
       <P className="text-amber-200 text-xs italic">Heads-up: AI meshes often have thin walls or non-manifold edges. After import, use the dimension inspector to scale up to printable size and consider a "make manifold" pass in your slicer.</P>
@@ -501,6 +537,7 @@ const SECTIONS = [
   { id: "components", label: "Component Library",  icon: Library,   Component: Components },
   { id: "voice",      label: "Voice Commands",     icon: Mic,       Component: VoiceCommands },
   { id: "ai",         label: "AI Generate",        icon: Sparkles,  Component: AIGenerate },
+  { id: "account",    label: "Account & Sign-in",  icon: UserCircle, Component: Account },
   { id: "shortcuts",  label: "Keyboard Shortcuts", icon: Keyboard,  Component: Shortcuts },
 ];
 
