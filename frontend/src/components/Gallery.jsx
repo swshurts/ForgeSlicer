@@ -152,7 +152,17 @@ function GalleryCard({ item, idx, onDelete }) {
       <div className="p-3">
         <h3 className="text-sm font-semibold text-white truncate" title={item.name}>{item.name}</h3>
         <div className="flex items-center justify-between mt-0.5">
-          <span className="text-[11px] text-slate-400">by {item.author}</span>
+          {item.user_id ? (
+            <Link
+              to={`/u/${item.user_id}`}
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`gallery-author-link-${item.id}`}
+              className="text-[11px] text-slate-400 hover:text-orange-400 truncate"
+              title={`See ${item.author}'s profile`}
+            >by {item.author}</Link>
+          ) : (
+            <span className="text-[11px] text-slate-400">by {item.author}</span>
+          )}
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
         <LicenseBadge license={item.license} testid={`gallery-license-${item.id}`} className="mt-1.5" />
@@ -260,7 +270,17 @@ function ComponentCard({ item, idx, onAdd, onUpvote, onDelete, onTagClick }) {
       <div className="p-3">
         <h3 className="text-sm font-semibold text-white truncate" title={item.name}>{item.name}</h3>
         <div className="flex items-center justify-between mt-0.5">
-          <span className="text-[11px] text-slate-400">by {item.author}</span>
+          {item.user_id ? (
+            <Link
+              to={`/u/${item.user_id}`}
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`component-author-link-${item.id}`}
+              className="text-[11px] text-slate-400 hover:text-orange-400 truncate"
+              title={`See ${item.author}'s profile`}
+            >by {item.author}</Link>
+          ) : (
+            <span className="text-[11px] text-slate-400">by {item.author}</span>
+          )}
           <span className="text-[10px] text-slate-500 font-mono">{timeAgo(item.created_at)}</span>
         </div>
         <LicenseBadge license={item.license} testid={`component-license-${item.id}`} className="mt-1.5" />

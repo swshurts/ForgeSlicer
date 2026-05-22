@@ -312,6 +312,9 @@ function Account() {
       </ul>
       <P>Display name is always shown publicly (it credits your designs). Email is never shown publicly. Everything else defaults to private — you have to explicitly tick a box to share it.</P>
 
+      <H>Public author profile pages</H>
+      <P>Click any author name <em>"by …"</em> on a gallery card to visit their public profile page at <Code>/u/&lt;userId&gt;</Code>. You'll see everything they've chosen to share (avatar, location, contact link), plus their full grid of public designs and components.</P>
+
       <H>Email delivery</H>
       <P>If you request a magic link or password reset and don't see the email, check your spam folder first. We use Resend for transactional email — if delivery is degraded (e.g. our key is being rotated), an amber banner will appear on the magic-link tab telling you to use Google or email + password instead.</P>
     </div>

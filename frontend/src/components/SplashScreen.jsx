@@ -17,40 +17,55 @@ const SPLASH_URL = "/splash.html";
  * If the file is missing, empty, or its version matches what the user has
  * already dismissed, the splash renders nothing. New visitors and version
  * bumps re-show it.
+ *
+ * In addition to the automatic version-based showing, any component can
+ * re-open the splash on demand by dispatching a `forgeslicer:show-splash`
+ * window event — used by the topbar "What's new" pin to let users re-read
+ * the announcement after they've dismissed it.
  */
 export default function SplashScreen() {
-  const [data, setData] = useState(null);    // { version, html }
+  const [data, setData] = useState(null);    // { version, html, forced }
   const [closing, setClosing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const r = await fetch(SPLASH_URL, { cache: "no-store" });
-        if (!r.ok) return;
-        const html = (await r.text()).trim();
-        if (!html) return;
-        // Parse out the version + the [data-splash] block.
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        const versionMeta = doc.querySelector('meta[name="splash-version"]');
-        const version = versionMeta ? versionMeta.getAttribute("content") || "" : "";
-        const block = doc.querySelector("[data-splash]");
-        if (!block || !block.innerHTML.trim()) return;
-        // Check whether the user has already dismissed THIS version.
+  // Shared fetch+parse routine. `respectSeen` controls whether we bail when
+  // the user already dismissed this version (true on auto-mount, false on
+  // manual "show me again" trigger from the topbar).
+  const loadSplash = async (respectSeen) => {
+    try {
+      const r = await fetch(SPLASH_URL, { cache: "no-store" });
+      if (!r.ok) return;
+      const html = (await r.text()).trim();
+      if (!html) return;
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const versionMeta = doc.querySelector('meta[name="splash-version"]');
+      const version = versionMeta ? versionMeta.getAttribute("content") || "" : "";
+      const block = doc.querySelector("[data-splash]");
+      if (!block || !block.innerHTML.trim()) return;
+      if (respectSeen) {
         let seen = "";
         try { seen = window.localStorage.getItem(STORAGE_KEY) || ""; } catch (err) { void err; }
         if (version && seen === version) return;
-        if (cancelled) return;
-        setData({ version, html: block.innerHTML });
-      } catch (err) {
-        // Missing /splash.html is the normal "no announcement" path; we
-        // never want to surface a console error for it.
-        void err;
       }
-    })();
+      setData({ version, html: block.innerHTML, forced: !respectSeen });
+    } catch (err) {
+      // Missing /splash.html is the normal "no announcement" path.
+      void err;
+    }
+  };
 
-    return () => { cancelled = true; };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await loadSplash(true);
+      if (cancelled) setData(null);
+    })();
+    // Listen for manual re-open requests from elsewhere in the app.
+    const onShow = () => { void loadSplash(false); };
+    window.addEventListener("forgeslicer:show-splash", onShow);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("forgeslicer:show-splash", onShow);
+    };
   }, []);
 
   useEffect(() => {

@@ -265,6 +265,88 @@ async def auth_email_status():
     return email_service.get_email_status()
 
 
+@api_router.get("/users/{user_id}/profile")
+async def get_public_user_profile(user_id: str):
+    """Public author page — return only the bits the owner has marked as
+    publicly shareable via the per-field share_* toggles. Email is never
+    exposed; user_id + display name + contributor badge are always public
+    (the name is already shown next to every shared design)."""
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Strict whitelist of what we ever return — no chance of leaking
+    # password_hash, email, IP, etc.
+    public_profile: dict = {
+        "user_id": user["user_id"],
+        "name": user.get("name", "Maker"),
+        "contributor_lifetime": bool(user.get("contributor_lifetime", False)),
+        "created_at": user.get("created_at", ""),
+    }
+    # Optional fields gated by per-field share toggle. Empty string means
+    # "user didn't fill this in" — same wire shape so the frontend doesn't
+    # need to special-case undefined.
+    if user.get("share_avatar") and user.get("avatar_url"):
+        public_profile["avatar_url"] = user["avatar_url"]
+    if user.get("share_contact") and user.get("contact_link"):
+        public_profile["contact_link"] = user["contact_link"]
+    if user.get("share_location") and (user.get("city") or user.get("state") or user.get("country")):
+        public_profile["location"] = ", ".join(
+            p for p in (user.get("city"), user.get("state"), user.get("country")) if p
+        )
+
+    # Public counts — same query the gallery uses, so they always match.
+    design_count = await db.gallery.count_documents({
+        "user_id": user_id,
+        "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+    })
+    component_count = await db.components.count_documents({
+        "user_id": user_id,
+        "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+    })
+    public_profile["public_design_count"] = design_count
+    public_profile["public_component_count"] = component_count
+
+    return public_profile
+
+
+@api_router.get("/users/{user_id}/designs")
+async def get_public_user_designs(user_id: str):
+    """Public-only designs by this user, in newest-first order. Same
+    projection as the main gallery list (no STL blob)."""
+    exists = await db.users.count_documents({"user_id": user_id}, limit=1)
+    if not exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    cursor = db.gallery.find(
+        {
+            "user_id": user_id,
+            "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+        },
+        {"_id": 0, "stl_base64": 0},
+    ).sort("created_at", -1)
+    items = await cursor.to_list(500)
+    return [_gallery_meta_from_doc(d).model_dump() for d in items]
+
+
+@api_router.get("/users/{user_id}/components")
+async def get_public_user_components(user_id: str):
+    """Public-only components by this user."""
+    exists = await db.users.count_documents({"user_id": user_id}, limit=1)
+    if not exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    cursor = db.components.find(
+        {
+            "user_id": user_id,
+            "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+        },
+        {"_id": 0, "data": 0, "stl_base64": 0},
+    ).sort("created_at", -1)
+    items = await cursor.to_list(500)
+    # Strip Mongo internals and normalize created_at to a string so the
+    # response shape matches the main components list.
+    return [{**d, "created_at": d.get("created_at", "")} for d in items]
+
+
 @api_router.put("/me/profile")
 async def update_my_profile(req: auth_local.ProfileUpdateRequest, request: Request):
     """Update the optional profile fields. Only supplied keys are touched —

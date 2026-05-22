@@ -300,13 +300,22 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - Files added: `backend/auth_local.py`, `backend/tests/test_local_auth*.py`, `frontend/src/components/SignIn.jsx`, `ForgotPassword.jsx`, `ResetPassword.jsx`, `MagicLinkLanding.jsx`.
 - Files modified: `backend/server.py` (extracted `_set_session_cookie` + `_public_user`, mounted local-auth router, added `/api/me/profile`), `backend/email_service.py`, `frontend/src/components/Profile.jsx` (ProfileEditor), `App.js`, `ProtectedRoute.jsx`, `UserMenu.jsx`, `dialogs/SaveComponentDialog.jsx`, `dialogs/ShareDialog.jsx` (CTAs now point to `/signin`).
 
+## Iteration 28 (2026-02-23) — Public Author Profiles + "What's New" Pin
+- ✅ **Public author profile pages** at `/u/:userId` (P1 backlog item done) — clicking any "by …" link on a gallery card or component card now opens that maker's public profile, showing avatar / location / contact link **only if** the user enabled the corresponding `share_*` toggle. Always-public bits: display name, contributor-lifetime badge, and counts. Designs and components tabs show the full grid of public items (privacy enforced server-side — private items never appear).
+- ✅ **Backend whitelist endpoint** `GET /api/users/:userId/profile` returns a strict, hard-coded set of fields — never `email`, never `password_hash`, never `last_login_at`, never `auth_methods`. Test suite explicitly asserts this. Plus `/users/:userId/designs` and `/users/:userId/components` for listing public items.
+- ✅ **"What's new" pin in topbar** — small ✨ Sparkles button next to the Help icon dispatches a `forgeslicer:show-splash` window event. `SplashScreen` listens for it and replays the current announcement even if the user has dismissed this version. No state lifting needed — clean decoupling via DOM event.
+- ✅ **Author name links** on gallery cards (designs + components) — `by {author}` is now a `<Link to="/u/{user_id}">` when the item has a `user_id`. Falls back to plain `<span>` for legacy items without ownership.
+- ✅ **Help system updated** — added "Public author profile pages" paragraph in the Account section.
+- ✅ **Test coverage**: 9 new tests (`test_author_profile.py`) including a "partial share only shows enabled fields" test that asserts toggles work independently. 100/100 backend tests pass.
+- Files added: `backend/tests/test_author_profile.py`, `frontend/src/components/AuthorProfile.jsx`.
+- Files modified: `backend/server.py` (3 new endpoints), `frontend/src/components/Gallery.jsx` (clickable author names), `SplashScreen.jsx` (event-driven re-open), `TopToolbar.jsx` (sparkles pin), `HelpDialog.jsx`, `App.js` (route).
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
-- P1: Public author profile pages (display each user's `share_*=true` fields)
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
-- P2: Further refactor `ContextMenu.jsx` + `TopToolbar.jsx` (Dialogs.jsx done)
+- P2: Further refactor `ContextMenu.jsx` + `TopToolbar.jsx`
 - P2: Stripe subscription tiers (PRICING_RESEARCH.md ready) — on hold per user request
 - P3: Sketch / 2D drawing mode
 - P3: AMS-aware preview — visualize multi-color slices layer-by-layer with extruder swaps

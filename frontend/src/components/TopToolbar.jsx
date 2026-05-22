@@ -19,7 +19,7 @@ import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, Duplicat
 import STLPreviewDialog from "./STLPreviewDialog";
 import VoiceButton from "./VoiceButton";
 import UserMenu from "./UserMenu";
-import { Eye, Library, CircleHelp } from "lucide-react";
+import { Eye, Library, CircleHelp, Sparkles } from "lucide-react";
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -536,6 +536,14 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       {busyMsg && (
         <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
       )}
+      <button
+        data-testid="whats-new-btn"
+        onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:show-splash"))}
+        title="What's new"
+        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-800 flex items-center justify-center"
+      >
+        <Sparkles size={16} />
+      </button>
       <button
         data-testid="help-btn"
         onClick={onOpenHelp}
