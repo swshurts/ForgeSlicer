@@ -254,6 +254,9 @@ function ImportExport() {
 function Gallery() {
   return (
     <div data-testid="help-section-gallery">
+      <H>Quick "+ Add" toolbar dropdown</H>
+      <P>The <Code>+ Add</Code> button at the start of Row 2 in the toolbar lists the most-used primitives (Cube/Sphere/Cylinder/Cone/Torus + the three 2D shapes). One click drops a primitive into the scene without leaving the canvas.</P>
+
       <H>Public Gallery</H>
       <P>The Gallery is a community library of designs and reusable components. Anyone can browse without an account; sign in to publish.</P>
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">

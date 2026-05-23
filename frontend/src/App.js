@@ -1,4 +1,5 @@
 import "@/App.css";
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Landing from "@/components/Landing";
 import Workspace from "@/components/Workspace";
@@ -54,6 +55,26 @@ function AppRouter() {
 }
 
 function App() {
+  // Best-effort browser protocol registration so users can paste a
+  // `web+forgeslicer://remix/<gallery_id>` link from anywhere on the web
+  // and have the browser route it to ForgeSlicer. Browsers REQUIRE the
+  // `web+` prefix for non-native protocols; the raw `forgeslicer://`
+  // scheme would need a native installer to register. We register once
+  // per visit — the browser dedupes and prompts the user the first time.
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.registerProtocolHandler) return;
+    try {
+      navigator.registerProtocolHandler(
+        "web+forgeslicer",
+        `${window.location.origin}/workspace?remix=%s`,
+      );
+    } catch (err) {
+      // Some browsers throw if the user already registered + revoked it;
+      // we just swallow — this is a nice-to-have, not critical UX.
+      void err;
+    }
+  }, []);
+
   return (
     <div className="App">
       <BrowserRouter>

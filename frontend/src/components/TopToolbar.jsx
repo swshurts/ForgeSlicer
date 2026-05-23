@@ -19,7 +19,65 @@ import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, Duplicat
 import STLPreviewDialog from "./STLPreviewDialog";
 import VoiceButton from "./VoiceButton";
 import UserMenu from "./UserMenu";
-import { Eye, Library, CircleHelp, Sparkles } from "lucide-react";
+import { Eye, Library, CircleHelp, Sparkles, Box, Circle, Cylinder, Cone, Triangle, Hexagon as HexIcon, Square, Plus } from "lucide-react";
+
+// Inline Add-Primitive dropdown that drops new objects into the scene
+// from the toolbar without forcing the user to open the left panel. The
+// most-used primitives surface here; advanced ones (Slot composite, 2D
+// wafers, etc.) still live in the left panel.
+function AddPrimitiveButton() {
+  const [open, setOpen] = useState(false);
+  const addPrimitive = useScene((s) => s.addPrimitive);
+  const PRIMITIVES = [
+    { type: "cube",      label: "Cube",      Icon: Box },
+    { type: "sphere",    label: "Sphere",    Icon: Circle },
+    { type: "cylinder",  label: "Cylinder",  Icon: Cylinder },
+    { type: "cone",      label: "Cone",      Icon: Cone },
+    { type: "torus",     label: "Torus",     Icon: HexIcon },
+    { type: "circle",    label: "2D Circle (extrude later)", Icon: Circle },
+    { type: "square2d",  label: "2D Square (extrude later)", Icon: Square },
+    { type: "triangle",  label: "2D Triangle (extrude later)", Icon: Triangle },
+  ];
+  return (
+    <div className="relative">
+      <button
+        data-testid="add-primitive-btn"
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        title="Add a primitive shape"
+        className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${
+          open
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+        }`}
+      >
+        <Plus size={12} /> Add <ChevronDown size={10} />
+      </button>
+      {open && (
+        <div
+          data-testid="add-primitive-menu"
+          className="absolute left-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded shadow-xl z-50 min-w-[220px] py-1"
+        >
+          {PRIMITIVES.map(({ type, label, Icon }) => (
+            <button
+              key={type}
+              data-testid={`add-primitive-${type}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                addPrimitive(type);
+              }}
+              className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2.5"
+            >
+              <Icon size={13} className="text-orange-400 flex-shrink-0" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function IconBtn({ active, onClick, title, testid, children, danger, success }) {
   return (
@@ -399,6 +457,10 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
           history, measure, plus the object-control popovers (position,
           rotation, size, duplicate, mirror, cut) and slicer settings. */}
       <div className="h-11 flex items-center px-3 gap-1 border-t border-slate-800/60 bg-slate-900/60" data-testid="top-toolbar-row-edit">
+      <AddPrimitiveButton />
+
+      <Divider />
+
       <IconBtn testid="bool-union-btn" onClick={() => doBool("union")} title="Union (merge 2 objects)">
         <PlusSquare size={16} className="text-orange-400" />
       </IconBtn>

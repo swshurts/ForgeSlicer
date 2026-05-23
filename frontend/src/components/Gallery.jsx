@@ -6,7 +6,7 @@ import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
   PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale, Layers,
-  Lock, Globe,
+  Lock, Globe, Share2,
 } from "lucide-react";
 import { getLicense } from "../lib/licenses";
 import { MATERIALS, getMaterial } from "../lib/materials";
@@ -206,6 +206,26 @@ function GalleryCard({ item, idx, onDelete }) {
           >
             <Download size={12} /> STL
           </a>
+          <button
+            data-testid={`gallery-share-link-${item.id}`}
+            onClick={async (e) => {
+              e.stopPropagation();
+              // Copy a public share link that opens straight to the remix
+              // workspace. Pulled from current origin so links work on
+              // forgeslicer.com AND any preview deployment.
+              const url = `${window.location.origin}/workspace?remix=${item.id}`;
+              try {
+                await navigator.clipboard.writeText(url);
+                alert(`Share link copied!\n\n${url}`);
+              } catch {
+                prompt("Copy this share link:", url);
+              }
+            }}
+            title="Copy a sharable link that opens straight to this design"
+            className="h-8 w-8 bg-slate-800 hover:bg-slate-700 hover:text-orange-300 text-slate-400 rounded flex items-center justify-center border border-slate-700"
+          >
+            <Share2 size={12} />
+          </button>
           <button
             data-testid={`gallery-delete-${item.id}`}
             onClick={() => onDelete(item.id)}
