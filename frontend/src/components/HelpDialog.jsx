@@ -372,6 +372,16 @@ const VOICE_LEXICON = [
     ],
   },
   {
+    category: "AI generation",
+    items: [
+      { phrase: "Open the AI generator",                        action: "open",        desc: "Opens the AI Generate dialog (no prompt)." },
+      { phrase: "Generate a small dragon for FDM printing",     action: "ai_generate", desc: "Pre-fills the AI generator with the noun phrase AND auto-submits — uses a credit." },
+      { phrase: "Make me a coffee mug with AI",                 action: "ai_generate", desc: "Pre-fills + auto-submits." },
+      { phrase: "AI a low-poly fox",                            action: "ai_generate", desc: "Pre-fills + auto-submits." },
+      { phrase: "I want to make a chess piece with AI",         action: "ai_generate", desc: "Pre-fills the prompt but waits for you to click Generate — no credit until you do." },
+    ],
+  },
+  {
     category: "Modes & I/O",
     items: [
       { phrase: "Switch to rotate mode",                        action: "mode",      desc: "Sets the gizmo to rotation." },
@@ -473,6 +483,7 @@ function AIGenerate() {
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
         <li><strong>From Text</strong> — type a description (e.g. <em>"a small articulated dragon for FDM printing"</em>) and pick a style: <strong>realistic</strong> or <strong>sculpture</strong>. Need low-poly geometry? Most slicers can decimate on import — just bring the realistic mesh in and reduce face count there.</li>
         <li><strong>From Image</strong> — upload a JPG/PNG/WebP (up to 8 MB). Works best with a single subject on a plain background. Great for translating your own artwork or photography into a printable form.</li>
+        <li><strong>By voice</strong> — hit the mic button and say <em>"Generate a small dragon for FDM printing"</em>. The dialog pops open with your prompt pre-filled and submits automatically. Say <em>"I want to make X with AI"</em> if you want to pre-fill without auto-submitting.</li>
       </ul>
       <H>Monthly cap</H>
       <P>Free accounts get <strong>13 generations per calendar month</strong>; Contributor Lifetime users get double. The remaining count is shown in the dialog header. The cap resets on the 1st of each month.</P>

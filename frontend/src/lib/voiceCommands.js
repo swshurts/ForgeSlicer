@@ -172,8 +172,32 @@ export async function executeCommand(cmd) {
     }
     case "open": {
       // Dialog opening is handled by the UI layer; we just emit an event.
+      // The AI generate dialog has its own dedicated event with prefill
+      // support, so route "open ai_generate" there.
+      if (raw.dialog === "ai_generate") {
+        window.dispatchEvent(new CustomEvent("forgeslicer:open-ai-generate", { detail: {} }));
+        return "Opening AI generator";
+      }
       window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", { detail: { name: raw.dialog } }));
       return `Opening ${raw.dialog}`;
+    }
+    case "ai_generate": {
+      // Voice-driven mesh generation. The parser extracts the noun phrase
+      // ("a small articulated dragon") into raw.prompt and decides whether
+      // to auto-submit (auto=true: user said "generate X") or just pre-fill
+      // (auto=false: user said "I want to make X with AI"). Either way the
+      // dialog mounts and shows the prompt.
+      const promptText = (raw.prompt || "").trim();
+      if (!promptText) {
+        window.dispatchEvent(new CustomEvent("forgeslicer:open-ai-generate", { detail: {} }));
+        return "Opening AI generator — what should I generate?";
+      }
+      window.dispatchEvent(new CustomEvent("forgeslicer:open-ai-generate", {
+        detail: { prompt: promptText, auto: !!raw.auto },
+      }));
+      return raw.auto
+        ? `Generating: "${promptText}" — credit will be used`
+        : `Pre-filled AI generator with: "${promptText}"`;
     }
     case "unknown":
     default:

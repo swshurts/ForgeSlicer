@@ -332,6 +332,17 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - Files added: `backend/admin.py`, `backend/tests/test_admin.py`, `frontend/src/components/AdminPage.jsx`, `frontend/src/lib/adminApi.js`.
 - Files modified: `backend/server.py` (mounted admin router, ban-check in session resolution, ai_quota_override in `_ai_cap_for`, admin flags in `_public_user`), `backend/.env` (added `ADMIN_EMAILS`), `frontend/src/App.js` (added `/admin` route), `backend/tests/test_components_p1.py` (updated to reflect ADMIN_EMAILS now permanently set).
 
+## Iteration 30 (2026-02-23) — CSV Export + Voice→AI Generation
+- ✅ **Admin Users CSV export** — green Export button on the Users tab downloads `forgeslicer_users_<timestamp>[_search-xxx].csv` with 12 columns. RFC-4180 escaped, UTF-8 BOM prepended (Excel-friendly). Exports the currently-filtered set so admins can grab targeted slices by searching first.
+- ✅ **Voice → AI Generation** — the intent parser (GPT-5.2) now understands `ai_generate` with two sub-modes:
+  - **Auto-submit** when user says "**Generate** X" / "**Make** X **with AI**" / "**AI** X" — pre-fills + immediately submits (uses a credit).
+  - **Pre-fill only** when user says "**I want to make** X **with AI**" — opens dialog with prompt populated, waits for click. Lets users review tone before committing a credit.
+  - "**Open the AI generator**" (no subject) → opens dialog with empty prompt via existing `open` intent.
+  - Parser test cases (live GPT-5.2): 5/5 correct including the exploratory/definitive distinction and a negative case ("Add a cube" doesn't get mis-classified).
+- ✅ **Event-driven AI dialog** — `AIGenerateDialog` now listens for `forgeslicer:open-ai-generate` events with optional `{prompt, auto}` detail. Same hybrid pattern as the splash re-trigger — voice can open from anywhere in the app without prop-drilling.
+- ✅ Help system updated: new "AI generation" voice lexicon category (5 example phrases), plus a "By voice" bullet in the AI Generate help section.
+- Files modified: `backend/server.py` (VOICE_SYSTEM_PROMPT extended), `frontend/src/components/AIGenerateDialog.jsx` (event listener + auto-submit + unified close), `frontend/src/lib/voiceCommands.js` (ai_generate action handler), `frontend/src/components/HelpDialog.jsx` (lexicon + AI section), `frontend/src/components/AdminPage.jsx` (CSV export).
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

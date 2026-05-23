@@ -75,7 +75,23 @@ function SizingControls({ autoFit, setAutoFit, targetMaxMm, setTargetMaxMm, buil
 // dismissed by the safety prompt, etc.).
 const INFLIGHT_KEY = "forge.ai.inflight";
 
-export default function AIGenerateDialog({ open, onClose }) {
+export default function AIGenerateDialog({ open: openProp, onClose }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  // Hybrid open state: parent can control via the `open` prop OR voice
+  // can fire `forgeslicer:open-ai-generate` from anywhere in the app and
+  // we'll open ourselves. Either trigger shows the dialog; close is
+  // unified through `closeDialog` below.
+  const open = openProp || internalOpen;
+  const closeDialog = () => {
+    setInternalOpen(false);
+    if (onClose) onClose();
+  };
+  // Pending auto-submit signal — set when voice command says auto=true.
+  // We can't call handleSubmitText immediately on open because the
+  // setPrompt hasn't flushed yet; instead the submit effect below picks
+  // it up after the prompt is populated.
+  const [pendingAutoSubmit, setPendingAutoSubmit] = useState(false);
+
   const [tab, setTab] = useState("text");      // "text" | "image"
   const [prompt, setPrompt] = useState("");
   const [artStyle, setArtStyle] = useState("realistic");
@@ -103,6 +119,7 @@ export default function AIGenerateDialog({ open, onClose }) {
       setJob(null); setBusy(false); setError("");
       setPrompt(""); setImageB64(null); setImageMime(null);
       setImagePreviewUrl(null);
+      setPendingAutoSubmit(false);
     } else {
       // Load usage when opening
       axios.get(`${API}/ai/usage`, { withCredentials: true })
@@ -159,6 +176,43 @@ export default function AIGenerateDialog({ open, onClose }) {
       .then((r) => setUsage(r.data))
       .catch(() => { /* non-fatal */ });
   };
+
+  // Voice / global trigger: any component (today: the voice-command
+  // executor; tomorrow: a keyboard shortcut, a hint card, etc.) can
+  // dispatch `forgeslicer:open-ai-generate` with optional detail
+  // `{ prompt: string, auto: bool }` to pop us open, pre-fill the prompt
+  // field, and optionally auto-submit. We force the Text tab — voice
+  // can't sensibly attach an image.
+  useEffect(() => {
+    const handler = (e) => {
+      const detail = e.detail || {};
+      const incomingPrompt = (detail.prompt || "").trim();
+      setInternalOpen(true);
+      setTab("text");
+      if (incomingPrompt) setPrompt(incomingPrompt);
+      // Only request auto-submit when we actually have a non-empty prompt;
+      // an empty auto-submit is just a normal "open the dialog" intent.
+      setPendingAutoSubmit(!!detail.auto && incomingPrompt.length >= 3);
+    };
+    window.addEventListener("forgeslicer:open-ai-generate", handler);
+    return () => window.removeEventListener("forgeslicer:open-ai-generate", handler);
+  }, []);
+
+  // Auto-submit after a voice-triggered open. We need the dialog mounted +
+  // prompt populated + no in-flight job + sufficient quota before firing.
+  useEffect(() => {
+    if (!pendingAutoSubmit) return;
+    if (!open || tab !== "text") return;
+    if (!prompt || prompt.trim().length < 3) return;
+    if (job || busy) return;
+    if (usage && usage.remaining !== undefined && usage.remaining <= 0) {
+      setPendingAutoSubmit(false);
+      return;
+    }
+    setPendingAutoSubmit(false);
+    handleSubmitText();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoSubmit, open, tab, prompt, job, busy, usage]);
 
   const pollOnce = async (jobId) => {
     try {
@@ -291,7 +345,7 @@ export default function AIGenerateDialog({ open, onClose }) {
       toast.success(`Imported: ${mesh.name}`, {
         description: `Max dimension: ${finalMax.toFixed(1)} mm. Drop, scale, or carve as normal.`,
       });
-      onClose();
+      closeDialog();
     } catch (e) {
       const detail = e?.response?.data?.detail || e.message;
       setError(`Import failed: ${detail}`);
@@ -313,11 +367,11 @@ export default function AIGenerateDialog({ open, onClose }) {
       }
       // Stop the global '?' handler in Workspace from also catching this.
       e.stopPropagation();
-      onClose();
+      closeDialog();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, job, onClose]);
+  }, [open, job]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null;
   const done = job?.status === "SUCCEEDED";
@@ -330,7 +384,7 @@ export default function AIGenerateDialog({ open, onClose }) {
   // way out is to wait, or to use the small "Run in background" link below.
   const safeClose = () => {
     if (inProgress) return;
-    onClose();
+    closeDialog();
   };
 
   // Block backdrop click + Esc from closing during an in-flight job.

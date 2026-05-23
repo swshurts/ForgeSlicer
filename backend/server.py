@@ -1313,10 +1313,24 @@ ALLOWED ACTIONS and their schemas:
    {"action":"mode","mode":"translate"|"rotate"|"scale"}
 
 6. Open named dialog:
-   {"action":"open","dialog":"save_component"|"share_gallery"|"slicer"|"position"|"rotation"|"size"}
+   {"action":"open","dialog":"save_component"|"share_gallery"|"slicer"|"position"|"rotation"|"size"|"ai_generate"}
 
 7. Export:
    {"action":"export","format":"stl"|"3mf"|"gcode"|"project"}
+
+8. AI mesh generation (text-to-3D via Meshy):
+   {"action":"ai_generate","prompt":"<the thing to generate>","auto":true|false}
+   - Use this when the user clearly says "generate", "create with AI", "AI a …",
+     "make me a … with AI", or similar.
+   - `prompt` should be the noun phrase / description ONLY (drop the "generate"
+     / "ai" verb), e.g. "a small articulated dragon for FDM printing".
+   - Set `auto`:true when the user's intent is unambiguous and they want it
+     submitted immediately ("Generate a dragon and add it"). Set false when
+     the request feels exploratory ("Open the AI generator", "I want to make
+     something with AI") — that just opens the dialog with the prompt
+     pre-filled so the user can review.
+   - If the user only asks to OPEN the AI dialog (no subject yet), use
+     action="open" with dialog="ai_generate" and OMIT the prompt.
 
 RULES:
 - Output MUST be valid JSON, no markdown.
