@@ -351,9 +351,27 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ Verified on 1440px viewport — help, what's-new, and user menu now visible with breathing room.
 - File: `frontend/src/components/TopToolbar.jsx` (single file change, no breakage to Workspace layout — uses `flex flex-col` so the extra height auto-adjusts).
 
+## Iteration 32 (2026-02-23) — Add Primitive Dropdown + Shareable Remix Links
+- ✅ **Add Primitive dropdown** in Row 2 of the toolbar — 8 primitives (Cube/Sphere/Cylinder/Cone/Torus + 2D Circle/Square/Triangle) accessible without expanding the left palette.
+- ✅ **`web+forgeslicer://` browser protocol handler** registered via `navigator.registerProtocolHandler` on first visit. Pastes of `web+forgeslicer://remix/<id>` URLs route into `/workspace?remix=<id>`.
+- ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
+- Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
+
+## Iteration 33 (2026-02-23) — manifold-3d CSG Swap (Phase 1)
+- ✅ **Installed manifold-3d 3.5.0** — Google's WASM-backed geometry library that guarantees manifold output (no open edges / slivers along boolean boundaries). Replaces `three-bvh-csg` as the **primary** CSG engine inside the Web Worker.
+- ✅ **New module `frontend/src/lib/manifoldEngine.js`** exposes the same async surface as the existing worker client: `evaluateSceneAsync`, `evaluateSceneByColorAsync`, `combineTwoAsync`, `cutObjectByPlaneAsync`. WASM init is lazy, shared across calls, and works in both main-thread and worker contexts.
+- ✅ **Worker (csg.worker.js) now uses manifold by default** with `three-bvh-csg` as a graceful fallback — if manifold throws on a corrupted import (e.g., NotManifold from a low-quality STL), the worker silently falls back so the user's project never breaks. Engine choice can be flipped at runtime via `{type:'set-engine', payload:{engine:'bvh'|'manifold'}}` for A/B regression debugging.
+- ✅ **Bridge helpers** weld duplicate vertices (snap-to-grid 1e-4) before constructing Manifold meshes — three.js's BoxGeometry/SphereGeometry carry duplicate verts along UV seams, which manifold-3d would otherwise reject as `NotManifold`.
+- ✅ **WASM hosting**: `manifold.wasm` (540KB) is copied to `frontend/public/manifold.wasm` via a yarn `postinstall` script so it's served from the app origin root. Worker locates it via `locateFile` callback so the worker scope resolves it correctly.
+- ✅ **craco webpack patch** rewrites `node:module` etc. imports (manifold-3d's isomorphic Node code path) to plain specifiers + `resolve.fallback` empty modules, so webpack 5 builds without an `UnhandledSchemeError`.
+- ✅ **Test coverage**: `frontend/tests/manifold-smoke.mjs` exercises cube/sphere/cylinder primitives, union/subtract/intersect, batched union, and `splitByPlane`. 9/9 passing. Backend pytest unchanged: 128/128 passing.
+- ✅ **End-to-end verification in Preview**: added Cube + Sphere via the left palette, clicked STL → exported 91KB binary STL successfully routed through worker → manifold-3d → STLExporter.
+- Files: `frontend/src/lib/manifoldEngine.js` (NEW, 354 lines), `frontend/src/lib/workers/csg.worker.js` (rewritten to dual-engine), `frontend/craco.config.js` (node-scheme replacement plugin), `frontend/package.json` (manifold-3d dep + postinstall), `frontend/public/manifold.wasm` (copied), `frontend/tests/manifold-smoke.mjs` (NEW).
+- **Note**: main-thread sync callers (`exporters.js`, `ContextMenu.jsx` flatten, `store.js cutObjectByPlane`) still use `three-bvh-csg` since manifold's WASM init is async. Acceptable today because the worker is the primary execution path for every CSG-heavy user action (STL/3MF export, scene stats, Combine button, slicing). Future work: introduce async variants for the two remaining sync callers.
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
-- P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
+- P2: Migrate the two remaining main-thread sync CSG callers (`ContextMenu.flatten`, `store.cutObjectByPlane`) to manifold-3d async — minor UX refactor (small "Computing…" state) but unifies the engine across all execution paths.
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
 - P2: Further refactor `ContextMenu.jsx` + `TopToolbar.jsx`

@@ -43,6 +43,7 @@
     "input-otp": "^1.4.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.507.0",
+    "manifold-3d": "^3.5.0",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-day-picker": "8.10.1",
@@ -64,7 +65,8 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "postinstall": "node -e \"const fs=require('fs');const path=require('path');const src=path.resolve('node_modules/manifold-3d/manifold.wasm');const dst=path.resolve('public/manifold.wasm');if(fs.existsSync(src)){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);console.log('[postinstall] copied manifold.wasm -> public/manifold.wasm');}\""
   },
   "browserslist": {
     "production": [

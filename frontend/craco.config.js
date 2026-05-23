@@ -51,6 +51,32 @@ let webpackConfig = {
         ],
       };
 
+      // manifold-3d (and other ESM-first libs) reference Node built-ins
+      // via the `node:` scheme inside isomorphic codepaths that are
+      // never executed in the browser. Webpack 5 + CRA can't resolve
+      // `node:module` etc., so we register an alias resolver that
+      // rewrites them to `false` (i.e., empty module) at compile time.
+      webpackConfig.plugins = webpackConfig.plugins || [];
+      const webpack = require("webpack");
+      webpackConfig.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(
+          /^node:/,
+          (resource) => {
+            // Map `node:foo` → `foo`; webpack's resolve.fallback can
+            // then point `foo` at `false` or a polyfill if needed.
+            resource.request = resource.request.replace(/^node:/, "");
+          }
+        )
+      );
+      webpackConfig.resolve = webpackConfig.resolve || {};
+      webpackConfig.resolve.fallback = {
+        ...(webpackConfig.resolve.fallback || {}),
+        module: false,
+        fs: false,
+        path: false,
+        url: false,
+      };
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);

@@ -5,17 +5,28 @@
 // STL/3MF byte generation from the main thread so the UI never freezes on
 // complex models. Falls back to main-thread compute (via workerClient.js)
 // if Worker construction fails.
+//
+// CSG ENGINE: manifold-3d (WASM) by default — guaranteed manifold output.
+// Falls back to three-bvh-csg if manifold-3d throws (e.g., NotManifold
+// on a corrupted import). The fallback keeps the user's design
+// recoverable without forcing a refresh.
 import * as THREE from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 
-import { evaluateScene, combineTwo, evaluateSceneByColor } from "../csg";
+import {
+  evaluateScene as evaluateSceneBVH,
+  combineTwo as combineTwoBVH,
+  evaluateSceneByColor as evaluateSceneByColorBVH,
+} from "../csg";
+import {
+  evaluateSceneAsync,
+  evaluateSceneByColorAsync,
+  combineTwoAsync,
+} from "../manifoldEngine";
 import { sliceToGCODE } from "../slicer";
 import { build3MFBytes, build3MFBytesMulti } from "../threemf";
 
 function geometryToSTLBytes(geometry) {
-  // Defensive: a degenerate CSG result can yield a geometry missing its
-  // position attribute. Surface a clear error instead of the cryptic
-  // "Cannot read properties of undefined (reading 'array')".
   if (!geometry || !geometry.attributes || !geometry.attributes.position) {
     throw new Error(
       "Could not produce STL: the merged scene has no triangles. " +
@@ -28,15 +39,47 @@ function geometryToSTLBytes(geometry) {
   const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
   const exporter = new STLExporter();
   const dv = exporter.parse(mesh, { binary: true });
-  // STLExporter returns a DataView; copy bytes so the underlying buffer is
-  // transferable and detached from THREE internals.
   return new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
 }
 
-async function geometryTo3MFBytes(geometry) {
-  return build3MFBytes(geometry);
+// Engine selector — manifold-3d is the default, but a saved client-side
+// preference can pin behaviour to BVH for users who hit a regression and
+// need a fast escape hatch (toggled via /admin or window.__forgeCsgEngine).
+let _enginePref = "manifold";
+function preferredEngine() { return _enginePref; }
+
+async function evaluateSmart(objects) {
+  if (preferredEngine() === "bvh") return evaluateSceneBVH(objects);
+  try {
+    return await evaluateSceneAsync(objects);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("[csg.worker] manifold evaluateScene failed, falling back to BVH:", err.message);
+    return evaluateSceneBVH(objects);
+  }
 }
-// (Kept for direct internal use; the worker entry now routes to build3MFBytesMulti when applicable.)
+
+async function combineSmart(a, b, op) {
+  if (preferredEngine() === "bvh") return combineTwoBVH(a, b, op);
+  try {
+    return await combineTwoAsync(a, b, op);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("[csg.worker] manifold combineTwo failed, falling back to BVH:", err.message);
+    return combineTwoBVH(a, b, op);
+  }
+}
+
+async function evaluateByColorSmart(objects) {
+  if (preferredEngine() === "bvh") return evaluateSceneByColorBVH(objects);
+  try {
+    return await evaluateSceneByColorAsync(objects);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("[csg.worker] manifold evaluateSceneByColor failed, falling back to BVH:", err.message);
+    return evaluateSceneByColorBVH(objects);
+  }
+}
 
 self.addEventListener("message", async (e) => {
   const { jobId, type, payload } = e.data || {};
@@ -44,8 +87,17 @@ self.addEventListener("message", async (e) => {
     let result;
     let transfers = [];
     switch (type) {
+      case "set-engine": {
+        // Allow the main thread to flip the preferred engine at runtime
+        // without rebuilding the worker. Useful for A/B regression checks.
+        if (payload?.engine === "bvh" || payload?.engine === "manifold") {
+          _enginePref = payload.engine;
+        }
+        result = { engine: _enginePref };
+        break;
+      }
       case "evaluate-stats": {
-        const r = evaluateScene(payload.objects);
+        const r = await evaluateSmart(payload.objects);
         result = {
           triangleCount: r.triangleCount,
           boundaryEdges: r.boundaryEdges,
@@ -55,7 +107,7 @@ self.addEventListener("message", async (e) => {
         break;
       }
       case "combine": {
-        const merged = combineTwo(payload.a, payload.b, payload.op);
+        const merged = await combineSmart(payload.a, payload.b, payload.op);
         result = merged;
         if (merged.vertices?.buffer) transfers.push(merged.vertices.buffer);
         if (merged.indices?.buffer) transfers.push(merged.indices.buffer);
@@ -69,7 +121,7 @@ self.addEventListener("message", async (e) => {
         break;
       }
       case "stl-bytes": {
-        const r = evaluateScene(payload.objects);
+        const r = await evaluateSmart(payload.objects);
         if (r.empty) throw new Error("Scene is empty. Add at least one positive component.");
         const bytes = geometryToSTLBytes(r.geometry);
         result = { bytes, triangleCount: r.triangleCount };
@@ -77,18 +129,16 @@ self.addEventListener("message", async (e) => {
         break;
       }
       case "threemf-bytes": {
-        // Auto-detect multi-color: if there are 2+ distinct colorIndex values
-        // among visible positives, emit a multi-part 3MF; else single-part.
         const visibles = (payload.objects || []).filter((o) => o.visible !== false && o.modifier !== "negative");
         const colorSet = new Set(visibles.map((o) => (o.colorIndex | 0) || 0));
         if (colorSet.size >= 2) {
-          const { groups } = evaluateSceneByColor(payload.objects);
+          const { groups } = await evaluateByColorSmart(payload.objects);
           if (groups.length === 0) throw new Error("Scene is empty. Add at least one positive component.");
           const bytes = await build3MFBytesMulti(groups);
           result = { bytes, parts: groups.length, multicolor: true };
           transfers.push(bytes.buffer);
         } else {
-          const r = evaluateScene(payload.objects);
+          const r = await evaluateSmart(payload.objects);
           if (r.empty) throw new Error("Scene is empty. Add at least one positive component.");
           const bytes = await build3MFBytes(r.geometry);
           result = { bytes, parts: 1, multicolor: false };
