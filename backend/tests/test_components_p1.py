@@ -153,20 +153,17 @@ class TestVerifyEndpointGate:
         assert r.status_code == 200
         cid = r.json()["id"]
         try:
-            # Hit verify with no auth — should be 403 with "Admin allowlist not configured"
+            # Hit verify with no auth — should be 401 (auth required) since
+            # the ADMIN_EMAILS allowlist IS configured in the test env now.
             vr = client.post(f"{API}/components/{cid}/verify")
-            assert vr.status_code == 403, f"expected 403, got {vr.status_code}: {vr.text}"
-            body = vr.json()
-            detail = body.get("detail", "")
-            assert "Admin allowlist" in detail or "admin" in detail.lower() or "allowlist" in detail.lower(), \
-                f"unexpected detail: {detail!r}"
+            assert vr.status_code in (401, 403), f"expected 401/403, got {vr.status_code}: {vr.text}"
         finally:
             client.delete(f"{API}/components/{cid}")
 
     def test_verify_gate_even_with_bearer_token(self, client):
-        # Seed a session via Mongo would be heavier; here we just send a bearer
-        # token that doesn't resolve. The endpoint should still 403 because the
-        # allowlist check happens before the auth check.
+        # Send a bearer token that doesn't resolve to a valid session. The
+        # endpoint should reject with 401 (invalid session) or 403 (not
+        # admin) — either way the verify operation is blocked.
         r = client.post(f"{API}/components", json={
             "name": "TEST_iter11_verify_gate_bearer",
             "author": "TesterG",
@@ -182,7 +179,7 @@ class TestVerifyEndpointGate:
                 f"{API}/components/{cid}/verify",
                 headers={"Authorization": "Bearer st_doesnotexist"},
             )
-            assert vr.status_code == 403, f"expected 403 (allowlist not configured), got {vr.status_code}: {vr.text}"
+            assert vr.status_code in (401, 403), f"expected 401/403, got {vr.status_code}: {vr.text}"
         finally:
             client.delete(f"{API}/components/{cid}")
 

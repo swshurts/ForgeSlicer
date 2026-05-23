@@ -18,6 +18,7 @@ from email_service import send_contributor_celebration
 import meshy_service
 import email_service
 import auth_local
+import admin as admin_module
 
 
 ROOT_DIR = Path(__file__).parent
@@ -111,6 +112,11 @@ async def _resolve_session_token(token: Optional[str]) -> Optional[dict]:
         await db.user_sessions.delete_one({"session_token": token})
         return None
     user = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
+    # Soft-banned users have their sessions killed at ban time. If a stale
+    # session somehow lives on, we refuse it here so banned accounts can't
+    # quietly continue to interact with the API.
+    if user and user.get("banned"):
+        return None
     return user
 
 
@@ -175,6 +181,14 @@ def _public_user(user: dict) -> dict:
         "auth_methods": user.get("auth_methods", ["google"]),
         "has_password": bool(user.get("password_hash")),
         "contributor_lifetime": bool(user.get("contributor_lifetime", False)),
+        # Admin flags — needed by the frontend so it can conditionally
+        # show the /admin link/page. Backend always re-checks via
+        # require_admin so a tampered client can't actually USE admin APIs.
+        "is_admin": bool(user.get("is_admin", False)),
+        "is_super_admin": bool(user.get("is_super_admin", False)),
+        # Override quota — the AIGenerateDialog shows the effective cap;
+        # if set, it overrides the default + contributor multiplier.
+        "ai_quota_override": user.get("ai_quota_override"),
     }
 
 
@@ -386,6 +400,13 @@ api_router.include_router(auth_local.build_auth_router(
     public_user=_public_user,
 ))
 
+# Mount the admin router at /api/admin/*. Each endpoint enforces its own
+# auth via Depends(require_admin) / Depends(require_super_admin).
+api_router.include_router(admin_module.build_admin_router(
+    db=db,
+    public_user=_public_user,
+))
+
 
 # ---------- Contributor tier ----------
 # Open-source licenses that count toward the Contributor Lifetime threshold.
@@ -480,6 +501,17 @@ def _month_key(now: Optional[datetime] = None) -> str:
 
 
 async def _ai_cap_for(user: dict) -> int:
+    """Per-user monthly AI cap.
+
+    Precedence (highest wins):
+      1. Admin-set override `ai_quota_override` (1..300) — bypasses
+         everything else, used to give specific users custom quotas.
+      2. Contributor multiplier on the default cap.
+      3. Default cap.
+    """
+    override = user.get("ai_quota_override")
+    if isinstance(override, int) and 1 <= override <= 300:
+        return override
     base = AI_MONTHLY_CAP
     return base * AI_CONTRIB_MULTIPLIER if user.get("contributor_lifetime") else base
 
@@ -1471,11 +1503,13 @@ async def migrate_legacy_authors():
 
 @app.on_event("startup")
 async def ensure_auth_indexes():
-    """Create MongoDB indexes for the local-auth collections. Idempotent."""
+    """Create MongoDB indexes for the local-auth + admin collections. Idempotent."""
     try:
         await auth_local.ensure_indexes(db)
+        await admin_module.ensure_indexes(db)
+        await admin_module.seed_super_admins(db)
     except Exception as e:  # noqa: BLE001
-        logger.warning("Auth index creation skipped: %s", e)
+        logger.warning("Auth/admin bootstrap skipped: %s", e)
 
 
 @app.on_event("shutdown")

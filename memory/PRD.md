@@ -310,6 +310,28 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - Files added: `backend/tests/test_author_profile.py`, `frontend/src/components/AuthorProfile.jsx`.
 - Files modified: `backend/server.py` (3 new endpoints), `frontend/src/components/Gallery.jsx` (clickable author names), `SplashScreen.jsx` (event-driven re-open), `TopToolbar.jsx` (sparkles pin), `HelpDialog.jsx`, `App.js` (route).
 
+## Iteration 29 (2026-02-23) — Admin Panel + AI Quota Overrides
+- ✅ **Two-tier admin roles**:
+  - **super_admin** — bootstrapped from `ADMIN_EMAILS` env var on each startup (idempotent). ONLY super-admins can promote/demote regular admins. Steve seeded as super-admin via `steve.shurts@gmail.com`.
+  - **admin** — can do everything else: grant AI quota, grant Contributor-for-Life, ban users, force sign-out, view analytics, see audit log, moderate content.
+- ✅ **Admin page at `/admin`** (security through obscurity — no link in nav, must know URL). Three tabs:
+  - **Analytics** — Total/DAU/MAU users, new in 24h/7d/30d, contributor count, design + component totals (public + private), AI generations this month
+  - **Users** — Searchable table with name/email/auth-methods/joined/last-login/AI-quota/AI-used/flags + per-row action buttons (toggle contributor, promote admin if super, force password reset, ban/unban)
+  - **Audit log** — Every state-changing admin action recorded with timestamp, actor, action name, target, and JSON details payload
+- ✅ **Per-user AI quota override** with **hard 300/month server-side ceiling** (`MAX_AI_QUOTA_OVERRIDE`). Click-to-edit cell on the user row: blank clears the override (default cap returns), 1-300 sets a custom monthly cap. Effective cap honored by `_ai_cap_for()` and reflected immediately in `/api/ai/usage`.
+- ✅ **Soft-ban flow** — flagged users have all sessions killed instantly and `_resolve_session_token` refuses to honour stale tokens. Data preserved; ban is reversible.
+- ✅ **Force-sign-out action** — kills every session for a user without touching their password. Useful for revoking access after credential leaks.
+- ✅ **Content moderation** — `/api/admin/content/remove` soft-flags gallery / component items with `removed: true` and forces them private. Audit-logged.
+- ✅ **Security guardrails**:
+  - Pydantic field `quota: Optional[int] = Field(None, ge=1, le=300)` enforces 1-300 ceiling at the schema layer — even a compromised admin can't issue infinite gens.
+  - Super-admins cannot demote themselves via the UI (lockout footgun protection).
+  - Cannot ban a super-admin or yourself.
+  - Removing an email from `ADMIN_EMAILS` doesn't auto-demote — must be done manually in Mongo (prevents env-var-typo lockouts).
+  - Banned users' admin status doesn't grant access (`require_admin` checks ban state).
+- ✅ **Test coverage**: 15 new admin tests (`test_admin.py`) — auth guards, 300-ceiling enforcement, audit log writes, ban-kills-sessions, super-vs-admin promotion gating, quota-clears-with-null. **115/115 backend tests pass.**
+- Files added: `backend/admin.py`, `backend/tests/test_admin.py`, `frontend/src/components/AdminPage.jsx`, `frontend/src/lib/adminApi.js`.
+- Files modified: `backend/server.py` (mounted admin router, ban-check in session resolution, ai_quota_override in `_ai_cap_for`, admin flags in `_public_user`), `backend/.env` (added `ADMIN_EMAILS`), `frontend/src/App.js` (added `/admin` route), `backend/tests/test_components_p1.py` (updated to reflect ADMIN_EMAILS now permanently set).
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output

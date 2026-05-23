@@ -11,6 +11,7 @@ import ForgotPassword from "@/components/ForgotPassword";
 import ResetPassword from "@/components/ResetPassword";
 import MagicLinkLanding from "@/components/MagicLinkLanding";
 import AuthorProfile from "@/components/AuthorProfile";
+import AdminPage from "@/components/AdminPage";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import SplashScreen from "@/components/SplashScreen";
@@ -34,6 +35,7 @@ function AppRouter() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/magic-link" element={<MagicLinkLanding />} />
       <Route path="/u/:userId" element={<AuthorProfile />} />
+      <Route path="/admin" element={<AdminPage />} />
       <Route
         path="/workspace"
         element={
