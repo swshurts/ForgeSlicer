@@ -258,7 +258,10 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
   };
 
   return (
-    <div className="h-12 border-b border-slate-800 bg-slate-900 flex items-center px-3 gap-1" data-testid="top-toolbar">
+    <div className="border-b border-slate-800 bg-slate-900" data-testid="top-toolbar">
+      {/* ROW 1 — System / global actions: brand, file I/O, share, slicer
+          send, project name, voice mic, what's new, help, user menu. */}
+      <div className="h-12 flex items-center px-3 gap-1" data-testid="top-toolbar-row-system">
       <Link to="/" className="flex items-center gap-2 px-2 mr-1 select-none" data-testid="brand">
         <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow">
           <Hexagon size={16} className="text-white" strokeWidth={2.4} />
@@ -297,8 +300,105 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
         <Eye size={16} />
       </IconBtn>
 
-      <Divider />
+      <div className="flex-1" />
 
+      <VoiceButton />
+
+      <input
+        data-testid="project-name-input"
+        value={projectName}
+        onChange={(e) => setProjectName(e.target.value)}
+        className="h-8 w-48 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none font-mono ml-1"
+        placeholder="project name"
+      />
+
+      <Link
+        to="/gallery"
+        data-testid="open-gallery-btn"
+        className="h-8 px-3 ml-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
+      >
+        <Globe size={14} /> Gallery
+      </Link>
+      <button
+        data-testid="share-design-btn"
+        onClick={onShare}
+        className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
+      >
+        <Globe size={14} /> Share
+      </button>
+      <button
+        data-testid="save-component-btn"
+        onClick={onSaveComponent}
+        disabled={objects.length === 0}
+        className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Save current scene as a reusable component to the public library"
+      >
+        <Library size={14} /> Component
+      </button>
+      <button
+        data-testid="send-to-orcaslicer-btn"
+        onClick={() => onSendToOrca(primarySlicer)}
+        className="h-8 px-3 ml-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-l flex items-center gap-1.5 shadow"
+        title={`Send to ${primarySlicer.name} (recommended for your printer)`}
+      >
+        <Printer size={14} /> Send to {primarySlicer.name}
+      </button>
+      {alternateSlicers.length > 0 && (
+        <div className="relative">
+          <button
+            data-testid="send-slicer-menu-btn"
+            onClick={() => setSendMenuOpen((v) => !v)}
+            onBlur={() => setTimeout(() => setSendMenuOpen(false), 150)}
+            className="h-8 px-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-r border-l border-orange-700 flex items-center shadow"
+            title="Choose a different slicer"
+          >
+            <ChevronDown size={14} />
+          </button>
+          {sendMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded shadow-xl z-50 min-w-[180px]" data-testid="send-slicer-menu">
+              {alternateSlicers.map((s) => (
+                <button
+                  key={s.id}
+                  data-testid={`send-slicer-option-${s.id}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setSendMenuOpen(false);
+                    onSendToOrca(s);
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Printer size={12} className="text-orange-400" /> {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {busyMsg && (
+        <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
+      )}
+      <button
+        data-testid="whats-new-btn"
+        onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:show-splash"))}
+        title="What's new"
+        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-800 flex items-center justify-center"
+      >
+        <Sparkles size={16} />
+      </button>
+      <button
+        data-testid="help-btn"
+        onClick={onOpenHelp}
+        title="Help & User Manual (?)"
+        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-orange-300 hover:bg-slate-800 flex items-center justify-center"
+      >
+        <CircleHelp size={16} />
+      </button>
+      <UserMenu returnPath="/workspace" />
+      </div>
+      {/* ROW 2 — Object / scene editing: booleans, transform gizmo,
+          history, measure, plus the object-control popovers (position,
+          rotation, size, duplicate, mirror, cut) and slicer settings. */}
+      <div className="h-11 flex items-center px-3 gap-1 border-t border-slate-800/60 bg-slate-900/60" data-testid="top-toolbar-row-edit">
       <IconBtn testid="bool-union-btn" onClick={() => doBool("union")} title="Union (merge 2 objects)">
         <PlusSquare size={16} className="text-orange-400" />
       </IconBtn>
@@ -356,8 +456,9 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
 
       <Divider />
 
-      {/* Quick-access popover buttons for the most-edited transforms + slicer
-          settings — replaces the need to scroll the right panel. */}
+      {/* Object-edit popovers: Position / Rotation / Size / Duplicate /
+          Mirror / Cut / Slicer — these were the items the user kept
+          getting clipped off the original single-row toolbar. */}
       <button
         ref={posBtnRef}
         data-testid="menu-position-btn"
@@ -458,101 +559,8 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       >
         <Sliders size={12} /> Slicer
       </button>
+      </div>
 
-      <div className="flex-1" />
-
-      <VoiceButton />
-
-      <input
-        data-testid="project-name-input"
-        value={projectName}
-        onChange={(e) => setProjectName(e.target.value)}
-        className="h-8 w-48 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none font-mono"
-        placeholder="project name"
-      />
-
-      <Link
-        to="/gallery"
-        data-testid="open-gallery-btn"
-        className="h-8 px-3 ml-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
-      >
-        <Globe size={14} /> Gallery
-      </Link>
-      <button
-        data-testid="share-design-btn"
-        onClick={onShare}
-        className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
-      >
-        <Globe size={14} /> Share
-      </button>
-      <button
-        data-testid="save-component-btn"
-        onClick={onSaveComponent}
-        disabled={objects.length === 0}
-        className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        title="Save current scene as a reusable component to the public library"
-      >
-        <Library size={14} /> Component
-      </button>
-      <button
-        data-testid="send-to-orcaslicer-btn"
-        onClick={() => onSendToOrca(primarySlicer)}
-        className="h-8 px-3 ml-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-l flex items-center gap-1.5 shadow"
-        title={`Send to ${primarySlicer.name} (recommended for your printer)`}
-      >
-        <Printer size={14} /> Send to {primarySlicer.name}
-      </button>
-      {alternateSlicers.length > 0 && (
-        <div className="relative">
-          <button
-            data-testid="send-slicer-menu-btn"
-            onClick={() => setSendMenuOpen((v) => !v)}
-            onBlur={() => setTimeout(() => setSendMenuOpen(false), 150)}
-            className="h-8 px-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-r border-l border-orange-700 flex items-center shadow"
-            title="Choose a different slicer"
-          >
-            <ChevronDown size={14} />
-          </button>
-          {sendMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded shadow-xl z-50 min-w-[180px]" data-testid="send-slicer-menu">
-              {alternateSlicers.map((s) => (
-                <button
-                  key={s.id}
-                  data-testid={`send-slicer-option-${s.id}`}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setSendMenuOpen(false);
-                    onSendToOrca(s);
-                  }}
-                  className="w-full px-3 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
-                >
-                  <Printer size={12} className="text-orange-400" /> {s.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {busyMsg && (
-        <span className="ml-2 text-xs text-orange-400 font-mono">{busyMsg}</span>
-      )}
-      <button
-        data-testid="whats-new-btn"
-        onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:show-splash"))}
-        title="What's new"
-        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-800 flex items-center justify-center"
-      >
-        <Sparkles size={16} />
-      </button>
-      <button
-        data-testid="help-btn"
-        onClick={onOpenHelp}
-        title="Help & User Manual (?)"
-        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-orange-300 hover:bg-slate-800 flex items-center justify-center"
-      >
-        <CircleHelp size={16} />
-      </button>
-      <UserMenu returnPath="/workspace" />
       {openPopover === "position" && (
         <PositionPopover anchor={posBtnRef.current} onClose={() => setOpenPopover(null)} />
       )}

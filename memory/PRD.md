@@ -343,6 +343,14 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ Help system updated: new "AI generation" voice lexicon category (5 example phrases), plus a "By voice" bullet in the AI Generate help section.
 - Files modified: `backend/server.py` (VOICE_SYSTEM_PROMPT extended), `frontend/src/components/AIGenerateDialog.jsx` (event listener + auto-submit + unified close), `frontend/src/lib/voiceCommands.js` (ai_generate action handler), `frontend/src/components/HelpDialog.jsx` (lexicon + AI section), `frontend/src/components/AdminPage.jsx` (CSV export).
 
+## Iteration 31 (2026-02-23) — Two-Row Toolbar + Help Discoverability Fix
+- ✅ **Toolbar split into two rows** (user reported the help button was unreachable — root cause: single horizontal flex row crammed with ~25 buttons clipped the right side on narrower viewports).
+  - **Row 1 (system)**: brand · file I/O · export · voice mic · project name · Gallery/Share/Component/Send-to-Slicer · ✨ What's new · ? Help · user menu
+  - **Row 2 (object editing)**: booleans · transform gizmo · undo/redo/measure · Position/Rotation/Size/Duplicate/Mirror/Cut/Slicer popovers
+- ✅ Subtle visual delineation: Row 2 has lighter background + thin top border so users intuit "edit controls" vs "system actions" without a label.
+- ✅ Verified on 1440px viewport — help, what's-new, and user menu now visible with breathing room.
+- File: `frontend/src/components/TopToolbar.jsx` (single file change, no breakage to Workspace layout — uses `flex flex-col` so the extra height auto-adjusts).
+
 ## Backlog / Future Enhancements
 - P1: Real solid infill in GCODE slicer (perimeter contours only today)
 - P1: Replace three-bvh-csg with manifold-3d (Google's WASM library) for truly watertight Boolean output
