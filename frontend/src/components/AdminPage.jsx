@@ -6,8 +6,27 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Hexagon, Loader2, RefreshCw, Search, Shield, ShieldCheck,
   Sparkles, Award, Ban, KeyRound, Trash2, ListChecks, BarChart3, Users,
-  AlertCircle, CheckCircle2, Clock,
+  AlertCircle, CheckCircle2, Clock, Download,
 } from "lucide-react";
+
+// Convert a 2D array of strings into a CSV blob and trigger a download.
+// Cells are wrapped in double-quotes when they contain commas/quotes/newlines
+// (RFC-4180 compliant) so the file opens cleanly in Excel / Sheets / Numbers.
+function downloadCsv(filename, headers, rows) {
+  const escape = (v) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escape).join(",")];
+  for (const row of rows) lines.push(row.map(escape).join(","));
+  // Prepend BOM so Excel auto-detects UTF-8 instead of mangling non-ASCII names.
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function StatCard({ label, value, hint, testid }) {
   return (
@@ -184,6 +203,33 @@ function UsersTab({ adminInfo }) {
     } catch (e) { toast.error(e?.response?.data?.detail || e.message); }
   };
 
+  // Export the CURRENTLY-LOADED user set to CSV. We export what's visible
+  // (post-filter), not the entire DB, so admins can grab targeted slices
+  // by searching first then exporting.
+  const exportCsv = () => {
+    if (users.length === 0) {
+      toast.error("No users to export.");
+      return;
+    }
+    const headers = [
+      "user_id", "name", "email", "auth_methods",
+      "created_at", "last_login_at",
+      "is_admin", "is_super_admin", "contributor_lifetime", "banned",
+      "ai_quota_override", "ai_used_this_month",
+    ];
+    const rows = users.map((u) => [
+      u.user_id, u.name || "", u.email || "", (u.auth_methods || []).join("|"),
+      u.created_at || "", u.last_login_at || "",
+      u.is_admin, u.is_super_admin, u.contributor_lifetime, u.banned,
+      u.ai_quota_override === null || u.ai_quota_override === undefined ? "" : u.ai_quota_override,
+      u.ai_used_this_month,
+    ]);
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+    const suffix = q ? `_search-${q.replace(/[^a-z0-9]/gi, "")}` : "";
+    downloadCsv(`forgeslicer_users_${stamp}${suffix}.csv`, headers, rows);
+    toast.success(`Exported ${users.length} user(s).`);
+  };
+
   return (
     <div data-testid="admin-users-tab">
       <form onSubmit={onSearch} className="flex gap-2 mb-4">
@@ -200,6 +246,16 @@ function UsersTab({ adminInfo }) {
         </div>
         <button data-testid="user-search-submit" type="submit" className="h-9 px-3 bg-orange-500 hover:bg-orange-600 text-xs text-white font-semibold rounded">Search</button>
         <button type="button" data-testid="user-search-clear" onClick={() => { setQ(""); load(""); }} className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded border border-slate-700">Clear</button>
+        <button
+          type="button"
+          data-testid="users-export-csv"
+          onClick={exportCsv}
+          disabled={loading || users.length === 0}
+          title="Download current results as CSV"
+          className="h-9 px-3 bg-slate-800 hover:bg-emerald-700 text-xs text-emerald-300 hover:text-white rounded border border-slate-700 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Download size={12} /> Export CSV
+        </button>
       </form>
 
       {err && <div className="text-red-400 text-sm mb-3">{err}</div>}
