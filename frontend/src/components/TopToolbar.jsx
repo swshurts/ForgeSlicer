@@ -318,8 +318,13 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
   return (
     <div className="border-b border-slate-800 bg-slate-900" data-testid="top-toolbar">
       {/* ROW 1 — System / global actions: brand, file I/O, share, slicer
-          send, project name, voice mic, what's new, help, user menu. */}
-      <div className="h-12 flex items-center px-3 gap-1" data-testid="top-toolbar-row-system">
+          send, project name, voice mic, what's new, help, user menu.
+          Uses `flex-wrap` so on narrow windows (or partial-screen layouts)
+          the right-side cluster (Send, Help, ✨, UserMenu) drops to a new
+          line instead of being clipped off the viewport edge. Variable
+          row height comes from `min-h-12 py-1` which gives any wrapped
+          chip the same breathing room as the single-line case. */}
+      <div className="min-h-12 flex flex-wrap items-center px-3 gap-y-1 gap-x-1 py-1" data-testid="top-toolbar-row-system">
       <Link to="/" className="flex items-center gap-2 px-2 mr-1 select-none" data-testid="brand">
         <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow">
           <Hexagon size={16} className="text-white" strokeWidth={2.4} />
@@ -366,7 +371,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
         data-testid="project-name-input"
         value={projectName}
         onChange={(e) => setProjectName(e.target.value)}
-        className="h-8 w-48 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none font-mono ml-1"
+        className="h-8 w-40 md:w-48 min-w-[120px] bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none font-mono ml-1"
         placeholder="project name"
       />
 
@@ -455,8 +460,10 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       </div>
       {/* ROW 2 — Object / scene editing: booleans, transform gizmo,
           history, measure, plus the object-control popovers (position,
-          rotation, size, duplicate, mirror, cut) and slicer settings. */}
-      <div className="h-11 flex items-center px-3 gap-1 border-t border-slate-800/60 bg-slate-900/60" data-testid="top-toolbar-row-edit">
+          rotation, size, duplicate, mirror, cut) and slicer settings.
+          Also flex-wrap so narrow windows never clip the Slicer / Cut
+          actions on the right. */}
+      <div className="min-h-11 flex flex-wrap items-center px-3 gap-y-1 gap-x-1 py-1 border-t border-slate-800/60 bg-slate-900/60" data-testid="top-toolbar-row-edit">
       <AddPrimitiveButton />
 
       <Divider />
