@@ -6,15 +6,17 @@ import { evaluateScene } from "./csg";
  *
  * Coordinate mapping: three.js Y is "up" → GCODE Z. three.js (X,Z) → GCODE (X,Y).
  *
- * Strategy per layer:
- *   - intersect each triangle of the merged geometry with horizontal plane Y = z
- *   - collect resulting line segments
- *   - chain segments into closed loops (or open chains) by endpoint matching
- *   - emit G1 moves with calculated extrusion
+ * Per-layer strategy:
+ *   - intersect each triangle of the merged geometry with the horizontal
+ *     plane Y = z → collect line segments → chain into closed loops
+ *   - emit perimeters by walking each loop
+ *   - **solid layers** (top N + bottom N): rasterise the loops with
+ *     ±45° alternating rectilinear infill (scan-line + even-odd rule)
+ *     so the first/last layers of every print are fully solid and
+ *     the part is actually printable
  *
- * Output is valid Marlin-flavoured GCODE with perimeter contours only
- * (no real infill / no toolpath optimisation). It is labelled clearly in the
- * file header so the user knows this is preview-quality.
+ * Output is valid Marlin-flavoured GCODE. Middle layers are still
+ * perimeter-only (sparse infill is the Tier-b follow-up).
  */
 export function sliceToGCODE(objects, settings, onProgress) {
   const { geometry, empty } = evaluateScene(objects);
@@ -40,6 +42,10 @@ export function sliceToGCODE(objects, settings, onProgress) {
     travelSpeed = 120,
     nozzleTemp = 210,
     bedTemp = 60,
+    // Tier-(a) solid infill — # of fully-solid layers on the bottom and
+    // top of the print. Middle layers stay perimeter-only.
+    topLayers = 4,
+    bottomLayers = 4,
   } = settings || {};
 
   const extrusionWidth = nozzleDiameter * 1.2;
@@ -59,7 +65,7 @@ export function sliceToGCODE(objects, settings, onProgress) {
   const out = [];
   const w = (s) => out.push(s);
 
-  w(`; ForgeSlicer 1.0 - GCODE (preview quality, perimeter contours only)`);
+  w(`; ForgeSlicer 1.0 - GCODE (perimeters + ${bottomLayers} bottom / ${topLayers} top solid layers)`);
   w(`; Generated: ${new Date().toISOString()}`);
   w(`; Layer height: ${layerHeight} mm | First layer: ${firstLayerHeight} mm`);
   w(`; Nozzle: ${nozzleDiameter} mm | Filament: ${filamentDiameter} mm`);
@@ -120,6 +126,38 @@ export function sliceToGCODE(objects, settings, onProgress) {
         w(`G1 X${(p.x + offX).toFixed(3)} Y${(p.z + offY).toFixed(3)} E${currentE.toFixed(5)}`);
         prev = p;
         totalSegments++;
+      }
+    }
+
+    // ---------- Solid infill on bottom / top layers ----------
+    // The bottom N layers (li < bottomLayers) and the top N layers
+    // (li >= totalLayers - topLayers) get rectilinear 100% solid infill
+    // so the surface is closed instead of an empty perimeter cage.
+    // Direction alternates ±45° per layer to bond cross-layer fibers.
+    const isBottomSolid = li < bottomLayers;
+    const isTopSolid = li >= totalLayers - topLayers;
+    if (isBottomSolid || isTopSolid) {
+      const angleDeg = li % 2 === 0 ? 45 : -45;
+      // Step the scan lines one extrusion-width apart so neighbours just
+      // touch (true 100% solid). Inset by half an extrusion-width to keep
+      // infill bonded to but inside the perimeter wall.
+      const fillSpacing = extrusionWidth;
+      const insetAmount = extrusionWidth / 2;
+      const fills = generateSolidFill(loops, sliceY, angleDeg, fillSpacing, insetAmount);
+      if (fills.length > 0) {
+        // Travel between fills happens implicitly via G0 — extrusion only
+        // along the fill line itself.
+        for (const seg of fills) {
+          const a = seg[0], b = seg[1];
+          w(`G0 X${(a.x + offX).toFixed(3)} Y${(a.z + offY).toFixed(3)} F${(travelSpeed * 60).toFixed(0)}`);
+          const dx = b.x - a.x;
+          const dz = b.z - a.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist < 1e-4) continue;
+          currentE += dist * ePerMMHere;
+          w(`G1 F${(printSpeed * 60).toFixed(0)} X${(b.x + offX).toFixed(3)} Y${(b.z + offY).toFixed(3)} E${currentE.toFixed(5)}`);
+          totalSegments++;
+        }
       }
     }
     layerIdx++;
@@ -243,3 +281,88 @@ function chainSegments(segments) {
   }
   return loops;
 }
+
+// ---------- Solid infill ----------
+//
+// Generate rectilinear scan-line fills that cover the interior of all
+// closed loops at this layer. Algorithm:
+//   1. Rotate every loop point by `-angleDeg` so scan lines become
+//      horizontal (parallel to X) in the rotated frame.
+//   2. For each scan-line y = y0, y0+step, ..., compute the
+//      intersections with every loop edge → x-values.
+//   3. Sort x-values; alternate pairs (even-odd rule) are inside the
+//      polygon → emit a segment between them.
+//   4. Rotate the resulting segment endpoints back into world XZ.
+//
+// `inset` shrinks each scan-line segment by half an extrusion-width on
+// each end so the fill line stays bonded to but inside the perimeter.
+// Returns world-space segments as [[{x,z},{x,z}], ...].
+function generateSolidFill(loops, sliceY, angleDeg, spacing, inset) {
+  if (!loops || loops.length === 0 || spacing <= 0) return [];
+  const a = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(-a), sin = Math.sin(-a);
+  const ucos = Math.cos(a), usin = Math.sin(a);
+
+  // Rotate to scan-aligned frame and gather edges.
+  const edges = [];
+  let yMin = Infinity, yMax = -Infinity;
+  for (const loop of loops) {
+    if (loop.length < 2) continue;
+    const rot = loop.map((p) => ({
+      x: p.x * cos - p.z * sin,
+      y: p.x * sin + p.z * cos,
+    }));
+    // Force-close each loop so the polygon test sees a continuous edge
+    // list. chainSegments may return an open polyline if the slice grazed
+    // the silhouette — we close it so the inside test still works.
+    if (
+      Math.hypot(rot[0].x - rot[rot.length - 1].x, rot[0].y - rot[rot.length - 1].y)
+      > 1e-4
+    ) {
+      rot.push(rot[0]);
+    }
+    for (let i = 0; i < rot.length - 1; i++) {
+      const p1 = rot[i], p2 = rot[i + 1];
+      const ey1 = Math.min(p1.y, p2.y);
+      const ey2 = Math.max(p1.y, p2.y);
+      if (Math.abs(p1.y - p2.y) < 1e-7) continue; // skip horizontal — never crossed by horizontal scan
+      edges.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, ymin: ey1, ymax: ey2 });
+      if (ey1 < yMin) yMin = ey1;
+      if (ey2 > yMax) yMax = ey2;
+    }
+  }
+  if (edges.length === 0 || !isFinite(yMin) || !isFinite(yMax)) return [];
+
+  // Start half a spacing inside the bbox so we don't emit zero-length
+  // grazing fills at the extreme edges.
+  const start = yMin + spacing * 0.5;
+  const fills = [];
+  for (let y = start; y <= yMax - spacing * 0.5 + 1e-9; y += spacing) {
+    const xs = [];
+    for (const e of edges) {
+      // Strict-on-one-end inequality so a scan line that exactly grazes
+      // a shared vertex isn't counted twice.
+      if ((e.y1 <= y && e.y2 > y) || (e.y2 <= y && e.y1 > y)) {
+        const t = (y - e.y1) / (e.y2 - e.y1);
+        xs.push(e.x1 + t * (e.x2 - e.x1));
+      }
+    }
+    if (xs.length < 2) continue;
+    xs.sort((u, v) => u - v);
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      let xa = xs[i], xb = xs[i + 1];
+      if (xb - xa < 2 * inset + 1e-4) continue; // too thin to bother
+      xa += inset;
+      xb -= inset;
+      // Rotate the two endpoints back into world XZ.
+      const aWorld = { x: xa * ucos - y * usin, z: xa * usin + y * ucos };
+      const bWorld = { x: xb * ucos - y * usin, z: xb * usin + y * ucos };
+      fills.push([aWorld, bWorld]);
+    }
+  }
+  // void-use sliceY here so future enhancements can use the layer Z for
+  // anti-grazing tweaks without ESLint complaining now.
+  void sliceY;
+  return fills;
+}
+

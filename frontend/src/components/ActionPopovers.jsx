@@ -454,10 +454,12 @@ export function SlicerPopover({ anchor, onClose }) {
         <NumberField testid="popover-slice-travel-speed" label="Travel" value={settings.travelSpeed} onChange={(v) => setS({ travelSpeed: v })} step={5} suffix="mm/s" />
         <NumberField testid="popover-slice-nozzle-temp" label="Hotend" value={settings.nozzleTemp} onChange={(v) => setS({ nozzleTemp: v })} step={5} suffix="°C" />
         <NumberField testid="popover-slice-bed-temp" label="Bed" value={settings.bedTemp} onChange={(v) => setS({ bedTemp: v })} step={5} suffix="°C" />
+        <NumberField testid="popover-slice-bottom-layers" label="Bottom Solid" value={settings.bottomLayers} onChange={(v) => setS({ bottomLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
+        <NumberField testid="popover-slice-top-layers" label="Top Solid" value={settings.topLayers} onChange={(v) => setS({ topLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
       </div>
       <div className="text-[10px] text-amber-400/80 flex items-start gap-1 font-medium leading-tight">
         <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-        <span>Preview slicer: perimeter contours only. For production prints use OrcaSlicer with the exported 3MF.</span>
+        <span>Top/bottom solid layers now print fully filled. Middle layers stay perimeter-only — for sparse infill, supports, and multi-material, export 3MF and slice in OrcaSlicer.</span>
       </div>
       <button
         data-testid="popover-slice-btn"

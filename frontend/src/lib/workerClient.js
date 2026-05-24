@@ -110,7 +110,9 @@ export async function sliceToGCODEAsync(objects, settings, onProgress) {
 export async function exportSTLBytesAsync(objects) {
   const p = runOnWorker("stl-bytes", { objects });
   if (p) return p;
-  return mainExportSTLBytes(objects);
+  // Main-thread fallback uses three-bvh-csg, so no manifold guarantee.
+  const r = await mainExportSTLBytes(objects);
+  return { ...r, manifoldVerified: false };
 }
 
 export async function export3MFBytesAsync(objects) {

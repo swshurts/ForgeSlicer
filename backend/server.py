@@ -726,6 +726,10 @@ class GalleryItemCreate(BaseModel):
     # we can grow the option set without migrations; frontend canonicalises
     # against /app/frontend/src/lib/materials.js.
     material: str = "pla"
+    # True when the STL was produced via manifold-3d (guaranteed watertight,
+    # zero open edges). Surfaces as a "Manifold ✓" badge on Gallery cards
+    # so remixers see at a glance that a design will slice/print cleanly.
+    manifold_verified: bool = False
 
 
 class GalleryItemMeta(BaseModel):
@@ -747,6 +751,8 @@ class GalleryItemMeta(BaseModel):
     private: bool = False
     license: str = "cc-by-4.0"
     material: str = "pla"
+    # Surfaces in the Gallery as a "Manifold ✓" badge when true.
+    manifold_verified: bool = False
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -816,6 +822,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         "private": bool(item.private) if user else False,
         "license": (item.license or "cc-by-4.0").strip()[:40],
         "material": (item.material or "pla").strip().lower()[:20],
+        "manifold_verified": bool(item.manifold_verified),
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
@@ -836,6 +843,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         private=doc["private"],
         license=doc["license"],
         material=doc.get("material", "pla"),
+        manifold_verified=doc.get("manifold_verified", False),
     )
 
 
@@ -862,6 +870,7 @@ def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
         private=bool(d.get("private", False)),
         license=d.get("license", "cc-by-4.0"),
         material=d.get("material", "pla"),
+        manifold_verified=bool(d.get("manifold_verified", False)),
     )
 
 

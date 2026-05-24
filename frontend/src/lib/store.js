@@ -963,6 +963,11 @@ export const useSliceSettings = create((set) => ({
   travelSpeed: 120,
   perimeters: 2,
   infillPercent: 15,
+  // Tier-(a) solid infill: number of fully solid layers at the bottom
+  // and top of the print. Middle layers stay perimeter-only until
+  // Tier-(b) sparse infill lands.
+  topLayers: 4,
+  bottomLayers: 4,
   nozzleTemp: 210,
   bedTemp: 60,
   retraction: 1.0,

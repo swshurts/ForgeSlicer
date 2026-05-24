@@ -49,13 +49,18 @@ let _enginePref = "manifold";
 function preferredEngine() { return _enginePref; }
 
 async function evaluateSmart(objects) {
-  if (preferredEngine() === "bvh") return evaluateSceneBVH(objects);
+  if (preferredEngine() === "bvh") {
+    const r = evaluateSceneBVH(objects);
+    return { ...r, manifoldVerified: false };
+  }
   try {
-    return await evaluateSceneAsync(objects);
+    const r = await evaluateSceneAsync(objects);
+    return { ...r, manifoldVerified: true };
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn("[csg.worker] manifold evaluateScene failed, falling back to BVH:", err.message);
-    return evaluateSceneBVH(objects);
+    const r = evaluateSceneBVH(objects);
+    return { ...r, manifoldVerified: false };
   }
 }
 
@@ -124,7 +129,7 @@ self.addEventListener("message", async (e) => {
         const r = await evaluateSmart(payload.objects);
         if (r.empty) throw new Error("Scene is empty. Add at least one positive component.");
         const bytes = geometryToSTLBytes(r.geometry);
-        result = { bytes, triangleCount: r.triangleCount };
+        result = { bytes, triangleCount: r.triangleCount, manifoldVerified: !!r.manifoldVerified };
         transfers.push(bytes.buffer);
         break;
       }

@@ -6,7 +6,7 @@ import UserMenu from "./UserMenu";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
   PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale, Layers,
-  Lock, Globe, Share2,
+  Lock, Globe, Share2, ShieldCheck,
 } from "lucide-react";
 import { getLicense } from "../lib/licenses";
 import { MATERIALS, getMaterial } from "../lib/materials";
@@ -146,6 +146,15 @@ function GalleryCard({ item, idx, onDelete }) {
             title="Private — only visible to you"
           >
             <Lock size={10} /> private
+          </div>
+        )}
+        {item.manifold_verified && !item.private && (
+          <div
+            data-testid={`gallery-manifold-${item.id}`}
+            className="absolute bottom-2 right-2 backdrop-blur text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 bg-emerald-500/15 text-emerald-300 border border-emerald-500/40"
+            title="Manifold ✓ — exported through manifold-3d, watertight & guaranteed to slice cleanly"
+          >
+            <ShieldCheck size={10} /> manifold
           </div>
         )}
       </div>
