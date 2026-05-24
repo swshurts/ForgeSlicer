@@ -16,6 +16,7 @@ import AdminPage from "@/components/AdminPage";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import SplashScreen from "@/components/SplashScreen";
+import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 
 // Detect the OAuth fragment SYNCHRONOUSLY during render so AuthCallback runs
 // before any /api/auth/me race from a global provider would 401. We read
@@ -82,6 +83,7 @@ function App() {
           <AppRouter />
           <Toaster richColors closeButton position="top-center" />
           <SplashScreen />
+          <ReleaseNotesDialog />
         </AuthProvider>
       </BrowserRouter>
     </div>

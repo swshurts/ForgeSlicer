@@ -442,8 +442,8 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       )}
       <button
         data-testid="whats-new-btn"
-        onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:show-splash"))}
-        title="What's new"
+        onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:show-release-notes"))}
+        title="Release notes — see what's new"
         className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-800 flex items-center justify-center"
       >
         <Sparkles size={16} />

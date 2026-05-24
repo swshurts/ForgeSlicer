@@ -357,6 +357,15 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 38 (2026-02-24) — Release Notes Dialog (replaces "What's New" splash)
+- ✅ **New `ReleaseNotesDialog` component**: scrollable changelog modal with one entry per release (date, version chip, title, list of changes). Newest entry on top, full scroll history.
+- ✅ **Change type chips**: each bullet is tagged with a colored chip — emerald **NEW** (feature), cyan **TWEAK** (improvement), rose **FIX** (bug fix). Visual at-a-glance scanning of what kind of change shipped.
+- ✅ **Source of truth**: `frontend/src/lib/releaseNotes.js` — structured array of `{version, date, title, changes:[{type,text}]}`. New entries appended at the top with each release.
+- ✅ **Auto-show on returning visitors**: localStorage `forge.releaseNotes.seen` tracks the last-acknowledged version. When that mismatches `latestReleaseVersion()`, the dialog auto-opens once. First-time visitors don't see it (they hit Landing).
+- ✅ **Topbar `Sparkles` button rewired** from `forgeslicer:show-splash` → `forgeslicer:show-release-notes`. The legacy `SplashScreen` (one-off announcement banners via `splash.html`) is preserved separately for special events.
+- ✅ End-to-end verified in Preview: 6 release entries (1.0.0 → 1.4.0) render correctly; scroll works; close + reload doesn't re-open; localStorage written.
+- Files: `frontend/src/lib/releaseNotes.js` (NEW), `frontend/src/components/ReleaseNotesDialog.jsx` (NEW), `frontend/src/App.js` (mount), `frontend/src/components/TopToolbar.jsx` (rewire button).
+
 ## Iteration 37 (2026-02-24) — Tier-(b) Sparse Infill + GCODE Download UX
 - ✅ **Sparse infill (Tier b)**: middle layers between the top/bottom solid bands now get sparse fill instead of being hollow. New settings: `infillPercent` (0–100%, slider) and `infillPattern` ("rectilinear" / "grid" / "gyroid"). Spacing scales inversely with density (100% = solid, 25% = 4× extrusion-width spacing, 0% = legacy perimeter cage).
 - ✅ **Three patterns implemented**: rectilinear (alternating ±45°), grid (perpendicular crosshatch), gyroid (sampled implicit surface — strong & isotropic).
