@@ -357,6 +357,16 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 34 (2026-02-24) — Auth Bug Fix: R3F Overlay + CORS Wildcard
+- 🔴 **User-reported bug**: "Runtime error with Google sign-in. Not persisting my sign-in from session to session. Can't log in with any method in incognito."
+- 🔍 **Root cause #1 (Preview only)**: The `@emergentbase/visual-edits` babel plugin injects `x-line-number` / `x-file-name` debug attrs on every **lowercase** JSX element (line 1782 of its compiled plugin: `if /^[A-Z]/.test(elementName) return;`). React-Three-Fiber treats every prop as a Three.js property, so those `x-*` attrs crash R3F with `Cannot set "x-line-number"` and the CRA dev error overlay covered the entire sign-in form. User reports of "can't log in" stem from the overlay blocking interaction, NOT from broken auth.
+- 🔍 **Root cause #2 (Production-relevant)**: Backend CORS middleware combined `allow_credentials=True` with `allow_origins=['*']`. Per CORS spec, browsers REFUSE to store/send cookies on responses that combine the wildcard origin with credentials. Same-origin requests (today's actual deploy topology) sidestep this, but if the user ever signed in via a cross-origin flow (e.g., Emergent Google Auth redirect from `auth.emergentagent.com`), the `session_token` cookie would be silently dropped.
+- ✅ **Fix #1**: `craco.config.js` — disabled visual-edits via `FORGE_DISABLE_VISUAL_EDITS=true` flag, gated by an explicit constant so future contributors can re-enable when upstream adds R3F intrinsic exclusions.
+- ✅ **Fix #2**: `backend/server.py` — replaced `allow_origins=['*']` with `allow_origin_regex` that reflects the specific request origin only when it matches `forgeslicer.com`, `*.preview.emergentagent.com`, `*.emergent.host`, or `localhost`. Disallowed origins get no `Access-Control-Allow-Origin` header (browser blocks the response). Same-origin requests still work transparently.
+- ✅ **End-to-end verification in Preview**: created a fresh account → redirected to `/workspace` → `session_token` cookie set with `Max-Age=604800; HttpOnly; Secure; SameSite=None` → full page reload → cookie still present → `/api/auth/me` returns 200 → user stays signed in.
+- ✅ Backend pytest unchanged: 128/128 passing.
+- Files: `frontend/craco.config.js`, `backend/server.py`.
+
 ## Iteration 33 (2026-02-23) — manifold-3d CSG Swap (Phase 1)
 - ✅ **Installed manifold-3d 3.5.0** — Google's WASM-backed geometry library that guarantees manifold output (no open edges / slivers along boolean boundaries). Replaces `three-bvh-csg` as the **primary** CSG engine inside the Web Worker.
 - ✅ **New module `frontend/src/lib/manifoldEngine.js`** exposes the same async surface as the existing worker client: `evaluateSceneAsync`, `evaluateSceneByColorAsync`, `combineTwoAsync`, `cutObjectByPlaneAsync`. WASM init is lazy, shared across calls, and works in both main-thread and worker contexts.

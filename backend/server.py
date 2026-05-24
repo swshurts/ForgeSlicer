@@ -1464,7 +1464,19 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    # Wildcard origins + allow_credentials=True is FORBIDDEN by the CORS
+    # spec — browsers refuse to store/send the session_token cookie when
+    # the response includes `Access-Control-Allow-Origin: *`. That's what
+    # was silently logging users out between visits. We reflect a specific
+    # origin via regex so cookies stay first-party AND every legitimate
+    # deploy host (prod custom domain + preview subdomains + localhost)
+    # is supported without hard-coding URLs.
+    allow_origin_regex=(
+        r"^https://forgeslicer\.com$"
+        r"|^https://[a-z0-9-]+\.preview\.emergentagent\.com$"
+        r"|^https://[a-z0-9-]+\.emergent\.host$"
+        r"|^http://localhost(:\d+)?$"
+    ),
     allow_methods=["*"],
     allow_headers=["*"],
 )

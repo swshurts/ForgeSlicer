@@ -107,8 +107,16 @@ webpackConfig.devServer = (devServerConfig) => {
   return devServerConfig;
 };
 
-// Wrap with visual edits (automatically adds babel plugin, dev server, and overlay in dev mode)
-if (isDevServer) {
+// Wrap with visual edits — DISABLED.
+// The visual-edits babel plugin injects `x-line-number` / `x-file-name`
+// debug attrs on every lowercase JSX element. React-Three-Fiber treats
+// every prop as a Three.js property, so those `x-*` attrs crash R3F with
+// `Cannot set "x-line-number"` and surface as the dev error overlay —
+// blocking the Sign-in flow underneath. The overlay made auth feel broken
+// even though backend auth worked correctly. We turn the plugin off until
+// upstream adds R3F intrinsic-element exclusions.
+const FORGE_DISABLE_VISUAL_EDITS = true;
+if (isDevServer && !FORGE_DISABLE_VISUAL_EDITS) {
   try {
     const { withVisualEdits } = require("@emergentbase/visual-edits/craco");
     webpackConfig = withVisualEdits(webpackConfig);
