@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2 } from "lucide-react";
+import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download } from "lucide-react";
 import { useScene, useSliceSettings } from "../lib/store";
 import { getBaseSize } from "../lib/geometry";
 import { sliceToGCODEAsync } from "../lib/workerClient";
@@ -435,9 +435,15 @@ export function SlicerPopover({ anchor, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [stats, setStats] = useState(null);
+  // Cache the last successful GCODE + filename so the user can re-download
+  // without re-slicing — Chrome occasionally drops the initial auto-download
+  // silently (especially when triggered from an async chain), and a fresh
+  // user-gesture click here bypasses that heuristic. Cleared on every new
+  // slice run so stale GCODE never gets re-shipped.
+  const [lastDownload, setLastDownload] = useState(null);
 
   const handleSlice = async () => {
-    setError(""); setBusy(true); setStats(null);
+    setError(""); setBusy(true); setStats(null); setLastDownload(null);
     try {
       const { gcode, stats: st } = await sliceToGCODEAsync(objects, {
         ...settings,
@@ -446,10 +452,17 @@ export function SlicerPopover({ anchor, onClose }) {
       });
       setStats(st);
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-      downloadText(gcode, `${safe}.gcode`, "text/plain");
+      const filename = `${safe}.gcode`;
+      downloadText(gcode, filename, "text/plain");
+      setLastDownload({ gcode, filename });
     } catch (e) {
       setError(e.message || String(e));
     } finally { setBusy(false); }
+  };
+
+  const handleDownloadAgain = () => {
+    if (!lastDownload) return;
+    downloadText(lastDownload.gcode, lastDownload.filename, "text/plain");
   };
 
   return (
@@ -466,9 +479,44 @@ export function SlicerPopover({ anchor, onClose }) {
         <NumberField testid="popover-slice-bottom-layers" label="Bottom Solid" value={settings.bottomLayers} onChange={(v) => setS({ bottomLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
         <NumberField testid="popover-slice-top-layers" label="Top Solid" value={settings.topLayers} onChange={(v) => setS({ topLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
       </div>
+      {/* Sparse infill (Tier-b) — middle layers between the solid bands.
+          0% disables sparse fill entirely (perimeter cage). Spacing
+          scales with density: 100% = solid, 25% = 4× extrusion-width
+          spacing, etc. */}
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1" data-testid="popover-slice-infill-percent-wrap">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Infill</span>
+          <div className="flex items-center gap-2 h-9 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-orange-500">
+            <input
+              data-testid="popover-slice-infill-percent"
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={settings.infillPercent}
+              onChange={(e) => setS({ infillPercent: parseInt(e.target.value, 10) })}
+              className="flex-1 accent-orange-500"
+            />
+            <span className="text-xs font-mono text-orange-300 w-10 text-right">{settings.infillPercent}%</span>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Pattern</span>
+          <select
+            data-testid="popover-slice-infill-pattern"
+            value={settings.infillPattern}
+            onChange={(e) => setS({ infillPattern: e.target.value })}
+            className="h-9 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-orange-500 outline-none"
+          >
+            <option value="rectilinear">Rectilinear ±45°</option>
+            <option value="grid">Grid (crosshatch)</option>
+            <option value="gyroid">Gyroid (strong)</option>
+          </select>
+        </label>
+      </div>
       <div className="text-[10px] text-amber-400/80 flex items-start gap-1 font-medium leading-tight">
         <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-        <span>Top/bottom solid layers now print fully filled. Middle layers stay perimeter-only — for sparse infill, supports, and multi-material, export 3MF and slice in OrcaSlicer.</span>
+        <span>Top/bottom solid + sparse infill (rectilinear/grid/gyroid) are now generated. For supports, tree supports, multi-material, and adaptive layer height, export 3MF and slice in OrcaSlicer.</span>
       </div>
       <button
         data-testid="popover-slice-btn"
@@ -485,6 +533,27 @@ export function SlicerPopover({ anchor, onClose }) {
           <span className="text-slate-500">Layers</span><span className="text-orange-400 text-right">{stats.layers}</span>
           <span className="text-slate-500">Segments</span><span className="text-orange-400 text-right">{stats.segments}</span>
           <span className="text-slate-500">Filament</span><span className="text-orange-400 text-right">{stats.filamentMM.toFixed(1)} mm</span>
+        </div>
+      )}
+      {lastDownload && (
+        <div
+          data-testid="popover-slice-download-confirm"
+          className="bg-emerald-500/10 border border-emerald-500/40 rounded p-2 flex flex-col gap-2"
+        >
+          <div className="flex items-start gap-2 text-[11px] text-emerald-200 leading-tight">
+            <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5 text-emerald-400" />
+            <div>
+              Saved as <span className="font-mono text-emerald-300">{lastDownload.filename}</span> to your Downloads folder.
+              <div className="text-emerald-200/70 mt-0.5">If your browser blocked the download, click below.</div>
+            </div>
+          </div>
+          <button
+            data-testid="popover-slice-redownload-btn"
+            onClick={handleDownloadAgain}
+            className="h-8 px-3 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-200 text-[11px] font-semibold rounded flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <Download size={12} /> Download {lastDownload.filename} again
+          </button>
         </div>
       )}
     </PopoverShell>

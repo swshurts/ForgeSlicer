@@ -357,6 +357,17 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 37 (2026-02-24) — Tier-(b) Sparse Infill + GCODE Download UX
+- ✅ **Sparse infill (Tier b)**: middle layers between the top/bottom solid bands now get sparse fill instead of being hollow. New settings: `infillPercent` (0–100%, slider) and `infillPattern` ("rectilinear" / "grid" / "gyroid"). Spacing scales inversely with density (100% = solid, 25% = 4× extrusion-width spacing, 0% = legacy perimeter cage).
+- ✅ **Three patterns implemented**: rectilinear (alternating ±45°), grid (perpendicular crosshatch), gyroid (sampled implicit surface — strong & isotropic).
+- ✅ **GCODE download UX clarity**: emerald confirmation card after every slice + a "Download `<file>` again" button that re-fires the download from a fresh user gesture (bypasses Chrome's silent-drop heuristic). Cached GCODE so re-download doesn't re-slice.
+- ✅ **Header advertises infill**: e.g. `; ForgeSlicer 1.0 - GCODE (perimeters + 4 bottom / 4 top solid layers + 15% gyroid sparse infill)`.
+- ✅ **End-to-end verified**: 20mm cube @ 15% density: middle-layer moves 16 (rectilinear) / 24 (grid) / 44 (gyroid) vs 8 (perimeter-only baseline) and 65 (solid bands). GCODE size scales appropriately.
+- ✅ Backend pytest: 131/131 passing.
+- Files: `frontend/src/lib/slicer.js`, `frontend/src/lib/store.js`, `frontend/src/components/ActionPopovers.jsx`.
+
+## Iteration 36 (2026-02-24) — Top Toolbar Wraps on Narrow Windows + GCODE Download UX (Loose Ends)
+
 ## Iteration 35 (2026-02-24) — Solid Infill (Tier a) + Manifold ✓ Gallery Badge
 - ✅ **Solid infill — Tier (a)**: top N and bottom N layers of every print are now fully solid via rectilinear ±45° fills (alternating per layer to bond cross-layer fibers). Middle layers stay perimeter-only (Tier b/c sparse infill is the next milestone).
 - ✅ **New slicer settings**: `bottomLayers` (default 4) + `topLayers` (default 4) exposed in the Slicer popover as integer fields. Setting either to 0 reproduces the legacy perimeter-only output.
