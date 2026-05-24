@@ -63,8 +63,12 @@ function PopoverShell({ title, icon: Icon, onClose, anchor, children, testid, wi
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Position the popover under its anchor.
-  const [pos, setPos] = useState({ top: 56, left: 16 });
+  // Position the popover under its anchor — and cap its height so the
+  // primary action button never falls off-screen. On short viewports
+  // (laptops below ~720px) the Slicer popover in particular has enough
+  // fields that the Slice & Export GCODE button used to render below the
+  // fold with no scroll, leading to "where did the button go?" reports.
+  const [pos, setPos] = useState({ top: 56, left: 16, maxHeight: 600 });
   useEffect(() => {
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
@@ -72,17 +76,22 @@ function PopoverShell({ title, icon: Icon, onClose, anchor, children, testid, wi
       Math.max(8, rect.left),
       Math.max(8, window.innerWidth - width - 8)
     );
-    setPos({ top: rect.bottom + 6, left });
+    const top = rect.bottom + 6;
+    // 16px margin from the viewport bottom keeps the popover from sticking
+    // to the edge and lets us scroll inside if content is taller than the
+    // window allows.
+    const maxHeight = Math.max(240, window.innerHeight - top - 16);
+    setPos({ top, left, maxHeight });
   }, [anchor, width]);
 
   return (
     <div
       ref={ref}
       data-testid={testid}
-      className="fixed z-[120] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
-      style={{ top: pos.top, left: pos.left, width }}
+      className="fixed z-[120] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col"
+      style={{ top: pos.top, left: pos.left, width, maxHeight: pos.maxHeight }}
     >
-      <div className="h-9 px-3 flex items-center justify-between bg-slate-900/80 border-b border-slate-800">
+      <div className="h-9 px-3 flex items-center justify-between bg-slate-900/80 border-b border-slate-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           {Icon && <Icon size={13} className="text-orange-400" />}
           <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">{title}</span>
@@ -95,7 +104,7 @@ function PopoverShell({ title, icon: Icon, onClose, anchor, children, testid, wi
           <X size={14} />
         </button>
       </div>
-      <div className="p-3 flex flex-col gap-3">{children}</div>
+      <div className="p-3 flex flex-col gap-3 overflow-y-auto">{children}</div>
     </div>
   );
 }
