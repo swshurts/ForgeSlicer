@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.5.0",
+    date: "2026-02-24",
+    title: "Better Slicing + Toolpath Preview",
+    changes: [
+      { type: "feature", text: "GCODE Preview — after slicing, click \"Preview toolpaths layer-by-layer\" to scrub through every layer in a 2D top-down viewer. Orange = print, grey = travel." },
+      { type: "feature", text: "Hybrid infill — sparse layers right next to the top & bottom solid bands now use a denser pattern to bridge cleanly into the solid (configurable Transition layers count, default 2)." },
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-02-24",
     title: "Real Slicing",

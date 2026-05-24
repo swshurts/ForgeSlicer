@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download } from "lucide-react";
+import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download, Eye } from "lucide-react";
 import { useScene, useSliceSettings } from "../lib/store";
 import { getBaseSize } from "../lib/geometry";
 import { sliceToGCODEAsync } from "../lib/workerClient";
 import { downloadText } from "../lib/exporters";
+import GcodePreviewDialog from "./GcodePreviewDialog";
 
 // ---------- Building blocks ----------
 function NumberField({ label, value, onChange, step = 1, suffix, testid, disabled }) {
@@ -441,6 +442,7 @@ export function SlicerPopover({ anchor, onClose }) {
   // user-gesture click here bypasses that heuristic. Cleared on every new
   // slice run so stale GCODE never gets re-shipped.
   const [lastDownload, setLastDownload] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const handleSlice = async () => {
     setError(""); setBusy(true); setStats(null); setLastDownload(null);
@@ -514,6 +516,9 @@ export function SlicerPopover({ anchor, onClose }) {
           </select>
         </label>
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField testid="popover-slice-transition-layers" label="Transition" value={settings.transitionLayers} onChange={(v) => setS({ transitionLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
+      </div>
       <div className="text-[10px] text-amber-400/80 flex items-start gap-1 font-medium leading-tight">
         <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
         <span>Top/bottom solid + sparse infill (rectilinear/grid/gyroid) are now generated. For supports, tree supports, multi-material, and adaptive layer height, export 3MF and slice in OrcaSlicer.</span>
@@ -554,8 +559,21 @@ export function SlicerPopover({ anchor, onClose }) {
           >
             <Download size={12} /> Download {lastDownload.filename} again
           </button>
+          <button
+            data-testid="popover-slice-preview-btn"
+            onClick={() => setPreviewOpen(true)}
+            className="h-8 px-3 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/60 text-orange-200 text-[11px] font-semibold rounded flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <Eye size={12} /> Preview toolpaths layer-by-layer
+          </button>
         </div>
       )}
+      <GcodePreviewDialog
+        open={previewOpen}
+        gcode={lastDownload?.gcode}
+        filename={lastDownload?.filename}
+        onClose={() => setPreviewOpen(false)}
+      />
     </PopoverShell>
   );
 }

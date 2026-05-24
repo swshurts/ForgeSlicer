@@ -357,6 +357,15 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 39 (2026-02-24) — Tier-(c) Hybrid Infill + GCODE Preview Viewer
+- ✅ **Tier-(c) hybrid infill**: layers immediately above the bottom solid band AND immediately below the top solid band now use a BOOSTED density (midpoint between user sparse % and 100%). Bridges sparse → solid cleanly so the first/last solid layer doesn't sag into a low-density gap below/above. Configurable `transitionLayers` count (default 2, in Slicer popover).
+- ✅ **GCODE Preview Viewer** (`GcodePreviewDialog.jsx`): scrubbable 2D top-down toolpath viewer. After every successful slice the Slicer popover gains a "Preview toolpaths layer-by-layer" button that opens a modal with a 560×560 canvas, prev/next layer buttons, play/pause loop (100ms/layer), and a range slider. Color legend: orange = extrusion, dim grey = travel. Per-layer stats show layer index, Z height, extrude move count, travel move count.
+- ✅ **GCODE parser**: lightweight, handles G0/G1 with modal X/Y/Z, distinguishes extrusion (G1 with E) from travel, buckets moves at each `; LAYER:n` comment.
+- ✅ Verified end-to-end on a 20mm cube: layer 1 (bottom solid) → 65 extrude moves rendering ±45° solid fill + perimeter; layer 51 (mid) → 16 extrude moves showing perimeter + ~6 sparse diagonal lines; layer 99 (top solid) → 65 extrude moves again. Auto-fit bounding box scales correctly to canvas.
+- ✅ Release notes bumped to v1.5.0 — returning users will auto-see the new entry on next visit.
+- ✅ Backend pytest: 131/131 passing.
+- Files: `frontend/src/lib/slicer.js` (transition layer detection + boosted density), `frontend/src/lib/store.js` (added `transitionLayers`), `frontend/src/components/ActionPopovers.jsx` (transition field + Preview button wire-up), `frontend/src/components/GcodePreviewDialog.jsx` (NEW), `frontend/src/lib/releaseNotes.js` (v1.5.0 entry).
+
 ## Iteration 38 (2026-02-24) — Release Notes Dialog (replaces "What's New" splash)
 - ✅ **New `ReleaseNotesDialog` component**: scrollable changelog modal with one entry per release (date, version chip, title, list of changes). Newest entry on top, full scroll history.
 - ✅ **Change type chips**: each bullet is tagged with a colored chip — emerald **NEW** (feature), cyan **TWEAK** (improvement), rose **FIX** (bug fix). Visual at-a-glance scanning of what kind of change shipped.

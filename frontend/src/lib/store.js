@@ -965,6 +965,10 @@ export const useSliceSettings = create((set) => ({
   infillPercent: 15,
   // Sparse infill pattern for middle layers: "rectilinear" | "grid" | "gyroid".
   infillPattern: "rectilinear",
+  // Tier-(c) hybrid: number of transition layers above bottom solid and
+  // below top solid where sparse infill density is boosted to bridge
+  // sparse → solid smoothly. 0 disables.
+  transitionLayers: 2,
   // Tier-(a) solid infill: number of fully solid layers at the bottom
   // and top of the print. Middle layers stay perimeter-only until
   // Tier-(b) sparse infill lands.

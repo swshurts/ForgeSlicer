@@ -54,6 +54,14 @@ export function sliceToGCODE(objects, settings, onProgress) {
     // OrcaSlicer/PrusaSlicer's gyroid).
     infillPercent = 15,
     infillPattern = "rectilinear",
+    // Tier-(c) gradient/transition layers — N layers immediately above
+    // the bottom solid band AND immediately below the top solid band
+    // get a BOOSTED density to bridge sparse → solid smoothly. Without
+    // this, sparse infill at low density (e.g. 10%) sags into the next
+    // solid layer because there's not enough material to bridge across.
+    // The boosted density is the midpoint between user-set sparse % and
+    // 100% (e.g., 15% sparse → 57% transition). Set to 0 to disable.
+    transitionLayers = 2,
   } = settings || {};
 
   const extrusionWidth = nozzleDiameter * 1.2;
@@ -174,7 +182,21 @@ export function sliceToGCODE(objects, settings, onProgress) {
       // density each line is 4× the extrusion width apart, etc. We clamp
       // density at [1, 100] before computing to avoid divide-by-zero and
       // absurdly wide spacing.
-      const pct = Math.min(100, Math.max(1, infillPercent));
+      //
+      // Tier-(c) hybrid: layers right above the bottom solid band and
+      // right below the top solid band get a BOOSTED density (midpoint
+      // between user % and 100%) so the next solid layer has something
+      // to bridge across instead of sagging. Without this, sparse infill
+      // at <20% commonly leaves visible droops in the first solid layer.
+      const inTransitionBottom = transitionLayers > 0 &&
+        li >= bottomLayers && li < bottomLayers + transitionLayers;
+      const inTransitionTop = transitionLayers > 0 &&
+        li >= totalLayers - topLayers - transitionLayers && li < totalLayers - topLayers;
+      const isTransition = inTransitionBottom || inTransitionTop;
+      const rawPct = isTransition
+        ? Math.min(100, infillPercent + (100 - infillPercent) / 2)
+        : infillPercent;
+      const pct = Math.min(100, Math.max(1, rawPct));
       const sparseSpacing = (extrusionWidth * 100) / pct;
       const insetAmount = extrusionWidth / 2;
       let sparse = [];
