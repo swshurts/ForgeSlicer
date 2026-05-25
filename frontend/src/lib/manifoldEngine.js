@@ -261,13 +261,26 @@ export async function evaluateSceneAsync(objects) {
   }
 
   const posManifolds = [];
+  const skipped = [];
   for (const p of positives) {
     try {
       posManifolds.push(buildObjectManifold(wasm, p));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn(`[manifoldEngine] skipped positive "${p.name}":`, err.message);
+      console.warn(`[manifoldEngine] failed positive "${p.name}":`, err.message);
+      skipped.push(p.name);
     }
+  }
+  // If ANY positive failed to convert, abort. The worker's evaluateSmart
+  // catches this and falls back to three-bvh-csg, which is more forgiving
+  // with imperfect imported STLs (open edges, near-coincident verts, etc.).
+  // We dispose anything we already built so memory doesn't leak.
+  if (skipped.length > 0) {
+    disposeAll(...posManifolds);
+    const err = new Error(`Manifold rejected ${skipped.length} object(s): ${skipped.join(", ")}`);
+    err.code = "MANIFOLD_REJECTED";
+    err.skipped = skipped;
+    throw err;
   }
   if (posManifolds.length === 0) {
     return {
@@ -290,13 +303,23 @@ export async function evaluateSceneAsync(objects) {
   let result = union;
   if (negatives.length > 0) {
     const negManifolds = [];
+    const negSkipped = [];
     for (const n of negatives) {
       try {
         negManifolds.push(buildObjectManifold(wasm, n));
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn(`[manifoldEngine] skipped negative "${n.name}":`, err.message);
+        console.warn(`[manifoldEngine] failed negative "${n.name}":`, err.message);
+        negSkipped.push(n.name);
       }
+    }
+    if (negSkipped.length > 0) {
+      // Abort & let BVH handle it — same reasoning as positives.
+      disposeAll(result, ...negManifolds);
+      const err = new Error(`Manifold rejected negative ${negSkipped.length} object(s): ${negSkipped.join(", ")}`);
+      err.code = "MANIFOLD_REJECTED";
+      err.skipped = negSkipped;
+      throw err;
     }
     if (negManifolds.length > 0) {
       const carved = wasm.Manifold.difference([result, ...negManifolds]);
@@ -346,10 +369,17 @@ export async function evaluateSceneByColorAsync(objects) {
   let negUnion = null;
   if (negatives.length > 0) {
     const negManifolds = [];
+    const negSkipped = [];
     for (const n of negatives) {
-      try {
-        negManifolds.push(buildObjectManifold(wasm, n));
-      } catch (_) { /* skip non-manifold neg */ }
+      try { negManifolds.push(buildObjectManifold(wasm, n)); }
+      catch (err) { negSkipped.push(n.name); }
+    }
+    if (negSkipped.length > 0) {
+      disposeAll(...negManifolds);
+      const err = new Error(`Manifold rejected negative ${negSkipped.length} object(s): ${negSkipped.join(", ")}`);
+      err.code = "MANIFOLD_REJECTED";
+      err.skipped = negSkipped;
+      throw err;
     }
     if (negManifolds.length === 1) {
       negUnion = negManifolds[0];
@@ -365,9 +395,17 @@ export async function evaluateSceneByColorAsync(objects) {
   for (const colorIndex of colorKeys) {
     const ps = byColor.get(colorIndex);
     const posManifolds = [];
+    const posSkipped = [];
     for (const p of ps) {
       try { posManifolds.push(buildObjectManifold(wasm, p)); }
-      catch (_) { /* skip */ }
+      catch (err) { posSkipped.push(p.name); }
+    }
+    if (posSkipped.length > 0) {
+      disposeAll(...posManifolds, negUnion);
+      const err = new Error(`Manifold rejected ${posSkipped.length} object(s): ${posSkipped.join(", ")}`);
+      err.code = "MANIFOLD_REJECTED";
+      err.skipped = posSkipped;
+      throw err;
     }
     if (posManifolds.length === 0) continue;
     let groupM;

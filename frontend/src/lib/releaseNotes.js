@@ -14,6 +14,14 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.8.1",
+    date: "2026-02-25",
+    title: "Imported STLs reappear",
+    changes: [
+      { type: "fix", text: "Imported STLs with tiny topology defects (open edges, near-coincident verts — common in third-party files) no longer silently vanish from STL/3MF export or the eye preview. They now route through the forgiving BVH boolean path automatically." },
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-02-25",
     title: "Sketch Mode",

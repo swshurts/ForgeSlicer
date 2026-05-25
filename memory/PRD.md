@@ -357,6 +357,14 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 42 (2026-02-25) — Imported STL Disappearance Fix
+- 🔴 **User-reported bug**: imported Gridfinity base (cut down + boolean'd with cube + chamfers + 8 negative cylinders) showed up in the workspace but disappeared from the eye-preview, STL export, and 3MF export.
+- 🔍 **Root cause**: `evaluateSceneAsync` (manifold-3d engine) was calling `buildObjectManifold` per object inside a `try/catch` that **silently** dropped any object manifold-3d rejected (NotManifold status on STLs with tiny topology defects — extremely common in third-party files). The worker's BVH fallback only kicks in when the WHOLE async eval throws, so partial rejections meant the bad object just vanished while everything else still rendered. Symptom matched user's report exactly.
+- ✅ **Fix**: when `buildObjectManifold` rejects ANY positive OR negative, abort the entire manifold eval with a `MANIFOLD_REJECTED` error. The worker's `evaluateSmart` catches it and falls back to three-bvh-csg, which is more forgiving with imperfect imports. Same fix applied to `evaluateSceneByColorAsync` (3MF multi-color path).
+- ✅ User confirmed fix works on their Tool Holder design.
+- ✅ Release notes bumped to v1.8.1.
+- Files: `frontend/src/lib/manifoldEngine.js`, `frontend/src/lib/releaseNotes.js`.
+
 ## Iteration 41 (2026-02-25) — Sketch / 2D Drawing Mode
 - ✅ **Sketch mode**: full-screen 2D drawing overlay that turns user-drawn shapes into extruded scene objects. Toggled via the new `SKETCH` toolbar button in Row 2. Implemented as a `SketchOverlay` component mounted inside Workspace so it disappears the moment the user exits or commits.
 - ✅ **Three drawing tools**:
