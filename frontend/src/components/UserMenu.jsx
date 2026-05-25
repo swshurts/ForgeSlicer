@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { LogIn, LogOut, User as UserIcon, FolderOpen, Library } from "lucide-react";
+import { LogIn, LogOut, User as UserIcon, FolderOpen, Library, CreditCard } from "lucide-react";
 
 // Compact auth widget for top-bar use. Anonymous => "Sign in" button;
 // authenticated => avatar that opens a dropdown to Profile / My Designs /
@@ -95,6 +95,19 @@ export default function UserMenu({ returnPath }) {
             className="flex items-center gap-2 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
           >
             <Library size={13} className="text-orange-400" /> My Components
+          </Link>
+          <Link
+            to="/pricing"
+            data-testid="user-menu-pricing-link"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 border-t border-slate-800"
+          >
+            <CreditCard size={13} className="text-orange-400" /> Plans &amp; Pricing
+            {user.subscription_tier && user.subscription_tier !== "free" && (
+              <span className="ml-auto text-[9px] font-mono uppercase tracking-wider text-emerald-300 bg-emerald-500/15 border border-emerald-500/40 rounded px-1.5 py-0.5">
+                {user.subscription_tier}
+              </span>
+            )}
           </Link>
           <button
             data-testid="user-menu-logout-btn"

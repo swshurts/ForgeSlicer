@@ -421,18 +421,20 @@ function CutHUD() {
 
   const handleApply = (keep) => {
     setBusy(true);
-    // Run on the next tick so the busy state flushes before the heavy CSG call.
-    setTimeout(() => {
-      const result = applyCut(keep);
-      setBusy(false);
-      if (result.ok) {
-        const pieces = result.pieces;
-        toast.success(`Cut applied: ${pieces} piece${pieces > 1 ? "s" : ""} created`);
-        if (result.errors && result.errors.length > 0) {
-          toast.warning("Some objects had issues", { description: result.errors.join("\n") });
+    setTimeout(async () => {
+      try {
+        const result = await applyCut(keep);
+        if (result.ok) {
+          const pieces = result.pieces;
+          toast.success(`Cut applied: ${pieces} piece${pieces > 1 ? "s" : ""} created`);
+          if (result.errors && result.errors.length > 0) {
+            toast.warning("Some objects had issues", { description: result.errors.join("\n") });
+          }
+        } else {
+          toast.error("Cut failed", { description: result.error });
         }
-      } else {
-        toast.error("Cut failed", { description: result.error });
+      } finally {
+        setBusy(false);
       }
     }, 50);
   };

@@ -18,6 +18,7 @@ from email_service import send_contributor_celebration
 import meshy_service
 import email_service
 import auth_local
+import billing
 import admin as admin_module
 
 
@@ -189,6 +190,12 @@ def _public_user(user: dict) -> dict:
         # Override quota — the AIGenerateDialog shows the effective cap;
         # if set, it overrides the default + contributor multiplier.
         "ai_quota_override": user.get("ai_quota_override"),
+        # Stripe subscription state — used by the frontend to render the
+        # current plan in the UserMenu + pricing page. `subscription_tier`
+        # is the package_id ("free", "maker", or "pro"); `expires_at` is
+        # an ISO timestamp set when the most recent payment was confirmed.
+        "subscription_tier": user.get("subscription_tier", "free"),
+        "subscription_expires_at": user.get("subscription_expires_at"),
     }
 
 
@@ -361,6 +368,64 @@ async def get_public_user_components(user_id: str):
     return [{**d, "created_at": d.get("created_at", "")} for d in items]
 
 
+@api_router.get("/users/{user_id}/remix-activity")
+async def get_user_remix_activity(user_id: str, limit: int = 25):
+    """Activity feed: PUBLIC gallery items that remixed any design owned
+    by `user_id`, newest first. Used on the public author profile to give
+    creators visibility into how their work is being built upon — a
+    lightweight social-signal layer.
+
+    Each entry includes:
+      - the remix item's id / name / thumbnail / created_at / author / author_id
+      - the source design's id + name (so the UI can render "X remixed your Y")
+
+    Private remixes (private=true) are excluded — viewers should only see
+    activity that's already public on the gallery, otherwise we'd leak
+    the existence of private projects through the back door."""
+    exists = await db.users.count_documents({"user_id": user_id}, limit=1)
+    if not exists:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # First, find the IDs of every design this user owns. Then pull the
+    # public gallery items whose remix_of points at any of them.
+    my_designs_cursor = db.gallery.find(
+        {"user_id": user_id},
+        {"_id": 0, "id": 1, "name": 1},
+    )
+    my_designs = await my_designs_cursor.to_list(2000)
+    if not my_designs:
+        return []
+    source_by_id = {d["id"]: d.get("name", "Untitled") for d in my_designs}
+
+    cursor = db.gallery.find(
+        {
+            "remix_of": {"$in": list(source_by_id.keys())},
+            "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+            # Don't surface the user remixing their own designs — would
+            # flood the feed with self-iteration noise.
+            "user_id": {"$ne": user_id},
+        },
+        {"_id": 0, "id": 1, "name": 1, "author": 1, "user_id": 1,
+         "thumbnail_base64": 1, "created_at": 1, "remix_of": 1},
+    ).sort("created_at", -1).limit(max(1, min(200, int(limit))))
+
+    items = await cursor.to_list(limit)
+    return [
+        {
+            "id": it["id"],
+            "name": it.get("name", "Untitled"),
+            "author": it.get("author", "Anonymous"),
+            "author_id": it.get("user_id"),
+            "thumbnail_base64": it.get("thumbnail_base64", ""),
+            "created_at": it.get("created_at", ""),
+            "source_id": it.get("remix_of"),
+            "source_name": source_by_id.get(it.get("remix_of"), "your design"),
+        }
+        for it in items
+    ]
+
+
+
 @api_router.put("/me/profile")
 async def update_my_profile(req: auth_local.ProfileUpdateRequest, request: Request):
     """Update the optional profile fields. Only supplied keys are touched —
@@ -406,6 +471,13 @@ api_router.include_router(admin_module.build_admin_router(
     db=db,
     public_user=_public_user,
 ))
+
+# Mount the Stripe billing routers. `/api/billing/*` for checkout +
+# status polling (uses the auth helper to attribute checkouts to users)
+# and `/api/webhook/stripe` (no prefix — Stripe expects the exact URL
+# we registered with them).
+billing_api_router = billing.get_router(db, get_optional_user)
+billing_webhook_router = billing.get_webhook_router(db)
 
 
 # ---------- Contributor tier ----------
@@ -1469,6 +1541,11 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
 
 app.include_router(api_router)
+# Billing routers are mounted on `app` directly because the checkout
+# router already has its own /api/billing prefix, and the webhook router
+# uses the exact `/api/webhook/stripe` path Stripe expects (no prefix).
+app.include_router(billing_api_router)
+app.include_router(billing_webhook_router)
 
 app.add_middleware(
     CORSMiddleware,

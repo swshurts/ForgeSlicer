@@ -2,7 +2,7 @@
 // wrappers around all CSG/slice/export operations and a synchronous main-thread
 // fallback for environments where Worker construction fails (test runners,
 // extremely old browsers, sandbox limits).
-import { evaluateScene, combineTwo } from "./csg";
+import { evaluateScene, combineTwo, cutObjectByPlane } from "./csg";
 import { sliceToGCODE } from "./slicer";
 import {
   exportSceneToSTLBytes as mainExportSTLBytes,
@@ -92,6 +92,42 @@ export async function combineTwoAsync(a, b, op) {
   if (p) return p;
   return combineTwo(a, b, op);
 }
+
+// Cut an object by an infinite plane via the manifold-3d worker (with
+// main-thread BVH fallback). Plane object: `{ position: [x,y,z],
+// rotation: [degX,degY,degZ] }`. `options.upper` / `options.lower`
+// default to true; set false to skip emitting that half.
+export async function cutObjectByPlaneAsync(obj, plane, options = {}) {
+  const p = runOnWorker("cut-plane", { obj, plane, options });
+  if (p) return p;
+  return cutObjectByPlane(obj, plane, options);
+}
+
+// Bake a subset of scene objects into a single new imported mesh via
+// the manifold-3d engine — used by the Flatten context-menu action. The
+// caller wraps the returned vertices/indices/bbox into a scene object.
+export async function flattenObjectsAsync(objects) {
+  const p = runOnWorker("flatten", { objects });
+  if (p) return p;
+  // Main-thread fallback uses BVH-CSG. We still return the same shape so
+  // ContextMenu's handler doesn't need to branch on engine.
+  const r = evaluateScene(objects);
+  if (r.empty || !r.geometry.attributes?.position) {
+    throw new Error("Empty merged geometry");
+  }
+  const pos = r.geometry.attributes.position.array;
+  const verts = pos instanceof Float32Array ? new Float32Array(pos) : Float32Array.from(pos);
+  const idx = r.geometry.index ? new Uint32Array(r.geometry.index.array) : null;
+  r.geometry.computeBoundingBox?.();
+  const bb = r.geometry.boundingBox;
+  return {
+    vertices: verts,
+    indices: idx,
+    bbox: bb ? { min: { x: bb.min.x, y: bb.min.y, z: bb.min.z }, max: { x: bb.max.x, y: bb.max.y, z: bb.max.z } } : null,
+    manifoldVerified: false,
+  };
+}
+
 
 export async function sliceToGCODEAsync(objects, settings, onProgress) {
   // Strip non-clonable fields (e.g. Zustand's `set` action) before

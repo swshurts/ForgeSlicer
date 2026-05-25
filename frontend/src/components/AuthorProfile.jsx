@@ -56,6 +56,49 @@ function DesignCard({ item }) {
   );
 }
 
+function RemixActivityRow({ item }) {
+  // "<author> remixed your <source name>" — a single horizontal row with
+  // thumbnail, attribution, and time-ago. Clicking the row opens the
+  // remix in /workspace?remix=<id> so the viewer can see what it became.
+  const navigate = useNavigate();
+  const thumb = item.thumbnail_base64 ? `data:image/png;base64,${item.thumbnail_base64}` : PLACEHOLDER;
+  const ago = formatAgo(item.created_at);
+  return (
+    <button
+      data-testid={`author-activity-${item.id}`}
+      onClick={() => navigate(`/workspace?remix=${item.id}`)}
+      className="text-left bg-slate-900 border border-slate-800 hover:border-orange-500/40 rounded-lg p-3 flex items-center gap-3 group transition-colors"
+    >
+      <img src={thumb} alt={item.name} className="w-14 h-14 rounded object-cover bg-slate-950 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-slate-200 truncate">
+          <span className="text-orange-300 font-semibold">{item.author}</span>
+          <span className="text-slate-400"> remixed </span>
+          <span className="text-white font-semibold">{item.source_name}</span>
+        </div>
+        <div className="text-xs text-slate-500 truncate mt-0.5">
+          as <span className="text-slate-300">{item.name}</span>
+        </div>
+      </div>
+      <div className="text-[10px] text-slate-500 flex-shrink-0 font-mono">{ago}</div>
+    </button>
+  );
+}
+
+// Compact relative-time formatter. Falls back to ISO date if parsing fails.
+function formatAgo(iso) {
+  try {
+    const t = new Date(iso).getTime();
+    if (!isFinite(t)) return "";
+    const sec = Math.floor((Date.now() - t) / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+    if (sec < 2592000) return `${Math.floor(sec / 86400)}d ago`;
+    return new Date(iso).toLocaleDateString();
+  } catch { return ""; }
+}
+
 function ComponentCard({ item }) {
   return (
     <div
@@ -78,6 +121,7 @@ export default function AuthorProfile() {
   const [profile, setProfile] = useState(null);
   const [designs, setDesigns] = useState([]);
   const [components, setComponents] = useState([]);
+  const [remixActivity, setRemixActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("designs");
@@ -88,17 +132,19 @@ export default function AuthorProfile() {
     setError("");
     (async () => {
       try {
-        // Run all three fetches in parallel; if the user doesn't exist
+        // Run all four fetches in parallel; if the user doesn't exist
         // the profile endpoint 404s and we render the not-found state.
-        const [profRes, designRes, compRes] = await Promise.all([
+        const [profRes, designRes, compRes, remixRes] = await Promise.all([
           axios.get(`${API}/users/${userId}/profile`),
           axios.get(`${API}/users/${userId}/designs`),
           axios.get(`${API}/users/${userId}/components`),
+          axios.get(`${API}/users/${userId}/remix-activity`).catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         setProfile(profRes.data);
         setDesigns(designRes.data || []);
         setComponents(compRes.data || []);
+        setRemixActivity(remixRes.data || []);
       } catch (e) {
         if (cancelled) return;
         const status = e?.response?.status;
@@ -207,6 +253,7 @@ export default function AuthorProfile() {
               {[
                 { key: "designs", label: `Designs (${designs.length})` },
                 { key: "components", label: `Components (${components.length})` },
+                { key: "activity", label: `Activity (${remixActivity.length})` },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -241,6 +288,21 @@ export default function AuthorProfile() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3" data-testid="author-components-grid">
                   {components.map((item) => <ComponentCard key={item.id} item={item} />)}
+                </div>
+              )
+            )}
+
+            {tab === "activity" && (
+              remixActivity.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 text-sm" data-testid="author-activity-empty">
+                  No remixes of {profile.name}'s designs yet.
+                  <div className="text-[11px] text-slate-600 mt-2">When someone forks a public design, it'll show up here.</div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2" data-testid="author-activity-feed">
+                  {remixActivity.map((item) => (
+                    <RemixActivityRow key={item.id} item={item} />
+                  ))}
                 </div>
               )
             )}

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library } from "lucide-react";
 import { useScene } from "../lib/store";
-import { evaluateScene } from "../lib/csg";
+import { flattenObjectsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
 
 // A small right-click context menu shown for the viewport AND outliner.
@@ -108,16 +108,15 @@ export default function ContextMenu({ position, onClose }) {
         .map((id) => useScene.getState().objects.find((o) => o.id === id))
         .filter(Boolean);
       if (subset.length === 0) { onClose(); return; }
-      const r = evaluateScene(subset);
-      if (r.empty || !r.geometry.attributes || !r.geometry.attributes.position) {
+      const r = await flattenObjectsAsync(subset);
+      if (!r || !r.vertices || r.vertices.length === 0) {
         alert("Could not flatten: the merged selection is empty.");
         onClose();
         return;
       }
-      const pos = r.geometry.attributes.position.array;
-      const verts = pos instanceof Float32Array ? pos.slice() : new Float32Array(pos);
-      const idx = r.geometry.index ? new Uint32Array(r.geometry.index.array) : null;
-      const bb = r.geometry.boundingBox || (() => { r.geometry.computeBoundingBox(); return r.geometry.boundingBox; })();
+      const verts = r.vertices;
+      const idx = r.indices;
+      const bb = r.bbox;
       const name = subset[0].groupName || (subset[0].name + " (flattened)");
       // Build the new imported mesh object inline (mirrors store.addImportedMesh)
       // so we can do EVERYTHING in a single atomic setState — no race between
@@ -134,7 +133,7 @@ export default function ContextMenu({ position, onClose }) {
         scale: [1, 1, 1],
         dims: {},
         colorIndex: 0,
-        originalBbox: { x: bb.max.x - bb.min.x, y: bb.max.y - bb.min.y, z: bb.max.z - bb.min.z },
+        originalBbox: bb ? { x: bb.max.x - bb.min.x, y: bb.max.y - bb.min.y, z: bb.max.z - bb.min.z } : { x: 0, y: 0, z: 0 },
         geometry: { vertices: verts, indices: idx },
       };
       // Push history BEFORE mutating so undo restores both the originals and

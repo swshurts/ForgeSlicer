@@ -22,6 +22,7 @@ import {
   evaluateSceneAsync,
   evaluateSceneByColorAsync,
   combineTwoAsync,
+  cutObjectByPlaneAsync,
 } from "../manifoldEngine";
 import { sliceToGCODE } from "../slicer";
 import { build3MFBytes, build3MFBytesMulti } from "../threemf";
@@ -116,6 +117,45 @@ self.addEventListener("message", async (e) => {
         result = merged;
         if (merged.vertices?.buffer) transfers.push(merged.vertices.buffer);
         if (merged.indices?.buffer) transfers.push(merged.indices.buffer);
+        break;
+      }
+      case "cut-plane": {
+        // Slice a single object by an infinite plane. Manifold-only —
+        // the legacy main-thread `cutObjectByPlane` already exists for
+        // worker-unavailable fallback paths.
+        const r = await cutObjectByPlaneAsync(payload.obj, payload.plane, payload.options || {});
+        result = r;
+        if (r.upper?.vertices?.buffer) transfers.push(r.upper.vertices.buffer);
+        if (r.upper?.indices?.buffer) transfers.push(r.upper.indices.buffer);
+        if (r.lower?.vertices?.buffer) transfers.push(r.lower.vertices.buffer);
+        if (r.lower?.indices?.buffer) transfers.push(r.lower.indices.buffer);
+        break;
+      }
+      case "flatten": {
+        // Evaluate a subset of objects via manifold-3d and return baked
+        // mesh vertices + indices. Wraps `stl-bytes` minus the STL
+        // serialisation step — the caller wants raw geometry to merge
+        // into a single new imported mesh.
+        const r = await evaluateSmart(payload.objects);
+        if (r.empty || !r.geometry.attributes?.position) {
+          throw new Error("Empty merged geometry");
+        }
+        const pos = r.geometry.attributes.position.array;
+        const verts = pos instanceof Float32Array ? new Float32Array(pos) : Float32Array.from(pos);
+        const idx = r.geometry.index ? new Uint32Array(r.geometry.index.array) : null;
+        r.geometry.computeBoundingBox?.();
+        const bb = r.geometry.boundingBox;
+        result = {
+          vertices: verts,
+          indices: idx,
+          bbox: bb ? {
+            min: { x: bb.min.x, y: bb.min.y, z: bb.min.z },
+            max: { x: bb.max.x, y: bb.max.y, z: bb.max.z },
+          } : null,
+          manifoldVerified: !!r.manifoldVerified,
+        };
+        transfers.push(verts.buffer);
+        if (idx) transfers.push(idx.buffer);
         break;
       }
       case "slice": {

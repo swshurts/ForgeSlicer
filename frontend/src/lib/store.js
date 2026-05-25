@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 import { computeRotatedBBox } from "./geometry";
 import { cutObjectByPlane } from "./csg";
+import { cutObjectByPlaneAsync } from "./workerClient";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -819,7 +820,7 @@ export const useScene = create((set, get) => ({
   // the original with up to two new "imported mesh" objects representing
   // the resulting pieces. History-atomic so Ctrl+Z restores everything in
   // one step.
-  applyCut: (keep = "both") => {
+  applyCut: async (keep = "both") => {
     const s = get();
     const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
     if (ids.length === 0) return { ok: false, error: "Nothing selected" };
@@ -830,10 +831,27 @@ export const useScene = create((set, get) => ({
       const src = s.objects.find((o) => o.id === id);
       if (!src) continue;
       try {
-        const result = cutObjectByPlane(src, plane, {
-          upper: keep === "both" || keep === "upper",
-          lower: keep === "both" || keep === "lower",
-        });
+        // Prefer the manifold-3d worker path so cuts are guaranteed
+        // watertight; the workerClient automatically falls back to
+        // the synchronous BVH-CSG cutter if the worker can't be
+        // constructed (test environments, very old browsers).
+        let result;
+        try {
+          result = await cutObjectByPlaneAsync(src, plane, {
+            upper: keep === "both" || keep === "upper",
+            lower: keep === "both" || keep === "lower",
+          });
+        } catch (manifoldErr) {
+          // Manifold rejected (NotManifold on a corrupted import etc.) —
+          // fall back to BVH so the user still gets a result instead of
+          // a hard error.
+          // eslint-disable-next-line no-console
+          console.warn("[applyCut] manifold cut failed, falling back to BVH:", manifoldErr.message);
+          result = cutObjectByPlane(src, plane, {
+            upper: keep === "both" || keep === "upper",
+            lower: keep === "both" || keep === "lower",
+          });
+        }
         const pieces = [];
         if (result.upper) pieces.push({ part: result.upper, suffix: keep === "both" ? "upper" : "" });
         if (result.lower) pieces.push({ part: result.lower, suffix: keep === "both" ? "lower" : "" });

@@ -357,6 +357,33 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 40 (2026-02-25) — Stripe Integration + Manifold-async Migration + Remix Activity Feed
+
+### Stripe billing (formerly "on hold")
+- ✅ **Pricing page** at `/pricing` — Free / Maker ($50/yr) / Pro ($190/yr). Server-defined catalog (`/api/billing/packages`) is the single source of truth; frontend never sends amounts to Stripe.
+- ✅ **Checkout flow**: `POST /api/billing/checkout` creates a Stripe session, persists a `payment_transactions` row with status="initiated", returns a checkout URL. Frontend hard-redirects to Stripe.
+- ✅ **Success page** at `/billing/success?session_id=...` polls `GET /api/billing/status/{session_id}` (every 2s, up to 10 attempts) and grants the tier idempotently on `payment_status=paid`. AuthContext refreshes immediately so the new tier shows up across the UI without reload.
+- ✅ **Webhook** at `POST /api/webhook/stripe` updates the transaction row as a backup confirmation channel — the primary tier grant runs on the polling path, but webhook ensures eventual consistency if the user closes the tab.
+- ✅ **Tier persistence**: `user.subscription_tier` ("free" / "maker" / "pro") + `subscription_expires_at` (ISO timestamp 365 days from payment). Exposed on `/api/auth/me` for frontend gating.
+- ✅ **UserMenu badge**: shows the current paid tier ("MAKER" / "PRO") next to the "Plans & Pricing" link for instant visibility.
+- ✅ Uses Emergent's pre-provisioned `sk_test_emergent` key (no user credential collection needed). Test cards work end-to-end through real Stripe Sandbox.
+- ✅ Tests: `backend/tests/test_billing.py` — 5/5 passing (catalog, unknown-package rejection, session creation, 404 on unknown session, default tier).
+
+### Manifold-async migration (P2)
+- ✅ Migrated `ContextMenu.Flatten` and `store.applyCut` from sync `three-bvh-csg` to the manifold-3d worker pipeline.
+- ✅ Added `cutObjectByPlaneAsync` + `flattenObjectsAsync` to `workerClient.js`. Worker now exposes `cut-plane` and `flatten` job types alongside existing `combine` / `evaluate-stats` / `slice` / `stl-bytes` / `threemf-bytes`.
+- ✅ Graceful fallback: each path catches manifold failures and falls back to BVH-CSG silently (with a console warning) so corrupted imports never hard-error.
+- ✅ Workspace `handleApply` now `await`s the async `applyCut` and shows the busy state correctly during the heavier manifold compute.
+
+### Remix activity feed (P3)
+- ✅ New backend endpoint `GET /api/users/{user_id}/remix-activity` returns public gallery items that remixed any design owned by `user_id`, newest-first. Private remixes excluded; self-remixes filtered out.
+- ✅ New "Activity (N)" tab on `AuthorProfile` (`/u/:userId`) — clean horizontal rows with thumbnail, "X remixed your Y as Z", relative time. Clicking a row opens that remix in `/workspace?remix=<id>`.
+
+### Other
+- ✅ Release notes bumped to v1.7.0 — three combined entries.
+- ✅ Backend pytest: **136/136 passing**.
+- Files: `backend/billing.py` (NEW), `backend/server.py` (router mount + me-endpoint tier fields + remix-activity route), `backend/.env` (STRIPE_API_KEY), `backend/tests/test_billing.py` (NEW), `frontend/src/components/PricingPage.jsx` (NEW), `frontend/src/components/BillingSuccessPage.jsx` (NEW), `frontend/src/components/UserMenu.jsx`, `frontend/src/App.js`, `frontend/src/components/AuthorProfile.jsx`, `frontend/src/lib/store.js`, `frontend/src/lib/workerClient.js`, `frontend/src/lib/workers/csg.worker.js`, `frontend/src/components/ContextMenu.jsx`, `frontend/src/components/Workspace.jsx`, `frontend/src/lib/releaseNotes.js`.
+
 ## Iteration 39 (2026-02-24) — Tier-(c) Hybrid Infill + GCODE Preview Viewer
 - ✅ **Tier-(c) hybrid infill**: layers immediately above the bottom solid band AND immediately below the top solid band now use a BOOSTED density (midpoint between user sparse % and 100%). Bridges sparse → solid cleanly so the first/last solid layer doesn't sag into a low-density gap below/above. Configurable `transitionLayers` count (default 2, in Slicer popover).
 - ✅ **GCODE Preview Viewer** (`GcodePreviewDialog.jsx`): scrubbable 2D top-down toolpath viewer. After every successful slice the Slicer popover gains a "Preview toolpaths layer-by-layer" button that opens a modal with a 560×560 canvas, prev/next layer buttons, play/pause loop (100ms/layer), and a range slider. Color legend: orange = extrusion, dim grey = travel. Per-layer stats show layer index, Z height, extrude move count, travel move count.

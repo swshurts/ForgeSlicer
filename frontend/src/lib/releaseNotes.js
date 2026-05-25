@@ -14,6 +14,24 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.7.0",
+    date: "2026-02-25",
+    title: "Plans &amp; Pricing",
+    changes: [
+      { type: "feature", text: "New Maker ($50/yr) and Pro ($190/yr) tiers unlock more AI generations, unlimited private designs, commercial-use license badges, and priority slicing. Manage everything from the new Plans & Pricing page in the user menu." },
+      { type: "improvement", text: "Stripe-powered checkout handles every payment — your card details never touch our servers." },
+    ],
+  },
+  {
+    version: "1.6.0",
+    date: "2026-02-24",
+    title: "Watertight Cut + Activity Feed",
+    changes: [
+      { type: "improvement", text: "Cut tool + Flatten now both use the manifold-3d engine — every piece they produce is guaranteed watertight (no slivers, no open edges)." },
+      { type: "feature", text: "Profile pages have a new Activity tab — see who remixed your designs, when, and what they made. Newest first." },
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-02-24",
     title: "Better Slicing + Toolpath Preview",
