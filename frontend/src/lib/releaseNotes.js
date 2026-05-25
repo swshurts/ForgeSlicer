@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.8.2",
+    date: "2026-02-25",
+    title: "Auto-repair imported STLs",
+    changes: [
+      { type: "feature", text: "Imported STLs are now auto-repaired on the fly — tiny topology defects (hairline cracks, duplicate vertices, sub-micron gaps) common in third-party files get welded silently before slicing. Saves a manual \"Repair\" step in OrcaSlicer or FlashForge Studio." },
+      { type: "improvement", text: "Repair runs at four progressive tolerance levels scaled to the model size, so small parts don't get over-collapsed and large parts still close." },
+    ],
+  },
+  {
     version: "1.8.1",
     date: "2026-02-25",
     title: "Imported STLs reappear",

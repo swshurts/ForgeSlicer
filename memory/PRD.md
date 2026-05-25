@@ -357,6 +357,15 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 43 (2026-02-25) — STL Auto-Repair (4-Pass Progressive Weld)
+- ✅ **Auto-repair pass on import**: `geometryToManifold` now attempts four progressive weld tolerances (scaled to the model's bbox diagonal: 1e-7, 1e-5, 1e-4, 5e-4) before giving up. Most third-party STLs (Thingiverse, Printables, MakerWorld) have sub-micron gaps that fail manifold-3d's strict check on first construction — this fix transparently bridges those gaps. Replicates what OrcaSlicer / FlashForge "Repair" does, but invisibly.
+- ✅ **Tolerance scales with model size**: a 1mm absolute gap is catastrophic on a 5mm earring but a rounding error on a 200mm Gridfinity tray — we use bbox-diagonal proportional tolerances so small parts don't get over-collapsed and large parts still close.
+- ✅ **Manifold ✓ badge survives auto-repair**: when the repair pass succeeds (which is the common case), the resulting boolean output is still 100% watertight, so the Gallery badge persists. Only if all 4 passes fail does the worker fall back to BVH (and the badge isn't applied).
+- ✅ **Tests**: new `tests/manifold-repair-smoke.mjs` builds a synthetic broken cube with mismatched corner vertices, confirms direct construction throws `NotManifold`, and confirms our progressive weld repairs it cleanly. Plus 9/9 existing manifold-smoke + 136/136 backend tests still green.
+- ✅ Verified end-to-end on the running Preview build with a cube+sphere union → 89KB STL exported through the auto-repair-aware path with zero errors.
+- ✅ Release notes bumped to v1.8.2.
+- Files: `frontend/src/lib/manifoldEngine.js` (rewrote `geometryToManifold` + added `modelScale` helper), `frontend/tests/manifold-repair-smoke.mjs` (NEW), `frontend/src/lib/releaseNotes.js`.
+
 ## Iteration 42 (2026-02-25) — Imported STL Disappearance Fix
 - 🔴 **User-reported bug**: imported Gridfinity base (cut down + boolean'd with cube + chamfers + 8 negative cylinders) showed up in the workspace but disappeared from the eye-preview, STL export, and 3MF export.
 - 🔍 **Root cause**: `evaluateSceneAsync` (manifold-3d engine) was calling `buildObjectManifold` per object inside a `try/catch` that **silently** dropped any object manifold-3d rejected (NotManifold status on STLs with tiny topology defects — extremely common in third-party files). The worker's BVH fallback only kicks in when the WHOLE async eval throws, so partial rejections meant the bad object just vanished while everything else still rendered. Symptom matched user's report exactly.

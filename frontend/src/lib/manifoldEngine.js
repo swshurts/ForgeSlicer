@@ -128,21 +128,89 @@ function weldGeometry(geom, tol = 1e-4) {
  * NonFiniteVertex, etc.). Callers are expected to handle these as
  * non-fatal so a single bad input doesn't tank the whole boolean chain.
  */
+/**
+ * Compute the model's typical edge length so we can pick repair
+ * tolerances that scale with the input. A 1mm gap is catastrophic on
+ * a 5mm earring but a rounding error on a 200mm Gridfinity base — fixed
+ * absolute tolerances would either miss small gaps or over-collapse
+ * tiny features. We sample the diagonal of the bbox and scale from there.
+ */
+function modelScale(geom) {
+  geom.computeBoundingBox();
+  const bb = geom.boundingBox;
+  if (!bb) return 1;
+  const dx = bb.max.x - bb.min.x;
+  const dy = bb.max.y - bb.min.y;
+  const dz = bb.max.z - bb.min.z;
+  const diag = Math.hypot(dx, dy, dz);
+  return diag > 0 ? diag : 1;
+}
+
+/**
+ * Build a Manifold from a THREE.BufferGeometry with progressive
+ * auto-repair. Most third-party STLs (Thingiverse, Printables, MakerWorld)
+ * arrive with tiny topology defects:
+ *   - duplicate vertices along seams that mergeVertices missed
+ *   - sub-micron gaps between adjacent triangles
+ *   - degenerate / zero-area tris from CAD export rounding
+ *   - hairline cracks along loft / sweep boundaries
+ *
+ * Each pass tightens-then-loosens the weld tolerance to close those
+ * gaps without collapsing the model:
+ *
+ *   Pass 1: tol = scale * 1e-7  → effectively no weld, fastest path for
+ *           already-clean meshes (Three.js primitives, exports from us).
+ *   Pass 2: tol = scale * 1e-5  → catches float-precision duplicates.
+ *   Pass 3: tol = scale * 1e-4  → bridges hairline cracks (~0.02mm on a
+ *           200mm part). This is what OrcaSlicer / FlashForge "Repair"
+ *           usually accomplishes.
+ *   Pass 4: tol = scale * 5e-4  → last-resort weld for chunky third-party
+ *           imports with visible seams.
+ *
+ * If all 4 passes still produce a `NotManifold` status, throw — the
+ * caller (evaluateSceneAsync) then aborts so the worker can fall back
+ * to BVH-CSG, which doesn't require manifold input.
+ */
 function geometryToManifold(wasm, geom) {
-  const { vertProperties, triVerts } = weldGeometry(geom);
-  if (triVerts.length === 0 || vertProperties.length === 0) {
-    throw new Error("Empty geometry");
+  const s = modelScale(geom);
+  const tolerances = [s * 1e-7, s * 1e-5, s * 1e-4, s * 5e-4];
+  let lastError = null;
+  for (let pass = 0; pass < tolerances.length; pass++) {
+    const tol = tolerances[pass];
+    const { vertProperties, triVerts } = weldGeometry(geom, tol);
+    if (triVerts.length === 0 || vertProperties.length === 0) {
+      lastError = new Error("Empty geometry");
+      continue;
+    }
+    let mesh = null;
+    let m = null;
+    try {
+      mesh = new wasm.Mesh({ numProp: 3, triVerts, vertProperties });
+      // `merge()` rebuilds shared-vertex topology — critical after a weld
+      // that collapsed duplicate verts into the same index.
+      mesh.merge();
+      m = new wasm.Manifold(mesh);
+      // manifold-3d exposes a status enum: "NoError" means the input is
+      // a valid 2-manifold solid. Anything else means we need a coarser
+      // weld pass. We don't trust the constructor to throw — some bad
+      // inputs construct successfully but with status != NoError.
+      const status = m.status();
+      if (status === "NoError" || !status) {
+        return m;
+      }
+      lastError = new Error(`Manifold status=${status} at tol=${tol.toExponential(2)}`);
+      m.delete();
+      m = null;
+    } catch (err) {
+      lastError = err;
+      if (m && !m.isDeleted?.()) {
+        try { m.delete(); } catch (_) { /* already gone */ }
+      }
+    }
   }
-  const mesh = new wasm.Mesh({
-    numProp: 3,
-    triVerts,
-    vertProperties,
-  });
-  // `merge()` rebuilds shared-vertex topology from the welded input,
-  // which is crucial when triangles meet along an edge that we welded
-  // but didn't co-index.
-  mesh.merge();
-  return new wasm.Manifold(mesh);
+  // All passes failed — re-throw the last error so the worker can fall
+  // back to the BVH path, which handles non-manifold meshes natively.
+  throw lastError || new Error("Auto-repair exhausted all weld tolerances");
 }
 
 /**
