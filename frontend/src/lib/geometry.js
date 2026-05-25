@@ -111,6 +111,24 @@ function buildShape2D(type, d) {
       else shape.lineTo(x, y);
     }
     shape.closePath();
+  } else if (type === "sketch") {
+    // User-drawn polygon. `d.points` is an array of [x, z] world-plane
+    // coords from the sketch overlay. We re-center the path on (0, 0)
+    // in the local Shape XY plane so the object's transform / position
+    // controls the world placement (same convention as every other
+    // primitive). The centroid offset is stored on the object so we
+    // can paint the world position cursor and add it back on placement.
+    const pts = Array.isArray(d.points) ? d.points : [];
+    if (pts.length >= 3) {
+      // Compute centroid (mean of vertices) so the Shape sits on its
+      // own origin — keeps gizmo math consistent.
+      let cx = 0, cy = 0;
+      for (const [x, y] of pts) { cx += x; cy += y; }
+      cx /= pts.length; cy /= pts.length;
+      shape.moveTo(pts[0][0] - cx, pts[0][1] - cy);
+      for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i][0] - cx, pts[i][1] - cy);
+      shape.closePath();
+    }
   }
   return shape;
 }
@@ -167,7 +185,7 @@ export function buildGeometry(obj) {
     const s = d.side || 20;
     return new THREE.BoxGeometry(s, d.h || 1, s);
   }
-  if (t === "triangle" || t === "polygon") {
+  if (t === "triangle" || t === "polygon" || t === "sketch") {
     const shape = buildShape2D(t, d);
     const g = new THREE.ExtrudeGeometry(shape, { depth: d.h || 1, bevelEnabled: false });
     // ExtrudeGeometry extrudes along +Z; rotate so depth aligns with world Y
@@ -254,6 +272,21 @@ export function getBaseSize(obj) {
   if (t === "polygon") {
     const r = d.r || 12;
     return { x: 2 * r, y: d.h || 1, z: 2 * r };
+  }
+  if (t === "sketch") {
+    // Compute the bbox of the user-drawn polygon — frontend dims.x / dims.z
+    // are pre-computed at sketch creation, but recompute defensively in
+    // case `points` was edited.
+    const pts = Array.isArray(d.points) ? d.points : [];
+    if (pts.length >= 3) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const [x, y] of pts) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      return { x: maxX - minX, y: d.h || 5, z: maxY - minY };
+    }
+    return { x: 10, y: d.h || 5, z: 10 };
   }
   if (t === "imported" && obj.originalBbox) {
     return { x: obj.originalBbox.x, y: obj.originalBbox.y, z: obj.originalBbox.z };

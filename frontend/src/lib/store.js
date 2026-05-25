@@ -233,6 +233,41 @@ export const useScene = create((set, get) => ({
     return obj.id;
   },
 
+  // Add a user-drawn sketch as an extruded scene object. `points` is an
+  // array of `[x, z]` world-plane coordinates (same units as `position`).
+  // The sketch's centroid becomes its origin; we then offset the object's
+  // world position so the polygon renders exactly where the user drew it
+  // (this is what "place on the build plate where I drew" should feel
+  // like — drawing in workspace XZ → object appears at that XZ).
+  addSketch: (points, modifier = "positive", height = 5) => {
+    if (!Array.isArray(points) || points.length < 3) return null;
+    get().pushHistory();
+    let cx = 0, cy = 0;
+    for (const [x, y] of points) { cx += x; cy += y; }
+    cx /= points.length; cy /= points.length;
+    const obj = {
+      id: newId("sketch"),
+      name: `Sketch ${(get().objects || []).filter((o) => o.type === "sketch").length + 1}`,
+      type: "sketch",
+      modifier,
+      visible: true,
+      locked: false,
+      position: [cx, height / 2, cy],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dims: { points: points.map(([x, y]) => [x, y]), h: height },
+      colorIndex: modifier === "negative" ? 0 : 7,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
+    return obj.id;
+  },
+
+  // Sketch-mode UI state — when truthy, the SketchOverlay component takes
+  // over the workspace canvas with a 2D drawing surface. Cleared by the
+  // overlay itself on commit / cancel.
+  sketchMode: false,
+  setSketchMode: (on) => set({ sketchMode: !!on }),
+
   addImportedMesh: (name, vertices, indices = null, originalBbox = null) => {
     get().pushHistory();
     let obj = {

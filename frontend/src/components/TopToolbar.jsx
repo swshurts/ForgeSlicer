@@ -19,7 +19,28 @@ import { PositionPopover, RotationPopover, ScalePopover, SlicerPopover, Duplicat
 import STLPreviewDialog from "./STLPreviewDialog";
 import VoiceButton from "./VoiceButton";
 import UserMenu from "./UserMenu";
-import { Eye, Library, CircleHelp, Sparkles, Box, Circle, Cylinder, Cone, Triangle, Hexagon as HexIcon, Square, Plus } from "lucide-react";
+import { Eye, Library, CircleHelp, Sparkles, Box, Circle, Cylinder, Cone, Triangle, Hexagon as HexIcon, Square, Plus, Pencil } from "lucide-react";
+
+// Toggle button that flips the workspace into 2D sketch mode. The
+// SketchOverlay component handles the actual drawing surface — this
+// button just flips the global flag. We also surface a subtle "active"
+// state via the orange background when sketch mode is on.
+function SketchButton() {
+  const sketchMode = useScene((s) => s.sketchMode);
+  const setSketchMode = useScene((s) => s.setSketchMode);
+  return (
+    <button
+      data-testid="sketch-toggle-btn"
+      onClick={() => setSketchMode(!sketchMode)}
+      title="Sketch mode — draw a 2D shape on the build plate to extrude into 3D"
+      className={`h-8 px-2 ml-0.5 rounded text-xs font-semibold flex items-center gap-1 ${
+        sketchMode ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+      }`}
+    >
+      <Pencil size={12} /> SKETCH
+    </button>
+  );
+}
 
 // Inline Add-Primitive dropdown that drops new objects into the scene
 // from the toolbar without forcing the user to open the left panel. The
@@ -465,6 +486,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
           actions on the right. */}
       <div className="min-h-11 flex flex-wrap items-center px-3 gap-y-1 gap-x-1 py-1 border-t border-slate-800/60 bg-slate-900/60" data-testid="top-toolbar-row-edit">
       <AddPrimitiveButton />
+      <SketchButton />
 
       <Divider />
 

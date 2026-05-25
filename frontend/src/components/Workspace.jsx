@@ -7,6 +7,7 @@ import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
 import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
+import SketchOverlay from "./SketchOverlay";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import HelpDialog from "./HelpDialog";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
@@ -362,6 +363,7 @@ export default function Workspace() {
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
           <Viewport />
           <CutHUD />
+          <SketchOverlay />
         </main>
         <RightPanel onSavePrinter={() => setSavePrinterOpen(true)} />
       </div>

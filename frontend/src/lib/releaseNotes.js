@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.8.0",
+    date: "2026-02-25",
+    title: "Sketch Mode",
+    changes: [
+      { type: "feature", text: "New Sketch mode — draw a 2D shape directly on the build plate (Pencil for free-form polygons, Rect for rectangles, Circle for discs) and it instantly becomes an editable 3D extrusion." },
+      { type: "feature", text: "Sketches respect every existing tool: drop-to-bed, transforms, boolean union/subtract, slicing, STL/3MF export, and they can be set as Negative cutouts." },
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-02-25",
     title: "Plans &amp; Pricing",

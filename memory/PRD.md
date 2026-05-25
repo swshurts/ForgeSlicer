@@ -357,6 +357,21 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Copy Share Link** button on every Gallery card. Composes `${origin}/workspace?remix=<id>` and writes to clipboard (falls back to prompt() if clipboard API blocked).
 - Files: `frontend/src/components/TopToolbar.jsx`, `frontend/src/App.js`, `frontend/src/components/Gallery.jsx`.
 
+## Iteration 41 (2026-02-25) — Sketch / 2D Drawing Mode
+- ✅ **Sketch mode**: full-screen 2D drawing overlay that turns user-drawn shapes into extruded scene objects. Toggled via the new `SKETCH` toolbar button in Row 2. Implemented as a `SketchOverlay` component mounted inside Workspace so it disappears the moment the user exits or commits.
+- ✅ **Three drawing tools**:
+  - **Pencil** — click to add polyline vertices, double-click or Enter to close. Dashed preview line follows the cursor between the last point and the hover position. ⌘Z undoes the last point, Esc cancels in stages.
+  - **Rect** — drag from corner to corner, right-angled rectangle commits on release.
+  - **Circle** — drag from center to set radius, approximated as a 48-segment polygon.
+- ✅ **Build-plate-aware**: canvas renders an actual build plate (e.g. 220×220mm) with a 10mm grid, origin crosshair, and a live X/Z coords readout in the bottom corner. Points snap to a 1mm grid for precision.
+- ✅ **New scene type `sketch`**: `buildShape2D` + `buildGeometry` + `getBaseSize` extended to handle arbitrary polygon point arrays. Sketches use the same `THREE.ExtrudeGeometry` pipeline as triangle/polygon primitives, so transforms, gizmos, drop-to-bed, mirror, cut, slicer, and STL/3MF export all work without further changes.
+- ✅ **Positive / Negative modifier** selector in the sketch toolbar — same dual-use as the left palette. Negative sketches subtract from positives via the existing CSG engine.
+- ✅ **Configurable extrude height** (default 5mm, min 0.5mm) — set per sketch right in the overlay before committing. Editable later in the Inspector.
+- ✅ End-to-end verified: drew a rectangle → became an extruded scene object on the bed (71×5×35 mm), fully editable, listed in Outliner as "Sketch 1".
+- ✅ Backend pytest: 136/136 passing (sketch work is frontend-only).
+- ✅ Release notes bumped to v1.8.0.
+- Files: `frontend/src/components/SketchOverlay.jsx` (NEW), `frontend/src/components/TopToolbar.jsx` (Sketch button + SketchButton component), `frontend/src/components/Workspace.jsx` (mount overlay), `frontend/src/lib/store.js` (`addSketch` + `sketchMode` state), `frontend/src/lib/geometry.js` (sketch shape + bbox), `frontend/src/lib/releaseNotes.js`.
+
 ## Iteration 40 (2026-02-25) — Stripe Integration + Manifold-async Migration + Remix Activity Feed
 
 ### Stripe billing (formerly "on hold")
