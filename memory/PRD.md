@@ -477,13 +477,23 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - Files: `frontend/src/lib/manifoldEngine.js` (NEW, 354 lines), `frontend/src/lib/workers/csg.worker.js` (rewritten to dual-engine), `frontend/craco.config.js` (node-scheme replacement plugin), `frontend/package.json` (manifold-3d dep + postinstall), `frontend/public/manifold.wasm` (copied), `frontend/tests/manifold-smoke.mjs` (NEW).
 - **Note**: main-thread sync callers (`exporters.js`, `ContextMenu.jsx` flatten, `store.js cutObjectByPlane`) still use `three-bvh-csg` since manifold's WASM init is async. Acceptable today because the worker is the primary execution path for every CSG-heavy user action (STL/3MF export, scene stats, Combine button, slicing). Future work: introduce async variants for the two remaining sync callers.
 
+## Iteration 47 (2026-02-25) — AMS-aware GCODE Preview (Multi-material Slicer + Per-extruder Toolpaths)
+- ✅ **Multi-material slicer**: `sliceToGCODE` now auto-detects scenes with 2+ distinct `colorIndex` groups and dispatches to a new `sliceMultiMaterialToGCODE` path. The new path uses `evaluateSceneByColor` to get per-color manifold geometries, then slices each colour's loops independently per layer with the existing solid/sparse/transition infill tier logic. Tool changes are emitted as `T<n>` lines + `; TOOL:n hex=#RRGGBB name=<n>` markers so downstream firmware and the in-app preview can both interpret them.
+- ✅ **AMS color table** declared once in the GCODE header (`; AMS_TABLE T0=#E5E5E5 T1=#3182CE …`) so previewers/post-processors don't need to wait for the first tool change to learn the palette.
+- ✅ **GCODE preview parser upgraded**: parses `AMS_TABLE`, `; TOOL:` markers, and explicit `T<n>` lines; attributes every G0/G1 move to its active tool; counts per-layer tool changes; records tool-change marker positions for visual overlay.
+- ✅ **Preview canvas renders per-tool colours**: extrusion strokes batched per extruder so each material paints in its filament hex from the palette (white, black, red, green, blue, yellow, purple, orange). Tool-change markers drawn as small coloured rings at the changeover XY. Single-material prints fall back to the legacy orange/grey rendering — zero visual regression.
+- ✅ **Per-tool legend with show/hide toggles**: when a print is multi-material, the dialog shows an `Extruders` legend with one chip per active tool (color swatch + `T<n> · <name>`). Clicking a chip hides that extruder's segments from the canvas, useful for inspecting a single colour layer-by-layer. An AMS badge in the dialog header advertises tool count.
+- ✅ **Layer stats** now include a `Tool Chg` cell on multi-material prints so the user can see at a glance which layers swap filaments.
+- ✅ **Tests**: `frontend/tests/ams-preview-smoke.mjs` covers AMS_TABLE palette ingestion, per-tool move attribution, tool-change counting, single-material no-regression, and implicit `T<n>` tool-change handling. 16/16 checks passing. Existing `manifold-smoke.mjs`: 9/9. Backend pytest: untouched (no backend changes for this feature).
+- Files: `frontend/src/lib/slicer.js` (multi-material slice path), `frontend/src/components/GcodePreviewDialog.jsx` (parser + per-tool rendering + legend), `frontend/tests/ams-preview-smoke.mjs` (NEW).
+
 ## Backlog / Future Enhancements
-- P1: Real solid infill in GCODE slicer (perimeter contours only today)
+- P1: Real solid infill in GCODE slicer (perimeter contours only today) — ✅ done
 - P2: Migrate the two remaining main-thread sync CSG callers (`ContextMenu.flatten`, `store.cutObjectByPlane`) to manifold-3d async — minor UX refactor (small "Computing…" state) but unifies the engine across all execution paths.
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app
 - P2: Further refactor `ContextMenu.jsx` + `TopToolbar.jsx`
-- P2: Stripe subscription tiers (PRICING_RESEARCH.md ready) — on hold per user request
-- P3: Sketch / 2D drawing mode
-- P3: AMS-aware preview — visualize multi-color slices layer-by-layer with extruder swaps
-- P3: Remix activity feed on Profile (who remixed your designs, when)
+- P2: Stripe subscription tiers (PRICING_RESEARCH.md ready) — ✅ done
+- P3: Sketch / 2D drawing mode — ✅ done
+- P3: AMS-aware preview — ✅ done (Iteration 47)
+- P3: Remix activity feed on Profile (who remixed your designs, when) — ✅ done
