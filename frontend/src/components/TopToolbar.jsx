@@ -265,9 +265,16 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
 
   const handleImport = async () => {
     try {
-      const file = await openFileDialog(".stl,.obj,.3mf");
-      setBusyMsg("Importing...");
+      const file = await openFileDialog(".stl,.obj,.3mf,.svg");
       const ext = file.name.split(".").pop().toLowerCase();
+      // SVG opens the dedicated import dialog (extrude height + sizing)
+      // rather than the direct-mesh path, since SVG is a 2D format.
+      if (ext === "svg") {
+        const text = await file.text();
+        window.dispatchEvent(new CustomEvent("forgeslicer:import-svg", { detail: { text, name: file.name } }));
+        return;
+      }
+      setBusyMsg("Importing...");
       const mesh =
         ext === "obj" ? await importOBJFile(file)
         : ext === "3mf" ? await import3MFFile(file)
@@ -367,7 +374,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       <IconBtn testid="file-save-btn" onClick={handleSaveProject} title="Save Project to Local">
         <Save size={16} />
       </IconBtn>
-      <IconBtn testid="file-import-btn" onClick={handleImport} title="Import STL / OBJ / 3MF">
+      <IconBtn testid="file-import-btn" onClick={handleImport} title="Import STL / OBJ / 3MF / SVG">
         <Upload size={16} />
       </IconBtn>
 
