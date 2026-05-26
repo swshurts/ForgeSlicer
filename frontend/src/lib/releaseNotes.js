@@ -14,6 +14,16 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.10.1",
+    date: "2026-05-26",
+    title: "OrcaSlicer profile editor (Phase 1.5)",
+    changes: [
+      { type: "feature", text: "Profile editor appears in the Slicer popover whenever the OrcaSlicer engine is selected — printer dropdown (12 models across Bambu Lab, Prusa, Voron, Sovol, Creality, plus Custom), Print Profile (Standard / Fine / Draft / Strong), Filament (PLA / PETG / ABS / TPU / ASA), and inline tunables for perimeter count, infill density, infill pattern, tree supports, and ironing." },
+      { type: "feature", text: "Sovol SV06, SV06 Plus, SV07, and SV08 included in the printer catalogue, with correct gcode flavor (Marlin for SV06/SV06+, Klipper for SV07/SV08) and accurate build volumes." },
+      { type: "improvement", text: "All profile selections + tunables persist to localStorage so a returning user lands back on their last setup." },
+    ],
+  },
+  {
     version: "1.10.0",
     date: "2026-05-26",
     title: "OrcaSlicer engine integration (Phase 1)",

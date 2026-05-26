@@ -6,6 +6,7 @@ import { sliceToGCODEAsync } from "../lib/workerClient";
 import { downloadText } from "../lib/exporters";
 import { exportSceneToSTLBytes } from "../lib/exporters";
 import { orcaApi, apiErrorMessage } from "../lib/api";
+import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, buildOrcaPayload, getPrinterGroups } from "../lib/orcaProfiles";
 import GcodePreviewDialog from "./GcodePreviewDialog";
 
 // ---------- Building blocks ----------
@@ -428,6 +429,153 @@ export function DuplicatePopover({ anchor, onClose }) {
   );
 }
 
+// ---------- OrcaSlicer profile editor ----------
+// Compact inline editor shown when Orca engine is selected. Three
+// dropdowns (printer / process / filament) + four tunables (perimeter
+// count, infill density, supports on/off, ironing on/off) cover the
+// fields that meaningfully change first-print outcomes. Everything
+// else flows from the chosen process preset so the slice button stays
+// one click away.
+function OrcaProfileEditor({
+  printerId, onPrinterChange,
+  processId, onProcessChange,
+  filamentId, onFilamentChange,
+  walls, onWallsChange,
+  infillPct, onInfillPctChange,
+  pattern, onPatternChange,
+  supports, onSupportsChange,
+  ironing, onIroningChange,
+}) {
+  const printerGroups = getPrinterGroups();
+  return (
+    <div
+      data-testid="orca-profile-editor"
+      className="space-y-2 bg-purple-500/5 border border-purple-500/30 rounded p-2.5"
+    >
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-purple-300 font-semibold">
+        <Cpu size={11} /> OrcaSlicer Profile
+      </div>
+      <div className="grid grid-cols-1 gap-1.5">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">Printer</span>
+          <select
+            data-testid="orca-profile-printer"
+            value={printerId}
+            onChange={(e) => onPrinterChange(e.target.value)}
+            className="h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-purple-500 outline-none"
+          >
+            {Object.entries(printerGroups).map(([cat, items]) => (
+              <optgroup key={cat} label={cat}>
+                {items.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400">Print Profile</span>
+            <select
+              data-testid="orca-profile-process"
+              value={processId}
+              onChange={(e) => onProcessChange(e.target.value)}
+              className="h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-purple-500 outline-none"
+            >
+              {Object.values(PROCESS_PROFILES).map((p) => (
+                <option key={p.id} value={p.id} title={p.description}>{p.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400">Filament</span>
+            <select
+              data-testid="orca-profile-filament"
+              value={filamentId}
+              onChange={(e) => onFilamentChange(e.target.value)}
+              className="h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-purple-500 outline-none"
+            >
+              {Object.values(FILAMENT_PROFILES).map((f) => (
+                <option key={f.id} value={f.id}>{f.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {/* Inline tunables — perimeter count + infill % + pattern + the
+          two toggles. Each overrides the corresponding key on the
+          chosen process preset. */}
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        <label className="flex flex-col gap-1">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">Perimeters (walls)</span>
+          <div className="flex items-center gap-1.5 h-8 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-purple-500">
+            <input
+              data-testid="orca-walls"
+              type="range" min={1} max={6} step={1}
+              value={walls}
+              onChange={(e) => onWallsChange(parseInt(e.target.value, 10))}
+              className="flex-1 accent-purple-500"
+            />
+            <span className="text-xs font-mono text-purple-200 w-4 text-right">{walls}</span>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">Infill density</span>
+          <div className="flex items-center gap-1.5 h-8 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-purple-500">
+            <input
+              data-testid="orca-infill"
+              type="range" min={0} max={100} step={5}
+              value={infillPct}
+              onChange={(e) => onInfillPctChange(parseInt(e.target.value, 10))}
+              className="flex-1 accent-purple-500"
+            />
+            <span className="text-xs font-mono text-purple-200 w-8 text-right">{infillPct}%</span>
+          </div>
+        </label>
+      </div>
+      <label className="flex flex-col gap-0.5">
+        <span className="text-[9px] uppercase tracking-wider text-slate-400">Infill pattern</span>
+        <select
+          data-testid="orca-pattern"
+          value={pattern}
+          onChange={(e) => onPatternChange(e.target.value)}
+          className="h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-purple-500 outline-none"
+        >
+          {INFILL_PATTERNS.map((p) => (
+            <option key={p.id} value={p.id}>{p.label}</option>
+          ))}
+        </select>
+      </label>
+      <div className="grid grid-cols-2 gap-2 pt-0.5">
+        <label className="flex items-center gap-2 h-8 bg-slate-950 border border-slate-700 rounded px-2 cursor-pointer text-xs text-slate-200 select-none">
+          <input
+            data-testid="orca-supports"
+            type="checkbox"
+            checked={supports}
+            onChange={(e) => onSupportsChange(e.target.checked)}
+            className="accent-purple-500"
+          />
+          Tree supports
+        </label>
+        <label className="flex items-center gap-2 h-8 bg-slate-950 border border-slate-700 rounded px-2 cursor-pointer text-xs text-slate-200 select-none">
+          <input
+            data-testid="orca-ironing"
+            type="checkbox"
+            checked={ironing}
+            onChange={(e) => onIroningChange(e.target.checked)}
+            className="accent-purple-500"
+          />
+          Ironing (top)
+        </label>
+      </div>
+      <div className="text-[10px] text-slate-500 leading-snug pt-0.5">
+        Other settings inherit from the chosen Print Profile. Slice time scales with perimeters × density.
+      </div>
+    </div>
+  );
+}
+
 // ---------- Slicer ----------
 // Convert an ArrayBuffer / Uint8Array to base64 without going through
 // btoa(String.fromCharCode) which blows the call stack on large STLs
@@ -473,6 +621,23 @@ export function SlicerPopover({ anchor, onClose }) {
     try { return window.localStorage.getItem("forge.slice.engine") || "builtin"; }
     catch { return "builtin"; }
   });
+  // Orca profile selections (printer / process / filament) + the four
+  // inline tunables that override the process preset. All persisted to
+  // localStorage so a returning user lands back on their last setup.
+  const lsGet = (key, def) => {
+    try { return window.localStorage.getItem(key) ?? def; } catch { return def; }
+  };
+  const lsSet = (key, val) => {
+    try { window.localStorage.setItem(key, val); } catch { /* noop */ }
+  };
+  const [orcaPrinter, setOrcaPrinter] = useState(() => lsGet("forge.orca.printer", "bambu_a1"));
+  const [orcaProcess, setOrcaProcess] = useState(() => lsGet("forge.orca.process", "standard"));
+  const [orcaFilament, setOrcaFilament] = useState(() => lsGet("forge.orca.filament", "pla"));
+  const [orcaWalls, setOrcaWalls] = useState(() => parseInt(lsGet("forge.orca.walls", "2"), 10));
+  const [orcaInfillPct, setOrcaInfillPct] = useState(() => parseInt(lsGet("forge.orca.infillpct", "15"), 10));
+  const [orcaPattern, setOrcaPattern] = useState(() => lsGet("forge.orca.pattern", "gyroid"));
+  const [orcaSupports, setOrcaSupports] = useState(() => lsGet("forge.orca.supports", "false") === "true");
+  const [orcaIroning, setOrcaIroning] = useState(() => lsGet("forge.orca.ironing", "false") === "true");
   // Orca install status — polled when the popover opens so the UI can
   // tell the user up front whether the OrcaSlicer engine is available.
   // null = not yet probed; { installed: bool, ...detail fields }.
@@ -507,14 +672,19 @@ export function SlicerPopover({ anchor, onClose }) {
         // sees the geometry (Orca treats input as one solid).
         const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
         const b64 = arrayBufferToBase64(bytes);
+        // Compose the three JSON profiles from the user's picker
+        // selections + inline tunables.
+        const payload = buildOrcaPayload({
+          printerId: orcaPrinter, processId: orcaProcess, filamentId: orcaFilament,
+          wallLoops: orcaWalls, sparseInfillDensity: orcaInfillPct,
+          sparseInfillPattern: orcaPattern,
+          enableSupport: orcaSupports, ironing: orcaIroning,
+        });
         const r = await orcaApi.slice({
           stlBase64: b64,
-          // Profiles intentionally empty in this first pass — Orca will
-          // use its own defaults. Profile editor will be added once the
-          // engine is verified end-to-end.
-          printerProfile: {},
-          processProfile: {},
-          filamentProfile: {},
+          printerProfile: payload.printerProfile,
+          processProfile: payload.processProfile,
+          filamentProfile: payload.filamentProfile,
         });
         gcode = r.gcode;
         st = {
@@ -524,6 +694,7 @@ export function SlicerPopover({ anchor, onClose }) {
           tris: triangleCount,
           engine: "orca",
           durationSec: r.stats.duration_seconds,
+          summary: payload.summary,
         };
       } else {
         const r = await sliceToGCODEAsync(objects, {
@@ -626,6 +797,22 @@ export function SlicerPopover({ anchor, onClose }) {
         <NumberField testid="popover-slice-bottom-layers" label="Bottom Solid" value={settings.bottomLayers} onChange={(v) => setS({ bottomLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
         <NumberField testid="popover-slice-top-layers" label="Top Solid" value={settings.topLayers} onChange={(v) => setS({ topLayers: Math.max(0, Math.round(v)) })} step={1} min={0} suffix="lyrs" />
       </div>
+      {/* OrcaSlicer profile editor — appears only when the Orca engine
+          is selected. Three dropdowns for printer/process/filament +
+          four inline tunables for the keys users actually care about.
+          Everything else inherits from the chosen process preset. */}
+      {engine === "orca" && (
+        <OrcaProfileEditor
+          printerId={orcaPrinter} onPrinterChange={(v) => { setOrcaPrinter(v); lsSet("forge.orca.printer", v); }}
+          processId={orcaProcess} onProcessChange={(v) => { setOrcaProcess(v); lsSet("forge.orca.process", v); }}
+          filamentId={orcaFilament} onFilamentChange={(v) => { setOrcaFilament(v); lsSet("forge.orca.filament", v); }}
+          walls={orcaWalls} onWallsChange={(v) => { setOrcaWalls(v); lsSet("forge.orca.walls", String(v)); }}
+          infillPct={orcaInfillPct} onInfillPctChange={(v) => { setOrcaInfillPct(v); lsSet("forge.orca.infillpct", String(v)); }}
+          pattern={orcaPattern} onPatternChange={(v) => { setOrcaPattern(v); lsSet("forge.orca.pattern", v); }}
+          supports={orcaSupports} onSupportsChange={(v) => { setOrcaSupports(v); lsSet("forge.orca.supports", String(v)); }}
+          ironing={orcaIroning} onIroningChange={(v) => { setOrcaIroning(v); lsSet("forge.orca.ironing", String(v)); }}
+        />
+      )}
       {/* Sparse infill (Tier-b) — middle layers between the solid bands.
           0% disables sparse fill entirely (perimeter cage). Spacing
           scales with density: 100% = solid, 25% = 4× extrusion-width
