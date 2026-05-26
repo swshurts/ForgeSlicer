@@ -136,6 +136,22 @@ export const PRINTER_PROFILES = {
       retraction_length: [0.8], retraction_speed: [40],
     },
   },
+  // SV06 Plus "Ace" — 2025 refresh of the SV06 Plus that swaps the
+  // Marlin board for a Klipper-based CoreXY platform. Same 300³ build
+  // volume but dramatically faster (input-shaper tuned 500mm/s) and
+  // direct-drive Sherpa-mini-clone extruder.
+  sovol_sv06_plus_ace: {
+    id: "sovol_sv06_plus_ace", label: "Sovol SV06 Plus Ace", category: "Sovol",
+    profile: {
+      printer_model: "Sovol SV06 Plus Ace", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: ["0x0", "300x0", "300x300", "0x300"],
+      printable_height: 340, gcode_flavor: "klipper",
+      machine_max_speed_x: [500], machine_max_speed_y: [500],
+      machine_max_speed_z: [12], machine_max_speed_e: [60],
+      retraction_length: [0.8], retraction_speed: [40],
+    },
+  },
   sovol_sv07: {
     id: "sovol_sv07", label: "Sovol SV07", category: "Sovol",
     profile: {

@@ -21,7 +21,7 @@ function check(label, cond, extra = "") {
 }
 
 // ---- Sovol catalogue ----
-for (const id of ["sovol_sv06", "sovol_sv06_plus", "sovol_sv07", "sovol_sv08"]) {
+for (const id of ["sovol_sv06", "sovol_sv06_plus", "sovol_sv06_plus_ace", "sovol_sv07", "sovol_sv08"]) {
   const p = PRINTER_PROFILES[id];
   check(`Sovol model present: ${id}`, !!p, `label="${p?.label || ""}"`);
   if (p) {
@@ -30,10 +30,12 @@ for (const id of ["sovol_sv06", "sovol_sv06_plus", "sovol_sv07", "sovol_sv08"]) 
     check(`${id} declares a gcode_flavor`, !!p.profile?.gcode_flavor);
   }
 }
-// SV07 + SV08 should be klipper (the Klipper-firmware Sovols).
+// SV07 + SV08 + SV06 Plus Ace should be klipper (the Klipper-firmware Sovols).
 check("SV07 is klipper", PRINTER_PROFILES.sovol_sv07.profile.gcode_flavor === "klipper");
 check("SV08 is klipper", PRINTER_PROFILES.sovol_sv08.profile.gcode_flavor === "klipper");
+check("SV06 Plus Ace is klipper", PRINTER_PROFILES.sovol_sv06_plus_ace.profile.gcode_flavor === "klipper");
 check("SV06 is marlin", PRINTER_PROFILES.sovol_sv06.profile.gcode_flavor === "marlin2");
+check("SV06 Plus (non-Ace) is marlin", PRINTER_PROFILES.sovol_sv06_plus.profile.gcode_flavor === "marlin2");
 
 // ---- Process + filament presets sanity ----
 check("Standard process has 2 perimeters", PROCESS_PROFILES.standard.profile.wall_loops === 2);
@@ -74,7 +76,7 @@ const groups = getPrinterGroups();
 const cats = Object.keys(groups);
 check("printer groups include Bambu Lab", cats.includes("Bambu Lab"));
 check("printer groups include Sovol", cats.includes("Sovol"));
-check("Sovol group has 4 printers", groups.Sovol?.length === 4, `count=${groups.Sovol?.length}`);
+check("Sovol group has 5 printers", groups.Sovol?.length === 5, `count=${groups.Sovol?.length}`);
 
 // ---- Infill pattern list ----
 check("at least 6 infill patterns exposed", INFILL_PATTERNS.length >= 6, `n=${INFILL_PATTERNS.length}`);
