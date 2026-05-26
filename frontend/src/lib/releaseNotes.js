@@ -14,6 +14,17 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.10.0",
+    date: "2026-05-26",
+    title: "OrcaSlicer engine integration (Phase 1)",
+    changes: [
+      { type: "feature", text: "New Slicer Engine picker at the top of the Slicer Settings popover: choose Built-in (in-browser, fast, single-perimeter) or OrcaSlicer (server-side, production quality — multi-perimeter walls, full infill pattern catalogue, real supports, AMS, ironing)." },
+      { type: "improvement", text: "Right panel converted to a tabbed layout — Inspect / Print / Health — matching the left panel pattern. Reduces visual density and your last-used tab persists across sessions." },
+      { type: "fix", text: "Voice control no longer hangs at \"Listening…\" — ambient-noise calibration auto-tunes the speech threshold to your environment, a 12-second hard cap guarantees the recorder always wraps up, and Whisper's known silence hallucinations (\"you\", \"thanks for watching\", etc.) now collapse to a friendly \"no speech detected\" message instead of executing as commands." },
+      { type: "fix", text: "Share to Gallery + Save Component dialogs no longer remember the previous Description, Author, or Tags between opens — every save starts on a clean form." },
+    ],
+  },
+  {
     version: "1.9.1",
     date: "2026-05-26",
     title: "SVG fidelity + Share dialog stickiness fix",

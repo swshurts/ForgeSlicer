@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download, Eye } from "lucide-react";
+import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download, Eye, Cpu, Zap, Loader2 } from "lucide-react";
 import { useScene, useSliceSettings } from "../lib/store";
 import { getBaseSize } from "../lib/geometry";
 import { sliceToGCODEAsync } from "../lib/workerClient";
 import { downloadText } from "../lib/exporters";
+import { exportSceneToSTLBytes } from "../lib/exporters";
+import { orcaApi, apiErrorMessage } from "../lib/api";
 import GcodePreviewDialog from "./GcodePreviewDialog";
 
 // ---------- Building blocks ----------
@@ -427,6 +429,32 @@ export function DuplicatePopover({ anchor, onClose }) {
 }
 
 // ---------- Slicer ----------
+// Convert an ArrayBuffer / Uint8Array to base64 without going through
+// btoa(String.fromCharCode) which blows the call stack on large STLs
+// (Chrome's spread-into-fromCharCode tops out around 100 KB). We
+// process in 32 KB chunks — STL exports of typical hobbyist parts run
+// 200 KB–5 MB, large hardware-store-imports ~30 MB.
+function arrayBufferToBase64(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const CHUNK = 0x8000;
+  let binary = "";
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+// Engine choices. The built-in JS slicer remains the default — it's
+// fast, deterministic, fully offline, but emits perimeter-only walls
+// and the limited infill repertoire that the user pushed back on.
+// "Orca" routes the slice through a server-side OrcaSlicer CLI for
+// multi-perimeter walls, real supports, AMS, ironing, etc. Availability
+// depends on the backend having Orca installed (status endpoint).
+const ENGINES = {
+  builtin: { id: "builtin", label: "Built-in", description: "Fast, runs in your browser. Single perimeter, simple infills." },
+  orca:    { id: "orca",    label: "OrcaSlicer", description: "Production-quality. Multi-perimeter walls, all infill patterns, supports, AMS." },
+};
+
 export function SlicerPopover({ anchor, onClose }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
@@ -436,29 +464,81 @@ export function SlicerPopover({ anchor, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [stats, setStats] = useState(null);
-  // Cache the last successful GCODE + filename so the user can re-download
-  // without re-slicing — Chrome occasionally drops the initial auto-download
-  // silently (especially when triggered from an async chain), and a fresh
-  // user-gesture click here bypasses that heuristic. Cleared on every new
-  // slice run so stale GCODE never gets re-shipped.
   const [lastDownload, setLastDownload] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  // Engine selector — persisted to localStorage so the user's choice
+  // survives a refresh. Defaults to "builtin" so first-time users get
+  // the instant slice without a server round-trip.
+  const [engine, setEngine] = useState(() => {
+    try { return window.localStorage.getItem("forge.slice.engine") || "builtin"; }
+    catch { return "builtin"; }
+  });
+  // Orca install status — polled when the popover opens so the UI can
+  // tell the user up front whether the OrcaSlicer engine is available.
+  // null = not yet probed; { installed: bool, ...detail fields }.
+  const [orcaStatus, setOrcaStatus] = useState(null);
+  const pickEngine = (id) => {
+    setEngine(id);
+    try { window.localStorage.setItem("forge.slice.engine", id); } catch { /* noop */ }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await orcaApi.status();
+        if (!cancelled) setOrcaStatus(s);
+      } catch (e) {
+        if (!cancelled) setOrcaStatus({ installed: false, source: "error", detail: apiErrorMessage(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSlice = async () => {
     setError(""); setBusy(true); setStats(null); setLastDownload(null);
     try {
-      const { gcode, stats: st } = await sliceToGCODEAsync(objects, {
-        ...settings,
-        bedX: buildVolume.x,
-        bedY: buildVolume.y,
-      });
-      setStats(st);
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
       const filename = `${safe}.gcode`;
+      let gcode = "";
+      let st = null;
+      if (engine === "orca") {
+        // Export merged scene → STL → base64. Reuses the existing CSG
+        // pipeline so positives/negatives are pre-merged before Orca
+        // sees the geometry (Orca treats input as one solid).
+        const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
+        const b64 = arrayBufferToBase64(bytes);
+        const r = await orcaApi.slice({
+          stlBase64: b64,
+          // Profiles intentionally empty in this first pass — Orca will
+          // use its own defaults. Profile editor will be added once the
+          // engine is verified end-to-end.
+          printerProfile: {},
+          processProfile: {},
+          filamentProfile: {},
+        });
+        gcode = r.gcode;
+        st = {
+          layers: r.stats.layers || 0,
+          segments: r.stats.gcode_lines,
+          filamentMM: r.stats.filament_mm || 0,
+          tris: triangleCount,
+          engine: "orca",
+          durationSec: r.stats.duration_seconds,
+        };
+      } else {
+        const r = await sliceToGCODEAsync(objects, {
+          ...settings,
+          bedX: buildVolume.x,
+          bedY: buildVolume.y,
+        });
+        gcode = r.gcode;
+        st = { ...r.stats, engine: "builtin" };
+      }
+      setStats(st);
       downloadText(gcode, filename, "text/plain");
       setLastDownload({ gcode, filename });
     } catch (e) {
-      setError(e.message || String(e));
+      setError(apiErrorMessage(e) || e.message || String(e));
     } finally { setBusy(false); }
   };
 
@@ -467,8 +547,73 @@ export function SlicerPopover({ anchor, onClose }) {
     downloadText(lastDownload.gcode, lastDownload.filename, "text/plain");
   };
 
+  // Whether the Orca tab is selectable — disabled when the server tells
+  // us it's not installed yet. The "Built-in" tab is always selectable.
+  const orcaReady = orcaStatus?.installed === true;
+  const orcaBuilding = orcaStatus?.build_in_progress === true;
+
   return (
     <PopoverShell title="Slicer Settings" icon={Sliders} onClose={onClose} anchor={anchor} testid="slicer-popover" width={340}>
+      {/* Engine selector — sits above the parameters so the user knows
+          which slicer their settings apply to. The built-in fields are
+          shown for both engines (they're sane defaults); Orca ignores
+          fields it has its own opinion about. */}
+      <div className="space-y-1.5" data-testid="slicer-engine-picker">
+        <div className="text-[10px] uppercase tracking-wider text-slate-400">Slicer Engine</div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            data-testid="slicer-engine-builtin"
+            onClick={() => pickEngine("builtin")}
+            className={`h-12 rounded border text-left px-2 flex items-center gap-2 transition-colors ${
+              engine === "builtin"
+                ? "bg-orange-500/15 border-orange-500/60 text-orange-100"
+                : "bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500"
+            }`}
+            title={ENGINES.builtin.description}
+          >
+            <Zap size={14} className={engine === "builtin" ? "text-orange-400" : "text-slate-500"} />
+            <div className="flex-1 leading-tight">
+              <div className="text-[11px] font-semibold">{ENGINES.builtin.label}</div>
+              <div className="text-[9px] opacity-70">in-browser</div>
+            </div>
+          </button>
+          <button
+            data-testid="slicer-engine-orca"
+            onClick={() => orcaReady && pickEngine("orca")}
+            disabled={!orcaReady}
+            className={`h-12 rounded border text-left px-2 flex items-center gap-2 transition-colors ${
+              engine === "orca" && orcaReady
+                ? "bg-purple-500/15 border-purple-500/60 text-purple-100"
+                : orcaReady
+                ? "bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500"
+                : "bg-slate-950 border-slate-800 text-slate-500 cursor-not-allowed"
+            }`}
+            title={orcaReady ? ENGINES.orca.description : "OrcaSlicer is not yet available on the server."}
+          >
+            <Cpu size={14} className={engine === "orca" && orcaReady ? "text-purple-400" : "text-slate-500"} />
+            <div className="flex-1 leading-tight">
+              <div className="text-[11px] font-semibold flex items-center gap-1">
+                {ENGINES.orca.label}
+                {orcaBuilding && <Loader2 size={9} className="animate-spin text-amber-400" />}
+              </div>
+              <div className="text-[9px] opacity-70">
+                {orcaReady ? "server-side" : orcaBuilding ? "installing…" : "unavailable"}
+              </div>
+            </div>
+          </button>
+        </div>
+        {engine === "orca" && orcaStatus?.version && (
+          <div className="text-[10px] text-slate-500 font-mono pl-1" data-testid="slicer-engine-version">
+            {orcaStatus.version} · {orcaStatus.arch}
+          </div>
+        )}
+        {!orcaReady && orcaStatus?.detail && (
+          <div className="text-[10px] text-amber-300/80 leading-snug pl-1" data-testid="slicer-engine-detail">
+            {orcaStatus.detail}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-2">
         <NumberField testid="popover-slice-layer-height" label="Layer Height" value={settings.layerHeight} onChange={(v) => setS({ layerHeight: v })} step={0.05} min={0.05} suffix="mm" />
         <NumberField testid="popover-slice-first-layer" label="First Layer" value={settings.firstLayerHeight} onChange={(v) => setS({ firstLayerHeight: v })} step={0.05} min={0.05} suffix="mm" />

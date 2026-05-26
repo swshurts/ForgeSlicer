@@ -487,8 +487,39 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - ✅ **Tests**: `frontend/tests/ams-preview-smoke.mjs` covers AMS_TABLE palette ingestion, per-tool move attribution, tool-change counting, single-material no-regression, and implicit `T<n>` tool-change handling. 16/16 checks passing. Existing `manifold-smoke.mjs`: 9/9. Backend pytest: untouched (no backend changes for this feature).
 - Files: `frontend/src/lib/slicer.js` (multi-material slice path), `frontend/src/components/GcodePreviewDialog.jsx` (parser + per-tool rendering + legend), `frontend/tests/ams-preview-smoke.mjs` (NEW).
 
+## Iteration 49 (2026-05-26) — OrcaSlicer Engine Integration (Phase 1) + Right-Panel Tabs + Voice Fixes
+
+### OrcaSlicer Engine (Phase 1 — backend skeleton + UI selector + background compile)
+- ✅ **Backend**: New `backend/orca_engine.py` module exposing `/api/slice/orca/status` (cheap, no fork — reports install location, arch, version, build-in-progress flag) and `/api/slice/orca/slice` (POST STL+profiles → shells out to OrcaSlicer CLI → returns extracted GCODE + stats). Hard 5-min timeout, 50 MB STL cap, per-request temp dir cleanup.
+- ✅ **Binary resolution** walks: `$ORCA_BIN` → `/app/backend/bin/orca-aarch64/OrcaSlicer` → `/app/backend/bin/orca-x86_64/OrcaSlicer` → `PATH`. Persistent install survives container restarts.
+- ✅ **Frontend Engine picker** in `ActionPopovers.SlicerPopover`: two-tile selector (Built-in · in-browser | OrcaSlicer · server-side) with live install-status detail line. Built-in remains default; Orca tile is disabled with "installing…" spinner + explanation when the server reports `build_in_progress`. Choice persists in localStorage. `orcaApi.{status,slice}` added to `lib/api.js`.
+- ✅ **Helper**: `arrayBufferToBase64` chunked encoder for large STL uploads (avoids the spread-into-fromCharCode stack overflow on 1MB+ buffers).
+- ✅ **Tests**: `backend/tests/test_orca_engine.py` — status returns well-formed payload; slice returns 503 with helpful detail when engine missing. 2/2 passing.
+- 🟡 **Phase 2 in progress**: ARM64 source compile of OrcaSlicer v2.3.2 running in background under `/opt/orca-build/`. Build output checked into `/app/backend/bin/orca-aarch64/` on success (`/app` is the persistent volume so the binary survives restarts). Currently at OpenSSL compile (~dep #110/193, ~1.5 GB into expected 5-8 GB). Expected completion: ~1-2 hours from initial launch.
+- 🔵 **Phase 3 (queued)**: x86_64 production fallback — fetch official AppImage at backend startup, `--appimage-extract`, drop into `bin/orca-x86_64/`. Backend already routes via `platform.machine()`.
+
+### Right Panel → tabbed (Inspect / Print / Health)
+- ✅ Three persisted tabs matching the LeftPanel pattern. Inspect = selected-object editor + scene stats; Print = printer/filament + compatibility warnings; Health = manifold checks. Reduces visual density and selection persists in localStorage. (`RightPanel.jsx`)
+
+### Voice control fixes
+- ✅ **Adaptive VAD threshold** (`whisperStt.js`): samples ambient noise for 600 ms then locks speech threshold at `floor + 10 dB` (capped at −55 dB). Replaces the fixed −45 dB cutoff that left quiet rooms / low-gain mics stuck on "Listening…" forever.
+- ✅ **Hard 12-s record cap** in `VoiceButton.jsx` — even if VAD never trips, the listener auto-finishes so the UI can never hang.
+- ✅ **Whisper hallucination filter** — known silence artefacts ("you", "Thank you.", "Thanks for watching", "[music]", "...") collapse to empty string so users get "No speech detected" instead of bogus commands. 15/15 smoke checks (`tests/voice-hallucination-smoke.mjs`).
+
+### Other fixes
+- ✅ Release-note dates corrected (Feb → May 2026 — system clock confusion on my end).
+- ✅ SVG import strips background-fill rectangles automatically and carves letter holes as negative siblings (logos now read properly, no more orange slab). 7/7 smoke checks against the user-submitted SWS Logo.
+- ✅ Share + Save Component dialogs fully reset all fields on every open (description was sticking).
+
+### Files touched
+- `backend/orca_engine.py` (NEW), `backend/server.py` (router mount), `backend/tests/test_orca_engine.py` (NEW)
+- `frontend/src/components/ActionPopovers.jsx` (Engine picker), `frontend/src/lib/api.js` (orcaApi), `frontend/src/components/RightPanel.jsx` (tabs), `frontend/src/components/VoiceButton.jsx` (cap), `frontend/src/lib/whisperStt.js` (adaptive VAD + hallucination filter), `frontend/src/lib/svgImport.js` (background strip + holes), `frontend/src/components/SVGImportDialog.jsx` (holes UI), `frontend/src/components/dialogs/ShareDialog.jsx` & `SaveComponentDialog.jsx` (reset on open), `frontend/src/lib/releaseNotes.js` (1.10.0 entry)
+- `frontend/tests/voice-hallucination-smoke.mjs` (NEW), `frontend/tests/svg-import-smoke.mjs` (NEW), `frontend/tests/ams-preview-smoke.mjs` (NEW + fixture `tests/fixtures/sws-logo.svg`)
+
 ## Backlog / Future Enhancements
-- P1: Real solid infill in GCODE slicer (perimeter contours only today) — ✅ done
+- P0: **OrcaSlicer Phase 2** — verify the ARM64 compile finishes successfully and the binary slices a test STL end-to-end. Re-deploy.
+- P0: **OrcaSlicer Phase 3** — x86_64 production AppImage extraction at backend startup.
+- P1: **OrcaSlicer profile editor UI** — surface printer/process/filament JSON fields so users can dial in supports / multi-perimeter count / ironing without leaving the dialog.
 - P2: Migrate the two remaining main-thread sync CSG callers (`ContextMenu.flatten`, `store.cutObjectByPlane`) to manifold-3d async — minor UX refactor (small "Computing…" state) but unifies the engine across all execution paths.
 - P2: Curve/extrude primitives
 - P2: `forgeslicer://` URL protocol companion app

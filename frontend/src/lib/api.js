@@ -139,6 +139,29 @@ export const componentsApi = {
   },
 };
 
+// OrcaSlicer engine — opt-in production-quality slicer. The built-in
+// JS slicer remains the default; this is invoked only when the user
+// flips the Engine selector in the Slicer popover.
+export const orcaApi = {
+  status: async () => {
+    const { data } = await axios.get(`${API}/slice/orca/status`, { timeout: 8000 });
+    return data;
+  },
+  slice: async ({ stlBase64, printerProfile, processProfile, filamentProfile }) => {
+    const { data } = await axios.post(
+      `${API}/slice/orca/slice`,
+      {
+        stl_base64: stlBase64,
+        printer_profile: printerProfile || {},
+        process_profile: processProfile || {},
+        filament_profile: filamentProfile || {},
+      },
+      { timeout: 360000 }, // 6 min — matches the backend's 5-min Orca cap + transport overhead
+    );
+    return data;
+  },
+};
+
 // Human-friendly error formatter for the catch-block. axios's "Network Error"
 // alone gives the user no actionable info — we expand on it.
 export const apiErrorMessage = (err) => {
