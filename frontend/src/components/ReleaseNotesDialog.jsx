@@ -141,9 +141,15 @@ function ChangeChip({ type }) {
 
 // Format `2026-02-24` → `Feb 24, 2026`. Uses the user's locale Intl
 // formatter so non-US visitors see their conventional date order.
+//
+// We anchor the parse to noon UTC (not midnight) on purpose: midnight UTC
+// rolls back to the previous calendar day in any negative UTC offset
+// (US/Americas), which surfaces as "the latest release shows yesterday"
+// for the majority of our users. Noon UTC keeps the date on the intended
+// day for every timezone between UTC-11 and UTC+11.
 function formatDate(iso) {
   try {
-    const d = new Date(iso + "T00:00:00Z");
+    const d = new Date(iso + "T12:00:00Z");
     if (!isNaN(d.getTime())) {
       return d.toLocaleDateString(undefined, {
         year: "numeric", month: "short", day: "numeric",

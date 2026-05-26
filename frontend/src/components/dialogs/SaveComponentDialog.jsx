@@ -83,6 +83,12 @@ export function SaveComponentDialog({ open, onClose }) {
   React.useEffect(() => {
     if (!open) return;
     setName(projectName);
+    setAuthor("");
+    setDescription("");
+    setTags("");
+    setIsPrivate(false);
+    setLicenseId(DEFAULT_LICENSE_ID);
+    setCategory("misc");
     setModifier(defaultModifier);
     // Re-evaluate "include opposite modifier" on every open — the dialog is
     // long-lived (mounted with open=false) so the initial useState ran when

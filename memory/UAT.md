@@ -1,10 +1,17 @@
 # ForgeSlicer — User Acceptance Testing (UAT)
 
-Last updated: **2026-02-25** (post Iteration 47 — AMS-aware GCODE Preview)
+Last updated: **2026-02-25** (post Iteration 48 — SVG group-import + release-date timezone fix)
 
 > Walk top-to-bottom on a fresh browser tab signed into the **preview** environment.
 > Tick `[x]` as you verify, or leave a comment after `→` for anything broken.
 > When you finish, paste the bullets you marked failed/odd back to the agent.
+
+---
+
+## 🆕 Today's fixes worth confirming first
+- [ ] **Release-notes dates show correct day** in your local timezone (Feb 25 entries no longer show Feb 24)
+- [ ] **SVG logo import → one selectable assembly** (Section 4 below has the detailed checks)
+- [ ] **AMS-aware GCODE preview** when scene has 2+ colour slots (Section 7a)
 
 ---
 
@@ -53,15 +60,20 @@ Last updated: **2026-02-25** (post Iteration 47 — AMS-aware GCODE Preview)
 
 ---
 
-## 4. SVG Import (Iteration 46 — LAST WORKING ITEM)
+## 4. SVG Import (Iteration 46 — updated Iteration 48)
 
 - [ ] **File → Import SVG** opens the `SVGImportDialog`
 - [ ] Dragging a real SVG (logo / icon) into the dialog shows a preview
 - [ ] Width/height/extrude depth fields update the preview live
+- [ ] **Multi-path SVGs** (≥2 paths) show a purple "Group as one assembly" toggle, **ON by default**
+- [ ] Importing a 565-path logo with grouping ON: clicking any glyph in the workspace selects the **whole logo** (all paths highlighted at once)
+- [ ] Moving/rotating with the gizmo moves the **whole logo** as one
+- [ ] Unchecking the toggle: paths import as separate, individually selectable objects (legacy behaviour)
+- [ ] Single-path SVGs skip the toggle entirely (no UI noise)
 - [ ] **Import as Sketch** lands a 2D wafer in the scene at the chosen size
 - [ ] **Import as Extrusion** lands a 3D part at the chosen depth
 - [ ] Imported SVG parts respect the auto-drop-to-bed preference
-- [ ] Undo removes the imported SVG cleanly
+- [ ] Undo removes the imported SVG cleanly (one step, even for grouped multi-path)
 
 ---
 

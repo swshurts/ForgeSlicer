@@ -239,7 +239,7 @@ export const useScene = create((set, get) => ({
   // world position so the polygon renders exactly where the user drew it
   // (this is what "place on the build plate where I drew" should feel
   // like — drawing in workspace XZ → object appears at that XZ).
-  addSketch: (points, modifier = "positive", height = 5) => {
+  addSketch: (points, modifier = "positive", height = 5, opts = {}) => {
     if (!Array.isArray(points) || points.length < 3) return null;
     get().pushHistory();
     let cx = 0, cy = 0;
@@ -247,7 +247,7 @@ export const useScene = create((set, get) => ({
     cx /= points.length; cy /= points.length;
     const obj = {
       id: newId("sketch"),
-      name: `Sketch ${(get().objects || []).filter((o) => o.type === "sketch").length + 1}`,
+      name: opts.name || `Sketch ${(get().objects || []).filter((o) => o.type === "sketch").length + 1}`,
       type: "sketch",
       modifier,
       visible: true,
@@ -257,6 +257,10 @@ export const useScene = create((set, get) => ({
       scale: [1, 1, 1],
       dims: { points: points.map(([x, y]) => [x, y]), h: height },
       colorIndex: modifier === "negative" ? 0 : 7,
+      // Optional shared group — used by SVG import to bundle every glyph
+      // of a multi-path logo into a single assembly so the user can move
+      // the whole thing as one. Falls through when caller omits it.
+      ...(opts.groupId ? { groupId: opts.groupId, groupName: opts.groupName || opts.name || "Sketch group" } : {}),
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;

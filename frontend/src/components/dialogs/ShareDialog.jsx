@@ -23,7 +23,22 @@ export function ShareDialog({ open, onClose }) {
   const [done, setDone] = useState(null); // gallery item
   const [error, setError] = useState("");
 
-  React.useEffect(() => { setName(projectName); }, [projectName, open]);
+  React.useEffect(() => {
+    // Reset every field whenever the dialog opens. The component stays
+    // mounted with open=false between sessions, so without this reset
+    // the previous Description / Author / Tags would persist into the
+    // next save — user-reported "the description is populated with the
+    // last description added" on the v1.9.0 UAT pass.
+    if (!open) return;
+    setName(projectName);
+    setAuthor("");
+    setDescription("");
+    setIsPrivate(false);
+    setLicenseId(DEFAULT_LICENSE_ID);
+    setMaterialId("pla");
+    setError("");
+    setDone(null);
+  }, [open, projectName]);
 
   if (!open) return null;
 

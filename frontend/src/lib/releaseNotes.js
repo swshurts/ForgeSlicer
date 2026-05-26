@@ -14,8 +14,30 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.9.1",
+    date: "2026-05-26",
+    title: "SVG fidelity + Share dialog stickiness fix",
+    changes: [
+      { type: "fix", text: "SVG import now strips the giant background rectangle that many logo exporters emit by default. Logos no longer land as a flat orange slab — you see the actual artwork." },
+      { type: "fix", text: "Letter interiors are carved correctly — closed shapes with holes (O, A, B, P, D, R, e, o, etc.) import the outer contour as positive and each interior as a negative sibling sharing the same group, so the letter forms read properly." },
+      { type: "fix", text: "Share to Gallery and Save Component dialogs no longer remember the previous Description / Tags / Author text — every open starts clean." },
+      { type: "fix", text: "Calendar dates corrected — earlier releases this week were stamped February by mistake. They were authored in May." },
+    ],
+  },
+  {
+    version: "1.9.0",
+    date: "2026-05-25",
+    title: "AMS-aware GCODE preview + SVG logos as one assembly",
+    changes: [
+      { type: "feature", text: "GCODE preview now visualizes multi-material prints in full colour — each AMS slot's toolpaths paint in their filament hex, tool-change positions get a small ring marker, and a legend lets you hide individual extruders to inspect one colour at a time." },
+      { type: "feature", text: "Slicer auto-detects scenes with 2+ colour slots and emits proper T<n> tool-change commands plus an AMS_TABLE header so downstream firmware (and our own preview) reads the palette out-of-the-box." },
+      { type: "improvement", text: "SVG import groups multi-path artwork (logos, multi-glyph icons) into a single moveable assembly by default — clicking any glyph selects the whole logo. Toggle off to keep paths independent." },
+      { type: "fix", text: "Release-notes dates were rolling back a day in US timezones (midnight UTC → previous local day). Pinned to midday UTC so the displayed date matches everywhere." },
+    ],
+  },
+  {
     version: "1.8.2",
-    date: "2026-02-25",
+    date: "2026-05-24",
     title: "Auto-repair imported STLs",
     changes: [
       { type: "feature", text: "Imported STLs are now auto-repaired on the fly — tiny topology defects (hairline cracks, duplicate vertices, sub-micron gaps) common in third-party files get welded silently before slicing. Saves a manual \"Repair\" step in OrcaSlicer or FlashForge Studio." },
@@ -24,7 +46,7 @@ export const RELEASE_NOTES = [
   },
   {
     version: "1.8.1",
-    date: "2026-02-25",
+    date: "2026-05-24",
     title: "Imported STLs reappear",
     changes: [
       { type: "fix", text: "Imported STLs with tiny topology defects (open edges, near-coincident verts — common in third-party files) no longer silently vanish from STL/3MF export or the eye preview. They now route through the forgiving BVH boolean path automatically." },
@@ -32,7 +54,7 @@ export const RELEASE_NOTES = [
   },
   {
     version: "1.8.0",
-    date: "2026-02-25",
+    date: "2026-05-23",
     title: "Sketch Mode",
     changes: [
       { type: "feature", text: "New Sketch mode — draw a 2D shape directly on the build plate (Pencil for free-form polygons, Rect for rectangles, Circle for discs) and it instantly becomes an editable 3D extrusion." },
