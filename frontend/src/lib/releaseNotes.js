@@ -14,6 +14,17 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.11.0",
+    date: "2026-05-26",
+    title: "Send GCODE directly to your printer",
+    changes: [
+      { type: "feature", text: "New \"Send to my printer\" button appears next to Download GCODE after every successful slice. Upload to any Moonraker-based printer (Sovol SV07/SV08, Voron, BTT, all DIY Klipper builds) over your LAN — no SD card shuffling required." },
+      { type: "feature", text: "Per-user printer profiles persist locally — add your printer's network address once and reuse it across every project. Includes a \"Test connection\" button so you can verify before saving, plus a one-click copy-paste config snippet to enable uploads from forgeslicer.com in your moonraker.conf." },
+      { type: "feature", text: "Upload alone, or Upload & Start Print — the latter immediately queues the file to print on the connected machine." },
+      { type: "improvement", text: "Roadmap entries shown in the protocol picker for PrusaLink, OctoPrint, and Bambu Lab (limitations explained — each requires a CORS or MQTT relay we'll add in follow-up releases)." },
+    ],
+  },
+  {
     version: "1.10.1",
     date: "2026-05-26",
     title: "OrcaSlicer profile editor (Phase 1.5)",

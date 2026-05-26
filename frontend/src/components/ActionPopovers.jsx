@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download, Eye, Cpu, Zap, Loader2 } from "lucide-react";
+import { Move3D, RotateCw, Scale3D, Sliders, X, Lock, Unlock, ArrowDownToLine, Activity, AlertTriangle, Copy, FlipHorizontal, FlipVertical, FlipHorizontal2, CheckCircle2, Download, Eye, Cpu, Zap, Loader2, Send } from "lucide-react";
 import { useScene, useSliceSettings } from "../lib/store";
 import { getBaseSize } from "../lib/geometry";
 import { sliceToGCODEAsync } from "../lib/workerClient";
@@ -8,6 +8,7 @@ import { exportSceneToSTLBytes } from "../lib/exporters";
 import { orcaApi, apiErrorMessage } from "../lib/api";
 import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, buildOrcaPayload, getPrinterGroups } from "../lib/orcaProfiles";
 import GcodePreviewDialog from "./GcodePreviewDialog";
+import SendToPrinterDialog from "./dialogs/SendToPrinterDialog";
 
 // ---------- Building blocks ----------
 function NumberField({ label, value, onChange, step = 1, suffix, testid, disabled }) {
@@ -614,6 +615,7 @@ export function SlicerPopover({ anchor, onClose }) {
   const [stats, setStats] = useState(null);
   const [lastDownload, setLastDownload] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [sendToPrinterOpen, setSendToPrinterOpen] = useState(false);
   // Engine selector — persisted to localStorage so the user's choice
   // survives a refresh. Defaults to "builtin" so first-time users get
   // the instant slice without a server round-trip.
@@ -892,6 +894,13 @@ export function SlicerPopover({ anchor, onClose }) {
             <Download size={12} /> Download {lastDownload.filename} again
           </button>
           <button
+            data-testid="popover-slice-send-to-printer-btn"
+            onClick={() => setSendToPrinterOpen(true)}
+            className="h-8 px-3 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/60 text-orange-200 text-[11px] font-semibold rounded flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <Send size={12} /> Send to my printer
+          </button>
+          <button
             data-testid="popover-slice-preview-btn"
             onClick={() => setPreviewOpen(true)}
             className="h-8 px-3 bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/60 text-orange-200 text-[11px] font-semibold rounded flex items-center justify-center gap-1.5 transition-colors"
@@ -905,6 +914,12 @@ export function SlicerPopover({ anchor, onClose }) {
         gcode={lastDownload?.gcode}
         filename={lastDownload?.filename}
         onClose={() => setPreviewOpen(false)}
+      />
+      <SendToPrinterDialog
+        open={sendToPrinterOpen}
+        gcode={lastDownload?.gcode}
+        filename={lastDownload?.filename}
+        onClose={() => setSendToPrinterOpen(false)}
       />
     </PopoverShell>
   );
