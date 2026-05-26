@@ -34,6 +34,8 @@
 //   actionable instead of dumping raw fetch error text on the user.
 
 const STORAGE_KEY = "forge.printers.v1";
+const HISTORY_KEY = "forge.printers.history.v1";
+const HISTORY_LIMIT = 50;
 
 export class PrinterUploadError extends Error {
   constructor(message, { hint, status, raw } = {}) {
@@ -85,6 +87,40 @@ export function saveConnection(conn) {
 export function deleteConnection(id) {
   const list = listConnections().filter((c) => c.id !== id);
   persist(list);
+}
+
+// ---- Print history ----
+// Lightweight log of every successful upload — surfaces in the
+// SendToPrinterDialog as "Recent uploads". We intentionally store ONLY
+// metadata (printer, filename, size, status, ISO timestamp). The
+// GCODE itself is *not* persisted because it can be 50 MB+ for complex
+// prints and localStorage tops out at ~5 MB. Re-upload from history
+// is enabled only when the originating slice is still in memory (the
+// SlicerPopover's `lastDownload` prop matches by filename).
+
+export function listHistory() {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addHistoryEntry({ connId, printerName, filename, size, started }) {
+  const entry = {
+    id: `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    ts: new Date().toISOString(),
+    connId, printerName, filename, size, started: !!started,
+  };
+  const list = [entry, ...listHistory()].slice(0, HISTORY_LIMIT);
+  try { window.localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* noop */ }
+  return entry;
+}
+
+export function clearHistory() {
+  try { window.localStorage.removeItem(HISTORY_KEY); } catch { /* noop */ }
 }
 
 // ---- Moonraker protocol implementation ----
@@ -184,6 +220,15 @@ export async function uploadMoonraker({ conn, gcode, filename, print = false, on
       if (xhr.status >= 200 && xhr.status < 300) {
         let body = {};
         try { body = JSON.parse(xhr.responseText); } catch { /* keep empty */ }
+        // Log every successful upload to the local history so the
+        // dialog's "Recent uploads" section can render it. Failures are
+        // intentionally NOT logged — keeps the history a list of what
+        // actually made it to the printer.
+        addHistoryEntry({
+          connId: conn.id,
+          printerName: conn.name || conn.host,
+          filename, size: file.size, started: !!print,
+        });
         resolve({
           filename,
           size: file.size,

@@ -14,6 +14,16 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.11.1",
+    date: "2026-05-26",
+    title: "Print history & one-click reprint",
+    changes: [
+      { type: "feature", text: "New Recent Uploads section in the Send-to-Printer dialog logs every successful upload (filename · printer · size · relative time · started/queued badge). Last 50 entries persisted locally." },
+      { type: "feature", text: "Per-row Send + Print buttons re-upload from history with a single click — no need to re-slice if the same project is still open. Older entries become re-uploadable as soon as you re-slice the matching project." },
+      { type: "feature", text: "Sovol SV06 Plus Ace added to the OrcaSlicer printer catalogue (the 2025 Klipper refresh — direct drive, 500 mm/s, 300×300×340 build)." },
+    ],
+  },
+  {
     version: "1.11.0",
     date: "2026-05-26",
     title: "Send GCODE directly to your printer",

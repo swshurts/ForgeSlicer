@@ -41,6 +41,7 @@ const mod = await import("../src/lib/printerConnect.js");
 const {
   listConnections, saveConnection, deleteConnection,
   PROTOCOLS, testMoonraker, PrinterUploadError,
+  listHistory, addHistoryEntry, clearHistory,
 } = mod;
 
 // ---- Persistence round trip ----
@@ -104,6 +105,27 @@ try {
 check("testMoonraker wraps network failure as PrinterUploadError",
   caught instanceof PrinterUploadError);
 check("PrinterUploadError carries a CORS hint", !!caught?.hint && caught.hint.toLowerCase().includes("cors"));
+
+// ---- History persistence ----
+clearHistory();
+check("history starts empty after clear", listHistory().length === 0);
+const h1 = addHistoryEntry({
+  connId: "pr-fake1", printerName: "Voron 2.4", filename: "model.gcode", size: 512_000, started: true,
+});
+check("addHistoryEntry returns the new record with id+ts",
+  typeof h1.id === "string" && typeof h1.ts === "string");
+check("history.length === 1 after first add", listHistory().length === 1);
+check("history record preserves started flag", listHistory()[0].started === true);
+addHistoryEntry({ connId: "pr-fake1", printerName: "Voron 2.4", filename: "part2.gcode", size: 8000, started: false });
+check("history sorts newest-first", listHistory()[0].filename === "part2.gcode");
+// Cap at 50 entries.
+for (let i = 0; i < 60; i++) {
+  addHistoryEntry({ connId: "pr-fake1", printerName: "x", filename: `bulk-${i}.gcode`, size: 100, started: false });
+}
+check("history caps at 50 entries", listHistory().length === 50,
+  `count=${listHistory().length}`);
+clearHistory();
+check("history clearable", listHistory().length === 0);
 
 const failed = results.filter((r) => !r.cond);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

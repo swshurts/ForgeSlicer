@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { X, Printer, Plus, Trash2, CheckCircle2, AlertCircle, Loader2, Send, PlayCircle, HelpCircle, Copy } from "lucide-react";
+import { X, Printer, Plus, Trash2, CheckCircle2, AlertCircle, Loader2, Send, PlayCircle, HelpCircle, Copy, History, ChevronDown, ChevronUp } from "lucide-react";
 import {
   PROTOCOLS,
   listConnections,
   saveConnection,
   deleteConnection,
+  listHistory,
+  clearHistory,
 } from "../../lib/printerConnect";
 
 /**
@@ -36,17 +38,27 @@ export default function SendToPrinterDialog({ open, onClose, gcode, filename }) 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);      // { ok, msg } | { error, hint }
   const [showCorsHelp, setShowCorsHelp] = useState(false);
+  // History panel — local state so the section refreshes after each
+  // successful upload without forcing a re-mount of the dialog. The
+  // section is collapsible to keep the empty-state minimal.
+  const [history, setHistory] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Reload connections + reset transient state on each open.
   useEffect(() => {
     if (!open) return;
     setConnections(listConnections());
+    setHistory(listHistory());
     setProgress(0);
     setBusy(false);
     setResult(null);
     setMode("list");
     setEditing(null);
     setShowCorsHelp(false);
+    // Auto-expand the history if there's anything in it — gives the
+    // user a quick "look at your recent uploads" moment without an
+    // extra click.
+    setHistoryOpen(listHistory().length > 0);
   }, [open]);
 
   // Default-select the first connection so the user can hit "Upload"
@@ -101,23 +113,32 @@ export default function SendToPrinterDialog({ open, onClose, gcode, filename }) 
 
   const runUpload = async (alsoPrint) => {
     if (!selected || !selectedProto?.implemented) return;
+    return await runUploadFor(selected, alsoPrint);
+  };
+
+  // Single-entry-point upload — used by both the main Upload buttons
+  // AND the per-history-row "Re-upload" buttons. The history rows
+  // pass an explicit `conn` so re-upload still works if the user has
+  // since selected a different connection in the picker.
+  const runUploadFor = async (conn, alsoPrint) => {
+    const proto = PROTOCOLS.find((p) => p.id === conn.protocol);
+    if (!proto?.implemented || !gcode || !filename) return;
     setBusy(true);
     setProgress(0);
     setResult(null);
     try {
-      const r = await selectedProto.upload({
-        conn: selected,
-        gcode,
-        filename,
-        print: alsoPrint,
+      const r = await proto.upload({
+        conn, gcode, filename, print: alsoPrint,
         onProgress: (p) => setProgress(p),
       });
       setResult({
         ok: true,
         msg: r.started
-          ? `Print started on ${selected.name}.`
-          : `Uploaded ${(r.size / 1024).toFixed(0)} KB to ${selected.name}.`,
+          ? `Print started on ${conn.name}.`
+          : `Uploaded ${(r.size / 1024).toFixed(0)} KB to ${conn.name}.`,
       });
+      setHistory(listHistory());
+      setHistoryOpen(true);
     } catch (e) {
       setResult({
         error: e.message || String(e),
@@ -126,6 +147,11 @@ export default function SendToPrinterDialog({ open, onClose, gcode, filename }) 
     } finally {
       setBusy(false);
     }
+  };
+
+  const onClearHistory = () => {
+    clearHistory();
+    setHistory([]);
   };
 
   return (
@@ -212,6 +238,22 @@ export default function SendToPrinterDialog({ open, onClose, gcode, filename }) 
 
           {showCorsHelp && selectedProto?.corsHelp && (
             <CorsHelp proto={selectedProto} onClose={() => setShowCorsHelp(false)} />
+          )}
+
+          {/* Recent uploads — collapsible footer section. Empty until
+              the user makes their first successful upload. */}
+          {mode === "list" && history.length > 0 && (
+            <HistorySection
+              history={history}
+              connections={connections}
+              open={historyOpen}
+              setOpen={setHistoryOpen}
+              currentFilename={filename}
+              gcodeAvailable={!!gcode}
+              busy={busy}
+              onReupload={(conn, withPrint) => runUploadFor(conn, withPrint)}
+              onClear={onClearHistory}
+            />
           )}
         </div>
       </div>
@@ -534,3 +576,119 @@ function CorsHelp({ proto, onClose }) {
     </div>
   );
 }
+
+// ---- Recent uploads / Print history ----
+// Reads from localStorage via printerConnect.listHistory(). Each row
+// shows: filename, printer, size, when. Two actions: Send (re-upload
+// only) and Print (re-upload + start). Both are disabled when:
+//   • the original printer connection has been deleted, OR
+//   • the GCODE for that filename is no longer in memory (we don't
+//     persist GCODE bodies — they can be 50 MB+).
+// Disabled buttons still appear so the user can see WHAT they could do
+// if they re-sliced the matching project.
+function HistorySection({ history, connections, open, setOpen, currentFilename, gcodeAvailable, busy, onReupload, onClear }) {
+  const rows = history.map((h) => ({
+    ...h,
+    conn: connections.find((c) => c.id === h.connId) || null,
+  }));
+  return (
+    <div className="border-t border-slate-800 pt-2" data-testid="send-to-printer-history">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-400 hover:text-orange-300 py-1"
+      >
+        <History size={11} />
+        Recent uploads
+        <span className="text-slate-600">({history.length})</span>
+        <span className="flex-1" />
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {open && (
+        <div className="space-y-1 mt-1" data-testid="send-to-printer-history-list">
+          {rows.slice(0, 10).map((h) => {
+            const canReupload = !!h.conn && gcodeAvailable && currentFilename === h.filename;
+            const reason = !h.conn
+              ? "Original printer no longer saved."
+              : !canReupload
+                ? "Re-slice this project first to make the GCODE available."
+                : null;
+            return (
+              <div
+                key={h.id}
+                data-testid={`send-to-printer-history-row-${h.id}`}
+                className="bg-slate-950 border border-slate-800 rounded p-2 flex items-center gap-2"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-mono text-slate-200 truncate">
+                    {h.filename}
+                    {h.started && (
+                      <span className="ml-1.5 text-[9px] text-emerald-300/80 uppercase tracking-wider">printed</span>
+                    )}
+                  </div>
+                  <div className="text-[9px] text-slate-500 flex items-center gap-1.5">
+                    <span>{h.printerName}</span>
+                    <span>·</span>
+                    <span>{(h.size / 1024).toFixed(0)} KB</span>
+                    <span>·</span>
+                    <span title={new Date(h.ts).toLocaleString()}>{relativeTime(h.ts)}</span>
+                  </div>
+                </div>
+                <button
+                  data-testid={`send-to-printer-history-reupload-${h.id}`}
+                  onClick={() => onReupload(h.conn, false)}
+                  disabled={!canReupload || busy}
+                  title={reason || "Re-upload (no print start)"}
+                  className="h-7 px-2 rounded bg-slate-800 hover:bg-orange-500 hover:text-white disabled:bg-slate-900 disabled:text-slate-700 disabled:cursor-not-allowed text-slate-300 text-[10px] font-semibold flex items-center gap-1"
+                >
+                  <Send size={10} /> Send
+                </button>
+                <button
+                  data-testid={`send-to-printer-history-reprint-${h.id}`}
+                  onClick={() => onReupload(h.conn, true)}
+                  disabled={!canReupload || busy}
+                  title={reason || "Re-upload and start printing"}
+                  className="h-7 px-2 rounded bg-slate-800 hover:bg-green-500 hover:text-white disabled:bg-slate-900 disabled:text-slate-700 disabled:cursor-not-allowed text-slate-300 text-[10px] font-semibold flex items-center gap-1"
+                >
+                  <PlayCircle size={10} /> Print
+                </button>
+              </div>
+            );
+          })}
+          {history.length > 10 && (
+            <div className="text-[9px] text-slate-600 text-center pt-1">
+              {history.length - 10} older entries hidden (we keep the last 50).
+            </div>
+          )}
+          <button
+            data-testid="send-to-printer-history-clear"
+            onClick={onClear}
+            className="w-full h-6 mt-1 rounded border border-slate-800 hover:border-red-500/40 hover:text-red-400 text-slate-500 text-[10px] flex items-center justify-center gap-1.5"
+          >
+            <Trash2 size={10} /> Clear history
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Human-friendly "5 min ago" / "2 hr ago" / "Mar 12" formatter.
+// Avoids pulling in dayjs/date-fns for this single use.
+function relativeTime(iso) {
+  try {
+    const then = new Date(iso).getTime();
+    if (!then) return iso;
+    const diffSec = Math.round((Date.now() - then) / 1000);
+    if (diffSec < 30) return "just now";
+    if (diffSec < 90) return "1 min ago";
+    if (diffSec < 3600) return `${Math.round(diffSec / 60)} min ago`;
+    if (diffSec < 5400) return "1 hr ago";
+    if (diffSec < 86400) return `${Math.round(diffSec / 3600)} hr ago`;
+    if (diffSec < 86400 * 2) return "yesterday";
+    if (diffSec < 86400 * 7) return `${Math.round(diffSec / 86400)} days ago`;
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
