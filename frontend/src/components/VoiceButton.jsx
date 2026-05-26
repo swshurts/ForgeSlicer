@@ -20,6 +20,7 @@ import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation
 // at every stage as escape hatches.
 
 const SILENCE_TAIL_MS = 1500;   // primary recording auto-stop trigger
+const COMMAND_MAX_MS = 12000;   // hard cap so VAD-stall never hangs the user
 const CONFIRM_GRACE_MS = 2000;  // brief pause so user can read transcript
 const CONFIRM_WINDOW_MS = 4000; // max length of the confirmation listen
 const CONFIRM_SILENCE_MS = 1000;
@@ -68,6 +69,16 @@ export default function VoiceButton() {
           finishCommandRecording();
         },
       });
+      // Hard cap so a VAD that never trips (e.g. mic muted at OS level,
+      // ambient calibration locked too high) can't leave the listening
+      // banner up forever. Without this the user reported the dialog
+      // would sit on "Listening… speak now" indefinitely. The cap fires
+      // a normal finish (Whisper still runs); if the recording was pure
+      // silence the hallucination filter returns an empty transcript
+      // and we show "no speech detected".
+      recRef.current.__autoCap = setTimeout(() => {
+        if (recRef.current) finishCommandRecording();
+      }, COMMAND_MAX_MS);
       setStage("recording");
     } catch (e) {
       setFeedback({ kind: "err", text: e.message || String(e) });
@@ -83,6 +94,7 @@ export default function VoiceButton() {
     try {
       const rec = recRef.current;
       recRef.current = null;
+      if (rec.__autoCap) { clearTimeout(rec.__autoCap); rec.__autoCap = null; }
       const blob = await rec.stop();
       if (!blob || blob.size < 500) {
         setStage("idle");
@@ -93,7 +105,7 @@ export default function VoiceButton() {
       const text = await transcribeBlob(blob);
       if (!text) {
         setStage("idle");
-        setFeedback({ kind: "warn", text: "Whisper returned an empty transcript. Try speaking more clearly or in a quieter environment." });
+        setFeedback({ kind: "warn", text: "No speech detected. Check that your microphone is unmuted and try again." });
         setTimeout(() => setFeedback(null), 6000);
         return;
       }

@@ -972,6 +972,17 @@ function StatsSection() {
 
 export default function RightPanel({ onSavePrinter }) {
   const setCommunity = useScene((s) => s.setCommunityPrinters);
+  // Tab persistence — same pattern as LeftPanel. Defaults to "inspect"
+  // because that's the most-used view (editing whatever is selected).
+  const [tab, setTab] = useState(() => {
+    try {
+      return window.localStorage.getItem("forge.rightpanel.tab") || "inspect";
+    } catch { return "inspect"; }
+  });
+  const pickTab = (t) => {
+    setTab(t);
+    try { window.localStorage.setItem("forge.rightpanel.tab", t); } catch { /* noop */ }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -984,13 +995,62 @@ export default function RightPanel({ onSavePrinter }) {
     return () => { cancelled = true; };
   }, [setCommunity]);
 
+  // Tab definitions — keep them tiny so adding a new pane is a one-line
+  // edit. The Health tab badges turn amber when there's a real issue so
+  // the user notices even when they're parked on another tab.
+  const TABS = [
+    { id: "inspect", label: "Inspect", icon: Sliders,  title: "Selected object editor + scene stats" },
+    { id: "print",   label: "Print",   icon: Factory,  title: "Printer & filament profile, build-volume warnings" },
+    { id: "health",  label: "Health",  icon: ShieldAlert, title: "Manifold / watertight checks for the current scene" },
+  ];
+
   return (
-    <aside className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900 flex flex-col h-full overflow-y-auto" data-testid="right-panel">
-      <Inspector />
-      <ProfileSection onSavePrinter={onSavePrinter} />
-      <CompatibilityWarning />
-      <ManifoldHealth />
-      <StatsSection />
+    <aside className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900 flex flex-col h-full overflow-hidden" data-testid="right-panel">
+      {/* ---- Tab strip (matches LeftPanel pattern) ---- */}
+      <div className="flex-shrink-0 flex border-b border-slate-800 bg-slate-950/40" data-testid="rightpanel-tabs">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              data-testid={`rightpanel-tab-${t.id}`}
+              onClick={() => pickTab(t.id)}
+              title={t.title}
+              className={`flex-1 h-10 text-[10px] font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                active
+                  ? "border-orange-500 text-orange-300 bg-orange-500/5"
+                  : "border-transparent text-slate-400 hover:text-white hover:bg-slate-800/40"
+              }`}
+            >
+              <Icon size={12} />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ---- Active tab body ---- */}
+      <div className="flex-1 overflow-y-auto" data-testid={`rightpanel-body-${tab}`}>
+        {tab === "inspect" && (
+          <>
+            <Inspector />
+            <StatsSection />
+          </>
+        )}
+        {tab === "print" && (
+          <>
+            <ProfileSection onSavePrinter={onSavePrinter} />
+            <CompatibilityWarning />
+          </>
+        )}
+        {tab === "health" && (
+          <>
+            <ManifoldHealth />
+            <CompatibilityWarning />
+          </>
+        )}
+      </div>
     </aside>
   );
 }

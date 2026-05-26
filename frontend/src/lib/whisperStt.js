@@ -43,9 +43,16 @@ export function isWhisperSupported() {
 // `onSilenceTrigger` fires once when silence exceeds `silenceMs` AFTER any
 // speech has been detected. (Without the "after speech" gate we'd fire the
 // instant recording starts, before the user could say anything.)
+//
+// Threshold strategy: a fixed -45 dB cutoff was too aggressive — quiet
+// rooms / low-gain mics rarely cross it, leaving the recorder running
+// forever waiting for "speech" that never registers. We now sample the
+// first ~600 ms of audio to estimate the ambient floor, and treat anything
+// >= `floor + 10 dB` (clamped at -55 dB max sensitivity) as speech. That
+// adapts to the user's environment without per-user calibration.
 function attachVAD(stream, {
   silenceMs = 1500,       // tail-of-utterance hold time
-  thresholdDb = -45,      // RMS dB threshold for "speech"
+  ambientWindowMs = 600,  // how long to listen before locking the threshold
   onSilenceTrigger,
 } = {}) {
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -60,17 +67,32 @@ function attachVAD(stream, {
   let silentSince = null;
   let fired = false;
   let rafId = null;
+  // Ambient calibration — collect the loudest dB reading during the first
+  // window, then bump it up by 10 dB to define "speech". Falls back to
+  // -50 dB if nothing came in (e.g. mic muted at OS level).
+  const startedAt = performance.now();
+  let ambientFloor = -90;
+  let threshold = null;   // null until calibration ends
 
   const tick = () => {
     analyser.getFloatTimeDomainData(buf);
-    // RMS → dB. Cheap, robust enough for "is the user talking" detection
-    // in a fairly quiet desktop environment. Won't survive a fan, but
-    // we've also got the manual Stop button as fallback.
     let sumSq = 0;
     for (let i = 0; i < buf.length; i++) sumSq += buf[i] * buf[i];
     const rms = Math.sqrt(sumSq / buf.length);
     const db = 20 * Math.log10(rms || 1e-9);
-    const speaking = db > thresholdDb;
+    const elapsed = performance.now() - startedAt;
+    if (elapsed < ambientWindowMs) {
+      if (db > ambientFloor) ambientFloor = db;
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
+    if (threshold === null) {
+      // Lock the threshold at floor + 10 dB but cap at -55 (so we never
+      // require >-55 dB even in a noisy room — most consumer mics
+      // comfortably hit that for normal speech).
+      threshold = Math.min(-55, ambientFloor + 10);
+    }
+    const speaking = db > threshold;
     if (speaking) {
       everSpoke = true;
       silentSince = null;
@@ -151,7 +173,44 @@ export async function startRecorder({
   };
 }
 
+// Whisper-1 has a small set of canned outputs it produces when handed
+// silent / noise-only audio (the model "hallucinates" plausible English
+// from its training data). Treating any of these as a real transcript
+// leads to bogus commands — e.g. a session of dead silence comes back
+// as "you" and the app proceeds as if the user had spoken. We strip
+// them after transcription so the caller's "empty transcript" branch
+// fires correctly. List sourced from observed Whisper outputs + OpenAI
+// forum reports; case-insensitive, punctuation-tolerant comparison.
+const WHISPER_HALLUCINATIONS = new Set([
+  "you",
+  "thank you",
+  "thank you.",
+  "thanks for watching",
+  "thanks for watching!",
+  "thanks for watching.",
+  "bye",
+  "bye.",
+  "[music]",
+  "[blank_audio]",
+  "[silence]",
+  "okay",
+  ".",
+  "...",
+]);
+
+function isHallucinatedTranscript(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase();
+  if (WHISPER_HALLUCINATIONS.has(norm)) return true;
+  // Strip trailing punctuation and retry (Whisper appends "." sometimes).
+  const stripped = norm.replace(/[.!?,]+$/, "");
+  return WHISPER_HALLUCINATIONS.has(stripped);
+}
+
 // POST the recorded blob to /api/voice/transcribe and return the text.
+// Returns an empty string if Whisper hallucinated a known silence
+// artefact (see WHISPER_HALLUCINATIONS) so callers can route to the
+// "no speech detected" branch instead of acting on bogus input.
 export async function transcribeBlob(blob) {
   const ext = (blob.type.includes("mp4") ? "mp4"
             : blob.type.includes("ogg") ? "ogg"
@@ -162,7 +221,9 @@ export async function transcribeBlob(blob) {
     headers: { "Content-Type": "multipart/form-data" },
     timeout: 60000,
   });
-  return (data?.transcript || "").trim();
+  const text = (data?.transcript || "").trim();
+  if (isHallucinatedTranscript(text)) return "";
+  return text;
 }
 
 // Simple keyword classifier for the post-transcript confirm phrase. The
