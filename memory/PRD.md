@@ -546,6 +546,21 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.22 (2026-02-27) — Voice command palette + Go-mode wait/resume
+- ✅ **Voice command palette**: new `BookOpen` icon button next to the Voice mode chevron opens a 360px popover with 11 categorized sections of example phrases (primitives, transform, selection, duplicate, booleans, history, group, gizmo mode, export, AI mesh, Go-mode controls). Categories are individually collapsible with persistent state, and the palette closes on click-outside / Esc / explicit X. Hidden by default — zero permanent screen real estate.
+- ✅ **Wait/Resume in Go mode** — addresses "let me take a measurement" / "let me look something up" workflows:
+   - **Pause phrases** ("wait", "wait a sec", "pause", "hold on", "one moment", "give me a sec", "hang on", "one sec") — recognised as the WHOLE utterance only; spoken as a command, they enter the paused state instead of running.
+   - **Paused state**: mic stays open in keyword-listen mode with longer silence tolerance (1.5 s vs 0.9 s) so brief ambient sounds don't trigger transcription. Each cycle ≤4.5 s. Only `resume` / `continue` / `ready` / `i'm back` / `go again` / `let's continue` / `go ahead` / `start again` re-engage the loop. Any other speech is silently discarded and the listen cycle restarts.
+   - **Hard cap**: 2-minute pause limit prevents accidental forever-recording. Auto-exits Go mode with a warning toast.
+   - **Manual escape**: clicking the Voice button while paused = manual resume (escape hatch for noisy environments where voice-resume can't be heard).
+   - **Disjoint regex sets** — pause / resume / exit are mathematically verified non-overlapping; no phrase ambiguously matches more than one.
+- ✅ **Visual states**: yellow Pause icon + "Resume" label on the Voice button while paused; yellow-bordered banner with the resume phrase list; localized banner text.
+
+### Files touched
+- `frontend/src/components/VoiceCommandPalette.jsx` (NEW) — 11-category collapsible cheatsheet popover with persistence
+- `frontend/src/components/VoiceButton.jsx` — adds `enterGoPause`, `beginGoPauseListen`, `finishGoPauseListen`, `resumeGoMode`, pause/resume regex classifiers, paused-state banner + button visuals
+- `frontend/src/components/toolbar/SystemRow.jsx` — mounts `<VoiceCommandPalette />` next to `<VoiceButton />`
+
 ## Iteration 1.21 (2026-02-27) — Voice latency cut + new "Go" continuous mode
 - ✅ **Latency fixes** (single-shot mode improves too): VAD silence trigger 1500 → 900 ms, grace pause 2000 → 600 ms, confirm-silence 1000 → 700 ms. Typical mic-to-result time: **~10 s → ~6-7 s**.
 - ✅ **Added "Go mode"** — continuous hands-free voice loop, no confirmation step. After each command runs, mic auto-reopens for the next utterance. Typical mic-to-result time in Go mode: **~3 s** (skips the entire confirmation Whisper round-trip).

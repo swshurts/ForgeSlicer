@@ -18,6 +18,7 @@ import { useScene } from "../../lib/store";
 import { getSlicersForPrinter } from "../../lib/presets";
 import { IconBtn, Divider } from "./ToolbarUI";
 import VoiceButton from "../VoiceButton";
+import VoiceCommandPalette from "../VoiceCommandPalette";
 import UserMenu from "../UserMenu";
 import ThemeSwitcher from "./ThemeSwitcher";
 
@@ -87,6 +88,7 @@ export default function SystemRow({
       <div className="flex-1" />
 
       <VoiceButton />
+      <VoiceCommandPalette />
 
       <input
         data-testid="project-name-input"

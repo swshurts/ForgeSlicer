@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Loader2, Sparkles, X, Send, ChevronDown, Zap } from "lucide-react";
+import { Mic, MicOff, Loader2, Sparkles, X, Send, ChevronDown, Zap, Pause } from "lucide-react";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation } from "../lib/whisperStt";
 
@@ -40,6 +40,17 @@ const GO_FEEDBACK_GAP_MS = 700;
 // no-speech-detected rounds, exit Go mode automatically so the mic
 // indicator doesn't pulse forever.
 const GO_IDLE_EXIT_MS = 20000;
+// Go-mode pause: each listen-for-keyword cycle's max length and tail
+// silence. We use a longer silence window than the active recording so
+// brief ambient sounds (paper rustle, sniff) don't constantly retrigger
+// transcription.
+const GO_PAUSE_WINDOW_MS = 4500;
+const GO_PAUSE_SILENCE_MS = 1500;
+// Go-mode pause: hard cap on time in the paused state. After this, we
+// auto-exit Go mode entirely so a user who walked away with the tab
+// open isn't recording ambient audio forever. Two minutes is enough for
+// "let me grab a measurement" but won't run for a full meeting.
+const GO_PAUSE_MAX_MS = 120000;
 const GO_MODE_KEY = "forgeslicer.voice.mode";
 
 // Phrases that exit Go mode when spoken as the entire command. Conservative
@@ -50,6 +61,27 @@ function isGoExitPhrase(text) {
   if (!text) return false;
   const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
   return /^(stop(?:\s+(?:voice|listening|go(?:\s+mode)?))?|exit(?:\s+(?:voice|go(?:\s+mode)?))?|done|i'?m\s+done|cancel|quit|end\s+voice|stop\s+listening)$/i
+    .test(norm);
+}
+
+// Pause phrases — said as the WHOLE utterance, these enter the paused
+// state (mic stays open in keyword-listen mode, no command runs). The
+// user's typical situations: holding a ruler, looking something up,
+// taking a phone call.
+function isGoPausePhrase(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
+  return /^(wait(?:\s+(?:a\s+)?(?:sec|second|moment|minute|bit))?|pause(?:\s+voice)?|hold\s+on|one\s+(?:moment|sec|second|minute)|give\s+me\s+(?:a\s+)?(?:sec|second|moment|minute)|hang\s+on)$/i
+    .test(norm);
+}
+
+// Resume phrases — recognised only inside the paused state. Restarts
+// the Go-mode loop. Conservative: most phrases require an explicit
+// verb so casual chatter doesn't accidentally re-engage the mic.
+function isResumePhrase(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
+  return /^(resume|continue|ready|i'?m\s+back|go\s+again|let'?s\s+(?:continue|go)|okay\s+(?:continue|go)|go\s+ahead|start\s+(?:again|over))$/i
     .test(norm);
 }
 
@@ -85,6 +117,9 @@ export default function VoiceButton() {
   // Wall-clock anchor for the Go-mode idle-exit timeout — reset on each
   // useful utterance, checked when an empty transcript comes back.
   const goLastUsefulAt = useRef(0);
+  // Wall-clock anchor for the Go-mode paused-state hard cap. Set when
+  // we enter pause, checked at the start of each paused listen cycle.
+  const goPausedSince = useRef(0);
   const recRef = useRef(null);
   const graceTimer = useRef(null);
   const goLoopTimer = useRef(null);
@@ -168,6 +203,10 @@ export default function VoiceButton() {
       if (mode === "go" && goRunningRef.current) {
         if (isGoExitPhrase(text)) {
           exitGoMode(text);
+          return;
+        }
+        if (isGoPausePhrase(text)) {
+          enterGoPause(text);
           return;
         }
         goLastUsefulAt.current = performance.now();
@@ -307,6 +346,7 @@ export default function VoiceButton() {
 
   const exitGoMode = (heardPhrase, customMsg) => {
     goRunningRef.current = false;
+    goPausedSince.current = 0;
     if (goLoopTimer.current) { clearTimeout(goLoopTimer.current); goLoopTimer.current = null; }
     setStage("idle");
     setPendingTranscript("");
@@ -316,6 +356,88 @@ export default function VoiceButton() {
       heard: heardPhrase || undefined,
     });
     setTimeout(() => setFeedback(null), 3500);
+  };
+
+  // ---------- Go-mode pause / resume ----------
+  // Enter the paused state. Mic stays open in "listen for keyword
+  // only" mode so the user can resume hands-free. There's a 2-minute
+  // hard cap (`GO_PAUSE_MAX_MS`) so a forgotten paused session can't
+  // record ambient audio forever — after that we auto-exit Go mode.
+  const enterGoPause = (heardPhrase) => {
+    goPausedSince.current = performance.now();
+    setPendingTranscript(heardPhrase || "");
+    beginGoPauseListen();
+  };
+
+  const beginGoPauseListen = async () => {
+    if (!goRunningRef.current) return;
+    // Hard cap: too long paused → exit completely.
+    if (performance.now() - goPausedSince.current > GO_PAUSE_MAX_MS) {
+      exitGoMode(null, "Go mode ended — paused too long.");
+      return;
+    }
+    setStage("go-paused");
+    try {
+      recRef.current = await startRecorder({
+        silenceMs: GO_PAUSE_SILENCE_MS,
+        onAutoStop: () => finishGoPauseListen(),
+      });
+      recRef.current.__autoCap = setTimeout(() => {
+        if (recRef.current) finishGoPauseListen();
+      }, GO_PAUSE_WINDOW_MS);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("Go-pause listen failed:", e);
+      exitGoMode(null, "Go mode ended — microphone unavailable.");
+    }
+  };
+
+  const finishGoPauseListen = async () => {
+    if (!recRef.current) return;
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec.__autoCap) { clearTimeout(rec.__autoCap); rec.__autoCap = null; }
+    setStage("go-pause-transcribing");
+    try {
+      const blob = await rec.stop();
+      let heard = "";
+      // Skip the Whisper round-trip if nothing was captured — saves the
+      // API cost on every silent sub-second of the user's offline task.
+      if (blob && blob.size >= 500) {
+        try { heard = await transcribeBlob(blob); }
+        catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("Go-pause transcribe failed:", err);
+        }
+      }
+      if (isResumePhrase(heard)) {
+        resumeGoMode(heard);
+        return;
+      }
+      if (isGoExitPhrase(heard)) {
+        exitGoMode(heard);
+        return;
+      }
+      // Unrelated speech / silence — keep listening for the keyword.
+      beginGoPauseListen();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("Go-pause stop failed:", e);
+      beginGoPauseListen();
+    }
+  };
+
+  const resumeGoMode = (heardPhrase) => {
+    goPausedSince.current = 0;
+    goLastUsefulAt.current = performance.now();
+    setPendingTranscript("");
+    setFeedback({ kind: "ok", text: "Resumed.", heard: heardPhrase || undefined });
+    setTimeout(() => setFeedback(null), 1500);
+    // Skip the gap timer — the user has been waiting; go straight to
+    // the next recording.
+    if (goLoopTimer.current) { clearTimeout(goLoopTimer.current); goLoopTimer.current = null; }
+    setStage("idle");
+    beginCommandRecording();
   };
 
   // ---------- Manual escape hatches ----------
@@ -361,18 +483,32 @@ export default function VoiceButton() {
       beginCommandRecording();
     }
     else if (stage === "recording") finishCommandRecording();
+    else if (stage === "go-paused") {
+      // While paused, clicking the Voice button is a manual resume —
+      // gives users an escape hatch when the room is too noisy for the
+      // voice-resume to work.
+      // Cancel the listen recorder cleanly before resuming.
+      if (recRef.current) {
+        try { recRef.current.cancel(); } catch { /* ignore */ }
+        recRef.current = null;
+      }
+      resumeGoMode(null);
+    }
     else cancelEverything();
   };
 
-  const busyStages = ["transcribing", "confirm-transcribing", "parsing"];
+  const busyStages = ["transcribing", "confirm-transcribing", "parsing", "go-pause-transcribing"];
   const busy = busyStages.includes(stage);
   const showBanner = stage !== "idle" || feedback;
 
   const goActive = mode === "go" && (goRunningRef.current || stage !== "idle");
+  const isPaused = stage === "go-paused" || stage === "go-pause-transcribing";
   const buttonLabel =
     stage === "transcribing" ? "Transcribing…" :
     stage === "confirm-transcribing" ? "Confirming…" :
     stage === "parsing" ? "Thinking…" :
+    stage === "go-pause-transcribing" ? "Checking…" :
+    stage === "go-paused" ? "Resume" :
     stage === "recording" ? "Stop" :
     stage === "grace" ? "Cancel" :
     stage === "confirming" ? "Cancel" :
@@ -396,6 +532,8 @@ export default function VoiceButton() {
           stage === "grace" ? "Reviewing transcript — say 'Run' or 'Cancel' in a moment." :
           stage === "confirming" ? "Listening for 'Run' or 'Cancel'…" :
           stage === "manual" ? "Voice didn't catch a Run/Cancel — finish by click." :
+          stage === "go-paused" || stage === "go-pause-transcribing"
+            ? "Go mode paused — click to resume, or say 'resume' / 'continue'." :
           mode === "go"
             ? "Go mode — speak commands continuously. Say 'stop' or click to end."
             : "Click and speak. Recording stops when you pause; say 'Run' to execute."
@@ -403,15 +541,18 @@ export default function VoiceButton() {
         className={`h-8 pl-2.5 pr-2 rounded-l text-[11px] font-semibold uppercase tracking-wider border-y border-l flex items-center gap-1.5 transition-colors ${
           stage === "recording" || stage === "confirming"
             ? "bg-red-500/20 border-red-500/70 text-red-300 animate-pulse"
-            : busy
-              ? "bg-slate-800 border-slate-700 text-slate-400"
-              : goActive
-                ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
-                : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+            : isPaused
+              ? "bg-yellow-500/20 border-yellow-500/60 text-yellow-300"
+              : busy
+                ? "bg-slate-800 border-slate-700 text-slate-400"
+                : goActive
+                  ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+                  : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
         }`}
       >
         {busy ? <Loader2 size={12} className="animate-spin" />
          : stage === "recording" || stage === "confirming" ? <Mic size={12} />
+         : isPaused ? <Pause size={12} className="text-yellow-300" />
          : goActive ? <Zap size={12} className="text-orange-300" />
          : <Sparkles size={12} className="text-orange-400" />}
         {buttonLabel}
@@ -486,6 +627,7 @@ export default function VoiceButton() {
               feedback?.kind === "err" ? "#dc2626" :
               feedback?.kind === "warn" ? "#d97706" :
               stage === "recording" || stage === "confirming" ? "#dc2626" :
+              stage === "go-paused" || stage === "go-pause-transcribing" ? "#eab308" :
               busy ? "#f97316" :
               stage === "grace" || stage === "manual" ? "#f97316" :
               "#16a34a",
@@ -493,6 +635,10 @@ export default function VoiceButton() {
         >
           {stage === "recording" || stage === "confirming" ? (
             <Mic size={16} className="text-red-400 animate-pulse mt-0.5" />
+          ) : stage === "go-paused" ? (
+            <Pause size={16} className="text-yellow-400 mt-0.5" />
+          ) : stage === "go-pause-transcribing" ? (
+            <Loader2 size={16} className="text-yellow-400 animate-spin mt-0.5" />
           ) : busy ? (
             <Loader2 size={16} className="text-orange-400 animate-spin mt-0.5" />
           ) : stage === "grace" || stage === "manual" ? (
@@ -517,6 +663,25 @@ export default function VoiceButton() {
             )}
             {stage === "transcribing" && (
               <div className="text-orange-300">Transcribing with Whisper…</div>
+            )}
+            {stage === "go-paused" && (
+              <>
+                <div className="text-yellow-300 font-semibold flex items-center gap-1.5">
+                  <Pause size={12} /> Go mode paused.
+                </div>
+                <div className="text-slate-300 mt-1">
+                  Say <span className="text-yellow-200">&ldquo;resume&rdquo;</span>
+                  {" / "}<span className="text-yellow-200">&ldquo;continue&rdquo;</span>
+                  {" / "}<span className="text-yellow-200">&ldquo;ready&rdquo;</span>
+                  {" "}to pick up, or <span className="text-yellow-200">&ldquo;stop&rdquo;</span> to end.
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">
+                  Or click the Voice button to resume manually. Auto-exits after 2 min.
+                </div>
+              </>
+            )}
+            {stage === "go-pause-transcribing" && (
+              <div className="text-yellow-300">Listening for &ldquo;resume&rdquo; / &ldquo;stop&rdquo;…</div>
             )}
             {stage === "grace" && pendingTranscript && (
               <>
