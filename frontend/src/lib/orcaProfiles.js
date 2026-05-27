@@ -333,6 +333,52 @@ export const INFILL_PATTERNS = [
  * pristine — we shallow-merge the overrides on top so the caller can
  * tweak any field independently.
  */
+// Map our internal printer/process/filament IDs to the bundled
+// OrcaSlicer system preset names (resources/profiles/<vendor>/...).
+// The BACKEND uses these to load the system JSON, walk the inheritance
+// chain, and apply tunable overrides — so we don't have to maintain
+// our own (incomplete) printer-spec dictionaries that risk drifting
+// from OrcaSlicer's schema and failing its validator.
+//
+// Falsy entries mean "no system preset available; backend falls back
+// to the raw profile dict we POST in `printer_profile`."
+const SYSTEM_PRESETS = {
+  printer: {
+    bambu_a1:      { vendor: "BBL",  name: "Bambu Lab A1 0.4 nozzle" },
+    bambu_a1_mini: { vendor: "BBL",  name: "Bambu Lab A1 mini 0.4 nozzle" },
+    bambu_p1s:     { vendor: "BBL",  name: "Bambu Lab P1S 0.4 nozzle" },
+    bambu_x1c:     { vendor: "BBL",  name: "Bambu Lab X1 Carbon 0.4 nozzle" },
+    prusa_mk4:     { vendor: "Prusa", name: "Prusa MK4 0.4 nozzle" },
+    prusa_mk4s:    { vendor: "Prusa", name: "Prusa MK4S 0.4 nozzle" },
+    sovol_sv06:    { vendor: "Sovol", name: "Sovol SV06 0.4 nozzle" },
+    sovol_sv07:    { vendor: "Sovol", name: "Sovol SV07 0.4 nozzle" },
+    sovol_sv08:    { vendor: "Sovol", name: "Sovol SV08 0.4 nozzle" },
+    creality_ender3: { vendor: "Creality", name: "Creality Ender-3 0.4 nozzle" },
+    voron24:       { vendor: "Voron", name: "Voron 2.4 350 0.4 nozzle" },
+  },
+  process: {
+    // Process presets are printer-specific (named "@BBL A1", "@Prusa MK4", …).
+    // The backend can't statically pre-pick these — we look up by
+    // {process layer-height + printer-key} pair at slice time.
+    // Encoded here as a function rather than a flat map so the printer
+    // context is available.
+    standard: { vendor: "BBL", name: "0.20mm Standard @BBL A1" },
+    quality:  { vendor: "BBL", name: "0.16mm Optimal @BBL A1" },
+    draft:    { vendor: "BBL", name: "0.28mm Draft @BBL A1" },
+    ultra:    { vendor: "BBL", name: "0.12mm Fine @BBL A1" },
+  },
+  filament: {
+    pla:   { vendor: "BBL", name: "Bambu PLA Basic @BBL A1" },
+    petg:  { vendor: "BBL", name: "Bambu PETG Basic @BBL A1" },
+    abs:   { vendor: "BBL", name: "Bambu ABS @BBL A1" },
+    tpu:   { vendor: "BBL", name: "Bambu TPU 95A @BBL A1" },
+  },
+};
+
+function lookupPreset(category, id) {
+  return SYSTEM_PRESETS[category]?.[id] || null;
+}
+
 export function buildOrcaPayload({
   printerId, processId, filamentId,
   wallLoops, sparseInfillDensity, sparseInfillPattern,

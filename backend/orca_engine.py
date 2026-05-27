@@ -241,19 +241,162 @@ async def _probe_version(binp: Path) -> Optional[str]:
 class OrcaSliceRequest(BaseModel):
     """Slice request payload from the frontend.
 
-    `stl_base64` is the binary STL of the merged scene (post-CSG). The
-    config bundle mirrors OrcaSlicer's own JSON profile schema — we
-    accept it as opaque dicts so we don't have to re-implement the
-    profile validator. Sensible defaults are filled server-side when a
-    key is missing.
+    `stl_base64` is the binary STL of the merged scene (post-CSG).
+
+    Two ways to specify the slicer config:
+
+    1. **Preset-by-name (recommended)** — set `printer_preset_name` /
+       `process_preset_name` / `filament_preset_name` to the name of
+       a bundled OrcaSlicer system preset (e.g., "Bambu Lab A1 0.4
+       nozzle"). The backend resolves the inheritance chain against
+       Orca's bundled `resources/profiles/<vendor>/...` and applies
+       any user overrides from `*_profile` on top. This is rock-solid
+       because the system presets are guaranteed to pass Orca's
+       validator.
+
+    2. **Raw profile JSON (legacy)** — pass the entire profile dict in
+       `*_profile`. Subject to OrcaSlicer's strict schema (requires
+       `type`, `name`, `from`, `instantiation`, plus a valid `inherits`
+       chain). Use only if you know what you're doing.
+
+    The two paths can be mixed: passing `printer_preset_name` plus a
+    sparse `printer_profile` applies the overrides from `printer_profile`
+    on top of the resolved preset.
     """
     stl_base64: str = Field(..., description="Base64-encoded binary STL")
     printer_profile: dict = Field(default_factory=dict)
     process_profile: dict = Field(default_factory=dict)
     filament_profile: dict = Field(default_factory=dict)
+    # Preferred path — name a bundled system preset, server resolves
+    # the inheritance chain. Empty / missing → use the raw *_profile
+    # path above.
+    printer_preset_name: Optional[str] = None
+    printer_vendor: Optional[str] = None  # default "BBL"
+    process_preset_name: Optional[str] = None
+    process_vendor: Optional[str] = None  # default "BBL"
+    filament_preset_name: Optional[str] = None
+    filament_vendor: Optional[str] = None  # default "BBL"
     # User-friendly summary so the response stats can reference what
     # was requested (echoed back, not validated server-side).
     description: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+
+def _resources_root(install: OrcaInstall) -> Optional[Path]:
+    """Locate Orca's bundled `resources/profiles/` directory. The
+    AppImage layout has it at `<install>/resources/profiles/`; some
+    source builds put it under `usr/share/OrcaSlicer/`. We probe both."""
+    if install.binary is None:
+        return None
+    parent = install.binary.parent
+    for candidate in (
+        parent / "resources" / "profiles",
+        parent / "usr" / "share" / "OrcaSlicer" / "profiles",
+        # binary might be at install_dir/bin/orca-slicer — go up two.
+        parent.parent / "resources" / "profiles",
+    ):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+_PROFILE_KINDS = {
+    "machine": "machine",
+    "process": "process",
+    "filament": "filament",
+}
+
+
+def _load_system_preset(
+    profiles_root: Path,
+    vendor: str,
+    kind: str,
+    name: str,
+) -> dict:
+    """Read a system preset JSON, walking the `inherits` chain to
+    produce a single fully-flat config. The result mirrors what
+    OrcaSlicer's own preset loader would compute at runtime.
+
+    `vendor` and `kind` map directly onto the on-disk layout:
+        `<profiles_root>/<vendor>/<kind>/<name>.json`
+    `inherits` references resolve relative to the same directory.
+
+    Raises FileNotFoundError if any link in the chain is missing —
+    the caller should surface that as a clean 400 instead of letting
+    it crash the request.
+    """
+    if kind not in _PROFILE_KINDS:
+        raise ValueError(f"Unknown profile kind {kind!r}; expected one of {list(_PROFILE_KINDS)}")
+    base_dir = profiles_root / vendor / kind
+    visited: set[str] = set()
+    chain: list[dict] = []
+    cursor = name
+    while cursor:
+        if cursor in visited:
+            raise RuntimeError(f"Circular inherits in {vendor}/{kind} starting at {name!r}")
+        visited.add(cursor)
+        path = base_dir / f"{cursor}.json"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"System preset {vendor}/{kind}/{cursor}.json not found in {base_dir}"
+            )
+        with path.open("r", encoding="utf-8") as f:
+            doc = json.load(f)
+        chain.append(doc)
+        cursor = doc.get("inherits") or ""
+
+    # Merge bottom-up: deepest base first, child overrides parent.
+    # Metadata fields (type/name/from/setting_id/instantiation/inherits)
+    # are taken from the LEAF (the originally-requested preset), so the
+    # final JSON declares itself as the user-facing one with `from`
+    # flipped to "User" — see _stage_user_profile below.
+    merged: dict = {}
+    for layer in reversed(chain):
+        merged.update(layer)
+    return merged
+
+
+def _stage_user_profile(
+    base: dict,
+    overrides: dict,
+    kind: str,
+    leaf_name: str,
+) -> dict:
+    """Compose the final JSON that gets written to `workdir/X.json`
+    and handed to the OrcaSlicer CLI.
+
+    Strips the `inherits` field (we've already flattened it) and
+    rewrites the metadata so OrcaSlicer's CLI sees a self-contained
+    user profile. `from: "User"` is required for any non-system path
+    per OrcaSlicer.cpp's `--load-settings` validator.
+    """
+    out = dict(base)
+    out.pop("inherits", None)
+    # Apply user overrides last so they win over the system defaults.
+    # Skip metadata-only keys in the overrides dict — those are
+    # caller-supplied annotations, not slicer params.
+    for k, v in (overrides or {}).items():
+        if k in ("type", "name", "from", "setting_id", "instantiation", "inherits"):
+            continue
+        out[k] = v
+    # Re-stamp the required metadata. `from` MUST be "User" / "user" /
+    # "system" or OrcaSlicer's load_config_file rejects the file with
+    # `:file X's from <value> unsupported`. `instantiation` must be the
+    # string "true" (not a JSON bool) so Orca treats the JSON as a
+    # concrete instance rather than a base template.
+    out["type"] = {
+        "machine": "machine",
+        "process": "process",
+        "filament": "filament",
+    }[kind]
+    out["from"] = "User"
+    out["instantiation"] = "true"
+    out["name"] = overrides.get("name") if overrides else None
+    if not out["name"]:
+        out["name"] = leaf_name
+    return out
+
 
 
 class OrcaSliceStats(BaseModel):
@@ -385,20 +528,51 @@ async def orca_slice(req: OrcaSliceRequest):
         # files because that's the CLI's documented format; passing them
         # inline is not supported.
         profile_args: list[str] = []
-        for key, prof in (
-            ("printer", req.printer_profile),
-            ("process", req.process_profile),
-            ("filament", req.filament_profile),
-        ):
-            if not prof:
+        # Resolve the profile triple. If the request named a system
+        # preset (the recommended path), load + flatten the inheritance
+        # chain from Orca's bundled resources, then layer overrides.
+        # If only the legacy *_profile dict is set, use that as-is —
+        # the user is opting out of preset resolution.
+        profiles_root = _resources_root(install)
+        if profiles_root is None:
+            logger.warning("Couldn't locate resources/profiles under %s; using raw profile dicts.", install.binary)
+        preset_specs = [
+            ("printer", "machine", req.printer_preset_name, req.printer_vendor, req.printer_profile),
+            ("process", "process", req.process_preset_name, req.process_vendor, req.process_profile),
+            ("filament", "filament", req.filament_preset_name, req.filament_vendor, req.filament_profile),
+        ]
+        profile_args: list[str] = []
+        for file_key, kind, preset_name, vendor, raw_profile in preset_specs:
+            final: dict | None = None
+            if preset_name and profiles_root is not None:
+                try:
+                    base = _load_system_preset(
+                        profiles_root, vendor or "BBL", kind, preset_name,
+                    )
+                    final = _stage_user_profile(base, raw_profile, kind, preset_name)
+                except FileNotFoundError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"OrcaSlicer system preset not found for "
+                            f"{file_key}: {preset_name!r} under vendor "
+                            f"{vendor or 'BBL'!r}. Original error: {e}"
+                        ),
+                    )
+                except (RuntimeError, json.JSONDecodeError) as e:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to resolve {file_key} preset {preset_name!r}: {e}",
+                    )
+            elif raw_profile:
+                final = raw_profile
+            if not final:
                 continue
-            p = workdir / f"{key}.json"
-            p.write_text(json.dumps(prof, indent=2))
-            if key == "filament":
+            p = workdir / f"{file_key}.json"
+            p.write_text(json.dumps(final, indent=2))
+            if file_key == "filament":
                 profile_args += ["--load-filaments", str(p)]
             else:
-                # Printer + process get loaded together via --load-settings,
-                # joined by semicolons per the CLI spec.
                 profile_args.append(str(p))
 
         # If neither printer nor process was provided we still need
