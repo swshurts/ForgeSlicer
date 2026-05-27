@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { meApi, authApi } from "../lib/auth";
 import { galleryApi, componentsApi } from "../lib/api";
 import { toast } from "sonner";
+import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import {
   ArrowLeft, Hexagon, GitFork, Download, Trash2, RefreshCw,
   PlusSquare, MinusSquare, Lock, Plus, Star, Award,
@@ -479,6 +480,7 @@ export default function Profile() {
           </div>
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
+        <ThemeSwitcher />
       </header>
       <main className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex items-center gap-5 mb-8">

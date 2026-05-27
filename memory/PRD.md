@@ -546,6 +546,21 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.18 (2026-02-27) — Per-route theme memory
+- ✅ **Optional pin toggle** added next to the theme switcher (Pin / PinOff icon). When pinned, the theme switcher writes to a per-route slot instead of the global default.
+- ✅ Storage: `forgeslicer.theme.perRoute` (1/0) + `forgeslicer.theme.routes` (JSON `{ path → choice }` map). Path keys are normalized to the top-level segment (`/workspace`, `/gallery`, `/u`, …) so users don't end up with a different theme per gallery item.
+- ✅ **Route-change reactivity** wired in `AppRouter` via `useLocation` → `useTheme.setRoute(pathname)`. When pin is ON and the route has a saved theme, it re-applies on navigation without a reload.
+- ✅ **Toggling pin ON seeds the current route** with the user's *global choice* (not the resolved value) so pinning a page in Auto mode stays Auto — a tiny but important detail.
+- ✅ **Switcher mounted on Landing, Gallery, Profile** (alongside the existing Workspace mount) so users can change/pin themes from any route.
+- ✅ **Bootstrap-aware**: `bootstrapTheme()` reads the per-route map and the current `location.pathname` at boot, so the first paint already reflects a pinned route's theme on direct page load.
+- ✅ Smoke test verified 7-scenario flow: global=Light → navigate to /workspace → pin → change to Dark → navigate to /gallery (still Light) → back to /workspace (Dark restored) → reload (Dark persists). Independent and idempotent.
+
+### Files touched
+- `frontend/src/lib/theme.js` (rewrote — adds `routeThemes`, `perRouteEnabled`, `setRoute`, `togglePerRoute`, `normalizeRoute`)
+- `frontend/src/components/toolbar/ThemeSwitcher.jsx` (adds Pin button, reads active-segment from effective theme)
+- `frontend/src/App.js` (subscribes to `useLocation` and calls `setRoute`)
+- `frontend/src/components/Landing.jsx`, `Gallery.jsx`, `Profile.jsx` (mount ThemeSwitcher in header)
+
 ## Iteration 1.17 (2026-02-27) — One-time "Auto theme is on" hint toast
 - ✅ Added a **one-time toast** on first launch for brand-new visitors: "Auto theme is on — We're following your system appearance. Tap the sun/moon icons in the toolbar to override." with a "Got it" action and 8s auto-dismiss.
 - ✅ **Gated tightly** — fires only when (a) user has *no* stored theme choice AND (b) `forgeslicer.theme.hintSeen` localStorage flag isn't set. Mounted with a 2.5s delay so it doesn't compete with the splash screen / auth redirects.

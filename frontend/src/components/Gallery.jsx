@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { galleryApi, componentsApi, apiErrorMessage } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
+import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
   PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale, Layers,
@@ -618,6 +619,7 @@ export default function Gallery() {
           </div>
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
+        <ThemeSwitcher />
         <UserMenu returnPath="/gallery" />
       </header>
 

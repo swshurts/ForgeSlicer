@@ -18,7 +18,7 @@ import BillingSuccessPage from "@/components/BillingSuccessPage";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { shouldShowThemeHint, markThemeHintSeen } from "@/lib/theme";
+import { shouldShowThemeHint, markThemeHintSeen, useTheme } from "@/lib/theme";
 import SplashScreen from "@/components/SplashScreen";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import SVGImportDialog from "@/components/SVGImportDialog";
@@ -29,6 +29,13 @@ import SVGImportDialog from "@/components/SVGImportDialog";
 // because the latter is sometimes stripped by the router on first mount.
 function AppRouter() {
   const location = useLocation();
+  // Notify the theme store of every route change so per-route mode
+  // can re-apply the right theme without a full reload.
+  const setThemeRoute = useTheme((s) => s.setRoute);
+  useEffect(() => {
+    setThemeRoute(location.pathname);
+  }, [location.pathname, setThemeRoute]);
+
   const rawHash = (typeof window !== "undefined" && window.location.hash) || location.hash || "";
   if (rawHash.includes("session_id=")) {
     return <AuthCallback />;
