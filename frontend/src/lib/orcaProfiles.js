@@ -333,50 +333,87 @@ export const INFILL_PATTERNS = [
  * pristine — we shallow-merge the overrides on top so the caller can
  * tweak any field independently.
  */
-// Map our internal printer/process/filament IDs to the bundled
-// OrcaSlicer system preset names (resources/profiles/<vendor>/...).
-// The BACKEND uses these to load the system JSON, walk the inheritance
-// chain, and apply tunable overrides — so we don't have to maintain
-// our own (incomplete) printer-spec dictionaries that risk drifting
-// from OrcaSlicer's schema and failing its validator.
+// Map our internal printer IDs onto the bundled OrcaSlicer system
+// presets (resources/profiles/<vendor>/...). The BACKEND uses these
+// to load the system JSON, walk the inheritance chain, and apply our
+// tunable overrides — so we don't have to maintain our own
+// (incomplete) printer-spec dictionaries that risk drifting from
+// OrcaSlicer's schema and failing its validator.
 //
-// Falsy entries mean "no system preset available; backend falls back
-// to the raw profile dict we POST in `printer_profile`."
-const SYSTEM_PRESETS = {
-  printer: {
-    bambu_a1:      { vendor: "BBL",  name: "Bambu Lab A1 0.4 nozzle" },
-    bambu_a1_mini: { vendor: "BBL",  name: "Bambu Lab A1 mini 0.4 nozzle" },
-    bambu_p1s:     { vendor: "BBL",  name: "Bambu Lab P1S 0.4 nozzle" },
-    bambu_x1c:     { vendor: "BBL",  name: "Bambu Lab X1 Carbon 0.4 nozzle" },
-    prusa_mk4:     { vendor: "Prusa", name: "Prusa MK4 0.4 nozzle" },
-    prusa_mk4s:    { vendor: "Prusa", name: "Prusa MK4S 0.4 nozzle" },
-    sovol_sv06:    { vendor: "Sovol", name: "Sovol SV06 0.4 nozzle" },
-    sovol_sv07:    { vendor: "Sovol", name: "Sovol SV07 0.4 nozzle" },
-    sovol_sv08:    { vendor: "Sovol", name: "Sovol SV08 0.4 nozzle" },
-    creality_ender3: { vendor: "Creality", name: "Creality Ender-3 0.4 nozzle" },
-    voron24:       { vendor: "Voron", name: "Voron 2.4 350 0.4 nozzle" },
+// Process + filament presets in OrcaSlicer are printer-suffixed
+// (e.g. "0.20mm Standard @BBL A1", "Bambu PLA Basic @BBL A1") so the
+// process/filament catalogs below give a base label and we compose
+// the final preset name using the selected printer's `suffix` here.
+//
+// Entries are intentionally limited to printers whose bundled preset
+// names we've verified in the OrcaSlicer source. For everything else
+// the backend silently falls back to the raw profile dict — same as
+// before this mapping existed.
+const PRINTER_PRESET_META = {
+  bambu_a1: {
+    vendor: "BBL",
+    printerPreset: "Bambu Lab A1 0.4 nozzle",
+    suffix: "@BBL A1",
   },
-  process: {
-    // Process presets are printer-specific (named "@BBL A1", "@Prusa MK4", …).
-    // The backend can't statically pre-pick these — we look up by
-    // {process layer-height + printer-key} pair at slice time.
-    // Encoded here as a function rather than a flat map so the printer
-    // context is available.
-    standard: { vendor: "BBL", name: "0.20mm Standard @BBL A1" },
-    quality:  { vendor: "BBL", name: "0.16mm Optimal @BBL A1" },
-    draft:    { vendor: "BBL", name: "0.28mm Draft @BBL A1" },
-    ultra:    { vendor: "BBL", name: "0.12mm Fine @BBL A1" },
+  bambu_a1_mini: {
+    vendor: "BBL",
+    printerPreset: "Bambu Lab A1 mini 0.4 nozzle",
+    suffix: "@BBL A1M",
   },
-  filament: {
-    pla:   { vendor: "BBL", name: "Bambu PLA Basic @BBL A1" },
-    petg:  { vendor: "BBL", name: "Bambu PETG Basic @BBL A1" },
-    abs:   { vendor: "BBL", name: "Bambu ABS @BBL A1" },
-    tpu:   { vendor: "BBL", name: "Bambu TPU 95A @BBL A1" },
+  bambu_p1s: {
+    // P1S shares its process+filament presets with the P1P platform
+    // in OrcaSlicer's bundle (they only differ at the machine level).
+    vendor: "BBL",
+    printerPreset: "Bambu Lab P1S 0.4 nozzle",
+    suffix: "@BBL P1P",
+  },
+  bambu_x1c: {
+    vendor: "BBL",
+    printerPreset: "Bambu Lab X1 Carbon 0.4 nozzle",
+    suffix: "@BBL X1C",
   },
 };
 
-function lookupPreset(category, id) {
-  return SYSTEM_PRESETS[category]?.[id] || null;
+// Process preset base labels keyed by our internal processId. Combined
+// with the printer's `suffix` to produce the bundled JSON name. For
+// printers without preset meta (non-Bambu) these strings are unused —
+// we ship the raw process_profile dict instead.
+const PROCESS_PRESET_BASES = {
+  standard: "0.20mm Standard",
+  fine:     "0.16mm Optimal",
+  draft:    "0.28mm Draft",
+  // Strong has no direct system preset; we ride Standard's inheritance
+  // chain and override `wall_loops` + `sparse_infill_density` on top.
+  strong:   "0.20mm Standard",
+};
+
+// Filament preset base labels. OrcaSlicer's bundled filament presets
+// are named "Bambu PLA Basic @BBL A1", "Bambu PETG HF @BBL A1", etc.
+const FILAMENT_PRESET_BASES = {
+  pla:  "Bambu PLA Basic",
+  petg: "Bambu PETG HF",
+  abs:  "Bambu ABS",
+  tpu:  "Bambu TPU 95A",
+  // ASA isn't shipped as a Bambu-branded preset — fall through to raw.
+  asa:  null,
+};
+
+/**
+ * Resolve the bundled-system preset triple for a given printer/process/
+ * filament selection. Returns `{ printer, process, filament }` where
+ * each value is either `{vendor, name}` or `null` (fallback to raw
+ * profile dict on the backend).
+ */
+function resolveSystemPresets(printerId, processId, filamentId) {
+  const meta = PRINTER_PRESET_META[printerId];
+  if (!meta) return { printer: null, process: null, filament: null };
+  const procBase = PROCESS_PRESET_BASES[processId];
+  const filBase  = FILAMENT_PRESET_BASES[filamentId];
+  return {
+    printer: { vendor: meta.vendor, name: meta.printerPreset },
+    process: procBase ? { vendor: meta.vendor, name: `${procBase} ${meta.suffix}` } : null,
+    filament: filBase ? { vendor: meta.vendor, name: `${filBase} ${meta.suffix}` } : null,
+  };
 }
 
 export function buildOrcaPayload({
@@ -421,10 +458,36 @@ export function buildOrcaPayload({
     ...profile,
   });
 
+  // When a bundled system preset matches, send EMPTY overrides for
+  // printer and filament (the system JSON already has the correct,
+  // schema-valid values — overriding with our own hand-rolled dict
+  // risks failing OrcaSlicer's strict validator). Process overrides
+  // ARE sent because they encode the user's tunable choices (perimeters,
+  // infill %, ironing, supports). When NO system preset matches we
+  // fall back to the legacy raw-dict path with all three populated.
+  const ps = resolveSystemPresets(printerId, processId, filamentId);
+  const onlyProcessOverrides = {
+    ...(wallLoops != null ? { wall_loops: wallLoops } : {}),
+    ...(sparseInfillDensity != null ? { sparse_infill_density: sparseInfillDensity } : {}),
+    ...(sparseInfillPattern ? { sparse_infill_pattern: sparseInfillPattern } : {}),
+    ...(enableSupport != null ? { enable_support: enableSupport } : {}),
+    ...(ironing != null ? { ironing } : {}),
+  };
+
   return {
-    printerProfile: withMeta(printer.profile, "machine", printer.label),
-    processProfile: withMeta(processProfile, "process", process.label),
-    filamentProfile: withMeta(filament.profile, "filament", filament.label),
+    printerProfile:  ps.printer  ? {} : withMeta(printer.profile, "machine", printer.label),
+    processProfile:  ps.process  ? onlyProcessOverrides : withMeta(processProfile, "process", process.label),
+    filamentProfile: ps.filament ? {} : withMeta(filament.profile, "filament", filament.label),
+    // Bundled-system preset names — when set, the backend loads the
+    // matching system JSON, walks its `inherits` chain, and applies
+    // the *_profile overrides on top. When null, the backend uses
+    // the raw *_profile dict alone (legacy fallback path).
+    printerPresetName:  ps.printer?.name   || null,
+    printerVendor:      ps.printer?.vendor || null,
+    processPresetName:  ps.process?.name   || null,
+    processVendor:      ps.process?.vendor || null,
+    filamentPresetName: ps.filament?.name  || null,
+    filamentVendor:     ps.filament?.vendor || null,
     // Echo back the resolved labels so the slicer status panel can
     // show what was actually sent (rather than the IDs).
     summary: {

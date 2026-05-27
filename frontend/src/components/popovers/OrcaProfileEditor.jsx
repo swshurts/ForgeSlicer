@@ -80,30 +80,30 @@ export default function OrcaProfileEditor({
           two toggles. Each overrides the corresponding key on the
           chosen process preset. */}
       <div className="grid grid-cols-2 gap-2 pt-1">
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 min-w-0">
           <span className="text-[9px] uppercase tracking-wider text-slate-400">Perimeters (walls)</span>
-          <div className="flex items-center gap-1.5 h-8 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-purple-500">
+          <div className="flex items-center gap-1.5 h-8 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-purple-500 min-w-0">
             <input
               data-testid="orca-walls"
               type="range" min={1} max={6} step={1}
               value={walls}
               onChange={(e) => onWallsChange(parseInt(e.target.value, 10))}
-              className="flex-1 accent-purple-500"
+              className="flex-1 min-w-0 accent-purple-500"
             />
-            <span className="text-xs font-mono text-purple-200 w-4 text-right">{walls}</span>
+            <span className="text-xs font-mono text-purple-200 w-4 text-right flex-shrink-0">{walls}</span>
           </div>
         </label>
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 min-w-0">
           <span className="text-[9px] uppercase tracking-wider text-slate-400">Infill density</span>
-          <div className="flex items-center gap-1.5 h-8 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-purple-500">
+          <div className="flex items-center gap-1.5 h-8 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-purple-500 min-w-0">
             <input
               data-testid="orca-infill"
               type="range" min={0} max={100} step={5}
               value={infillPct}
               onChange={(e) => onInfillPctChange(parseInt(e.target.value, 10))}
-              className="flex-1 accent-purple-500"
+              className="flex-1 min-w-0 accent-purple-500"
             />
-            <span className="text-xs font-mono text-purple-200 w-8 text-right">{infillPct}%</span>
+            <span className="text-xs font-mono text-purple-200 w-8 text-right flex-shrink-0">{infillPct}%</span>
           </div>
         </label>
       </div>

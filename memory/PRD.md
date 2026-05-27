@@ -753,3 +753,22 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - `frontend/src/components/popovers/` (NEW directory, 8 files)
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
+
+## Iteration 44 (2026-02-27) — OrcaSlicer System-Preset Wiring + Slider Overflow Fix
+- ✅ **OrcaSlicer profile validator unblocked (P0)** — finished the in-progress preset wiring left by the previous agent. `buildOrcaPayload` in `frontend/src/lib/orcaProfiles.js` now resolves a printer/process/filament triple into the bundled OrcaSlicer system-preset NAMES (e.g. `"Bambu Lab A1 0.4 nozzle"`, `"0.20mm Standard @BBL A1"`, `"Bambu PLA Basic @BBL A1"`) and ships them alongside the override dicts. The backend's `_load_system_preset` walks the inheritance chain from `<install>/resources/profiles/<vendor>/...`, applies user tunables on top, re-stamps the four required metadata fields (`type`/`name`/`from: "User"`/`instantiation: "true"`), and hands the final flattened JSON to the OrcaSlicer CLI — passing its strict validator.
+  - Printer mapping is conservative: only the four Bambu models (A1, A1 mini, P1S, X1C) have verified preset names. Process+filament names are composed from a base label + the printer's `@BBL <model>` suffix so swapping printers automatically targets the right bundled JSON.
+  - Non-mapped printers (Prusa, Voron, Sovol, Creality, Custom) fall through to the legacy raw-dict path that was already working before the system-preset effort.
+  - When a system preset DOES match, the override dict for printer + filament is sent EMPTY so we don't accidentally override valid system values with our hand-rolled stand-ins. Process overrides ARE sent (they encode the user's wall_loops / infill % / pattern / supports / ironing choices).
+  - `orcaApi.slice()` and `SlicerPopover.handleSlice` extended to forward the six new fields (`printer_preset_name` + `printer_vendor`, `process_preset_name` + `process_vendor`, `filament_preset_name` + `filament_vendor`).
+- ✅ **Slider overflow in Slicer popover fixed (P1)** — added `min-w-0` to grid label + inner flex container + the range input itself; locked the readout span to `flex-shrink-0`. The classic flex/grid `min-width: auto` bug was letting the range thumb's intrinsic width push the cell past its `1fr` allocation, splaying the panel. Same fix applied to `OrcaProfileEditor` (perimeters + infill sliders) and the built-in slicer's infill+pattern row.
+- ⚠️ **Not e2e-tested in preview** — preview pod is ARM64; the x86_64 OrcaSlicer AppImage cannot execute here. Verified the JS payload shape via lint + smoke-test screenshot; full slicing verification happens on the user's production deploy (forgeslicer.com).
+- Files touched: `frontend/src/lib/orcaProfiles.js` (rewrote SYSTEM_PRESETS → `PRINTER_PRESET_META` + `resolveSystemPresets` + smart-override `buildOrcaPayload`), `frontend/src/lib/api.js` (forward six preset fields in `orcaApi.slice`), `frontend/src/components/popovers/SlicerPopover.jsx` (forward fields + slider overflow fix), `frontend/src/components/popovers/OrcaProfileEditor.jsx` (slider overflow fix).
+
+### P2 backlog (deferred, ordered)
+- `/api/components` intermittent 404 in dev/preview — observability/retry breadcrumbs
+- Sketch→Path sweep (extrude 2D sketches along a curved path)
+- Parametric Bolt/Nut threads generator
+- Admin "Reinstall OrcaSlicer" button
+- SSE for engine/install status (replace polling)
+- Settings → Appearance panel
+- Slice progress reporting (parse Orca's stdout)

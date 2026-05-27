@@ -147,7 +147,12 @@ export const orcaApi = {
     const { data } = await axios.get(`${API}/slice/orca/status`, { timeout: 8000 });
     return data;
   },
-  slice: async ({ stlBase64, printerProfile, processProfile, filamentProfile }) => {
+  slice: async ({
+    stlBase64, printerProfile, processProfile, filamentProfile,
+    printerPresetName, printerVendor,
+    processPresetName, processVendor,
+    filamentPresetName, filamentVendor,
+  }) => {
     const { data } = await axios.post(
       `${API}/slice/orca/slice`,
       {
@@ -155,6 +160,17 @@ export const orcaApi = {
         printer_profile: printerProfile || {},
         process_profile: processProfile || {},
         filament_profile: filamentProfile || {},
+        // Preferred path: name a bundled OrcaSlicer system preset and
+        // let the backend resolve its inheritance chain. The *_profile
+        // dicts above are then applied as overrides on top. When these
+        // are null/omitted the backend stays on the legacy raw-dict
+        // path so older callers keep working.
+        printer_preset_name:  printerPresetName  || null,
+        printer_vendor:       printerVendor      || null,
+        process_preset_name:  processPresetName  || null,
+        process_vendor:       processVendor      || null,
+        filament_preset_name: filamentPresetName || null,
+        filament_vendor:      filamentVendor     || null,
       },
       { timeout: 360000 }, // 6 min — matches the backend's 5-min Orca cap + transport overhead
     );

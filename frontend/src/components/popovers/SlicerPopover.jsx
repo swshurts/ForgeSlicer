@@ -153,6 +153,12 @@ export function SlicerPopover({ anchor, onClose }) {
           printerProfile: payload.printerProfile,
           processProfile: payload.processProfile,
           filamentProfile: payload.filamentProfile,
+          printerPresetName:  payload.printerPresetName,
+          printerVendor:      payload.printerVendor,
+          processPresetName:  payload.processPresetName,
+          processVendor:      payload.processVendor,
+          filamentPresetName: payload.filamentPresetName,
+          filamentVendor:     payload.filamentVendor,
         });
         gcode = r.gcode;
         st = {
@@ -286,9 +292,9 @@ export function SlicerPopover({ anchor, onClose }) {
           scales with density: 100% = solid, 25% = 4× extrusion-width
           spacing, etc. */}
       <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1" data-testid="popover-slice-infill-percent-wrap">
+        <label className="flex flex-col gap-1 min-w-0" data-testid="popover-slice-infill-percent-wrap">
           <span className="text-[10px] uppercase tracking-wider text-slate-400">Infill</span>
-          <div className="flex items-center gap-2 h-9 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-orange-500">
+          <div className="flex items-center gap-2 h-9 bg-slate-950 border border-slate-700 rounded px-2 focus-within:border-orange-500 min-w-0">
             <input
               data-testid="popover-slice-infill-percent"
               type="range"
@@ -297,18 +303,18 @@ export function SlicerPopover({ anchor, onClose }) {
               step={5}
               value={settings.infillPercent}
               onChange={(e) => setS({ infillPercent: parseInt(e.target.value, 10) })}
-              className="flex-1 accent-orange-500"
+              className="flex-1 min-w-0 accent-orange-500"
             />
-            <span className="text-xs font-mono text-orange-300 w-10 text-right">{settings.infillPercent}%</span>
+            <span className="text-xs font-mono text-orange-300 w-10 text-right flex-shrink-0">{settings.infillPercent}%</span>
           </div>
         </label>
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 min-w-0">
           <span className="text-[10px] uppercase tracking-wider text-slate-400">Pattern</span>
           <select
             data-testid="popover-slice-infill-pattern"
             value={settings.infillPattern}
             onChange={(e) => setS({ infillPattern: e.target.value })}
-            className="h-9 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-orange-500 outline-none"
+            className="h-9 w-full bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-orange-500 outline-none"
           >
             <option value="rectilinear">Rectilinear ±45°</option>
             <option value="grid">Grid (crosshatch)</option>
