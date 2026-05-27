@@ -546,6 +546,22 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.26 (2026-02-27) — TODO ADDED (not yet fixed)
+**Slider value-bubble overflow in Slicer popover**: When a value indicator (e.g. `2` walls, `15%` infill) is rendered, it can appear *underneath an adjacent control to its right* or *escape the popover boundary entirely* when the popover is anchored near the right edge of the viewport. Reported by user against production.
+
+**Where to look**:
+- `frontend/src/components/popovers/SlicerPopover.jsx` — `bg-slate-950 ... flex-shrink-0` slider rows for Infill (`%`)
+- `frontend/src/components/popovers/OrcaProfileEditor.jsx` — same pattern for Perimeters (`walls`) and Infill density (`%`)
+- `frontend/src/components/popovers/PopoverShell.jsx` — viewport-edge clamping in `setPos`
+
+**Likely fix**:
+- The slider rows use `flex items-center gap-X` with `flex-1` on the input — the value span at the end may be overflowing on narrow popover widths
+- Or browser default value-bubble on `<input type="range">` is escaping
+- The PopoverShell's `width` parameter (340 px for Slicer) may need a max-width clamp against the viewport
+- Add `overflow-hidden` or `min-w-0` to the slider row to contain the bubble
+
+**Action**: Investigate in a screenshot test (right-column position + ultrawide + narrow viewports), then patch.
+
 ## Iteration 1.25 (2026-02-27) — Slicer popover status polling (UI didn't refresh after install completed)
 **Diagnosis**: User saw "installing…" forever on production even though `/api/slice/orca/status` returned `installed: true` (verified via browser DevTools). The OrcaSlicer install actually succeeded — but the frontend only fetched status ONCE on mount and never refreshed.
 
