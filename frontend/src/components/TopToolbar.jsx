@@ -22,7 +22,7 @@ import { useScene } from "../lib/store";
 import {
   PositionPopover, RotationPopover, ScalePopover,
   SlicerPopover, DuplicatePopover, MirrorPopover,
-} from "./ActionPopovers";
+} from "./popovers";
 import STLPreviewDialog from "./STLPreviewDialog";
 import SystemRow from "./toolbar/SystemRow";
 import EditRow from "./toolbar/EditRow";

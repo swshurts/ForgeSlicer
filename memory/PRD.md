@@ -528,3 +528,20 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - P3: Sketch / 2D drawing mode — ✅ done
 - P3: AMS-aware preview — ✅ done (Iteration 47)
 - P3: Remix activity feed on Profile (who remixed your designs, when) — ✅ done
+
+
+## Iteration 1.14 (2026-02-27) — Popover refactor + Rotation/Position regression closed
+- ✅ **Verified Rotation ≠ Position popover bug is gone** — live preview shows the Position popover renders X/Y/Z mm fields and the Rotation popover renders X/Y/Z ° fields + Drop-to-Bed. Previous agent's TopToolbar refactor already resolved it; no further patch needed.
+- ✅ **Split `ActionPopovers.jsx` (991 lines) into `components/popovers/`** — one file per popover:
+   - `PopoverShell.jsx` — shared `PopoverShell` + `NumberField` + `EmptyMsg` primitives
+   - `PositionPopover.jsx`, `RotationPopover.jsx`, `ScalePopover.jsx`
+   - `DuplicatePopover.jsx`, `MirrorPopover.jsx`, `SlicerPopover.jsx`
+   - `OrcaProfileEditor.jsx` — extracted from inside SlicerPopover
+   - `index.js` — barrel for `TopToolbar` import
+- ✅ `ActionPopovers.jsx` shrunk to a 7-line re-export shim for backward compat.
+- ✅ Smoke test verified all 6 popovers (position / rotation / scale / duplicate / mirror / slicer) render unique testids on click.
+
+### Files touched
+- `frontend/src/components/popovers/` (NEW directory, 8 files)
+- `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
+- `frontend/src/components/TopToolbar.jsx` (import path updated)
