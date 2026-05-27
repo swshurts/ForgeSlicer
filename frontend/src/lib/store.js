@@ -709,13 +709,75 @@ export const useScene = create((set, get) => ({
     if (ids.length === 0) return;
     if (!delta || delta.every((v) => Math.abs(v) < 1e-6)) return;
     get().pushHistory();
-    set((s) => ({
-      objects: s.objects.map((o) =>
-        ids.includes(o.id)
-          ? { ...o, rotation: [o.rotation[0] + delta[0], o.rotation[1] + delta[1], o.rotation[2] + delta[2]] }
-          : o
-      ),
-    }));
+    set((s) => {
+      const targets = s.objects.filter((o) => ids.includes(o.id));
+      // Convert the rotation delta (degrees → radians) into a rotation
+      // matrix using three.js's Euler XYZ ordering — the SAME ordering
+      // the renderer uses per-object — so the rigid-body orbit and the
+      // per-object spin stay in sync visually. We import on-demand to
+      // keep the store cold-start cheap (three is already in the bundle
+      // via the viewport; this is a hot-path no-op import).
+      // eslint-disable-next-line global-require
+      const THREE = require("three");
+      const dEuler = new THREE.Euler(
+        (delta[0] * Math.PI) / 180,
+        (delta[1] * Math.PI) / 180,
+        (delta[2] * Math.PI) / 180,
+        "XYZ",
+      );
+      const dMat = new THREE.Matrix4().makeRotationFromEuler(dEuler);
+      // Pivot = centroid of the selected objects' world positions.
+      // This is what users expect from a TinkerCad-style "group rotate":
+      // the whole assembly orbits around its shared center. For a
+      // single object this collapses to its own position so behaviour
+      // is unchanged.
+      let pivot = [0, 0, 0];
+      if (targets.length > 1) {
+        const sum = targets.reduce(
+          (acc, o) => [acc[0] + o.position[0], acc[1] + o.position[1], acc[2] + o.position[2]],
+          [0, 0, 0],
+        );
+        pivot = [sum[0] / targets.length, sum[1] / targets.length, sum[2] / targets.length];
+      } else if (targets.length === 1) {
+        pivot = [...targets[0].position];
+      }
+      const pivotV = new THREE.Vector3(pivot[0], pivot[1], pivot[2]);
+      return {
+        objects: s.objects.map((o) => {
+          if (!ids.includes(o.id)) return o;
+          // 1) Tilt the object itself by the delta (so its local axes
+          //    rotate with the group — without this, members would
+          //    orbit the pivot but stay axis-aligned, which is wrong).
+          const nextRotation = [
+            o.rotation[0] + delta[0],
+            o.rotation[1] + delta[1],
+            o.rotation[2] + delta[2],
+          ];
+          // 2) Orbit the object's center around the pivot. Skip this
+          //    when only one object is selected (its pivot == its own
+          //    position so the orbit is a no-op anyway — but avoiding
+          //    the math entirely keeps single-object rotations bit-
+          //    identical to the pre-fix behaviour).
+          if (targets.length <= 1) {
+            return { ...o, rotation: nextRotation };
+          }
+          const offset = new THREE.Vector3(
+            o.position[0] - pivotV.x,
+            o.position[1] - pivotV.y,
+            o.position[2] - pivotV.z,
+          ).applyMatrix4(dMat);
+          return {
+            ...o,
+            rotation: nextRotation,
+            position: [
+              pivotV.x + offset.x,
+              pivotV.y + offset.y,
+              pivotV.z + offset.z,
+            ],
+          };
+        }),
+      };
+    });
   },
 
   // selectObject:
@@ -1060,3 +1122,12 @@ export const useSliceSettings = create((set) => ({
 }));
 
 export { PRINTERS, FILAMENTS };
+
+// Dev / debug: expose the scene store on `window.__forgeStore` so
+// Playwright scripts, the browser console, and tooling like Cypress
+// can introspect or drive scene state without needing to hook into
+// React's fiber tree. Strictly read/write through the same API
+// React components use, so there's no risk of state drift.
+if (typeof window !== "undefined") {
+  window.__forgeStore = useScene;
+}

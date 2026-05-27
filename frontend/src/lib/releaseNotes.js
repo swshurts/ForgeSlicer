@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.14.1",
+    date: "2026-02-27",
+    title: "Assembly rotation — rigid-body fix",
+    changes: [
+      { type: "fix", text: "Rotating a multi-part Assembly (group) now rotates the whole assembly as one rigid unit, orbiting every member around the assembly's combined centroid — just like in TinkerCad / Fusion. Previously each member rotated around its own center, breaking the relative geometry of any offset assembly." },
+    ],
+  },
+
+  {
     version: "1.14.0",
     date: "2026-02-27",
     title: "Sketch curves + OrcaSlicer bug fix",

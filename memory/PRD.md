@@ -803,3 +803,12 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 3. **Parametric Bolt/Nut threads** generator
 4. **Admin "Reinstall OrcaSlicer" button** + SSE for install status
 5. **Settings → Appearance panel**
+
+## Iteration 47 (2026-02-27) — Assembly Rotation Rigid-Body Fix
+- 🔴 **Bug fix — Group rotation breaks assembly geometry**: User reported "if I select an assembly, the rotation only acts on one member; for a more complex assembly it wouldn't rotate correctly". Root cause in `store.js -> rotateSelected`: the function added the rotation delta to each member's local `rotation` array, but NEVER orbited their `position` around a shared pivot. So every member spun in place around its own center — a sphere offset from a cube would stay "in the same world spot" while the cube tilted, destroying the rigid-body relationship.
+  - **Fix**: when multiple objects are being rotated together, compute the centroid of their world positions, build a Three.js `Matrix4` from the delta Euler (XYZ order — matches the renderer's per-object Euler order so the visual orbit and per-object tilt stay in sync), and for each member: tilt its local rotation by the delta AND orbit its position around the centroid by the same rotation matrix.
+  - Single-object rotation is a fast-path no-op (skips the matrix math entirely) so behaviour is bit-identical to before for non-assembly cases.
+  - **Validated**: new standalone Node test `frontend/tests/rotation-group-pivot.mjs` exercises the math on a cube+sphere offset by (20, 8, 0). Confirms: centroid stationary, rigid-body distance preserved, both members orbit to predicted positions after 90°/Z. All 7 assertions pass.
+- ✅ **Dev affordance**: `useScene` store is now exposed on `window.__forgeStore` so Playwright / browser-console debugging can drive scene state directly without poking React internals.
+- ✅ **Release notes v1.14.1** added.
+- Files touched: `frontend/src/lib/store.js`, `frontend/tests/rotation-group-pivot.mjs` (NEW), `frontend/src/lib/releaseNotes.js`.
