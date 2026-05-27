@@ -546,6 +546,17 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.21 (2026-02-27) — Voice latency cut + new "Go" continuous mode
+- ✅ **Latency fixes** (single-shot mode improves too): VAD silence trigger 1500 → 900 ms, grace pause 2000 → 600 ms, confirm-silence 1000 → 700 ms. Typical mic-to-result time: **~10 s → ~6-7 s**.
+- ✅ **Added "Go mode"** — continuous hands-free voice loop, no confirmation step. After each command runs, mic auto-reopens for the next utterance. Typical mic-to-result time in Go mode: **~3 s** (skips the entire confirmation Whisper round-trip).
+- ✅ **Mode picker UI**: small chevron dropdown next to the Voice button → two-option menu (Single Command / Go Mode) with persistent `localStorage` storage. A subtle "GO" badge on the Voice button when Go mode is selected so it's discoverable without opening the menu.
+- ✅ **Exit phrases for Go mode**: `"stop"`, `"done"`, `"exit"`, `"cancel"`, `"quit"`, `"end voice"`, `"stop listening"`, `"i'm done"`, plus variants like "exit go mode". Regex-tested to NOT false-trigger on commands containing those words (e.g. "stop the slicer" → still a command, "cancel my last operation" → still a command).
+- ✅ **Idle exit**: 20 s of no-speech in Go mode → automatically ends the loop so the mic indicator doesn't pulse forever if the user walks away.
+- ✅ **Visual state**: Voice button gains an orange Zap icon + "Voice · Go" label while Go mode is actively running; the banner shows a one-line hint about how to exit ("Say 'stop' or click Voice to end Go mode").
+
+### Files touched
+- `frontend/src/components/VoiceButton.jsx` (rewritten — adds mode state, Go-loop scheduler, exit-phrase classifier, chevron menu, reduced timeout constants)
+
 ## Iteration 1.20 (2026-02-27) — Light/Dim active-state legibility fix
 - ✅ **Fixed**: in light mode, the active state of toolbar pills + theme switcher segments + the pin toggle was `text-orange-300` on `bg-orange-500/20` — pale-orange text on pale-orange background, near-illegible.
 - ✅ **Solution**: targeted `[data-theme="light"]` overrides in `themes.css` that darken `text-orange-100/200/300/400` to orange-700/800 and bump the highlight fill from 20% → 28% opacity. Dark + Dim modes are completely untouched.

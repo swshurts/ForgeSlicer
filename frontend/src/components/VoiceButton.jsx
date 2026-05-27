@@ -1,52 +1,120 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Loader2, Sparkles, X, Send } from "lucide-react";
+import { Mic, MicOff, Loader2, Sparkles, X, Send, ChevronDown, Zap } from "lucide-react";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation } from "../lib/whisperStt";
 
-// Hands-free voice flow:
+// Two voice flows — picked from the small chevron menu beside the button:
 //
+// ── "Single" (default) — one command at a time, with read-back ──
 //   1. Click Voice once.
-//   2. Speak your command. Recording auto-stops after ~1.5 s of silence.
+//   2. Speak. Recording auto-stops after ~0.9 s of silence.
 //   3. Whisper transcribes (~1 s).
-//   4. Banner shows the transcript; a 2 s grace period gives you a chance
-//      to glance at it without doing anything.
-//   5. A "Say RUN to execute" mic re-opens and listens briefly (≤4 s).
-//      • Say "run / go / yes / execute" → the command fires.
-//      • Say "cancel / no / stop" → it's dropped.
-//      • Stay silent → the banner stays open and a manual Run / Cancel
-//        appears so you can finish by click if you want.
+//   4. Brief 0.6 s pause so you can glance at the transcript.
+//   5. A "Say RUN to execute" mic re-opens for ≤4 s.
+//      • "run / go / yes / execute" → the command fires.
+//      • "cancel / no / stop"       → it's dropped.
+//      • Silence / ambiguous        → manual Run / Cancel buttons.
 //
-// Manual controls (Stop / Cancel / Edit transcript / Run) are kept available
-// at every stage as escape hatches.
+// ── "Go" (continuous, hands-free) — chained commands, no confirmation ──
+//   1. Click Voice once (in Go mode).
+//   2. Speak — command fires as soon as Whisper + GPT return (~3 s).
+//   3. Mic auto-reopens; speak the next command. Repeat.
+//   4. Exit by saying "stop" / "done" / "exit", clicking Voice, or
+//      staying silent for ~20 s.
+//
+// Manual controls (Stop / Cancel / Edit transcript / Run) remain available
+// at every stage as escape hatches in single mode.
+//
+// Latency target post-fix (single-mode, mic → result): ~6-7 s typical.
+// Latency target (go-mode, mic → result): ~3 s typical.
 
-const SILENCE_TAIL_MS = 1500;   // primary recording auto-stop trigger
-const COMMAND_MAX_MS = 12000;   // hard cap so VAD-stall never hangs the user
-const CONFIRM_GRACE_MS = 2000;  // brief pause so user can read transcript
-const CONFIRM_WINDOW_MS = 4000; // max length of the confirmation listen
-const CONFIRM_SILENCE_MS = 1000;
+const SILENCE_TAIL_MS = 900;        // primary recording auto-stop trigger
+const COMMAND_MAX_MS  = 12000;      // hard cap so VAD-stall never hangs the user
+const CONFIRM_GRACE_MS = 600;       // brief pause so user can read transcript
+const CONFIRM_WINDOW_MS = 4000;     // max length of the confirmation listen
+const CONFIRM_SILENCE_MS = 700;
+// Go-mode: how long to show the success feedback before re-recording.
+// Short enough to feel continuous, long enough to read "Added cube".
+const GO_FEEDBACK_GAP_MS = 700;
+// Go-mode: if the user stays silent for this long across consecutive
+// no-speech-detected rounds, exit Go mode automatically so the mic
+// indicator doesn't pulse forever.
+const GO_IDLE_EXIT_MS = 20000;
+const GO_MODE_KEY = "forgeslicer.voice.mode";
+
+// Phrases that exit Go mode when spoken as the entire command. Conservative
+// — we don't want "cancel my last operation" or "stop the slicer" to be
+// caught as an exit. Match only when the phrase IS the whole utterance
+// (plus optional trailing punctuation / "voice"/"listening" suffix).
+function isGoExitPhrase(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
+  return /^(stop(?:\s+(?:voice|listening|go(?:\s+mode)?))?|exit(?:\s+(?:voice|go(?:\s+mode)?))?|done|i'?m\s+done|cancel|quit|end\s+voice|stop\s+listening)$/i
+    .test(norm);
+}
+
+function readMode() {
+  try {
+    const v = window.localStorage.getItem(GO_MODE_KEY);
+    return v === "go" ? "go" : "single";
+  } catch { return "single"; }
+}
+function writeMode(v) {
+  try { window.localStorage.setItem(GO_MODE_KEY, v); } catch { /* noop */ }
+}
 
 export default function VoiceButton() {
   const supported = isWhisperSupported();
-  // State machine: idle → recording → transcribing → grace → confirming →
-  //                confirm-transcribing → manual → parsing → idle (+ feedback)
+  // State machine — extended with go-mode counterparts:
+  //   idle → recording → transcribing
+  //     ↓ (mode==="single") grace → confirming → confirm-transcribing
+  //                                            → parsing → idle
+  //     ↓ (mode==="go")     parsing → idle (and auto-loops while in go)
   const [stage, setStage] = useState("idle");
   const [pendingTranscript, setPendingTranscript] = useState("");
   const [feedback, setFeedback] = useState(null); // { kind, text, heard }
   const [confirmHeard, setConfirmHeard] = useState("");
+  // Mode picker. Persisted so the user's choice survives a refresh.
+  const [mode, setMode] = useState(readMode);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // When the user is actively in Go mode AND the mic loop is running. We
+  // use this as a separate flag from `mode` so flipping the dropdown to
+  // "single" while a Go session is mid-cycle doesn't tear it down — the
+  // current cycle finishes naturally.
+  const goRunningRef = useRef(false);
+  // Wall-clock anchor for the Go-mode idle-exit timeout — reset on each
+  // useful utterance, checked when an empty transcript comes back.
+  const goLastUsefulAt = useRef(0);
   const recRef = useRef(null);
   const graceTimer = useRef(null);
+  const goLoopTimer = useRef(null);
   const editInputRef = useRef(null);
 
+  const setModeAndPersist = (m) => {
+    setMode(m);
+    writeMode(m);
+    setMenuOpen(false);
+  };
+
   useEffect(() => {
-    // Cleanup on unmount: kill any active recorder and pending timer.
     return () => {
       if (graceTimer.current) clearTimeout(graceTimer.current);
+      if (goLoopTimer.current) clearTimeout(goLoopTimer.current);
       if (recRef.current) { try { recRef.current.cancel(); } catch { /* ignore */ } }
     };
   }, []);
 
   useEffect(() => {
-    // When the manual editor opens, autofocus + select for instant typing.
+    // Click-outside closes the mode menu.
+    if (!menuOpen) return;
+    const onDown = (e) => {
+      if (!e.target.closest?.("[data-testid='voice-mode-menu-wrap']")) setMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
+  useEffect(() => {
     if (stage === "manual" && editInputRef.current) {
       editInputRef.current.focus();
       editInputRef.current.select();
@@ -62,20 +130,8 @@ export default function VoiceButton() {
     try {
       recRef.current = await startRecorder({
         silenceMs: SILENCE_TAIL_MS,
-        onAutoStop: () => {
-          // VAD fired — wrap recording. We do this inline so the user
-          // doesn't need to click. recRef.current.stop() is idempotent
-          // (re-stopping a finished recorder no-ops).
-          finishCommandRecording();
-        },
+        onAutoStop: () => finishCommandRecording(),
       });
-      // Hard cap so a VAD that never trips (e.g. mic muted at OS level,
-      // ambient calibration locked too high) can't leave the listening
-      // banner up forever. Without this the user reported the dialog
-      // would sit on "Listening… speak now" indefinitely. The cap fires
-      // a normal finish (Whisper still runs); if the recording was pure
-      // silence the hallucination filter returns an empty transcript
-      // and we show "no speech detected".
       recRef.current.__autoCap = setTimeout(() => {
         if (recRef.current) finishCommandRecording();
       }, COMMAND_MAX_MS);
@@ -83,12 +139,11 @@ export default function VoiceButton() {
     } catch (e) {
       setFeedback({ kind: "err", text: e.message || String(e) });
       setTimeout(() => setFeedback(null), 6000);
+      goRunningRef.current = false;
     }
   };
 
   const finishCommandRecording = async () => {
-    // Allow this to be called from either the auto-stop callback or the
-    // manual Stop button. Guarding on stage prevents a race where both fire.
     if (!recRef.current) return;
     setStage("transcribing");
     try {
@@ -97,36 +152,65 @@ export default function VoiceButton() {
       if (rec.__autoCap) { clearTimeout(rec.__autoCap); rec.__autoCap = null; }
       const blob = await rec.stop();
       if (!blob || blob.size < 500) {
-        setStage("idle");
-        setFeedback({ kind: "warn", text: "Recording too short — try again and speak for at least half a second." });
-        setTimeout(() => setFeedback(null), 6000);
+        await handleEmptyOrShort("Recording too short — try again and speak for at least half a second.");
         return;
       }
       const text = await transcribeBlob(blob);
       if (!text) {
-        setStage("idle");
-        setFeedback({ kind: "warn", text: "No speech detected. Check that your microphone is unmuted and try again." });
-        setTimeout(() => setFeedback(null), 6000);
+        await handleEmptyOrShort("No speech detected. Check that your microphone is unmuted and try again.");
         return;
       }
       setPendingTranscript(text);
-      setStage("grace");
-      // 2-second pause so the user can read the transcript before the
-      // confirmation mic re-opens. This is the "pause for two seconds"
-      // requested.
-      graceTimer.current = setTimeout(() => {
-        graceTimer.current = null;
-        beginConfirmListening(text);
-      }, CONFIRM_GRACE_MS);
+
+      // ── Branch on mode ──
+      //   single: read-back grace pause → confirmation listening
+      //   go:     skip confirmation, run immediately, then loop
+      if (mode === "go" && goRunningRef.current) {
+        if (isGoExitPhrase(text)) {
+          exitGoMode(text);
+          return;
+        }
+        goLastUsefulAt.current = performance.now();
+        await runCommand(text);
+        // runCommand will schedule the next cycle through scheduleGoLoop()
+      } else {
+        setStage("grace");
+        graceTimer.current = setTimeout(() => {
+          graceTimer.current = null;
+          beginConfirmListening(text);
+        }, CONFIRM_GRACE_MS);
+      }
     } catch (e) {
       setStage("idle");
       const msg = e?.response?.data?.detail || e?.message || String(e);
       setFeedback({ kind: "err", text: `Transcription failed: ${msg}` });
       setTimeout(() => setFeedback(null), 8000);
+      goRunningRef.current = false;
     }
   };
 
-  // ---------- Confirmation listening (says "run" / "cancel") ----------
+  // Shared "no speech / too short" handler — in single mode shows the
+  // warning and returns to idle; in go mode also checks the idle-exit
+  // timer and either loops or exits.
+  const handleEmptyOrShort = async (msg) => {
+    if (mode === "go" && goRunningRef.current) {
+      // No useful audio this round — if we've been quiet for too long,
+      // exit; otherwise re-start without a feedback toast.
+      const idleFor = performance.now() - (goLastUsefulAt.current || 0);
+      if (idleFor > GO_IDLE_EXIT_MS) {
+        exitGoMode(null, "Go mode ended — no speech for 20 s.");
+      } else {
+        setStage("idle");
+        scheduleGoLoop();
+      }
+      return;
+    }
+    setStage("idle");
+    setFeedback({ kind: "warn", text: msg });
+    setTimeout(() => setFeedback(null), 6000);
+  };
+
+  // ---------- Confirmation listening (single mode only: "run" / "cancel") ----------
   const beginConfirmListening = async (transcript) => {
     if (!transcript) return;
     setStage("confirming");
@@ -137,12 +221,9 @@ export default function VoiceButton() {
         silenceMs: CONFIRM_SILENCE_MS,
         onAutoStop: () => finishConfirmListening(transcript),
       });
-      // Hard cap on the confirmation window so we don't sit listening
-      // forever if the VAD never triggers (e.g. fan noise above threshold).
       autoCap = setTimeout(() => finishConfirmListening(transcript), CONFIRM_WINDOW_MS);
       recRef.current.__autoCap = autoCap;
     } catch (e) {
-      // Mic permission failed mid-flow — drop into manual mode.
       // eslint-disable-next-line no-console
       console.warn("Confirm-listen failed, falling back to manual:", e);
       setStage("manual");
@@ -158,9 +239,6 @@ export default function VoiceButton() {
     try {
       const blob = await rec.stop();
       let heard = "";
-      // Whisper has a non-zero cost per call so we only transcribe if we
-      // captured at least a tiny amount of audio. Very short blobs (<500
-      // bytes) are nothing-to-say and we drop straight into manual mode.
       if (blob && blob.size >= 500) {
         try { heard = await transcribeBlob(blob); }
         catch (err) {
@@ -178,9 +256,6 @@ export default function VoiceButton() {
         setFeedback({ kind: "warn", text: "Cancelled.", heard: originalTranscript });
         setTimeout(() => setFeedback(null), 4000);
       } else {
-        // Silence or ambiguous → fall back to manual buttons so the user
-        // can finish by click. We do NOT auto-run on ambiguity to avoid
-        // surprise mutations to the scene.
         setStage("manual");
       }
     } catch (e) {
@@ -207,13 +282,47 @@ export default function VoiceButton() {
       setStage("idle");
       setPendingTranscript("");
       setConfirmHeard("");
-      setTimeout(() => setFeedback(null), 6000);
+      // Single mode: clear feedback after the usual delay.
+      // Go mode: schedule the next recording cycle. The feedback toast
+      // gets a shorter dismiss so it doesn't visually pile up across
+      // multiple chained commands.
+      if (mode === "go" && goRunningRef.current) {
+        setTimeout(() => setFeedback(null), 2500);
+        scheduleGoLoop();
+      } else {
+        setTimeout(() => setFeedback(null), 6000);
+      }
     }
+  };
+
+  // ---------- Go-mode loop control ----------
+  const scheduleGoLoop = () => {
+    if (!goRunningRef.current) return;
+    if (goLoopTimer.current) clearTimeout(goLoopTimer.current);
+    goLoopTimer.current = setTimeout(() => {
+      goLoopTimer.current = null;
+      if (goRunningRef.current) beginCommandRecording();
+    }, GO_FEEDBACK_GAP_MS);
+  };
+
+  const exitGoMode = (heardPhrase, customMsg) => {
+    goRunningRef.current = false;
+    if (goLoopTimer.current) { clearTimeout(goLoopTimer.current); goLoopTimer.current = null; }
+    setStage("idle");
+    setPendingTranscript("");
+    setFeedback({
+      kind: "ok",
+      text: customMsg || "Go mode ended.",
+      heard: heardPhrase || undefined,
+    });
+    setTimeout(() => setFeedback(null), 3500);
   };
 
   // ---------- Manual escape hatches ----------
   const cancelEverything = () => {
+    goRunningRef.current = false;
     if (graceTimer.current) { clearTimeout(graceTimer.current); graceTimer.current = null; }
+    if (goLoopTimer.current) { clearTimeout(goLoopTimer.current); goLoopTimer.current = null; }
     if (recRef.current) {
       try { recRef.current.cancel(); } catch { /* already stopped */ }
       recRef.current = null;
@@ -238,14 +347,28 @@ export default function VoiceButton() {
   }
 
   const onMainClick = () => {
-    if (stage === "idle") beginCommandRecording();
+    if (stage === "idle") {
+      if (mode === "go") {
+        // Toggle behaviour for Go: first click starts the loop, second
+        // click ends it.
+        if (goRunningRef.current) {
+          exitGoMode(null, "Go mode ended.");
+          return;
+        }
+        goRunningRef.current = true;
+        goLastUsefulAt.current = performance.now();
+      }
+      beginCommandRecording();
+    }
     else if (stage === "recording") finishCommandRecording();
     else cancelEverything();
   };
+
   const busyStages = ["transcribing", "confirm-transcribing", "parsing"];
   const busy = busyStages.includes(stage);
   const showBanner = stage !== "idle" || feedback;
 
+  const goActive = mode === "go" && (goRunningRef.current || stage !== "idle");
   const buttonLabel =
     stage === "transcribing" ? "Transcribing…" :
     stage === "confirm-transcribing" ? "Confirming…" :
@@ -254,10 +377,16 @@ export default function VoiceButton() {
     stage === "grace" ? "Cancel" :
     stage === "confirming" ? "Cancel" :
     stage === "manual" ? "Cancel" :
+    goActive ? "Voice · Go" :
+    mode === "go" ? "Voice" :
     "Voice";
 
+  // Show a faint "Go" pill on the Voice button when Go mode is selected
+  // but no cycle is running yet — discoverability without the busy state.
+  const showGoBadge = mode === "go" && !goActive && stage === "idle";
+
   return (
-    <>
+    <div className="relative inline-flex items-center" data-testid="voice-mode-menu-wrap">
       <button
         data-testid="voice-btn"
         onClick={onMainClick}
@@ -267,21 +396,86 @@ export default function VoiceButton() {
           stage === "grace" ? "Reviewing transcript — say 'Run' or 'Cancel' in a moment." :
           stage === "confirming" ? "Listening for 'Run' or 'Cancel'…" :
           stage === "manual" ? "Voice didn't catch a Run/Cancel — finish by click." :
-          "Click and speak. Recording stops when you pause; say 'Run' to execute."
+          mode === "go"
+            ? "Go mode — speak commands continuously. Say 'stop' or click to end."
+            : "Click and speak. Recording stops when you pause; say 'Run' to execute."
         }
-        className={`h-8 px-2.5 rounded text-[11px] font-semibold uppercase tracking-wider border flex items-center gap-1.5 transition-colors ${
+        className={`h-8 pl-2.5 pr-2 rounded-l text-[11px] font-semibold uppercase tracking-wider border-y border-l flex items-center gap-1.5 transition-colors ${
           stage === "recording" || stage === "confirming"
             ? "bg-red-500/20 border-red-500/70 text-red-300 animate-pulse"
             : busy
               ? "bg-slate-800 border-slate-700 text-slate-400"
-              : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+              : goActive
+                ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+                : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
         }`}
       >
         {busy ? <Loader2 size={12} className="animate-spin" />
          : stage === "recording" || stage === "confirming" ? <Mic size={12} />
+         : goActive ? <Zap size={12} className="text-orange-300" />
          : <Sparkles size={12} className="text-orange-400" />}
         {buttonLabel}
+        {showGoBadge && (
+          <span className="ml-1 px-1 py-0 text-[8px] leading-none uppercase tracking-wider rounded-sm bg-orange-500/20 text-orange-300 border border-orange-500/40">
+            Go
+          </span>
+        )}
       </button>
+      <button
+        data-testid="voice-mode-menu-btn"
+        onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+        disabled={busy || stage === "recording" || stage === "confirming"}
+        title="Pick voice mode"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        className={`h-8 w-5 rounded-r border-y border-r text-[11px] flex items-center justify-center transition-colors ${
+          goActive
+            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+            : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800"
+        } ${(busy || stage === "recording" || stage === "confirming") ? "opacity-50 cursor-not-allowed" : ""}`}
+      >
+        <ChevronDown size={12} />
+      </button>
+
+      {menuOpen && (
+        <div
+          data-testid="voice-mode-menu"
+          role="menu"
+          className="absolute top-full mt-1 left-0 z-[150] w-64 bg-slate-900 border border-slate-700 rounded shadow-xl overflow-hidden"
+        >
+          <button
+            data-testid="voice-mode-single"
+            role="menuitem"
+            onClick={() => setModeAndPersist("single")}
+            className={`w-full text-left px-3 py-2 hover:bg-slate-800 transition-colors ${mode === "single" ? "bg-slate-800/60" : ""}`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Sparkles size={12} className={mode === "single" ? "text-orange-300" : "text-slate-500"} />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Single command</span>
+              {mode === "single" && <span className="ml-auto text-[9px] text-orange-300">●</span>}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+              Speak → confirm with "Run" → executes. Confirmation step protects against misheard commands.
+            </div>
+          </button>
+          <div className="border-t border-slate-800" />
+          <button
+            data-testid="voice-mode-go"
+            role="menuitem"
+            onClick={() => setModeAndPersist("go")}
+            className={`w-full text-left px-3 py-2 hover:bg-slate-800 transition-colors ${mode === "go" ? "bg-slate-800/60" : ""}`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Zap size={12} className={mode === "go" ? "text-orange-300" : "text-slate-500"} />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Go mode (continuous)</span>
+              {mode === "go" && <span className="ml-auto text-[9px] text-orange-300">●</span>}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+              Speak commands back-to-back, no confirmation. Say <span className="text-orange-300">"stop"</span>, <span className="text-orange-300">"done"</span>, or click Voice to end.
+            </div>
+          </button>
+        </div>
+      )}
 
       {showBanner && (
         <div
@@ -309,9 +503,17 @@ export default function VoiceButton() {
             <Sparkles size={16} className={`mt-0.5 ${feedback?.kind === "warn" ? "text-yellow-400" : "text-green-400"}`} />
           )}
           <div className="flex-1 text-xs min-w-0">
-            {/* Stage-specific body */}
             {stage === "recording" && (
-              <div className="font-mono text-red-300">Listening… speak now. (Pauses when you stop.)</div>
+              <>
+                <div className="font-mono text-red-300">
+                  {goActive ? "Listening (Go mode)… speak a command." : "Listening… speak now. (Pauses when you stop.)"}
+                </div>
+                {goActive && (
+                  <div className="text-[10px] text-slate-400 mt-1">
+                    Say <span className="text-orange-300">"stop"</span> or click Voice to end Go mode.
+                  </div>
+                )}
+              </>
             )}
             {stage === "transcribing" && (
               <div className="text-orange-300">Transcribing with Whisper…</div>
@@ -320,7 +522,7 @@ export default function VoiceButton() {
               <>
                 <div className="text-slate-300">Heard:</div>
                 <div className="text-white font-mono text-sm mt-0.5 mb-2 italic">"{pendingTranscript}"</div>
-                <div className="text-orange-300 font-semibold">Pausing 2 s — get ready to say <span className="text-orange-100">Run</span> or <span className="text-orange-100">Cancel</span>…</div>
+                <div className="text-orange-300 font-semibold">Get ready to say <span className="text-orange-100">Run</span> or <span className="text-orange-100">Cancel</span>…</div>
               </>
             )}
             {stage === "confirming" && (
@@ -347,7 +549,7 @@ export default function VoiceButton() {
               <div data-testid="voice-confirm-row">
                 <div className="text-orange-300 font-semibold mb-1.5">
                   {confirmHeard
-                    ? <>Didn't catch a confirmation (heard <span className="italic text-white">"{confirmHeard}"</span>). Click or edit:</>
+                    ? <>Didn&apos;t catch a confirmation (heard <span className="italic text-white">&quot;{confirmHeard}&quot;</span>). Click or edit:</>
                     : <>No confirmation heard. Click Run, edit the transcript, or cancel:</>}
                 </div>
                 <input
@@ -392,7 +594,7 @@ export default function VoiceButton() {
               <>
                 {feedback.heard && (
                   <div className="text-slate-400 mb-0.5">
-                    Heard: <span className="text-white italic">"{feedback.heard}"</span>
+                    Heard: <span className="text-white italic">&quot;{feedback.heard}&quot;</span>
                   </div>
                 )}
                 <div className={`font-semibold ${
@@ -405,6 +607,6 @@ export default function VoiceButton() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

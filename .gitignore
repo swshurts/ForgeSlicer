@@ -146,3 +146,4 @@ backend/bin/orca-x86_64/
 backend/bin/orca-aarch64/
 backend/bin/.cache/
 backend/bin/.orca_install_lock
+frontend/node_modules/.cache/default-development/31.pack
