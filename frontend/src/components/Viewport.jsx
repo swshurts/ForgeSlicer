@@ -487,8 +487,10 @@ export default function Viewport() {
   const measurementsCount = useScene((s) => s.measurements.length);
   // Canvas background tracks the global UI theme so the 3D scene
   // doesn't sit on a slate-800 island when the user picks Light/Dim.
-  const theme = useTheme((s) => s.theme);
-  const viewportBg = VIEWPORT_BG[theme] || VIEWPORT_BG.dark;
+  // Uses the *resolved* theme (concrete dark/dim/light) so "system"
+  // mode follows the OS without a separate code path here.
+  const resolvedTheme = useTheme((s) => s.resolvedTheme);
+  const viewportBg = VIEWPORT_BG[resolvedTheme] || VIEWPORT_BG.dark;
   const [ctxMenu, setCtxMenu] = React.useState(null);
 
   // ---- Marquee (Shift + left-drag) box selection ----

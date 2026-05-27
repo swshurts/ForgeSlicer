@@ -546,6 +546,18 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.16 (2026-02-27) — System / Auto theme mode (new default)
+- ✅ **Added `system` mode** (icon: MonitorCog, label: Auto) — follows `(prefers-color-scheme: light)` media query. Now the default for brand-new users.
+- ✅ **Live OS updates**: A `matchMedia` listener installed at module load re-resolves the theme when the user flips their OS appearance while the tab is open. Listener only acts when stored choice is `"system"` — explicit Dark/Dim/Light picks are never overridden by OS changes.
+- ✅ **Store now exposes `theme` (user choice incl. `system`) AND `resolvedTheme` (concrete `dark|dim|light` actually rendered)**. Viewport canvas reads `resolvedTheme` so Auto mode flows through to the 3D scene background too.
+- ✅ Switcher tooltip on the Auto button shows the currently-resolved mode (`"… — currently light"`).
+- ✅ Smoke test verified all 6 scenarios: default → system; system + OS=light → light; system + OS=dark → dark; user picks Dark → sticks even when OS flips to light; system mode survives reload.
+
+### Files touched
+- `frontend/src/lib/theme.js` (rewritten — adds `resolveTheme`, system listener, `resolvedTheme` state)
+- `frontend/src/components/toolbar/ThemeSwitcher.jsx` (4 segments now: Auto / Dark / Dim / Light)
+- `frontend/src/components/Viewport.jsx` (uses `resolvedTheme` instead of `theme`)
+
 ## Iteration 1.15 (2026-02-27) — Theme switcher (Dark / Dim / Light)
 - ✅ **3-mode theme switcher** added to the top toolbar (right side, before user menu). Modes: Dark (original), Dim (in-between softer dark), Light (full light mode).
 - ✅ Choice persists to `localStorage` (`forgeslicer.theme`) and is bootstrapped onto `<html data-theme="…">` BEFORE React mounts (no FOUC on first paint).
