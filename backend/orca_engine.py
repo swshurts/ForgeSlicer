@@ -474,6 +474,23 @@ async def orca_slice(req: OrcaSliceRequest):
                         f"Built-in slicer is unaffected."
                     ),
                 )
+            # Detect OrcaSlicer's profile-JSON validator errors. The
+            # CLI prints `operator():file X.json's from <value> is
+            # unsupported` when a profile JSON is missing required
+            # metadata or has bad values. Surface a clean message
+            # rather than the raw C++ trace.
+            if "operator()" in tail and "json" in tail and ("unsupported" in tail or "is invalid" in tail):
+                m = re.search(r"file\s+(\S+\.json)", tail)
+                bad_file = m.group(1).rsplit("/", 1)[-1] if m else "a profile"
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"OrcaSlicer rejected {bad_file} — the profile JSON is missing "
+                        f"required metadata (type / name / from / instantiation) or "
+                        f"contains a value the slicer doesn't recognise. This is a "
+                        f"client-side bug; please report it. Built-in slicer is unaffected."
+                    ),
+                )
             raise HTTPException(
                 status_code=500,
                 detail=f"OrcaSlicer exited with code {proc.returncode}: {tail}",

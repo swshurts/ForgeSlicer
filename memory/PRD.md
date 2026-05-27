@@ -546,6 +546,29 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.27 (2026-02-27) — OrcaSlicer profile-JSON metadata fix (exit 251)
+**Production bug**: User clicked Slice & Export GCODE in OrcaSlicer mode and got
+`OrcaSlicer exited with code 251: operator():file /tmp/orca-XXX/printer.json's from unsupported (HTTP 500)`.
+
+**Root cause**: OrcaSlicer's CLI strictly validates the JSONs it loads — every profile must carry four required metadata fields (`type`, `name`, `from`, `instantiation`). We were sending just the slicer-param keys (`nozzle_diameter`, `printable_area`, etc.). Without the metadata, the C++ validator threw `operator():file X.json's from <empty> is unsupported (rc=251)`.
+
+**Fix shipped (preview-only, needs redeploy for prod)**:
+- ✅ `buildOrcaPayload()` now wraps every output profile with the four required metadata fields:
+   - `type` = `"machine" | "process" | "filament"`
+   - `name` = the human label
+   - `from` = `"User"`
+   - `instantiation` = `"true"` (string, not bool — Orca expects a string)
+- ✅ Friendly error mapping in `orca_engine.py`: when stderr matches `operator():file X.json's from ... unsupported`, the slice endpoint now returns **400** with "OrcaSlicer rejected printer.json — the profile JSON is missing required metadata" instead of the raw C++ trace.
+- ✅ **22-check unit test** (`tests/orca-profile-meta.mjs`) verifies every profile carries metadata + tunables override correctly + unknown IDs fall back. All passing.
+
+### Files touched
+- `frontend/src/lib/orcaProfiles.js` — `buildOrcaPayload` adds `withMeta()` wrapper
+- `backend/orca_engine.py` — slice endpoint maps the profile-validation pattern to a clean 400
+- `frontend/tests/orca-profile-meta.mjs` (NEW) — regression coverage
+
+### To restore OrcaSlicer on prod
+Redeploy. After redeploy, the same workflow (group interlocking cubes → OrcaSlicer engine → Slice & Export) should now produce real Orca GCODE.
+
 ## Iteration 1.26 (2026-02-27) — TODO ADDED (not yet fixed)
 **Slider value-bubble overflow in Slicer popover**: When a value indicator (e.g. `2` walls, `15%` infill) is rendered, it can appear *underneath an adjacent control to its right* or *escape the popover boundary entirely* when the popover is anchored near the right edge of the viewport. Reported by user against production.
 

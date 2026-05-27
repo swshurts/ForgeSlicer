@@ -353,10 +353,32 @@ export function buildOrcaPayload({
     ...(ironing != null ? { ironing } : {}),
   };
 
+  // OrcaSlicer's CLI is strict about profile-JSON metadata. Every JSON
+  // it loads MUST declare four header fields, or its C++ validator
+  // throws `loading json file X's from <empty> is unsupported` and
+  // exits 251. (We hit this in production v1.0 of the slice flow.)
+  //   • type           — one of "machine" | "process" | "filament"
+  //   • name           — display name (any string)
+  //   • from           — provenance, must be "Default" | "System" | "User"
+  //   • instantiation  — "true" string (yes, a string, not a bool) so
+  //                       Orca treats the JSON as a concrete instance
+  //                       rather than a base template
+  //
+  // Adding them here (rather than in each individual preset) keeps the
+  // preset JSONs focused on actual slicer params and prevents the
+  // header from drifting between presets.
+  const withMeta = (profile, type, name) => ({
+    type,
+    name,
+    from: "User",
+    instantiation: "true",
+    ...profile,
+  });
+
   return {
-    printerProfile: printer.profile,
-    processProfile,
-    filamentProfile: filament.profile,
+    printerProfile: withMeta(printer.profile, "machine", printer.label),
+    processProfile: withMeta(processProfile, "process", process.label),
+    filamentProfile: withMeta(filament.profile, "filament", filament.label),
     // Echo back the resolved labels so the slicer status panel can
     // show what was actually sent (rather than the IDs).
     summary: {
