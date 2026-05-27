@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pencil, Square, Circle as CircleIcon, X, Check, Undo2, Hexagon, MousePointer2 } from "lucide-react";
+import { Pencil, Square, Circle as CircleIcon, X, Check, Undo2, Hexagon, MousePointer2, Spline } from "lucide-react";
 import { useScene } from "../lib/store";
 
 /**
@@ -36,23 +36,37 @@ export default function SketchOverlay() {
   const [extrudeHeight, setExtrudeHeight] = useState(5);
   // Pencil polyline as a list of build-plate [x, z] points (mm).
   const [points, setPoints] = useState([]);
+  // Per-edge quadratic bezier control points keyed by the starting
+  // vertex index. `curves[i] = [cx, cz]` means the edge from points[i]
+  // to points[i+1] bows toward [cx, cz]. Absent keys = straight edge.
+  // Set by the Curve tool: user drags the midpoint of an edge and the
+  // control point is computed so the bezier passes through the cursor.
+  const [curves, setCurves] = useState({});
   // For rect/circle: in-progress drag start/end (also build-plate coords).
   const [dragStart, setDragStart] = useState(null);
   const [dragEnd, setDragEnd] = useState(null);
+  // Curve-tool drag state — which edge is being bent.
+  const [curveDragEdge, setCurveDragEdge] = useState(null);
   // Hover position — drawn as a ghost cursor + a preview line from the last
   // committed pencil point so the user sees where the next click lands.
   const [hover, setHover] = useState(null);
 
   // Reset every tool's working state when entering/exiting sketch mode or
   // switching tools so a half-drawn pencil polyline doesn't leak between
-  // sessions.
+  // sessions. The Curve tool is special: it *operates on* the existing
+  // pencil polyline, so switching to/from Curve must NOT wipe points or
+  // curves — only the in-progress drag indicator.
   useEffect(() => {
     if (!sketchMode) {
-      setPoints([]); setDragStart(null); setDragEnd(null); setHover(null);
+      setPoints([]); setCurves({}); setDragStart(null); setDragEnd(null); setHover(null); setCurveDragEdge(null);
     }
   }, [sketchMode]);
   useEffect(() => {
-    setPoints([]); setDragStart(null); setDragEnd(null);
+    setDragStart(null); setDragEnd(null); setCurveDragEdge(null);
+    // Switching AWAY from a destructive tool back to pencil/curve, OR
+    // between pencil ↔ curve, preserves `points` + `curves`. Switching
+    // to rect/circle clears them since those tools commit a fresh shape.
+    if (tool === "rect" || tool === "circle") { setPoints([]); setCurves({}); }
   }, [tool]);
 
   // Re-paint whenever any input changes. Painting the full canvas every
@@ -60,8 +74,8 @@ export default function SketchOverlay() {
   // repaint on user input, never on a RAF loop.
   useEffect(() => {
     if (!sketchMode) return;
-    paint(canvasRef.current, { tool, points, dragStart, dragEnd, hover, buildVolume });
-  }, [sketchMode, tool, points, dragStart, dragEnd, hover, buildVolume]);
+    paint(canvasRef.current, { tool, points, curves, dragStart, dragEnd, hover, buildVolume, curveDragEdge });
+  }, [sketchMode, tool, points, curves, dragStart, dragEnd, hover, buildVolume, curveDragEdge]);
 
   // Cancel / commit shortcuts.
   useEffect(() => {
@@ -106,6 +120,12 @@ export default function SketchOverlay() {
     const p = toPlate(e); if (!p) return;
     if (tool === "pencil") {
       setPoints((prev) => [...prev, p]);
+    } else if (tool === "curve") {
+      // Find the closest edge midpoint (straight) or existing curve
+      // sample-midpoint within a 10mm pickup radius. If found, start a
+      // drag that re-shapes that edge's bezier.
+      const hit = pickEdgeHandle(p, points, curves, /* radius_mm */ 10);
+      if (hit != null) setCurveDragEdge(hit);
     } else {
       setDragStart(p); setDragEnd(p);
     }
@@ -114,6 +134,19 @@ export default function SketchOverlay() {
     const p = toPlate(e); if (!p) return;
     setHover(p);
     if ((tool === "rect" || tool === "circle") && dragStart) setDragEnd(p);
+    if (tool === "curve" && curveDragEdge != null) {
+      // Convert the user's drag-target M into a quadratic bezier control
+      // point such that B(0.5) = M (curve passes through the cursor).
+      //   B(t)  = (1-t)² P0 + 2(1-t)t P1 + t² P2
+      //   B(.5) = 0.25 P0 + 0.5 P1 + 0.25 P2 = M
+      //   P1    = 2M − 0.5 (P0 + P2)
+      const i = curveDragEdge;
+      const p0 = points[i], p2 = points[(i + 1) % points.length];
+      if (!p0 || !p2) return;
+      const cx = 2 * p[0] - 0.5 * (p0[0] + p2[0]);
+      const cz = 2 * p[1] - 0.5 * (p0[1] + p2[1]);
+      setCurves((c) => ({ ...c, [i]: [Math.round(cx), Math.round(cz)] }));
+    }
   };
   const handleUp = (e) => {
     if ((tool === "rect" || tool === "circle") && dragStart) {
@@ -127,13 +160,31 @@ export default function SketchOverlay() {
       }
       setDragStart(null); setDragEnd(null);
     }
+    if (tool === "curve") setCurveDragEdge(null);
   };
-  const handleDoubleClick = () => { if (tool === "pencil") commit(); };
+  const handleDoubleClick = (e) => {
+    if (tool === "pencil") commit();
+    if (tool === "curve") {
+      // Double-click to STRAIGHTEN an edge: remove its curve control if
+      // one exists, otherwise no-op.
+      const p = toPlate(e); if (!p) return;
+      const hit = pickEdgeHandle(p, points, curves, 10);
+      if (hit != null && curves[hit] != null) {
+        setCurves((c) => {
+          const out = { ...c }; delete out[hit]; return out;
+        });
+      }
+    }
+  };
 
   const commit = () => {
-    if (tool === "pencil") {
+    if (tool === "pencil" || tool === "curve") {
       if (points.length < 3) return;
-      const id = addSketch(points, modifier, extrudeHeight);
+      // Tessellate every bezier-curved edge into ~16 short segments so
+      // the downstream extrude geometry stays smooth without exploding
+      // the triangle count. Straight edges remain as their two endpoints.
+      const expanded = expandCurvedPolyline(points, curves, /* samples */ 16);
+      const id = addSketch(expanded, modifier, extrudeHeight);
       if (id) setSketchMode(false);
     }
   };
@@ -152,6 +203,7 @@ export default function SketchOverlay() {
         <div className="flex-1" />
 
         <ToolButton testid="sketch-tool-pencil" Icon={Pencil} label="Pencil" active={tool === "pencil"} onClick={() => setTool("pencil")} />
+        <ToolButton testid="sketch-tool-curve" Icon={Spline} label="Curve" active={tool === "curve"} onClick={() => setTool("curve")} disabled={points.length < 2} />
         <ToolButton testid="sketch-tool-rect" Icon={Square} label="Rect" active={tool === "rect"} onClick={() => setTool("rect")} />
         <ToolButton testid="sketch-tool-circle" Icon={CircleIcon} label="Circle" active={tool === "circle"} onClick={() => setTool("circle")} />
 
@@ -195,7 +247,7 @@ export default function SketchOverlay() {
         <button
           data-testid="sketch-commit"
           onClick={commit}
-          disabled={tool === "pencil" ? points.length < 3 : !dragStart}
+          disabled={(tool === "pencil" || tool === "curve") ? points.length < 3 : !dragStart}
           className="h-8 px-3 rounded bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-700 disabled:text-slate-500 text-xs font-semibold text-white flex items-center gap-1"
         >
           <Check size={12} /> Commit
@@ -214,6 +266,9 @@ export default function SketchOverlay() {
         <MousePointer2 size={11} className="text-slate-500" />
         {tool === "pencil" && (
           <span>Click to add corners. Double-click or press <kbd className="text-orange-300">Enter</kbd> to close. <kbd className="text-orange-300">⌘Z</kbd> undoes the last point. <kbd className="text-orange-300">Esc</kbd> cancels.</span>
+        )}
+        {tool === "curve" && (
+          <span>Drag the cyan midpoint handle on any edge to bend it into an arc. Double-click a curved handle to straighten. Press <kbd className="text-orange-300">Enter</kbd> to commit, <kbd className="text-orange-300">Esc</kbd> to cancel.</span>
         )}
         {tool === "rect" && <span>Drag from one corner to the opposite corner. Release to commit.</span>}
         {tool === "circle" && <span>Drag from the center outward to set the radius. Release to commit.</span>}
@@ -237,17 +292,99 @@ export default function SketchOverlay() {
   );
 }
 
-function ToolButton({ Icon, label, active, onClick, testid }) {
+function ToolButton({ Icon, label, active, onClick, testid, disabled = false }) {
   return (
     <button
       data-testid={testid}
       onClick={onClick}
-      className={`h-8 px-2 rounded text-xs font-semibold flex items-center gap-1 ${active ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
-      title={label}
+      disabled={disabled}
+      className={`h-8 px-2 rounded text-xs font-semibold flex items-center gap-1 transition-colors ${
+        active
+          ? "bg-orange-500 text-white"
+          : disabled
+            ? "bg-slate-900 text-slate-600 cursor-not-allowed"
+            : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+      }`}
+      title={disabled ? `${label} — add at least 2 pencil points first` : label}
     >
       <Icon size={12} /> {label}
     </button>
   );
+}
+
+// Quadratic-bezier helpers for the Curve tool.
+// `points[i]` & `points[i+1]` (wrapping at length-1) are an edge; if
+// `curves[i]` exists it's a control-point [cx, cz] for that edge's
+// bezier. The user grabs the edge by its midpoint; we recompute the
+// control point so the resulting curve passes through the cursor.
+
+/** Convert build-plate distance to mm-space (the points + curves arrays
+ *  already live in mm so we just compute euclidean distance). */
+function distSq(a, b) { return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2; }
+
+/** Return the on-screen "handle" point for the edge between
+ *  `points[i]` and `points[(i+1) % n]`. For straight edges it's the
+ *  geometric midpoint; for curved edges it's the bezier midpoint
+ *  (t=0.5) which also happens to be where the user previously dragged. */
+function edgeHandlePoint(i, points, curves) {
+  const n = points.length;
+  const p0 = points[i], p2 = points[(i + 1) % n];
+  if (!p0 || !p2) return null;
+  const c = curves[i];
+  if (!c) return [(p0[0] + p2[0]) / 2, (p0[1] + p2[1]) / 2];
+  // B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
+  return [
+    0.25 * p0[0] + 0.5 * c[0] + 0.25 * p2[0],
+    0.25 * p0[1] + 0.5 * c[1] + 0.25 * p2[1],
+  ];
+}
+
+/** Find which edge handle is within `radius_mm` of the cursor `p`.
+ *  Returns the edge index or null. We skip the closing edge (from
+ *  last point back to first) until the polyline has 3+ points — for
+ *  a 2-point polyline only one real edge exists. */
+function pickEdgeHandle(p, points, curves, radius_mm) {
+  const n = points.length;
+  if (n < 2) return null;
+  const r2 = radius_mm * radius_mm;
+  let bestIdx = null, bestD2 = Infinity;
+  const edgeCount = n >= 3 ? n : n - 1;
+  for (let i = 0; i < edgeCount; i++) {
+    const handle = edgeHandlePoint(i, points, curves);
+    if (!handle) continue;
+    const d2 = distSq(p, handle);
+    if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+/** Tessellate the polyline into a fine, all-straight version for
+ *  three.js's ExtrudeGeometry. Each curved edge is sampled at
+ *  `samples` evenly-spaced t values; straight edges stay 1 segment.
+ *  We always include the starting vertex of each edge to preserve
+ *  corners. The closing edge (last → first) is intentionally NOT
+ *  expanded — `addSketch` closes the polygon itself by repeating the
+ *  first point. */
+function expandCurvedPolyline(points, curves, samples) {
+  const n = points.length;
+  if (n < 2) return points.slice();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = points[i];
+    const p2 = points[(i + 1) % n];
+    out.push(p0);
+    const c = curves[i];
+    if (!c || i === n - 1) continue;  // skip closing edge sampling
+    for (let s = 1; s < samples; s++) {
+      const t = s / samples;
+      const it = 1 - t;
+      out.push([
+        it * it * p0[0] + 2 * it * t * c[0] + t * t * p2[0],
+        it * it * p0[1] + 2 * it * t * c[1] + t * t * p2[1],
+      ]);
+    }
+  }
+  return out;
 }
 
 // ---------- Geometry helpers ----------
@@ -292,7 +429,7 @@ function plateExtents(canvas, buildVolume) {
   return { x: { bx, bz }, y: { padX, padY, scale, drawW, drawH } };
 }
 
-function paint(canvas, { tool, points, dragStart, dragEnd, hover, buildVolume }) {
+function paint(canvas, { tool, points, curves, dragStart, dragEnd, hover, buildVolume, curveDragEdge }) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
@@ -328,18 +465,28 @@ function paint(canvas, { tool, points, dragStart, dragEnd, hover, buildVolume })
 
   const toPx = ([mx, mz]) => [padX + (mx + bx / 2) * scale, padY + (mz + bz / 2) * scale];
 
-  // Pencil: existing polyline
-  if (tool === "pencil" && points.length > 0) {
+  // Pencil / Curve: existing polyline (curve tool reuses the same data)
+  if ((tool === "pencil" || tool === "curve") && points.length > 0) {
     ctx.strokeStyle = "#f97316";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    points.forEach((p, i) => {
-      const [x, y] = toPx(p);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
+    for (let i = 0; i < points.length; i++) {
+      const [x, y] = toPx(points[i]);
+      if (i === 0) { ctx.moveTo(x, y); continue; }
+      // If the edge ENDING at this vertex has a curve, draw it as a
+      // quadratic. Edge index is i-1 (the edge from points[i-1] to
+      // points[i]). Closing edge handled below.
+      const c = curves[i - 1];
+      if (c) {
+        const [cx, cy] = toPx(c);
+        ctx.quadraticCurveTo(cx, cy, x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
     ctx.stroke();
-    // Hover preview line from last point
-    if (hover) {
+    // Hover preview line from last point (pencil only, not curve).
+    if (tool === "pencil" && hover) {
       const [hx, hy] = toPx(hover);
       const [lx, ly] = toPx(points[points.length - 1]);
       ctx.setLineDash([4, 4]);
@@ -348,12 +495,30 @@ function paint(canvas, { tool, points, dragStart, dragEnd, hover, buildVolume })
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // Dots
+    // Vertex dots
     ctx.fillStyle = "#f97316";
     points.forEach((p) => {
       const [x, y] = toPx(p);
       ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
     });
+    // Curve-tool: cyan draggable midpoint handle per edge. Larger ring
+    // for the currently-active drag so users see what they're moving.
+    if (tool === "curve") {
+      const n = points.length;
+      const edgeCount = n >= 3 ? n : n - 1;
+      for (let i = 0; i < edgeCount; i++) {
+        const handle = edgeHandlePoint(i, points, curves);
+        if (!handle) continue;
+        const [hx, hy] = toPx(handle);
+        const curved = !!curves[i];
+        const active = curveDragEdge === i;
+        ctx.fillStyle = curved ? "#22d3ee" : "rgba(34, 211, 238, 0.45)";
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = active ? 2 : 1;
+        const r = active ? 6 : 4;
+        ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
   }
 
   // Rect / circle in-progress

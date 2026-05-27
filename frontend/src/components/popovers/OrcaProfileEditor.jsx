@@ -5,9 +5,10 @@
 // that meaningfully change first-print outcomes. Everything else flows
 // from the chosen process preset so the slice button stays one click
 // away.
-import React from "react";
-import { Cpu, CheckCircle2 } from "lucide-react";
+import React, { useState } from "react";
+import { Cpu, CheckCircle2, ExternalLink } from "lucide-react";
 import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, getPrinterGroups, resolveSystemPresets } from "../../lib/orcaProfiles";
+import OrcaPresetViewer from "../dialogs/OrcaPresetViewer";
 
 export default function OrcaProfileEditor({
   printerId, onPrinterChange,
@@ -26,6 +27,7 @@ export default function OrcaProfileEditor({
   // users see the same string they'd see inside OrcaSlicer's own
   // preset picker — proves the link between the two apps.
   const resolved = resolveSystemPresets(printerId, processId, filamentId);
+  const [viewer, setViewer] = useState(null);  // { vendor, kind, name } | null
   return (
     <div
       data-testid="orca-profile-editor"
@@ -55,14 +57,17 @@ export default function OrcaProfileEditor({
               we've mapped to a bundled JSON; non-Bambu printers stay
               on the legacy raw-dict path and don't show a hint. */}
           {resolved.printer && (
-            <span
+            <button
+              type="button"
               data-testid="orca-resolved-printer"
-              className="text-[9px] text-emerald-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1"
-              title="This bundled OrcaSlicer system preset is loaded by the server and used for the slice."
+              onClick={() => setViewer({ vendor: resolved.printer.vendor, kind: "machine", name: resolved.printer.name })}
+              className="text-[9px] text-emerald-300/80 hover:text-emerald-200 font-mono leading-tight pl-0.5 flex items-center gap-1 group transition-colors text-left"
+              title="View the bundled OrcaSlicer system preset JSON"
             >
               <CheckCircle2 size={9} className="flex-shrink-0 text-emerald-400" />
               <span className="truncate">{resolved.printer.name}</span>
-            </span>
+              <ExternalLink size={8} className="flex-shrink-0 opacity-60 group-hover:opacity-100" />
+            </button>
           )}
         </label>
         <div className="grid grid-cols-2 gap-1.5">
@@ -79,14 +84,17 @@ export default function OrcaProfileEditor({
               ))}
             </select>
             {resolved.process && (
-              <span
+              <button
+                type="button"
                 data-testid="orca-resolved-process"
-                className="text-[9px] text-emerald-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1 truncate"
-                title="Bundled process JSON loaded by the slicer"
+                onClick={() => setViewer({ vendor: resolved.process.vendor, kind: "process", name: resolved.process.name })}
+                className="text-[9px] text-emerald-300/80 hover:text-emerald-200 font-mono leading-tight pl-0.5 flex items-center gap-1 group transition-colors text-left"
+                title="View the bundled OrcaSlicer process JSON"
               >
                 <CheckCircle2 size={9} className="flex-shrink-0 text-emerald-400" />
                 <span className="truncate">{resolved.process.name}</span>
-              </span>
+                <ExternalLink size={8} className="flex-shrink-0 opacity-60 group-hover:opacity-100" />
+              </button>
             )}
           </label>
           <label className="flex flex-col gap-0.5 min-w-0">
@@ -102,14 +110,17 @@ export default function OrcaProfileEditor({
               ))}
             </select>
             {resolved.filament && (
-              <span
+              <button
+                type="button"
                 data-testid="orca-resolved-filament"
-                className="text-[9px] text-emerald-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1 truncate"
-                title="Bundled filament JSON loaded by the slicer"
+                onClick={() => setViewer({ vendor: resolved.filament.vendor, kind: "filament", name: resolved.filament.name })}
+                className="text-[9px] text-emerald-300/80 hover:text-emerald-200 font-mono leading-tight pl-0.5 flex items-center gap-1 group transition-colors text-left"
+                title="View the bundled OrcaSlicer filament JSON"
               >
                 <CheckCircle2 size={9} className="flex-shrink-0 text-emerald-400" />
                 <span className="truncate">{resolved.filament.name}</span>
-              </span>
+                <ExternalLink size={8} className="flex-shrink-0 opacity-60 group-hover:opacity-100" />
+              </button>
             )}
           </label>
         </div>
@@ -184,6 +195,13 @@ export default function OrcaProfileEditor({
       <div className="text-[10px] text-slate-500 leading-snug pt-0.5">
         Other settings inherit from the chosen Print Profile. Slice time scales with perimeters × density.
       </div>
+      <OrcaPresetViewer
+        open={!!viewer}
+        vendor={viewer?.vendor}
+        kind={viewer?.kind}
+        name={viewer?.name}
+        onClose={() => setViewer(null)}
+      />
     </div>
   );
 }

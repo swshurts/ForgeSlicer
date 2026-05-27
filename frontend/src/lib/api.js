@@ -147,6 +147,13 @@ export const orcaApi = {
     const { data } = await axios.get(`${API}/slice/orca/status`, { timeout: 8000 });
     return data;
   },
+  preset: async ({ vendor, kind, name }) => {
+    const { data } = await axios.get(
+      `${API}/slice/orca/preset`,
+      { params: { vendor, kind, name }, timeout: 15000 },
+    );
+    return data;
+  },
   slice: async ({
     stlBase64, printerProfile, processProfile, filamentProfile,
     printerPresetName, printerVendor,

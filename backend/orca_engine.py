@@ -493,6 +493,51 @@ async def orca_status():
     )
 
 
+@router.get("/preset")
+async def orca_preset(vendor: str, kind: str, name: str):
+    """Return the fully-flattened (inherits-walked) bundled OrcaSlicer
+    preset JSON so the UI can show the user exactly what config the
+    slicer will load.
+
+    Validates the requested `kind` against the known profile kinds —
+    refuses anything else as a 400 — so the endpoint can't be tricked
+    into reading arbitrary files off the install's `resources/` tree.
+    The `name` is joined onto a fixed `<root>/<vendor>/<kind>/` prefix
+    by `_load_system_preset`, which already constrains the lookup to
+    direct children of that directory.
+    """
+    if kind not in _PROFILE_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown profile kind {kind!r}; expected one of {sorted(_PROFILE_KINDS)}",
+        )
+    install = resolve_install()
+    if not install.binary:
+        raise HTTPException(
+            status_code=503,
+            detail="OrcaSlicer engine not installed on this server.",
+        )
+    profiles_root = _resources_root(install)
+    if profiles_root is None:
+        raise HTTPException(
+            status_code=503,
+            detail="OrcaSlicer resources/profiles directory was not found on this server.",
+        )
+    try:
+        merged = _load_system_preset(profiles_root, vendor, kind, name)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (RuntimeError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to resolve preset: {e}")
+    return {
+        "vendor": vendor,
+        "kind": kind,
+        "name": name,
+        "preset": merged,
+    }
+
+
+
 @router.post("/slice", response_model=OrcaSliceResponse)
 async def orca_slice(req: OrcaSliceRequest):
     """Shell out to OrcaSlicer CLI to produce production-quality GCODE.
@@ -543,13 +588,28 @@ async def orca_slice(req: OrcaSliceRequest):
         ]
         profile_args: list[str] = []
         for file_key, kind, preset_name, vendor, raw_profile in preset_specs:
-            final: dict | None = None
-            if preset_name and profiles_root is not None:
+            base: dict = {}
+            if preset_name:
+                if profiles_root is None:
+                    # The caller asked for a system preset but we have no
+                    # way to resolve it — fail loudly with a 503 instead
+                    # of silently writing an empty JSON that OrcaSlicer's
+                    # validator would later reject with the cryptic
+                    # `unknown config type` error.
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            f"OrcaSlicer engine is installed but its "
+                            f"resources/profiles directory was not found "
+                            f"on the server, so the requested {file_key} "
+                            f"preset {preset_name!r} cannot be resolved. "
+                            f"Built-in slicer remains available."
+                        ),
+                    )
                 try:
                     base = _load_system_preset(
                         profiles_root, vendor or "BBL", kind, preset_name,
                     )
-                    final = _stage_user_profile(base, raw_profile, kind, preset_name)
                 except FileNotFoundError as e:
                     raise HTTPException(
                         status_code=400,
@@ -564,10 +624,23 @@ async def orca_slice(req: OrcaSliceRequest):
                         status_code=500,
                         detail=f"Failed to resolve {file_key} preset {preset_name!r}: {e}",
                     )
-            elif raw_profile:
-                final = raw_profile
-            if not final:
+
+            # Skip writing the file entirely only when BOTH the system-preset
+            # base AND the raw override are empty — otherwise we'd produce a
+            # bogus zero-key JSON that OrcaSlicer can't validate.
+            if not base and not raw_profile:
                 continue
+            # ALWAYS run through `_stage_user_profile` so the required
+            # metadata fields (type / name / from / instantiation) are
+            # stamped onto the final JSON, regardless of which path got us
+            # here. This protects against the new-frontend / no-preset-root
+            # combination that previously produced an empty `{}` file.
+            leaf_name = (
+                preset_name
+                or (raw_profile.get("name") if isinstance(raw_profile, dict) else None)
+                or f"ForgeSlicer {kind}"
+            )
+            final = _stage_user_profile(base, raw_profile, kind, leaf_name)
             p = workdir / f"{file_key}.json"
             p.write_text(json.dumps(final, indent=2))
             if file_key == "filament":

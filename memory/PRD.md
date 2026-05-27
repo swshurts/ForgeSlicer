@@ -779,3 +779,27 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ **`resolveSystemPresets` now exported** from `frontend/src/lib/orcaProfiles.js` so UI components can mirror the exact resolution logic the backend payload uses.
 - ✅ **Process-preset base name updated** — `draft` now points to `"0.28mm Extra Draft"` (the real OrcaSlicer name for the 0.28mm layer-height tier; was incorrectly `"0.28mm Draft"`).
 - Files touched: `frontend/src/lib/orcaProfiles.js` (labels + base names + export), `frontend/src/components/popovers/OrcaProfileEditor.jsx` (hint rendering + min-w-0 on label children).
+
+## Iteration 46 (2026-02-27) — P0 OrcaSlicer "unknown config type" + Curve tool + Preset Viewer
+- 🔴 **P0 — Slicer "unknown config type" bug fixed**. Root cause: when the frontend (post-iter 44) sent `printer_profile: {}` because a system preset matched, AND the backend could not locate `resources/profiles/` (e.g. AppImage variant where the path differs), the code fell through to `final = raw_profile` and wrote an empty `{}` JSON to disk. OrcaSlicer's CLI loaded that file, found no `type` field, and aborted with `unknown config type  of file printer.json` (note the tell-tale double space — empty type_str). Fix:
+  - **Backend**: route BOTH the system-preset path AND the raw-dict path through `_stage_user_profile` so the required metadata (`type` / `name` / `from` / `instantiation`) is ALWAYS stamped on the final JSON. Refuse to silently fall back when `profiles_root is None` AND a preset name was requested — raise a clean 503 instead.
+  - **Frontend**: when a preset matches, send the FULL `withMeta(...)` dict as the override (instead of `{}`). The backend's `_stage_user_profile` strips metadata fields from overrides anyway, so it's a zero-cost defensive belt-and-braces.
+  - **Tests**: 5 new unit tests in `backend/tests/test_orca_profile_staging.py` lock in the invariant. All pass.
+- ✅ **Sketch Curve tool (P2 feature)** — new fourth Sketch tool. Workflow: draw with Pencil → switch to Curve → drag the cyan midpoint handle on any edge to bend it into a quadratic bezier arc that passes through the cursor. Double-click a curved handle to straighten that edge again. Implementation:
+  - Parallel `curves` state (`{ [edgeIdx]: [cx, cz] }`) lives alongside the existing `points` array; absent keys = straight edge.
+  - User drags the visual midpoint M; we solve `B(0.5) = M` for the bezier control point `P1 = 2M − 0.5(P0+P2)` so the arc passes through where the cursor is.
+  - Painter uses `quadraticCurveTo` to render curved edges smoothly.
+  - On commit, every curved edge is sampled at 16 evenly-spaced t-values (~16 short segments) so three.js's `ExtrudeGeometry` stays cheap.
+  - Tool switching preserves `points`+`curves` when going Pencil↔Curve; switching to Rect/Circle still resets (since those are fresh-shape tools).
+  - The Curve button is disabled until at least 2 Pencil points exist so the affordance reads correctly.
+- ✅ **OrcaSlicer "View bundled JSON →" link** — each of the three resolved-preset hints in `OrcaProfileEditor` is now a clickable button that opens `OrcaPresetViewer` (new modal in `components/dialogs/`). Backend endpoint `GET /api/slice/orca/preset?vendor=&kind=&name=` returns the fully-flattened (inheritance-walked) bundled JSON. Includes a Copy-JSON button. Power-user trust-builder + free debug tool when a preset name mismatch happens.
+- ✅ **OrcaSlicer process labels relabeled** to match the slicer's own bundled names: `"0.20mm Standard"`, `"0.12mm Fine"`, `"0.28mm Extra Draft"`, `"0.20mm Strong (functional)"`.
+- ✅ **Release notes v1.14.0** added.
+- Files touched: `backend/orca_engine.py`, `backend/tests/test_orca_profile_staging.py` (NEW), `frontend/src/lib/orcaProfiles.js`, `frontend/src/lib/api.js`, `frontend/src/components/popovers/OrcaProfileEditor.jsx`, `frontend/src/components/dialogs/OrcaPresetViewer.jsx` (NEW), `frontend/src/components/SketchOverlay.jsx`, `frontend/src/lib/releaseNotes.js`.
+
+### Pending P2 (next session)
+1. **Sketch → Path sweep** (extrude 2D profile along a curved path; needs a separate Path drawing pass + ExtrudeGeometry along curve)
+2. **Slice progress reporting** (parse OrcaSlicer stdout `=> Slicing: N%` lines + stream via SSE)
+3. **Parametric Bolt/Nut threads** generator
+4. **Admin "Reinstall OrcaSlicer" button** + SSE for install status
+5. **Settings → Appearance panel**

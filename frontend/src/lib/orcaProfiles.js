@@ -467,26 +467,25 @@ export function buildOrcaPayload({
     ...profile,
   });
 
-  // When a bundled system preset matches, send EMPTY overrides for
-  // printer and filament (the system JSON already has the correct,
-  // schema-valid values — overriding with our own hand-rolled dict
-  // risks failing OrcaSlicer's strict validator). Process overrides
-  // ARE sent because they encode the user's tunable choices (perimeters,
-  // infill %, ironing, supports). When NO system preset matches we
-  // fall back to the legacy raw-dict path with all three populated.
+  // When a bundled system preset matches we still send the full
+  // `withMeta(...)` dict as the override so the backend has a valid
+  // fallback in case its preset resolver can't locate the bundled JSON.
+  // The backend's `_stage_user_profile` will:
+  //   1. Load the bundled preset (printer geometry, etc.)
+  //   2. Strip metadata fields from our overrides (type/name/from/inst.)
+  //   3. Apply only the non-metadata override keys on top
+  //   4. Re-stamp the correct metadata
+  // So sending the full dict is safe and zero-cost when the preset path
+  // succeeds, and life-saving when it doesn't.
   const ps = resolveSystemPresets(printerId, processId, filamentId);
-  const onlyProcessOverrides = {
-    ...(wallLoops != null ? { wall_loops: wallLoops } : {}),
-    ...(sparseInfillDensity != null ? { sparse_infill_density: sparseInfillDensity } : {}),
-    ...(sparseInfillPattern ? { sparse_infill_pattern: sparseInfillPattern } : {}),
-    ...(enableSupport != null ? { enable_support: enableSupport } : {}),
-    ...(ironing != null ? { ironing } : {}),
+  const processOverrides = {
+    ...processProfile,
   };
 
   return {
-    printerProfile:  ps.printer  ? {} : withMeta(printer.profile, "machine", printer.label),
-    processProfile:  ps.process  ? onlyProcessOverrides : withMeta(processProfile, "process", process.label),
-    filamentProfile: ps.filament ? {} : withMeta(filament.profile, "filament", filament.label),
+    printerProfile:  withMeta(printer.profile, "machine", printer.label),
+    processProfile:  withMeta(processOverrides, "process", process.label),
+    filamentProfile: withMeta(filament.profile, "filament", filament.label),
     // Bundled-system preset names — when set, the backend loads the
     // matching system JSON, walks its `inherits` chain, and applies
     // the *_profile overrides on top. When null, the backend uses

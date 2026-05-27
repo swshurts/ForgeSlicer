@@ -14,6 +14,18 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.14.0",
+    date: "2026-02-27",
+    title: "Sketch curves + OrcaSlicer bug fix",
+    changes: [
+      { type: "feature", text: "New Sketch Curve tool — draw a polyline with the Pencil tool, then switch to Curve and drag the cyan handle on any edge to bend it into a smooth arc. Double-click a curved handle to straighten the edge again. Curves are sampled into 16 short segments on commit so the extrude stays clean." },
+      { type: "feature", text: "OrcaSlicer profile editor: clickable preset hints — when you pick a Bambu printer, the resolved bundled JSON name shows up under each dropdown. Click it to open a read-only viewer of the actual flattened preset OrcaSlicer will load. Useful for debugging and for power users who want to verify the slicer config." },
+      { type: "fix", text: "Fixed OrcaSlicer rejecting our generated profile JSONs with \"unknown config type\" — the staging pipeline now always stamps the required type/name/from/instantiation metadata, even when system-preset resolution falls through. Slicing should work end-to-end on Bambu printers now." },
+      { type: "improvement", text: "OrcaSlicer process labels now match the slicer's own bundled-preset names exactly (0.20mm Standard, 0.12mm Fine, 0.28mm Extra Draft) so what you see here is what loads inside OrcaSlicer." },
+    ],
+  },
+
+  {
     version: "1.13.0",
     date: "2026-05-26",
     title: "Toolbar refactor (housekeeping)",
