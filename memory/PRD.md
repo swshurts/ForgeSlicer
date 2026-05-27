@@ -545,3 +545,34 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/popovers/` (NEW directory, 8 files)
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
+
+## Iteration 1.15 (2026-02-27) — Theme switcher (Dark / Dim / Light)
+- ✅ **3-mode theme switcher** added to the top toolbar (right side, before user menu). Modes: Dark (original), Dim (in-between softer dark), Light (full light mode).
+- ✅ Choice persists to `localStorage` (`forgeslicer.theme`) and is bootstrapped onto `<html data-theme="…">` BEFORE React mounts (no FOUC on first paint).
+- ✅ Implemented via a single `styles/themes.css` overlay (no per-component edits) — `[data-theme="dim|light"]` selectors remap the most-used `bg-slate-*` / `text-slate-*` / `border-slate-*` / `hover:*` utilities. Dark mode retains zero overrides so it's bit-identical to before.
+- ✅ 3D canvas background follows the theme via `VIEWPORT_BG` map (slate-800 → slate-700 → slate-200) so the viewport doesn't sit on a dark island in light mode.
+- ✅ Smoke test verified: data-theme attribute updates, localStorage persists across reload, landing page + workspace both repaint correctly.
+
+### Files touched
+- `frontend/src/lib/theme.js` (NEW) — zustand store + `bootstrapTheme()` + `VIEWPORT_BG`
+- `frontend/src/styles/themes.css` (NEW) — overrides for dim + light
+- `frontend/src/components/toolbar/ThemeSwitcher.jsx` (NEW) — 3-segment UI
+- `frontend/src/index.css` (import themes.css)
+- `frontend/src/index.js` (boot-time `bootstrapTheme()`)
+- `frontend/src/components/toolbar/SystemRow.jsx` (mount switcher)
+- `frontend/src/components/Viewport.jsx` (canvas bg tracks theme)
+
+- ✅ **Verified Rotation ≠ Position popover bug is gone** — live preview shows the Position popover renders X/Y/Z mm fields and the Rotation popover renders X/Y/Z ° fields + Drop-to-Bed. Previous agent's TopToolbar refactor already resolved it; no further patch needed.
+- ✅ **Split `ActionPopovers.jsx` (991 lines) into `components/popovers/`** — one file per popover:
+   - `PopoverShell.jsx` — shared `PopoverShell` + `NumberField` + `EmptyMsg` primitives
+   - `PositionPopover.jsx`, `RotationPopover.jsx`, `ScalePopover.jsx`
+   - `DuplicatePopover.jsx`, `MirrorPopover.jsx`, `SlicerPopover.jsx`
+   - `OrcaProfileEditor.jsx` — extracted from inside SlicerPopover
+   - `index.js` — barrel for `TopToolbar` import
+- ✅ `ActionPopovers.jsx` shrunk to a 7-line re-export shim for backward compat.
+- ✅ Smoke test verified all 6 popovers (position / rotation / scale / duplicate / mirror / slicer) render unique testids on click.
+
+### Files touched
+- `frontend/src/components/popovers/` (NEW directory, 8 files)
+- `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
+- `frontend/src/components/TopToolbar.jsx` (import path updated)

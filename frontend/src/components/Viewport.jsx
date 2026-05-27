@@ -3,6 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edges, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { useScene } from "../lib/store";
+import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import ContextMenu from "./ContextMenu";
@@ -484,6 +485,10 @@ export default function Viewport() {
   const measureMode = useScene((s) => s.measureMode);
   const handleMeasureClick = useScene((s) => s.handleMeasureClick);
   const measurementsCount = useScene((s) => s.measurements.length);
+  // Canvas background tracks the global UI theme so the 3D scene
+  // doesn't sit on a slate-800 island when the user picks Light/Dim.
+  const theme = useTheme((s) => s.theme);
+  const viewportBg = VIEWPORT_BG[theme] || VIEWPORT_BG.dark;
   const [ctxMenu, setCtxMenu] = React.useState(null);
 
   // ---- Marquee (Shift + left-drag) box selection ----
@@ -648,9 +653,9 @@ export default function Viewport() {
           if (e && (e.button === 2 || e.which === 3)) return;
           clearSelection();
         }}
-        style={{ background: "#1E293B" }}
+        style={{ background: viewportBg }}
       >
-        <color attach="background" args={["#1E293B"]} />
+        <color attach="background" args={[viewportBg]} />
         <ambientLight intensity={0.55} />
         <directionalLight
           position={[150, 250, 100]}

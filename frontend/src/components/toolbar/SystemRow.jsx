@@ -19,6 +19,7 @@ import { getSlicersForPrinter } from "../../lib/presets";
 import { IconBtn, Divider } from "./ToolbarUI";
 import VoiceButton from "../VoiceButton";
 import UserMenu from "../UserMenu";
+import ThemeSwitcher from "./ThemeSwitcher";
 
 export default function SystemRow({
   busyMsg,
@@ -186,6 +187,7 @@ export default function SystemRow({
       >
         <CircleHelp size={16} />
       </button>
+      <ThemeSwitcher />
       <UserMenu returnPath="/workspace" />
     </div>
   );

@@ -4,6 +4,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import "./styles/themes.css";
+
 html, body, #root {
     margin: 0;
     height: 100%;
