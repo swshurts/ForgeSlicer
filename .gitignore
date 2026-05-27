@@ -139,3 +139,10 @@ frontend/node_modules/.cache/default-development/16.pack
 frontend/node_modules/.cache/default-development/23.pack
 frontend/node_modules/.cache/default-development/21.pack
 frontend/node_modules/.cache/default-development/21.pack
+
+# OrcaSlicer AppImage install — downloaded + extracted at deploy time
+# (or on first backend startup). ~300 MB extracted, not committed.
+backend/bin/orca-x86_64/
+backend/bin/orca-aarch64/
+backend/bin/.cache/
+backend/bin/.orca_install_lock

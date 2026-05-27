@@ -92,13 +92,42 @@ def _file_executable(p: Path) -> bool:
     return p.exists() and p.is_file() and os.access(p, os.X_OK)
 
 
+def _resolve_appimage_entry(install_dir: Path) -> Optional[Path]:
+    """For AppImage installs the launcher is `AppRun` (which sets up
+    LD_LIBRARY_PATH for bundled libs). Source-built installs put the
+    binary at `OrcaSlicer` directly. We try AppRun first, then fall
+    back to the historical name so both flows work."""
+    for candidate_name in ("AppRun", "OrcaSlicer"):
+        c = install_dir / candidate_name
+        if _file_executable(c):
+            return c
+    # Some AppImage builds nest the binary under usr/bin/.
+    nested = install_dir / "usr" / "bin" / "OrcaSlicer"
+    if _file_executable(nested):
+        return nested
+    return None
+
+
+def _install_in_progress() -> bool:
+    """True while the AppImage installer is running. The script writes
+    `/app/backend/bin/.orca_install_lock` for the duration of its run
+    so we can surface "installing…" in the status badge without
+    polling the script's stdout."""
+    return Path("/app/backend/bin/.orca_install_lock").exists()
+
+
 def _build_in_progress() -> bool:
-    """Heuristic — return True if /opt/orca-build/src exists but the
-    binary hasn't landed in /app/backend/bin/orca-*/yet. Lets the UI
-    distinguish 'never installed' from 'install running, hang on'."""
+    """Backward-compat alias used by the status endpoint. Originally
+    meant "the C++ source compile is running"; now it also covers the
+    AppImage install path (which is the only one we ship)."""
+    if _install_in_progress():
+        return True
+    # The legacy source-build heuristic — kept so a re-introduced
+    # source-build path doesn't have to touch this file.
     return Path("/opt/orca-build/src").exists() and not (
         Path("/app/backend/bin/orca-aarch64/OrcaSlicer").exists()
         or Path("/app/backend/bin/orca-x86_64/OrcaSlicer").exists()
+        or Path("/app/backend/bin/orca-x86_64/AppRun").exists()
     )
 
 
@@ -107,13 +136,21 @@ def resolve_install() -> OrcaInstall:
     candidates: list[tuple[str, Path, Optional[Path]]] = []
     if (env := os.environ.get("ORCA_BIN")):
         candidates.append(("env", Path(env), None))
-    # arch-specific persistent installs under /app
+    # arch-specific persistent installs under /app. Both flows
+    # (source-build → OrcaSlicer binary, AppImage → AppRun launcher)
+    # are resolved by _resolve_appimage_entry below.
     if arch in ("aarch64", "arm64"):
         b = Path("/app/backend/bin/orca-aarch64")
-        candidates.append(("app-aarch64", b / "OrcaSlicer", b / "resources"))
+        if b.exists():
+            entry = _resolve_appimage_entry(b)
+            if entry:
+                candidates.append(("app-aarch64", entry, b / "resources"))
     if arch in ("x86_64", "amd64"):
         b = Path("/app/backend/bin/orca-x86_64")
-        candidates.append(("app-x86_64", b / "OrcaSlicer", b / "resources"))
+        if b.exists():
+            entry = _resolve_appimage_entry(b)
+            if entry:
+                candidates.append(("app-x86_64", entry, b / "resources"))
     # PATH fallback
     which = shutil.which("OrcaSlicer") or shutil.which("orca-slicer")
     if which:
@@ -231,9 +268,14 @@ async def orca_status():
     if install.source == "missing":
         if install.build_in_progress:
             detail = (
-                "OrcaSlicer is compiling on the server. This is a one-time "
-                "process (~1-2 hours on first deploy). The built-in slicer "
-                "is fully functional in the meantime."
+                "OrcaSlicer is installing on the server (~1 min). The "
+                "built-in slicer remains fully functional in the meantime — "
+                "refresh in a minute to see the engine appear."
+            )
+        elif install.arch not in ("x86_64", "amd64"):
+            detail = (
+                f"OrcaSlicer ships an x86_64-only AppImage; this server is "
+                f"{install.arch}. The built-in slicer remains available."
             )
         else:
             detail = (

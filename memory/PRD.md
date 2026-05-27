@@ -546,6 +546,27 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.19 (2026-02-27) — OrcaSlicer AppImage installer (auto on backend startup)
+- ✅ **`scripts/install_orca.py`** — downloads the latest OrcaSlicer Linux AppImage from the official `SoftFever/OrcaSlicer` GitHub release, self-extracts via `--appimage-extract` (no FUSE), and stages the result at `/app/backend/bin/orca-x86_64/`. Idempotent — running on an already-installed host is a sub-100 ms no-op. Honors `--force` and `--dry-run`.
+- ✅ **Auto-run on backend startup** (`server.py` `@app.on_event("startup")`): if no working binary is resolved, fires the installer in a background thread. Non-blocking — backend serves traffic immediately, engine becomes available once install (~30-60 s on x86_64) finishes. On aarch64 the installer cleanly skips with rc=1 (no AppImage published for ARM).
+- ✅ **Resolver supports both flows**: `_resolve_appimage_entry()` prefers `AppRun` (AppImage launcher with bundled LD_LIBRARY_PATH) and falls back to `OrcaSlicer` / `usr/bin/OrcaSlicer` so a future source-build also works.
+- ✅ **Arch-aware status detail** — on aarch64 hosts the status endpoint surfaces "OrcaSlicer ships an x86_64-only AppImage; this server is aarch64" instead of the generic "not installed" message.
+- ✅ **Lock file sentinel** (`bin/.orca_install_lock`) so the status endpoint can report `build_in_progress: true` while a concurrent install is running. UI already displays an "installing…" pill on this state.
+- ✅ **9 new pytest unit tests** in `test_install_orca.py` exercising asset-picker, arch check, env-override, on-aarch64 skip path, AppRun preference, nested binary fallback, and lock-file detection. All passing.
+- ✅ **`.gitignore` entries** for `backend/bin/orca-*/` + `backend/bin/.cache/` so the ~280 MB extracted binary is downloaded per-deploy rather than committed.
+- ✅ **`backend/scripts/README.md`** documents the install flow, manual operations, disk usage, status endpoint payload, and the AppImage-vs-source-build tradeoff.
+
+### Files touched
+- `backend/scripts/install_orca.py` (NEW) — full installer with download, extract, idempotency, lock file, arch detection
+- `backend/scripts/README.md` (NEW) — deploy ops documentation
+- `backend/orca_engine.py` — `_resolve_appimage_entry`, `_install_in_progress`, updated `resolve_install`, arch-aware status detail
+- `backend/server.py` — startup hook + thread-pool runner for the installer
+- `backend/tests/test_install_orca.py` (NEW) — 9 unit tests
+- `/app/.gitignore` — entries for the binary cache + extracted tree
+
+### Production verification
+This preview pod is aarch64 — the install pipeline is exercised through download + GitHub API + asset picker + lock file, but the final binary cannot run here. **Production x86_64 hosts will install + verify end-to-end on first backend boot** (~30-60 s) and surface the engine immediately. No manual intervention required after merging.
+
 ## Iteration 1.18 (2026-02-27) — Per-route theme memory
 - ✅ **Optional pin toggle** added next to the theme switcher (Pin / PinOff icon). When pinned, the theme switcher writes to a per-route slot instead of the global default.
 - ✅ Storage: `forgeslicer.theme.perRoute` (1/0) + `forgeslicer.theme.routes` (JSON `{ path → choice }` map). Path keys are normalized to the top-level segment (`/workspace`, `/gallery`, `/u`, …) so users don't end up with a different theme per gallery item.

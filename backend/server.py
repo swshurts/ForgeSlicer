@@ -1629,6 +1629,54 @@ async def ensure_auth_indexes():
         logger.warning("Auth/admin bootstrap skipped: %s", e)
 
 
+@app.on_event("startup")
+async def install_orca_if_missing():
+    """If we're on x86_64 and OrcaSlicer isn't installed yet, kick off
+    the AppImage installer in a background thread. Non-blocking — the
+    backend starts immediately and the engine becomes available once
+    the install (~1 min) finishes. On aarch64 the installer no-ops
+    cleanly (no AppImage published for ARM).
+
+    The installer is fully idempotent — calling it when a working
+    binary already exists is a fast no-op that returns 0 without a
+    re-download. We can call it on every startup safely."""
+    try:
+        install = orca_engine.resolve_install()
+        if install.binary is not None:
+            logger.info("OrcaSlicer already installed at %s", install.binary)
+            return
+        script = Path(__file__).parent / "scripts" / "install_orca.py"
+        if not script.exists():
+            logger.warning("OrcaSlicer install script missing at %s", script)
+            return
+        # Fire-and-forget — the install runs in a thread so the FastAPI
+        # event loop doesn't block on subprocess wait. Failures are
+        # logged but never raised (the built-in slicer is the fallback).
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, _run_orca_install, script)
+        logger.info("OrcaSlicer auto-install kicked off (background).")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("OrcaSlicer auto-install skipped: %s", e)
+
+
+def _run_orca_install(script: Path) -> None:
+    """Subprocess invocation of the install script. Runs in a worker
+    thread so the FastAPI event loop is never blocked."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["python3", str(script)],
+            capture_output=True, timeout=600, check=False,
+        )
+        if result.returncode == 0:
+            logger.info("OrcaSlicer auto-install finished successfully.")
+        else:
+            tail = (result.stdout or b"")[-500:].decode(errors="replace")
+            logger.info("OrcaSlicer auto-install rc=%s tail=%s", result.returncode, tail)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("OrcaSlicer auto-install crashed: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
