@@ -494,6 +494,17 @@ function estimateHalfExtents(o) {
   if (o.type === "sphere") return [(d.r || 10) * s[0], (d.r || 10) * s[1], (d.r || 10) * s[2]];
   if (o.type === "cylinder" || o.type === "cone") return [(d.r || 10) * s[0], (d.h || 20) / 2 * s[1], (d.r || 10) * s[2]];
   if (o.type === "torus") return [((d.r || 12) + (d.tube || 4)) * s[0], (d.tube || 4) * s[1], ((d.r || 12) + (d.tube || 4)) * s[2]];
+  // ---- Curve primitives (helix / pipe / wedge) ----
+  // helix: bbox = (R + tube) on XZ; height = turns * pitch on Y.
+  if (o.type === "helix") {
+    const R = (d.r || 12) + (d.tube || 2);
+    const H = (d.turns || 4) * (d.pitch || 6);
+    return [R * s[0], (H / 2) * s[1], R * s[2]];
+  }
+  // pipe: same XZ as a cylinder; height = d.h.
+  if (o.type === "pipe") return [(d.r || 12) * s[0], (d.h || 30) / 2 * s[1], (d.r || 12) * s[2]];
+  // wedge: same as cube dims (x/y/z) but the shape is a ramp.
+  if (o.type === "wedge") return [(d.x || 24) / 2 * s[0], (d.y || 16) / 2 * s[1], (d.z || 24) / 2 * s[2]];
   if (o.originalBbox) return [o.originalBbox.x / 2 * s[0], o.originalBbox.y / 2 * s[1], o.originalBbox.z / 2 * s[2]];
   return [10, 10, 10];
 }
@@ -721,6 +732,55 @@ function Inspector() {
               step={0.5}
             />
             <NumberField testid="dim-tube" label="Tube ⌀" value={(obj.dims.tube || 0) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.05, v / 2) })} step={0.2} />
+          </div>
+        </div>
+      )}
+
+      {/* Helix — coil/spring/thread shape. Total height = turns × pitch.
+          User sees four fields (Radius, Tube ⌀, Pitch, Turns); the
+          number of segments is left at the safe 96 default. */}
+      {obj.type === "helix" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField testid="dim-helix-r" label="Radius" value={obj.dims.r || 12} onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v) })} step={0.5} />
+            <NumberField testid="dim-helix-tube" label="Tube ⌀" value={(obj.dims.tube || 2) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.1, v / 2) })} step={0.2} />
+            <NumberField testid="dim-helix-pitch" label="Pitch" value={obj.dims.pitch || 6} onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.5, v) })} step={0.5} suffix="mm/turn" />
+            <NumberField testid="dim-helix-turns" label="Turns" value={obj.dims.turns || 4} onChange={(v) => updateDims(obj.id, { turns: Math.max(0.25, v) })} step={0.25} />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500">
+            Height = {((obj.dims.turns || 4) * (obj.dims.pitch || 6)).toFixed(1)} mm ({obj.dims.turns || 4} turns × {obj.dims.pitch || 6} mm/turn).
+          </div>
+        </div>
+      )}
+
+      {/* Pipe — hollow cylinder. Wall thickness is the gap between outer
+          R and inner R; clamped so wall < R to keep a real interior. */}
+      {obj.type === "pipe" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField testid="dim-pipe-d" label="Outer ⌀" value={(obj.dims.r || 12) * 2} onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })} step={0.5} />
+            <NumberField testid="dim-pipe-wall" label="Wall" value={obj.dims.wall || 2} onChange={(v) => updateDims(obj.id, { wall: Math.max(0.2, Math.min((obj.dims.r || 12) - 0.1, v)) })} step={0.2} />
+            <NumberField testid="dim-pipe-h" label="Height" value={obj.dims.h || 30} onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })} step={1} />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500">
+            Inner ⌀ = {(((obj.dims.r || 12) - (obj.dims.wall || 2)) * 2).toFixed(1)} mm.
+          </div>
+        </div>
+      )}
+
+      {/* Wedge — same XYZ as a cube; the geometry is a ramp. */}
+      {obj.type === "wedge" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="grid grid-cols-3 gap-2">
+            <NumberField testid="dim-wedge-x" label="Length (X)" value={obj.dims.x || 24} onChange={(v) => updateDims(obj.id, { x: Math.max(0.5, v) })} step={1} />
+            <NumberField testid="dim-wedge-y" label="Height (Y)" value={obj.dims.y || 16} onChange={(v) => updateDims(obj.id, { y: Math.max(0.5, v) })} step={1} />
+            <NumberField testid="dim-wedge-z" label="Depth (Z)" value={obj.dims.z || 24} onChange={(v) => updateDims(obj.id, { z: Math.max(0.5, v) })} step={1} />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500">
+            Ramps from y=0 at +z to y={(obj.dims.y || 16).toFixed(1)} at −z.
           </div>
         </div>
       )}

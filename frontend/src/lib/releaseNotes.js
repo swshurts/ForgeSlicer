@@ -14,6 +14,16 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.12.0",
+    date: "2026-05-26",
+    title: "Curve primitives — Helix, Pipe, Wedge",
+    changes: [
+      { type: "feature", text: "Three new shapes in the 3D palette. Helix: parametric coil/spring/thread with editable radius, tube ⌀, pitch and turns. Pipe: hollow cylinder with editable outer ⌀, wall thickness, and height (inner ⌀ shown live). Wedge: TinkerCAD-style ramp." },
+      { type: "feature", text: "All three primitives play nicely with every existing tool: drop-to-bed, transforms, boolean union/subtract, slicing, STL/3MF export, and they can be set as Negative cutouts." },
+      { type: "improvement", text: "Inspector dimension forms specific to each new shape — Helix shows live computed Height (= turns × pitch); Pipe shows live computed Inner ⌀; Wedge shows ramp orientation hint." },
+    ],
+  },
+  {
     version: "1.11.1",
     date: "2026-05-26",
     title: "Print history & one-click reprint",

@@ -10,6 +10,21 @@ const PRIMITIVE_DEFAULTS = {
   cylinder: { dims: { r: 10, h: 24, segments: 64 } },
   cone:     { dims: { r: 10, h: 24, segments: 64 } },
   torus:    { dims: { r: 14, tube: 4, segments: 48 } },
+  // ---- Curve / extrude-style primitives (v1.12) ----
+  // helix: a tube swept along a parametric helix. Useful for screw
+  //        threads, springs, decorative coils, antennae mounts. `turns`
+  //        is the number of complete revolutions; `pitch` is the
+  //        per-turn rise so `H = turns * pitch`.
+  helix:    { dims: { r: 12, tube: 2, pitch: 6, turns: 4, segments: 96 } },
+  // pipe: hollow cylinder (outer R, wall thickness, height). Same idea
+  //       as cylinder but builds the inside hole at primitive construction
+  //       time so the user doesn't need a CSG subtract for the simplest
+  //       case (pipes / tube fittings / standoffs).
+  pipe:     { dims: { r: 12, wall: 2, h: 30, segments: 64 } },
+  // wedge: TinkerCAD-style ramp. Right-triangle profile extruded along
+  //        the X axis; ramps along +Z, height along +Y. Great for
+  //        chamfered bases, draft angles, ergonomic grips.
+  wedge:    { dims: { x: 24, y: 16, z: 24 } },
   // ---- 2D shapes ----
   // Stored as thin extrusions (h = 1 mm by default — a "2D wafer").
   // The Extrude action in the inspector promotes them to 3D parts by
@@ -25,6 +40,17 @@ const newId = (type) => `${type}-${Date.now()}-${nextId++}`;
 
 const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
   const def = PRIMITIVE_DEFAULTS[type] || PRIMITIVE_DEFAULTS.cube;
+  // Compute the bbox-half-height so the new primitive lands centered
+  // on the build plate with its base at Y=0. Helix uses turns*pitch
+  // (the geometry's actual vertical extent), other curve primitives
+  // fall through to their explicit `h` key. Final fallback is the
+  // legacy z/h/r heuristic so untouched primitives behave as before.
+  let halfH;
+  if (type === "helix") halfH = (def.dims.turns * def.dims.pitch) / 2;
+  else if (def.dims.h != null) halfH = def.dims.h / 2;
+  else if (def.dims.z != null) halfH = def.dims.z / 2;
+  else if (def.dims.r != null) halfH = def.dims.r;
+  else halfH = 10;
   return {
     id: newId(type),
     name: `${type[0].toUpperCase() + type.slice(1)}`,
@@ -32,14 +58,10 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     modifier,
     visible: true,
     locked: false,
-    position: [0, (def.dims.z || def.dims.h || def.dims.r) / 2 || 10, 0],
+    position: [0, halfH, 0],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     dims: { ...def.dims },
-    // Default a positive primitive to slot 7 (Orange) so the historical
-    // ForgeSlicer-house-orange look is preserved; negatives use the cyan
-    // outline so colorIndex is moot for them. Picking slot 0 (White) in the
-    // inspector now renders accurately as White.
     colorIndex: modifier === "negative" ? 0 : 7,
     ...overrides,
   };

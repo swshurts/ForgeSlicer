@@ -4,7 +4,7 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles,
+  Sparkles, Tornado, CircleDashed, TriangleRight,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -15,6 +15,10 @@ const PRIMS_3D = [
   { type: "cylinder", label: "Cylinder", icon: Cylinder },
   { type: "cone", label: "Cone", icon: Cone },
   { type: "torus", label: "Torus", icon: Donut },
+  // ---- Curve / extrude primitives (1.12) ----
+  { type: "helix", label: "Helix", icon: Tornado },
+  { type: "pipe", label: "Pipe", icon: CircleDashed },
+  { type: "wedge", label: "Wedge", icon: TriangleRight },
 ];
 
 // 2D primitives — render as thin wafers; the user extrudes via the

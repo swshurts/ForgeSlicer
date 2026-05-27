@@ -175,6 +175,72 @@ export function buildGeometry(obj) {
   if (t === "torus") {
     return new THREE.TorusGeometry(d.r || 12, d.tube || 4, 24, d.segments || 48);
   }
+  if (t === "helix") {
+    // Tube swept along a parametric helix.
+    //
+    // helix(t) = ( R·cos(theta), pitch·t·turns − H/2, R·sin(theta) )
+    // where theta = 2π·turns·t  and t ∈ [0, 1].
+    // We subtract H/2 so the helix is centered on Y=0 — the object's
+    // `position[1]` then places its base on the build plate (matching
+    // every other primitive's convention).
+    const R = d.r || 12;
+    const tube = d.tube || 2;
+    const pitch = d.pitch || 6;
+    const turns = Math.max(0.25, d.turns || 4);
+    const tubularSegs = Math.max(32, d.segments || 96);
+    const radialSegs = 12;
+    const H = pitch * turns;
+    class HelixCurve extends THREE.Curve {
+      getPoint(u, target = new THREE.Vector3()) {
+        const theta = 2 * Math.PI * turns * u;
+        const y = pitch * turns * u - H / 2;
+        return target.set(R * Math.cos(theta), y, R * Math.sin(theta));
+      }
+    }
+    return new THREE.TubeGeometry(new HelixCurve(), tubularSegs, tube, radialSegs, false);
+  }
+  if (t === "pipe") {
+    // Hollow cylinder. We could CSG-subtract two cylinders but the
+    // user expectation is "one solid pipe primitive", so we build
+    // the geometry directly via LatheGeometry: a rectangular 2D
+    // profile (outer R → inner R → top → bottom) revolved 360°.
+    const Router = d.r || 12;
+    const wall = Math.max(0.2, d.wall || 2);
+    const Rinner = Math.max(0.1, Router - wall);
+    const H = d.h || 30;
+    const segs = Math.max(16, d.segments || 64);
+    const half = H / 2;
+    // Cross-section: walked clockwise from bottom-outer corner so the
+    // resulting normals point outward / upward correctly.
+    const profile = [
+      new THREE.Vector2(Router, -half),
+      new THREE.Vector2(Router,  half),
+      new THREE.Vector2(Rinner,  half),
+      new THREE.Vector2(Rinner, -half),
+      new THREE.Vector2(Router, -half),
+    ];
+    return new THREE.LatheGeometry(profile, segs);
+  }
+  if (t === "wedge") {
+    // Right-triangle profile extruded along X. Ramps from y=0 at +z
+    // to y=H at -z, with full width along X. Matches TinkerCAD's
+    // "Wedge" / "Roof" semantics. Centered on origin to match the
+    // bbox of every other primitive.
+    const X = d.x || 24, Y = d.y || 16, Z = d.z || 24;
+    const shape = new THREE.Shape();
+    shape.moveTo(-Z / 2, -Y / 2);
+    shape.lineTo(Z / 2, -Y / 2);
+    shape.lineTo(-Z / 2, Y / 2);
+    shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, { depth: X, bevelEnabled: false });
+    // ExtrudeGeometry extrudes along +Z from the shape's XY plane.
+    // Rotate so the extrusion axis aligns with world X, then translate
+    // so the centroid sits at the origin.
+    g.rotateY(Math.PI / 2);
+    g.translate(-X / 2, 0, 0);
+    g.computeVertexNormals();
+    return g;
+  }
 
   // ---- 2D shapes (extruded thin slabs that orient flat on the bed) ----
   if (t === "circle") {
