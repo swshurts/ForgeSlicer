@@ -546,6 +546,30 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.23 (2026-02-27) — OrcaSlicer system-deps fix (prod libEGL error)
+**Production bug**: User reported on https://forgeslicer.com that switching to the OrcaSlicer engine and slicing produced `libEGL.so.1: cannot open shared object file (exit code 127)`. Built-in slicer worked fine.
+
+**Root cause analysis**:
+- Used `readelf -d` on the v2.3.2 binary inside the AppImage. Confirmed it has ~30 `NEEDED` shared libraries — libEGL, libGL, libgtk-3, libwebkit2gtk-4.1, libpango, libcairo, libgstreamer, libsoup, libsecret, etc.
+- The AppImage ships ONLY `bin/orca-slicer` and `AppRun`. ZERO bundled `.so` files. The binary expects the host system to have the entire GTK+OpenGL+WebKit stack installed.
+- The production container has none of these — it was built for a Node/Python web stack, not a GUI app's runtime.
+
+**Fix shipped**:
+- ✅ **NEW `scripts/install_orca_deps.sh`** — apt-get installs the 30-package runtime dep list (libegl1, libgl1, libgtk-3-0, libwebkit2gtk-4.1-0, libpango-*, libcairo*, libgstreamer*, libsoup-3.0-0, etc.). Idempotent — uses `dpkg-query` to skip already-installed packages, ~50 ms when satisfied. Skips cleanly if not root or apt-get not present.
+- ✅ **Wired into 2 places**: invoked once from `install_orca.py` before extracting; invoked again on every backend startup via a separate `server.py` hook so already-installed boxes still get fixed.
+- ✅ **Resolver fix**: `_resolve_appimage_entry()` now includes `bin/orca-slicer` as a candidate (the AppImage v2.x actual layout) — was previously missing it; only worked through AppRun.
+- ✅ **Friendly slice-error mapping**: when `stderr` contains `error while loading shared libraries`, the slice endpoint extracts the missing lib name with regex and returns a **503 with actionable detail** ("library 'libEGL.so.1' is missing — run `install_orca_deps.sh`") instead of a raw 500 trace.
+- ✅ **README.md** updated with the full Dockerfile snippet (recommended) so the deps are baked in at image-build time.
+- ✅ **2 new pytest tests**: AppImage layout candidate (`bin/orca-slicer`) detection; existing 12-test suite still passes.
+
+### Files touched
+- `backend/scripts/install_orca_deps.sh` (NEW) — apt-get-based system-deps installer with idempotency, age-aware apt-list refresh, clear logging
+- `backend/scripts/install_orca.py` — calls `_ensure_system_deps()` before AppImage extract; adds `bin/orca-slicer` candidate in `_pick_entrypoint`
+- `backend/orca_engine.py` — `_resolve_appimage_entry` recognises real v2.x layout; slice endpoint returns 503 + actionable detail for missing-lib errors
+- `backend/server.py` — `_run_orca_deps` worker fires the deps script on every startup
+- `backend/scripts/README.md` — system-deps documentation + Dockerfile recommendation
+- `backend/tests/test_install_orca.py` — new test for `bin/orca-slicer` resolver path
+
 ## Iteration 1.22 (2026-02-27) — Voice command palette + Go-mode wait/resume
 - ✅ **Voice command palette**: new `BookOpen` icon button next to the Voice mode chevron opens a 360px popover with 11 categorized sections of example phrases (primitives, transform, selection, duplicate, booleans, history, group, gizmo mode, export, AI mesh, Go-mode controls). Categories are individually collapsible with persistent state, and the palette closes on click-outside / Esc / explicit X. Hidden by default — zero permanent screen real estate.
 - ✅ **Wait/Resume in Go mode** — addresses "let me take a measurement" / "let me look something up" workflows:

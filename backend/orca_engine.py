@@ -52,6 +52,7 @@ import base64
 import json
 import logging
 import os
+import re
 import platform
 import shutil
 import tempfile
@@ -93,18 +94,21 @@ def _file_executable(p: Path) -> bool:
 
 
 def _resolve_appimage_entry(install_dir: Path) -> Optional[Path]:
-    """For AppImage installs the launcher is `AppRun` (which sets up
-    LD_LIBRARY_PATH for bundled libs). Source-built installs put the
-    binary at `OrcaSlicer` directly. We try AppRun first, then fall
-    back to the historical name so both flows work."""
-    for candidate_name in ("AppRun", "OrcaSlicer"):
-        c = install_dir / candidate_name
+    """For AppImage installs the launcher is `AppRun` (sets up
+    LD_LIBRARY_PATH for any bundled libs + workarounds for locale +
+    NVIDIA). The real binary is `bin/orca-slicer`. We prefer AppRun
+    because it does the env setup; everything else is fallback for
+    layout drift or source-builds."""
+    for rel in (
+        "AppRun",                  # AppImage v2.x — preferred
+        "OrcaSlicer",              # legacy source-build
+        "bin/orca-slicer",         # real binary, fallback if AppRun missing
+        "usr/bin/OrcaSlicer",
+        "usr/bin/orca-slicer",
+    ):
+        c = install_dir / rel
         if _file_executable(c):
             return c
-    # Some AppImage builds nest the binary under usr/bin/.
-    nested = install_dir / "usr" / "bin" / "OrcaSlicer"
-    if _file_executable(nested):
-        return nested
     return None
 
 
@@ -395,6 +399,28 @@ async def orca_slice(req: OrcaSliceRequest):
         if proc.returncode != 0:
             tail = (stderr or b"")[-2000:].decode(errors="replace")
             logger.warning("orca slice rc=%s err=%s", proc.returncode, tail)
+            # Detect the "missing shared library" pattern (rc=127 +
+            # ld.so error). This is the production-container failure
+            # mode we hit before `install_orca_deps.sh` was wired
+            # in — return a friendly 503 with the exact missing lib
+            # so an admin can install it (or just redeploy if they've
+            # already merged the deps script).
+            missing_lib = None
+            if "error while loading shared libraries" in tail or "cannot open shared object" in tail:
+                m = re.search(r"(lib[\w.+-]+\.so[\.\d]*)", tail)
+                if m:
+                    missing_lib = m.group(1)
+            if missing_lib:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        f"OrcaSlicer engine couldn't start — system library "
+                        f"'{missing_lib}' is missing in the server container. "
+                        f"An admin should run `bash backend/scripts/install_orca_deps.sh` "
+                        f"or rebuild with the OrcaSlicer runtime deps in the Dockerfile. "
+                        f"Built-in slicer is unaffected."
+                    ),
+                )
             raise HTTPException(
                 status_code=500,
                 detail=f"OrcaSlicer exited with code {proc.returncode}: {tail}",

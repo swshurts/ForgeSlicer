@@ -5,6 +5,47 @@ slicing (multi-perimeter walls, real supports, tree supports, AMS, ironing,
 etc.). The built-in JS slicer remains the default and works completely
 offline — Orca is opt-in via the engine selector inside the Slicer popover.
 
+## ⚠️ System runtime dependencies (READ THIS)
+
+The official OrcaSlicer AppImage **does not bundle its GUI / graphics
+stack** — it dynamically links against ~30 system libraries (libEGL,
+libGL, GTK-3, WebKit-4.1, Pango, Cairo, GStreamer, libsoup, libsecret, …).
+If those libs aren't installed on the host, you get a runtime error like:
+
+```
+bin/orca-slicer: error while loading shared libraries:
+libEGL.so.1: cannot open shared object file
+```
+
+`scripts/install_orca_deps.sh` installs the full known list via `apt-get`
+(idempotent, ~50 ms when satisfied). It's invoked automatically:
+* On every backend startup (via `server.py`'s `install_orca_if_missing`
+  hook), so a container deploy that didn't include the libs gets them
+  installed at runtime.
+* From inside `install_orca.py` before extracting the AppImage.
+
+**Recommended for production**: also add the same packages to your
+Dockerfile so the libs are baked in at image-build time. The runtime
+install is a safety net, not a replacement — it depends on the
+container running as root with apt sources available.
+
+```dockerfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libegl1 libgl1 libglx0 libglu1-mesa libopengl0 \
+    libgtk-3-0 libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
+    libcairo2 libcairo-gobject2 libharfbuzz0b libgdk-pixbuf-2.0-0 libatk1.0-0 \
+    libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libsoup-3.0-0 \
+    libsm6 libice6 libx11-6 libxext6 libwayland-cursor0 \
+    libsecret-1-0 libmspack0 libtiff6 libbz2-1.0 liblzma5 \
+    libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libdbus-1-3 libfontconfig1 \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+If the libs are missing at slice time, the API returns **503** with a
+clear actionable message (the missing lib name + the fix command),
+instead of a raw 500 trace. The frontend already falls back to the
+built-in JS slicer gracefully.
+
 ## How the engine gets onto the server
 
 `scripts/install_orca.py` downloads the latest **Linux x86_64 AppImage** from

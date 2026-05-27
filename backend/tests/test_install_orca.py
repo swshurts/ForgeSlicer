@@ -88,6 +88,20 @@ def test_resolve_appimage_entry_prefers_apprun(tmp_path):
     assert entry == apprun
 
 
+def test_resolve_appimage_entry_finds_bin_orca_slicer(tmp_path):
+    """v2.x AppImage real layout: AppRun at root + bin/orca-slicer.
+    If AppRun is somehow missing (e.g. extract failure, wrong chmod)
+    we still find the binary so the resolver doesn't return None."""
+    from orca_engine import _resolve_appimage_entry
+    bin_dir = tmp_path / "orca-x86_64"
+    (bin_dir / "bin").mkdir(parents=True)
+    real = bin_dir / "bin" / "orca-slicer"
+    real.write_text("#!/bin/sh\nexit 0\n")
+    real.chmod(0o755)
+    entry = _resolve_appimage_entry(bin_dir)
+    assert entry == real
+
+
 def test_resolve_appimage_entry_falls_back_to_nested(tmp_path):
     """Some AppImage variants nest the binary under usr/bin/. The
     resolver should still find it even when neither AppRun nor a

@@ -1639,13 +1639,28 @@ async def install_orca_if_missing():
 
     The installer is fully idempotent — calling it when a working
     binary already exists is a fast no-op that returns 0 without a
-    re-download. We can call it on every startup safely."""
+    re-download. We can call it on every startup safely.
+
+    Also runs `install_orca_deps.sh` separately on every boot, even
+    when Orca is already installed. The deps script is itself
+    idempotent (skips when dpkg-query says everything is present) so
+    this is just a 50 ms safety net: if a previous deploy installed
+    Orca before the deps script existed (the v1.19 → v1.23 case),
+    this still gets the missing libs onto the box."""
     try:
+        script_dir = Path(__file__).parent / "scripts"
+        # Always re-run the deps script — cheap when satisfied, fixes
+        # boxes where Orca was installed against a pre-deps codebase.
+        deps_script = script_dir / "install_orca_deps.sh"
+        if deps_script.exists():
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, _run_orca_deps, deps_script)
+
         install = orca_engine.resolve_install()
         if install.binary is not None:
             logger.info("OrcaSlicer already installed at %s", install.binary)
             return
-        script = Path(__file__).parent / "scripts" / "install_orca.py"
+        script = script_dir / "install_orca.py"
         if not script.exists():
             logger.warning("OrcaSlicer install script missing at %s", script)
             return
@@ -1657,6 +1672,28 @@ async def install_orca_if_missing():
         logger.info("OrcaSlicer auto-install kicked off (background).")
     except Exception as e:  # noqa: BLE001
         logger.warning("OrcaSlicer auto-install skipped: %s", e)
+
+
+def _run_orca_deps(script: Path) -> None:
+    """Subprocess invocation of the deps installer (bash). Runs in a
+    worker thread; logs are short on success and verbose on failure."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["bash", str(script)],
+            capture_output=True, timeout=180, check=False,
+        )
+        if result.returncode == 0:
+            # Squelch the happy path to one log line — the script
+            # itself already logs detail when it does work.
+            tail = (result.stdout or b"")[-200:].decode(errors="replace").strip()
+            if tail:
+                logger.info("install_orca_deps.sh: %s", tail.splitlines()[-1])
+        else:
+            tail = (result.stdout or b"")[-600:].decode(errors="replace")
+            logger.warning("install_orca_deps.sh rc=%s tail=%s", result.returncode, tail)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("install_orca_deps.sh crashed: %s", e)
 
 
 def _run_orca_install(script: Path) -> None:

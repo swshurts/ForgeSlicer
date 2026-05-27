@@ -227,13 +227,16 @@ def _stage_install(extracted: Path, target: Path) -> None:
 
 
 def _pick_entrypoint(install_dir: Path) -> Path:
-    """The AppImage layout puts the launcher script at AppRun (which
-    handles LD_LIBRARY_PATH for bundled libs) and the actual binary at
-    a few candidate locations. We prefer AppRun and fall back so future
-    AppImage layout changes don't break us silently."""
+    """Choose the executable to launch. The AppImage v2.x layout puts
+    the launcher script at `AppRun` (sets LD_LIBRARY_PATH for whatever
+    bundled libs do exist, applies workarounds for locale + NVIDIA)
+    and the real binary at `bin/orca-slicer`. Older source-builds put
+    it at `OrcaSlicer` or `usr/bin/OrcaSlicer`. We prefer AppRun
+    because it does the env setup; everything else is a fallback."""
     candidates = [
-        install_dir / "AppRun",
-        install_dir / "OrcaSlicer",
+        install_dir / "AppRun",            # AppImage v2.x — sets LD_LIBRARY_PATH
+        install_dir / "OrcaSlicer",        # legacy source-build
+        install_dir / "bin" / "orca-slicer", # real binary if AppRun is missing
         install_dir / "usr" / "bin" / "OrcaSlicer",
         install_dir / "usr" / "bin" / "orca-slicer",
     ]
@@ -248,6 +251,29 @@ def _pick_entrypoint(install_dir: Path) -> Path:
 
 
 # ---------- main ----------
+
+def _ensure_system_deps() -> None:
+    """Best-effort install of OrcaSlicer's GUI / GL system libraries
+    via the companion bash script. Failures are logged but never
+    raise — the AppImage still gets extracted and the user-facing
+    error from the slice endpoint will at least be informative."""
+    try:
+        deps_script = Path(__file__).parent / "install_orca_deps.sh"
+        if not deps_script.exists():
+            logger.warning("install_orca_deps.sh missing — system deps may be incomplete.")
+            return
+        proc = subprocess.run(
+            ["bash", str(deps_script)],
+            capture_output=True, timeout=120, check=False,
+        )
+        if proc.returncode == 0:
+            logger.info("System deps OK.")
+        else:
+            tail = (proc.stdout or b"")[-600:].decode(errors="replace")
+            logger.warning("install_orca_deps.sh rc=%s tail=%s", proc.returncode, tail)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("System-deps install crashed: %s", e)
+
 
 def install(force: bool = False, dry_run: bool = False) -> int:
     """Returns a POSIX exit code so the script (and the background
@@ -299,6 +325,12 @@ def install(force: bool = False, dry_run: bool = False) -> int:
             logger.info("--dry-run: would download from %s and install to %s. Exiting.",
                         asset["browser_download_url"], target)
             return 0
+
+        # Install the system libs the AppImage's bundled binary needs at
+        # runtime (libEGL, libGL, GTK-3, WebKit, …). Best-effort — a
+        # locked-down container without apt or root will skip this and
+        # the operator will see the dep list in the logs.
+        _ensure_system_deps()
 
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         appimage_path = CACHE_DIR / asset["name"]
