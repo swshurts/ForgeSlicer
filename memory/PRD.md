@@ -772,3 +772,10 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - SSE for engine/install status (replace polling)
 - Settings → Appearance panel
 - Slice progress reporting (parse Orca's stdout)
+
+## Iteration 45 (2026-02-27) — OrcaSlicer Preset Label Alignment + Resolved-Preset Hints
+- ✅ **Process dropdown labels aligned with OrcaSlicer's bundled-preset names** — `"Standard 0.2mm"` → `"0.20mm Standard"`, `"Fine 0.12mm"` → `"0.12mm Fine"`, `"Draft 0.28mm"` → `"0.28mm Extra Draft"` (matches OrcaSlicer's bundled `0.28mm Extra Draft @BBL …` exactly; their "Draft" preset is actually 0.24mm), `"Strong (functional)"` → `"0.20mm Strong (functional)"`. Users now see the same string here that they'd see in OrcaSlicer's own preset picker.
+- ✅ **Live resolved-preset hint under each dropdown** — when a Bambu printer is selected, the `OrcaProfileEditor` shows a tiny emerald `CheckCircle2 + monospace` caption underneath the printer / process / filament dropdowns, displaying the exact bundled OrcaSlicer JSON name the backend will load (e.g. `"Bambu Lab A1 0.4 nozzle"`, `"0.20mm Standard @BBL A1"`, `"Bambu PLA Basic @BBL A1"`). New testids: `orca-resolved-printer`, `orca-resolved-process`, `orca-resolved-filament`. Hints update live as the user changes any of the three selectors. Non-Bambu printers (Prusa, Voron, Sovol, etc.) stay on the legacy raw-dict path and the hints are silent.
+- ✅ **`resolveSystemPresets` now exported** from `frontend/src/lib/orcaProfiles.js` so UI components can mirror the exact resolution logic the backend payload uses.
+- ✅ **Process-preset base name updated** — `draft` now points to `"0.28mm Extra Draft"` (the real OrcaSlicer name for the 0.28mm layer-height tier; was incorrectly `"0.28mm Draft"`).
+- Files touched: `frontend/src/lib/orcaProfiles.js` (labels + base names + export), `frontend/src/components/popovers/OrcaProfileEditor.jsx` (hint rendering + min-w-0 on label children).

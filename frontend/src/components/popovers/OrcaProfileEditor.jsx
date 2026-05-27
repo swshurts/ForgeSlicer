@@ -6,8 +6,8 @@
 // from the chosen process preset so the slice button stays one click
 // away.
 import React from "react";
-import { Cpu } from "lucide-react";
-import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, getPrinterGroups } from "../../lib/orcaProfiles";
+import { Cpu, CheckCircle2 } from "lucide-react";
+import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, getPrinterGroups, resolveSystemPresets } from "../../lib/orcaProfiles";
 
 export default function OrcaProfileEditor({
   printerId, onPrinterChange,
@@ -20,6 +20,12 @@ export default function OrcaProfileEditor({
   ironing, onIroningChange,
 }) {
   const printerGroups = getPrinterGroups();
+  // When the selected printer has bundled-system-preset metadata,
+  // resolve the exact OrcaSlicer JSON name for each of the three
+  // selections. The UI surfaces these underneath the dropdowns so
+  // users see the same string they'd see inside OrcaSlicer's own
+  // preset picker — proves the link between the two apps.
+  const resolved = resolveSystemPresets(printerId, processId, filamentId);
   return (
     <div
       data-testid="orca-profile-editor"
@@ -45,9 +51,22 @@ export default function OrcaProfileEditor({
               </optgroup>
             ))}
           </select>
+          {/* OrcaSlicer-bundled preset hint. Only renders for printers
+              we've mapped to a bundled JSON; non-Bambu printers stay
+              on the legacy raw-dict path and don't show a hint. */}
+          {resolved.printer && (
+            <span
+              data-testid="orca-resolved-printer"
+              className="text-[9px] text-emerald-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1"
+              title="This bundled OrcaSlicer system preset is loaded by the server and used for the slice."
+            >
+              <CheckCircle2 size={9} className="flex-shrink-0 text-emerald-400" />
+              <span className="truncate">{resolved.printer.name}</span>
+            </span>
+          )}
         </label>
         <div className="grid grid-cols-2 gap-1.5">
-          <label className="flex flex-col gap-0.5">
+          <label className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[9px] uppercase tracking-wider text-slate-400">Print Profile</span>
             <select
               data-testid="orca-profile-process"
@@ -59,8 +78,18 @@ export default function OrcaProfileEditor({
                 <option key={p.id} value={p.id} title={p.description}>{p.label}</option>
               ))}
             </select>
+            {resolved.process && (
+              <span
+                data-testid="orca-resolved-process"
+                className="text-[9px] text-emerald-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1 truncate"
+                title="Bundled process JSON loaded by the slicer"
+              >
+                <CheckCircle2 size={9} className="flex-shrink-0 text-emerald-400" />
+                <span className="truncate">{resolved.process.name}</span>
+              </span>
+            )}
           </label>
-          <label className="flex flex-col gap-0.5">
+          <label className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[9px] uppercase tracking-wider text-slate-400">Filament</span>
             <select
               data-testid="orca-profile-filament"
@@ -72,6 +101,16 @@ export default function OrcaProfileEditor({
                 <option key={f.id} value={f.id}>{f.label}</option>
               ))}
             </select>
+            {resolved.filament && (
+              <span
+                data-testid="orca-resolved-filament"
+                className="text-[9px] text-emerald-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1 truncate"
+                title="Bundled filament JSON loaded by the slicer"
+              >
+                <CheckCircle2 size={9} className="flex-shrink-0 text-emerald-400" />
+                <span className="truncate">{resolved.filament.name}</span>
+              </span>
+            )}
           </label>
         </div>
       </div>

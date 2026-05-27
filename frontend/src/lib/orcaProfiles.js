@@ -203,7 +203,12 @@ export const PRINTER_PROFILES = {
 // works without translation.
 export const PROCESS_PROFILES = {
   standard: {
-    id: "standard", label: "Standard 0.2mm",
+    // Labels deliberately match OrcaSlicer's bundled-process-preset
+    // names ("0.20mm Standard", "0.12mm Fine", "0.28mm Extra Draft")
+    // so users see the same string here that they'd see if they
+    // opened OrcaSlicer directly. Strong is a ForgeSlicer-specific
+    // override that rides Standard's bundled chain.
+    id: "standard", label: "0.20mm Standard",
     description: "Balanced quality / time. Good first-print pick.",
     profile: {
       layer_height: 0.2, initial_layer_print_height: 0.3,
@@ -216,7 +221,7 @@ export const PROCESS_PROFILES = {
     },
   },
   fine: {
-    id: "fine", label: "Fine 0.12mm",
+    id: "fine", label: "0.12mm Fine",
     description: "Smoother surfaces. ~2× print time.",
     profile: {
       layer_height: 0.12, initial_layer_print_height: 0.2,
@@ -229,7 +234,7 @@ export const PROCESS_PROFILES = {
     },
   },
   draft: {
-    id: "draft", label: "Draft 0.28mm",
+    id: "draft", label: "0.28mm Extra Draft",
     description: "Fastest. Use for rough prototypes.",
     profile: {
       layer_height: 0.28, initial_layer_print_height: 0.3,
@@ -241,7 +246,7 @@ export const PROCESS_PROFILES = {
     },
   },
   strong: {
-    id: "strong", label: "Strong (functional parts)",
+    id: "strong", label: "0.20mm Strong (functional)",
     description: "4 perimeters + dense gyroid. Slowest, stiffest.",
     profile: {
       layer_height: 0.2, initial_layer_print_height: 0.3,
@@ -375,13 +380,17 @@ const PRINTER_PRESET_META = {
 };
 
 // Process preset base labels keyed by our internal processId. Combined
-// with the printer's `suffix` to produce the bundled JSON name. For
-// printers without preset meta (non-Bambu) these strings are unused —
-// we ship the raw process_profile dict instead.
+// with the printer's `suffix` to produce the bundled JSON name. These
+// MUST match the layer-height labels OrcaSlicer ships in
+// `resources/profiles/<vendor>/process/`. For printers without preset
+// meta (non-Bambu) these strings are unused — we ship the raw
+// process_profile dict instead.
 const PROCESS_PRESET_BASES = {
   standard: "0.20mm Standard",
-  fine:     "0.16mm Optimal",
-  draft:    "0.28mm Draft",
+  fine:     "0.12mm Fine",
+  // OrcaSlicer's "Draft" preset is actually 0.24mm; the 0.28mm tier
+  // ships as "Extra Draft" — that's the one our 0.28mm process maps to.
+  draft:    "0.28mm Extra Draft",
   // Strong has no direct system preset; we ride Standard's inheritance
   // chain and override `wall_loops` + `sparse_infill_density` on top.
   strong:   "0.20mm Standard",
@@ -404,7 +413,7 @@ const FILAMENT_PRESET_BASES = {
  * each value is either `{vendor, name}` or `null` (fallback to raw
  * profile dict on the backend).
  */
-function resolveSystemPresets(printerId, processId, filamentId) {
+export function resolveSystemPresets(printerId, processId, filamentId) {
   const meta = PRINTER_PRESET_META[printerId];
   if (!meta) return { printer: null, process: null, filament: null };
   const procBase = PROCESS_PRESET_BASES[processId];
