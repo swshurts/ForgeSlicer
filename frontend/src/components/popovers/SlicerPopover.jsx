@@ -91,15 +91,40 @@ export function SlicerPopover({ anchor, onClose }) {
   };
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let timerId = null;
+
+    const fetchStatus = async () => {
       try {
         const s = await orcaApi.status();
         if (!cancelled) setOrcaStatus(s);
+        // Keep polling while the install is in progress (or we
+        // don't have a definitive answer yet). The previous code
+        // fetched once on mount and never refreshed, so a user who
+        // opened the popover during the ~1 min install would see
+        // "installing…" forever even after the engine became ready.
+        // We poll every 5 s — server endpoint is a 50 ms file-stat,
+        // negligible load. Stops polling automatically once installed
+        // is true OR the server says we're on the wrong arch.
+        const keepPolling = s && !s.installed && (s.build_in_progress || s.source === "missing")
+          && (s.arch === "x86_64" || s.arch === "amd64");
+        if (!cancelled && keepPolling) {
+          timerId = setTimeout(fetchStatus, 5000);
+        }
       } catch (e) {
         if (!cancelled) setOrcaStatus({ installed: false, source: "error", detail: apiErrorMessage(e) });
+        // Even on error, keep retrying — could be a transient network
+        // blip and the user shouldn't have to close+reopen the popover.
+        if (!cancelled) {
+          timerId = setTimeout(fetchStatus, 10000);
+        }
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    fetchStatus();
+    return () => {
+      cancelled = true;
+      if (timerId) clearTimeout(timerId);
+    };
   }, []);
 
   const handleSlice = async () => {

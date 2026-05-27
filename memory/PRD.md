@@ -546,6 +546,27 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.25 (2026-02-27) — Slicer popover status polling (UI didn't refresh after install completed)
+**Diagnosis**: User saw "installing…" forever on production even though `/api/slice/orca/status` returned `installed: true` (verified via browser DevTools). The OrcaSlicer install actually succeeded — but the frontend only fetched status ONCE on mount and never refreshed.
+
+**Fix**:
+- ✅ `SlicerPopover.jsx` now polls `/api/slice/orca/status` every 5 s while `installed` is still false (AND the user is on a supported arch). Stops polling automatically once installed flips true.
+- ✅ Transient network errors also re-try (10 s backoff) — no need to close/reopen the popover.
+
+**For the existing stuck UI**: a single hard refresh (Ctrl+Shift+R) clears the stale client state immediately, no redeploy required.
+
+### Files touched
+- `frontend/src/components/popovers/SlicerPopover.jsx`
+
+## Iteration 1.24 (2026-02-27) — Stale-lock cleanup + status-detail debug info
+- ✅ `_install_in_progress()` ignores + auto-cleans lock files older than 15 min so a crashed install can't permanently jam the UI.
+- ✅ Status detail surfaces lock-file age when an install runs longer than 5 min ("612 s elapsed").
+- ✅ New pytest test covers the stale-cleanup path. 11/11 passing.
+
+### Files touched
+- `backend/orca_engine.py` — stale-lock guard + age-aware detail messages
+- `backend/tests/test_install_orca.py` — `test_install_in_progress_clears_stale_lock`
+
 ## Iteration 1.23 (2026-02-27) — OrcaSlicer system-deps fix (prod libEGL error)
 **Production bug**: User reported on https://forgeslicer.com that switching to the OrcaSlicer engine and slicing produced `libEGL.so.1: cannot open shared object file (exit code 127)`. Built-in slicer worked fine.
 
