@@ -14,6 +14,14 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.13.0",
+    date: "2026-05-26",
+    title: "Toolbar refactor (housekeeping)",
+    changes: [
+      { type: "improvement", text: "Top toolbar rewritten: the 684-line monolith is now a 112-line shell that composes seven small focused modules (system row, edit row, project actions, keyboard shortcuts, shared UI primitives, sketch button, add-primitive dropdown). No user-visible change, but new features will land faster from here." },
+    ],
+  },
+  {
     version: "1.12.1",
     date: "2026-05-26",
     title: "Curve primitives — correct measurements",
