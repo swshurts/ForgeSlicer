@@ -56,6 +56,7 @@ import re
 import platform
 import shutil
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,8 +117,36 @@ def _install_in_progress() -> bool:
     """True while the AppImage installer is running. The script writes
     `/app/backend/bin/.orca_install_lock` for the duration of its run
     so we can surface "installing…" in the status badge without
-    polling the script's stdout."""
-    return Path("/app/backend/bin/.orca_install_lock").exists()
+    polling the script's stdout.
+
+    Includes a stale-lock guard — if the lock file is older than 15
+    minutes, we treat it as abandoned (the install crashed or was
+    killed without cleanup) and let the next call reset it. Without
+    this, a single crashed install leaves the UI stuck on "installing"
+    forever, and the only fix would be SSH access to delete the file.
+
+    15 min is generous — a worst-case install is apt-get update (~30s)
+    + 30 packages (~60s) + 119 MB download (~10s) + extract (~10s) =
+    ~2 min. Padded heavily so a slow network never gets false-cleared."""
+    lock = Path("/app/backend/bin/.orca_install_lock")
+    if not lock.exists():
+        return False
+    try:
+        age = time.time() - lock.stat().st_mtime
+    except OSError:
+        return True
+    if age > 15 * 60:
+        # Stale — clean it up so the next install can run. Best-effort;
+        # if the unlink races against a legitimate fast retry we'll
+        # just report False this time and the new install will write
+        # a fresh lock.
+        try:
+            lock.unlink()
+            logger.warning("Cleared stale OrcaSlicer install lock (age %.0f s).", age)
+        except FileNotFoundError:
+            pass
+        return False
+    return True
 
 
 def _build_in_progress() -> bool:
@@ -268,14 +297,38 @@ async def orca_status():
     version = None
     if install.binary:
         version = await _probe_version(install.binary)
+
+    # Surface the lock file's age in the status detail so a stuck
+    # "installing" pill is debuggable just from the JSON — no SSH
+    # needed. The 15-min stale-lock guard in _install_in_progress
+    # auto-clears it next call, but the user/admin still wants to know
+    # "is this really running or did it crash?"
+    lock_age_s = None
+    lock_path = Path("/app/backend/bin/.orca_install_lock")
+    if lock_path.exists():
+        try:
+            lock_age_s = int(time.time() - lock_path.stat().st_mtime)
+        except OSError:
+            pass
+
     detail = None
     if install.source == "missing":
         if install.build_in_progress:
-            detail = (
-                "OrcaSlicer is installing on the server (~1 min). The "
-                "built-in slicer remains fully functional in the meantime — "
-                "refresh in a minute to see the engine appear."
-            )
+            if lock_age_s is not None and lock_age_s > 5 * 60:
+                # Past the 5-min mark — install is taking longer than
+                # expected. Surface that so users don't think it's
+                # frozen at 30 seconds.
+                detail = (
+                    f"OrcaSlicer install is still running ({lock_age_s} s elapsed). "
+                    f"It auto-aborts after 15 min if hung. Built-in slicer remains "
+                    f"available."
+                )
+            else:
+                detail = (
+                    "OrcaSlicer is installing on the server (~1-2 min). The "
+                    "built-in slicer remains fully functional in the meantime — "
+                    "refresh in a minute to see the engine appear."
+                )
         elif install.arch not in ("x86_64", "amd64"):
             detail = (
                 f"OrcaSlicer ships an x86_64-only AppImage; this server is "

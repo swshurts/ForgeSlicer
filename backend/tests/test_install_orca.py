@@ -140,3 +140,25 @@ def test_install_in_progress_reads_lock_file(tmp_path, monkeypatch):
     finally:
         try: lock.unlink()
         except FileNotFoundError: pass
+
+
+def test_install_in_progress_clears_stale_lock():
+    """A lock file older than 15 min must be treated as abandoned —
+    otherwise a crashed install leaves the UI stuck on 'installing'
+    forever, and the only fix without this is SSH. The helper should
+    return False AND clean the file up so the next install can run."""
+    import os, time as _time
+    from orca_engine import _install_in_progress
+    lock = Path("/app/backend/bin/.orca_install_lock")
+    assert not _install_in_progress()
+    try:
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("99999")
+        # Backdate mtime by 16 minutes.
+        old = _time.time() - 16 * 60
+        os.utime(lock, (old, old))
+        assert _install_in_progress() is False, "stale lock should be ignored"
+        assert not lock.exists(), "stale lock should be removed by the helper"
+    finally:
+        try: lock.unlink()
+        except FileNotFoundError: pass
