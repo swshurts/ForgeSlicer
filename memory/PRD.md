@@ -546,6 +546,15 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.20 (2026-02-27) — Light/Dim active-state legibility fix
+- ✅ **Fixed**: in light mode, the active state of toolbar pills + theme switcher segments + the pin toggle was `text-orange-300` on `bg-orange-500/20` — pale-orange text on pale-orange background, near-illegible.
+- ✅ **Solution**: targeted `[data-theme="light"]` overrides in `themes.css` that darken `text-orange-100/200/300/400` to orange-700/800 and bump the highlight fill from 20% → 28% opacity. Dark + Dim modes are completely untouched.
+- ✅ Also pre-emptively darkened light-mode accent texts that exhibited the same low-contrast pattern: `text-emerald-200/300`, `text-amber-300/400`, `text-purple-100/200/300`, `text-green-300`, `text-red-400`, `text-cyan-400` — used by Slicer engine cards, save-component confirmation, and multi-select badges.
+- ✅ Computed-style verification: light-mode active = `rgb(194,65,12)` orange-700 / 28% tint; dark + dim = `rgb(253,186,116)` orange-300 / 20% tint (unchanged).
+
+### Files touched
+- `frontend/src/styles/themes.css` — one new block under `[data-theme="light"]` for orange + accent text remaps
+
 ## Iteration 1.19 (2026-02-27) — OrcaSlicer AppImage installer (auto on backend startup)
 - ✅ **`scripts/install_orca.py`** — downloads the latest OrcaSlicer Linux AppImage from the official `SoftFever/OrcaSlicer` GitHub release, self-extracts via `--appimage-extract` (no FUSE), and stages the result at `/app/backend/bin/orca-x86_64/`. Idempotent — running on an already-installed host is a sub-100 ms no-op. Honors `--force` and `--dry-run`.
 - ✅ **Auto-run on backend startup** (`server.py` `@app.on_event("startup")`): if no working binary is resolved, fires the installer in a background thread. Non-blocking — backend serves traffic immediately, engine becomes available once install (~30-60 s on x86_64) finishes. On aarch64 the installer cleanly skips with rc=1 (no AppImage published for ARM).

@@ -125,5 +125,45 @@
 [data-theme="light"] input::placeholder,
 [data-theme="light"] textarea::placeholder { color: rgb(148 163 184); }
 
+/* -----------------------------------------------------------
+ * Orange — the active/highlight color used throughout the UI
+ * for pill buttons, theme switcher segments, pin toggle, etc.
+ *
+ * The historical palette assumes a dark backdrop: light orange
+ * text (orange-300/200/100) on a dim orange tint
+ * (bg-orange-500/20). In light mode that's pale-orange text
+ * on a pale-orange background — near-illegible contrast.
+ *
+ * We darken the orange foreground tones so they read against
+ * the now-white surface, and bump the highlight tint opacity
+ * a touch so the active pill is still visually obvious.
+ * ----------------------------------------------------------- */
+[data-theme="light"] .text-orange-100 { color: rgb(154 52 18); }   /* → orange-800 */
+[data-theme="light"] .text-orange-200 { color: rgb(154 52 18); }   /* → orange-800 */
+[data-theme="light"] .text-orange-300 { color: rgb(194 65 12); }   /* → orange-700 */
+[data-theme="light"] .text-orange-400 { color: rgb(194 65 12); }   /* → orange-700 */
+[data-theme="light"] .hover\:text-orange-300:hover { color: rgb(194 65 12); }
+
+/* Stronger highlight fill — the 20%-alpha orange wash is invisible
+ * on a white panel. Bumping to ~30% keeps the design language but
+ * gives the active state a visible edge. */
+[data-theme="light"] .bg-orange-500\/10 { background-color: rgb(249 115 22 / 0.15); }
+[data-theme="light"] .bg-orange-500\/15 { background-color: rgb(249 115 22 / 0.22); }
+[data-theme="light"] .bg-orange-500\/20 { background-color: rgb(249 115 22 / 0.28); }
+
+/* Same problem (smaller scale) for the green/amber/purple accents
+ * used by the Slicer popover engine cards, save-component card,
+ * and similar — pale text on pale tint. Darken the foregrounds. */
+[data-theme="light"] .text-emerald-200 { color: rgb(6 95 70); }    /* → emerald-800 */
+[data-theme="light"] .text-emerald-300 { color: rgb(4 120 87); }   /* → emerald-700 */
+[data-theme="light"] .text-amber-300   { color: rgb(180 83 9); }   /* → amber-700 */
+[data-theme="light"] .text-amber-400   { color: rgb(180 83 9); }
+[data-theme="light"] .text-purple-100  { color: rgb(88 28 135); }  /* → purple-900 */
+[data-theme="light"] .text-purple-200  { color: rgb(107 33 168); } /* → purple-800 */
+[data-theme="light"] .text-purple-300  { color: rgb(126 34 206); } /* → purple-700 */
+[data-theme="light"] .text-green-300   { color: rgb(21 128 61); }  /* → green-700 */
+[data-theme="light"] .text-red-400     { color: rgb(185 28 28); }  /* → red-700 */
+[data-theme="light"] .text-cyan-400    { color: rgb(14 116 144); } /* → cyan-700 */
+
 /* Accent shadows used for the green/orange/cyan/red highlights stay
    exactly as designed; we only touch the neutral slate layer. */
