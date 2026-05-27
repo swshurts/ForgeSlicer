@@ -17,6 +17,8 @@ import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
+import { shouldShowThemeHint, markThemeHintSeen } from "@/lib/theme";
 import SplashScreen from "@/components/SplashScreen";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import SVGImportDialog from "@/components/SVGImportDialog";
@@ -79,6 +81,28 @@ function App() {
       // we just swallow — this is a nice-to-have, not critical UX.
       void err;
     }
+  }, []);
+
+  // One-time "Auto theme is on" hint for brand-new visitors. Fires once
+  // ever (gated by localStorage), only when the user has no stored
+  // theme choice. We delay a couple of seconds so it doesn't compete
+  // with the splash screen or any post-auth redirect.
+  useEffect(() => {
+    if (!shouldShowThemeHint()) return;
+    const t = setTimeout(() => {
+      if (!shouldShowThemeHint()) return; // double-check after the delay
+      toast.info("Auto theme is on", {
+        description: "We're following your system appearance. Tap the sun/moon icons in the toolbar to override.",
+        duration: 8000,
+        action: {
+          label: "Got it",
+          onClick: () => markThemeHintSeen(),
+        },
+        onDismiss: markThemeHintSeen,
+        onAutoClose: markThemeHintSeen,
+      });
+    }, 2500);
+    return () => clearTimeout(t);
   }, []);
 
   return (

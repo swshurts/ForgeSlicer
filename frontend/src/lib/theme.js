@@ -31,6 +31,43 @@ function readStoredTheme() {
   }
 }
 
+/**
+ * Did the user have any stored theme on this device before we
+ * bootstrapped? Used by App.js to show a one-time "Auto theme is on,
+ * tap a sun/moon to override" hint to brand-new users only.
+ *
+ * Captured at module load (before any setTheme call) so it survives
+ * even if the user clicks the switcher before the hint effect runs.
+ */
+let HAD_STORED_THEME_AT_BOOT = false;
+try {
+  HAD_STORED_THEME_AT_BOOT = USER_THEMES.includes(
+    window.localStorage.getItem(STORAGE_KEY),
+  );
+} catch { /* noop */ }
+
+const HINT_SEEN_KEY = "forgeslicer.theme.hintSeen";
+/**
+ * Returns true if this is a brand-new visitor (no stored theme) AND
+ * we have not yet shown them the auto-mode hint. The caller is
+ * responsible for marking the hint as seen via `markThemeHintSeen()`
+ * after firing the toast — keeping the read + write split lets the
+ * caller skip firing under conditions only it knows about (e.g.
+ * during an auth redirect).
+ */
+export function shouldShowThemeHint() {
+  if (HAD_STORED_THEME_AT_BOOT) return false;
+  try {
+    return window.localStorage.getItem(HINT_SEEN_KEY) !== "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markThemeHintSeen() {
+  try { window.localStorage.setItem(HINT_SEEN_KEY, "1"); } catch { /* noop */ }
+}
+
 function writeStoredTheme(theme) {
   try { window.localStorage.setItem(STORAGE_KEY, theme); } catch { /* noop */ }
 }

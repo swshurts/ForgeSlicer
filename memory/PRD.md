@@ -546,6 +546,16 @@ Stripe Checkout + a `users.tier` counter will implement this; awaiting user sign
 - `frontend/src/components/ActionPopovers.jsx` (reduced to re-export shim)
 - `frontend/src/components/TopToolbar.jsx` (import path updated)
 
+## Iteration 1.17 (2026-02-27) — One-time "Auto theme is on" hint toast
+- ✅ Added a **one-time toast** on first launch for brand-new visitors: "Auto theme is on — We're following your system appearance. Tap the sun/moon icons in the toolbar to override." with a "Got it" action and 8s auto-dismiss.
+- ✅ **Gated tightly** — fires only when (a) user has *no* stored theme choice AND (b) `forgeslicer.theme.hintSeen` localStorage flag isn't set. Mounted with a 2.5s delay so it doesn't compete with the splash screen / auth redirects.
+- ✅ "Got it" click, swipe-dismiss, and auto-close all mark the hint as seen — so it never re-appears regardless of how the user dismisses it.
+- ✅ Smoke test verified: appears once for new user → never again on reload → never shown to returning users with a pre-existing stored theme.
+
+### Files touched
+- `frontend/src/lib/theme.js` (added `shouldShowThemeHint()` / `markThemeHintSeen()` + module-load capture of pre-bootstrap stored value)
+- `frontend/src/App.js` (delayed `useEffect` fires the toast)
+
 ## Iteration 1.16 (2026-02-27) — System / Auto theme mode (new default)
 - ✅ **Added `system` mode** (icon: MonitorCog, label: Auto) — follows `(prefers-color-scheme: light)` media query. Now the default for brand-new users.
 - ✅ **Live OS updates**: A `matchMedia` listener installed at module load re-resolves the theme when the user flips their OS appearance while the tab is open. Listener only acts when stored choice is `"system"` — explicit Dark/Dim/Light picks are never overridden by OS changes.
