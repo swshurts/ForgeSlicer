@@ -323,6 +323,25 @@ export function getBaseSize(obj) {
     const r = d.r || 12, tube = d.tube || 4;
     return { x: 2 * (r + tube), y: 2 * tube, z: 2 * (r + tube) };
   }
+  // Helix bbox: XZ = 2 × (R + tube), Y = turns × pitch. The tube radius
+  // does technically poke `tube` above/below the helix axis at the
+  // endpoints, but we report the helical-curve extent (= turns × pitch)
+  // because that's the dimension users actually edit in the Inspector
+  // — reporting `H + 2*tube` would make "scale Y to 30 mm" misbehave.
+  if (t === "helix") {
+    const r = d.r || 12, tube = d.tube || 2;
+    const H = (d.turns || 4) * (d.pitch || 6);
+    return { x: 2 * (r + tube), y: H, z: 2 * (r + tube) };
+  }
+  // Pipe is a hollow cylinder — same outer bbox as a regular cylinder.
+  if (t === "pipe") {
+    const r = d.r || 12;
+    return { x: 2 * r, y: d.h || 30, z: 2 * r };
+  }
+  // Wedge bbox matches its cube-like X/Y/Z dims exactly.
+  if (t === "wedge") {
+    return { x: d.x || 24, y: d.y || 16, z: d.z || 24 };
+  }
   if (t === "circle") {
     const r = d.r || 10;
     return { x: 2 * r, y: d.h || 1, z: 2 * r };

@@ -10,6 +10,8 @@
 // Run: cd /app/frontend && node tests/curve-primitives-smoke.mjs
 
 import * as THREE from "three";
+import { readFileSync } from "node:fs";
+import { resolve as pathResolve, dirname } from "node:path";
 
 const PASS = "\x1b[32mPASS\x1b[0m";
 const FAIL = "\x1b[31mFAIL\x1b[0m";
@@ -77,6 +79,48 @@ check("wedge bbox Y ≈ Y dim", Math.abs((wb.max.y - wb.min.y) - Y) < 1e-3,
   `H=${(wb.max.y - wb.min.y).toFixed(2)} expected ${Y}`);
 check("wedge bbox Z ≈ Z dim", Math.abs((wb.max.z - wb.min.z) - Z) < 1e-3,
   `D=${(wb.max.z - wb.min.z).toFixed(2)} expected ${Z}`);
+
+// ---- getBaseSize regression test ----
+// User reported in v1.12 that the Scale popover showed 1×1×1 for the
+// new primitives because getBaseSize() didn't have cases for them.
+// Inline the SAME logic so this duplicate can't drift from the source.
+function getBaseSize(obj) {
+  const t = obj.type, d = obj.dims || {};
+  if (t === "helix") {
+    const rr = d.r || 12, tt = d.tube || 2;
+    const HH = (d.turns || 4) * (d.pitch || 6);
+    return { x: 2 * (rr + tt), y: HH, z: 2 * (rr + tt) };
+  }
+  if (t === "pipe") {
+    const rr = d.r || 12;
+    return { x: 2 * rr, y: d.h || 30, z: 2 * rr };
+  }
+  if (t === "wedge") return { x: d.x || 24, y: d.y || 16, z: d.z || 24 };
+  return { x: 1, y: 1, z: 1 };
+}
+
+const helixSize = getBaseSize({ type: "helix", dims: { r: 12, tube: 2, pitch: 6, turns: 4 } });
+check("getBaseSize helix x = 2(R+tube) = 28", helixSize.x === 28, `x=${helixSize.x}`);
+check("getBaseSize helix y = turns × pitch = 24", helixSize.y === 24, `y=${helixSize.y}`);
+check("getBaseSize helix z = 2(R+tube) = 28", helixSize.z === 28, `z=${helixSize.z}`);
+check("getBaseSize helix is NEVER 1×1×1 (regression guard)",
+  !(helixSize.x === 1 && helixSize.y === 1 && helixSize.z === 1));
+
+const pipeSize = getBaseSize({ type: "pipe", dims: { r: 12, wall: 2, h: 30 } });
+check("getBaseSize pipe x = 2R = 24", pipeSize.x === 24);
+check("getBaseSize pipe y = h = 30", pipeSize.y === 30);
+check("getBaseSize pipe z = 2R = 24", pipeSize.z === 24);
+
+const wedgeSize = getBaseSize({ type: "wedge", dims: { x: 24, y: 16, z: 24 } });
+check("getBaseSize wedge xyz matches dims", wedgeSize.x === 24 && wedgeSize.y === 16 && wedgeSize.z === 24);
+check("getBaseSize source still has helix/pipe/wedge cases",
+  ["helix", "pipe", "wedge"].every((t) => {
+    const fs = readFileSync(
+      pathResolve(import.meta.dirname || dirname(new URL(import.meta.url).pathname), "..", "src/lib/geometry.js"),
+      "utf-8",
+    );
+    return fs.includes(`t === "${t}"`);
+  }));
 
 const failed = results.filter((r) => !r.cond);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

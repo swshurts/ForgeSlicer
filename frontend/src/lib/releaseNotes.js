@@ -14,6 +14,14 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.12.1",
+    date: "2026-05-26",
+    title: "Curve primitives — correct measurements",
+    changes: [
+      { type: "fix", text: "The Size popover and percent-scale controls were showing 1 × 1 × 1 for Helix, Pipe, and Wedge because the size resolver hadn't been taught about the new primitive types. Now reports the correct mm dimensions and base size for every shape." },
+    ],
+  },
+  {
     version: "1.12.0",
     date: "2026-05-26",
     title: "Curve primitives — Helix, Pipe, Wedge",
