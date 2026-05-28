@@ -895,3 +895,22 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 ### Pending P2 (next session)
 - **Sketch → Path sweep** — substantial work (sketch overlay second-pass + ExtrudeGeometry-along-curve refactor). Deferred to a dedicated session.
 - **Fastener Pair macro** (suggested but not yet built — Bolt + Nut + 2 negative bore cylinders pre-grouped)
+
+## Iteration 44 (2026-02-28) — P0 OrcaSlicer profile + Consecutive rotation fixes
+- ✅ **OrcaSlicer "unknown config type" error eliminated** — root cause traced via OrcaSlicer C++ source: `load_from_json` parses keys in JSON-iteration order and BREAKS the loop on the first malformed value (e.g. a JSON array containing numbers like `[0.4]` instead of strings like `["0.4"]`). Any keys after the breakpoint — including `type` — are silently dropped, surfacing the cryptic "unknown config type of file printer.json" CLI error.
+  - **Fix #1**: `_stage_user_profile` now stamps the 5 metadata keys (`type`, `name`, `from`, `instantiation`, `version`) FIRST in the dict so they survive even if a later config value is malformed. Python 3.7+ guarantees dict insertion order is preserved through `json.dumps`.
+  - **Fix #2**: new `_orca_stringify` helper recurses into the value and coerces numbers/bools/None/lists-of-numbers into the string format Orca expects (`350 → "350"`, `0.4 → "0.4"`, `[0.4] → ["0.4"]`, `True → "1"`, `None → ""`).
+  - **Fix #3**: new `_resolve_fallback_preset` walks a universal bundled-preset chain (`Custom/MyKlipper 0.4 nozzle` + `Custom/0.20mm Standard @MyKlipper` + `OrcaFilamentLibrary/Generic PLA @System`) so printers without a Bambu-mapped system preset still get a real-base preset to ride, instead of a synthesised dict.
+  - **Tests**: 10 new in `backend/tests/test_orca_profile_staging.py` (incl. Sovol SV06 Plus Ace production-input reproducer), 5 new in `backend/tests/test_orca_fallback_preset.py`. Full pytest 164/164 (1 known test-isolation flake on rate-limit-state in test_local_auth, passes in isolation).
+- ✅ **Consecutive group rotation drift fixed** — root cause: Euler-additive math (`rotation += delta`) doesn't compose for non-axis-aligned starting rotations. Reproduced: starting (45,0,0) + 45° around world Y → Euler XYZ decomposition gives (54.74, 30, -35.26); naive subtraction yields a wrong delta-Euler and children scatter.
+  - **Fix**: replaced both `rotateSelected` (popover path) and `Viewport.handleChange` rotate branch (gizmo path) with quaternion composition — `newQ = dQ · childQ` where `dQ = newPrimaryQ · oldPrimaryQ⁻¹`. Children's positions orbit via `applyQuaternion(dQ)`; their orientations track the same world rotation; both decomposed back to Euler XYZ only for storage.
+  - **Test**: new `frontend/tests/rotation-group-consecutive.mjs` runs 5 sequential rotations (X/Y/Z mix) on a 4-piece assembly and confirms all 6 pairwise distances stay invariant (within 1e-4) AND every satellite position matches the analytically composed quaternion result.
+- ✅ Release notes bumped to v1.17.0.
+- Files: `backend/orca_engine.py` (_stage_user_profile rewrite, new _orca_stringify + _resolve_fallback_preset, fallback wired into orca_slice), `backend/tests/test_orca_profile_staging.py` (overwrite), `backend/tests/test_orca_fallback_preset.py` (NEW), `frontend/src/lib/store.js` (rotateSelected quaternion rewrite), `frontend/src/components/Viewport.jsx` (handleChange rotate branch), `frontend/tests/rotation-group-consecutive.mjs` (NEW), `frontend/src/lib/releaseNotes.js`.
+
+### Pending (next session)
+- **Save Assembly to Gallery/Share silent failure (P2)** — user reported "tried to save Pitman Arm to the Share and it didn't save it"; trace `/api/components` save flow front-to-back.
+- **Sketch → Path sweep (P1)** — deferred from iter 43.
+- **Refactor `frontend/src/lib/store.js`** — file is now >1300 lines; split rotation/CSG math + group ops into dedicated modules.
+- **PRD.md split** — file is at 916 lines; should split into PRD.md (problem statement / personas / static) + CHANGELOG.md (append-only history) + ROADMAP.md (P0/P1/P2 backlog).
+
