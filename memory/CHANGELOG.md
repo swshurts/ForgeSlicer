@@ -951,3 +951,32 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - Release notes bumped to **v1.18.1**.
 - Files: `frontend/src/components/ContextMenu.jsx` (new doCenterOnBed handler + menu item with Crosshair icon + testid `ctx-center-bed-btn`), `frontend/src/lib/releaseNotes.js`, `frontend/tests/center-on-bed.mjs` (NEW).
 
+
+## Iteration 48 (2026-02-28) — Sweep MVP follow-ups + Fastener Pair macro
+
+### What landed
+- ✅ **Sweep ref-export fix** — Sweeps with `path.kind: "ref"` (the "From Object" path option) now export to STL with the source object's centerline-driven geometry baked in. Underneath: a module-level `_sceneContext` in `lib/csg.js` set/cleared at the entry points (`evaluateScene`, `evaluateSceneByColor`); `lib/manifoldEngine.js` signature-extends `buildObjectManifold(wasm, obj, scene)` and threads `scene` through both `evaluateSceneAsync` and `evaluateSceneByColorAsync`. Closes one of the three known MVP limitations from iter 46.
+- ✅ **Sweep preset library** — 8 curated cards in the Sweep Inspector (Helical spring, Watch spring, Twisted cable, Corkscrew, Rope, Hex bar arc, Spiral railing, Tornado funnel). One click rewrites the full Sweep dims; tweakable afterward without resetting. Surfaced as an orange-bordered card at the top of `SweepInspectorBlock` with `data-testid="sweep-preset-picker"`.
+- ✅ **Fastener Pair macro** — new `addFastenerPair` store action + LeftPanel "Fastener Pair" button under Composites. Drops a coordinated **Bolt + Nut + bore cylinder + head counterbore**, all sharing a `groupId` prefixed `fastener-` so they move/rotate/scale as one fastener and ungroup for fine-tuning. The 4 parts share matching pitch/major-radius so the threads visually mate; layout is built so dropping it onto a 12mm-thick host gives you a flush-headed, fully-threaded fastener with one click. Customisation via `opts` (boltR, pitch, workThickness, headR, headH, shaftH, nutH) flows through cleanly.
+- ✅ Release notes bumped to **v1.19.0**.
+
+### Tests added
+- `frontend/tests/sweep-presets-and-fastener.mjs` — 25+ assertions covering all 8 presets (each builds valid geometry with >100 tris and a distinct tri count), corkscrew first-vertex finiteness, and Fastener Pair layout invariants (counterbore-bottom, bore alignment, nut flush with bore-top, bolt shaft extends past nut top, customisation params flow through correctly).
+
+### Test report
+- `/app/test_reports/iteration_17.json` — backend 100% (no changes), frontend 100%. All 7 node test files green. Sweep preset picker + Fastener Pair button verified clickable + produce expected scene changes.
+
+### Files touched
+- `frontend/src/lib/csg.js` (module-level `_sceneContext` + entry-point wrappers)
+- `frontend/src/lib/manifoldEngine.js` (scene-aware `buildObjectManifold` + threaded through `evaluateSceneAsync` + `evaluateSceneByColorAsync`)
+- `frontend/src/components/SweepInspectorBlock.jsx` (SWEEP_PRESETS array + Preset library UI card)
+- `frontend/src/lib/store.js` (new `addFastenerPair` action)
+- `frontend/src/components/LeftPanel.jsx` (FastenerPairButton + wired into Composites grid)
+- `frontend/src/lib/releaseNotes.js` (v1.19.0 entry)
+- `frontend/tests/sweep-presets-and-fastener.mjs` (NEW)
+
+### Pending (next session)
+- The two sketch-source Sweep options (`profile.kind:"sketch"`, `path.kind:"sketch3d"`) still surface as no-ops with amber hints. Wiring them requires a "Use as sweep profile" / "Use as sweep path" context-menu action on the existing sketch UI — small UX surface, deferred unless requested.
+- E2E note from the testing agent (pre-existing, NOT a feature bug): Playwright scripted change-events on React-controlled `<select>` elements don't reliably trigger React's onChange. Math-layer node tests cover this exhaustively, but if more frontend E2E is desired later, exposing `window.useScene` in dev builds would help.
+- See ROADMAP.md for the up-to-date backlog.
+

@@ -10,11 +10,12 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 *(none open as of 2026-02-28)*
 
 ## 🟡 P1 — Next features
-- **Sweep MVP follow-ups (iter 46 deferred)**:
+- **Sweep MVP follow-ups (iter 46 deferred — 1 closed, 2 still open)**:
+  - ~~Thread `scene` context through `lib/csg.js` so `path.kind: "ref"` sweeps export correctly~~ [DONE — iter 48]
   - `profile.kind: "sketch"` — wire up "Use as sweep profile" from a sketch context menu so the user can sweep an arbitrary 2D drawing.
   - `path.kind: "sketch3d"` — let users draw a 3D polyline in sketch mode and use it as a sweep path.
-  - Thread `scene` context through `lib/csg.js` so `path.kind: "ref"` sweeps export correctly (today they fall back to a placeholder cube during STL export only; live viewport is fine).
-- **Fastener Pair macro** — Bolt + Nut + 2 negative bore cylinders pre-grouped as one drop-in assembly.
+- ~~**Fastener Pair macro**~~ [DONE — iter 48]
+- **Composite library expansion** — chamfered countersinks, gussets, hex pockets (mentioned in the Composites footer as "coming soon" — flesh out with the same pattern Slot + Fastener Pair use).
 
 ## 🟢 P2 — Polish
 - **Refactor `lib/store.js` further** — now at 1147 lines after iter 46 split. Group ops + sketch state could still come out (target <800 lines).
