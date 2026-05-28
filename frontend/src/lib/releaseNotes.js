@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.15.1",
+    date: "2026-02-27",
+    title: "Rotation double-fire fix",
+    changes: [
+      { type: "fix", text: "Typing a value in the Rotation / Position / Size popover and pressing Enter no longer applies the value twice. Previously Enter ran the commit immediately AND fired a blur whose handler also re-ran commit with a stale value — for absolute fields (Position, Size) the second pass was harmless, but for multi-select Rotation (which applies a delta) it doubled the rotation: typing 45° rotated by 90°, and the second pass also re-ran the rigid-body orbit math, which disassembled the group. Fixed with a single-flight ref guard." },
+    ],
+  },
+
+  {
     version: "1.15.0",
     date: "2026-02-27",
     title: "Bolts + Nuts, Settings panel, Save Assembly, Export STL fix",

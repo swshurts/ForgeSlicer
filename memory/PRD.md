@@ -851,3 +851,25 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 ### Pending P2 (deferred to next session)
 - **Sketch → Path sweep** — requires a separate sketch-overlay pass for the path + ExtrudeGeometry-along-curve refactor. Substantial work.
 - **Slice progress reporting** — needs `asyncio.subprocess.PIPE` + stdout parser + an SSE stream + frontend progress UI. Substantial work.
+
+## Iteration 51 (2026-02-27) — NumberField double-commit fix
+- 🔴 **Bug — typing 45° rotation rotated by 90° on multi-select**: every popover NumberField (Position / Rotation / Size) was double-firing onChange on Enter. The flow was:
+  1. User types `45`, presses Enter
+  2. `commit()` runs: parses "45", calls `setDraft(null)`, calls `onChange(45)` → rotation popover applies delta = 45 - 0 = 45° → group rotates 45°
+  3. `e.currentTarget.blur()` synchronously triggers `onBlur={commit}` — but React HASN'T flushed `setDraft(null)` yet, so the blur's commit closure still sees draft = "45" → calls `onChange(45)` AGAIN
+  4. Rotation popover applies delta = 45 - 45 = 0 ✗ ← it would, but here's the kicker: NumberField passes `value={obj.rotation[i]}` which is now 45, AND that value is captured by the parent's `setRot(0, v)` callback. So actually the second call's value is still the typed "45" with the new current of 45 → delta = 45 - 45 = 0. Hm.
+  
+  Actually the real mechanism: the parent passes a new `setRot` closure on every render, but the input's onChange/onBlur callbacks are baked from the FIRST `setRot` instance during the initial render of the commit. Since `obj.rotation[i]` is read fresh in setRot at call time, both calls see the SAME current value (the pre-rotation value, because the first onChange's state update hadn't yet propagated to a re-render of the popover when the synchronous blur fired). So both deltas are 45° → group rotates 90°.
+  
+  This is why **absolute** transforms (Position / Size) were unaffected (they set the same absolute value twice = idempotent), and only **multi-select Rotation** broke. The doubled rigid-body orbit math (offset rotated twice through the same matrix) is also what disassembled the group on subsequent rotations.
+  
+  **Fix**: added a `justCommittedRef = useRef(false)` to NumberField. When Enter fires commit, set the ref to true BEFORE calling `e.currentTarget.blur()`. The subsequent `onBlur={commit}` checks the ref first, flips it back to false, and returns early. Single-flight commit per user action.
+- ✅ **Release notes v1.15.1**.
+- Files touched: `frontend/src/components/popovers/PopoverShell.jsx`.
+
+## Iteration 51 — Notes
+- "OrcaSlicer disabled in Slicer gizmo" is **expected behaviour** on the ARM64 preview pod (x86_64 AppImage cannot execute there). Iter 46's `_load_system_preset` + iter 50's `unknown config type` fix mean the x86_64 production deploy will accept the JSONs and slice correctly.
+
+### Pending P2 (next session)
+- Sketch → Path sweep
+- Slice progress reporting (subprocess stdout → SSE → UI %)
