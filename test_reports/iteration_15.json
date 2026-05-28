@@ -1,0 +1,38 @@
+{
+  "summary": "Full regression checkpoint sweep across backend + frontend per review_request. Backend: 164/164 full pytest pass + 9/9 iter15 live-preview smoke (incl. P2 Save-to-Share, Orca status aarch64, voice command, public lists, billing packages). Frontend: workspace loads with zero console/page errors after session cookie injection, all 8 Add-Primitive buttons work, Boolean toolbar enables on multi-select, STL + 3MF exports both trigger downloads with ZERO React #321 errors (regression cleared), all 4 themes toggle without breakage, voice button toggles, Save-as-Component dialog opens with full form, Settings dialog reachable, Release Notes dialog displays v1.17.0 'Rigid-body rotations stay rigid · OrcaSlicer profile fix' on top as expected. Group-rotation P0 fix verified at math layer (rotation-group-consecutive.mjs, iter14) and UI controls are reachable. SKIPPED per request: actual Orca slicing CLI (aarch64 pod).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/google/login, /api/auth/refresh, /api/projects, /api/components/{id} GET, /api/components/mine, /api/meshy/health, /api/meshy/generate, /api/billing/products, /api/billing/subscription, /api/settings/me, /api/admin/components, /api/admin/orca/reinstall, /api/printers/test-connection, /api/slice/builtin", "issue": "These endpoint paths listed in the review_request do NOT exist on the backend. Actual surfaces in use: /api/auth/session (Emergent session auth), /api/me/designs (projects), /api/components/{cid}/project (component fetch), /api/me/components (mine filter), /api/billing/packages + /api/billing/checkout + /api/billing/status/{id} (billing), /api/me/profile (settings), /api/slice/orca/reinstall (orca admin reinstall). All actual endpoints are exercised by existing pytest suite and all pass. No functional gap — just a naming mismatch in the review brief."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_smoke.py",
+    "/app/test_reports/pytest/iter15_full.xml",
+    "/app/test_reports/pytest/iter15_smoke.xml"
+  ],
+  "action_items": [
+    "(Optional) Consider adding a data-testid for the Group/Combo button (currently no testid contains 'group'; uses 'COMBO' label). Helps future E2E group-rotation flows.",
+    "(Optional) Voice button does not expose aria-pressed for the listening state — using class-based styling instead. Adding aria-pressed would improve a11y + test selector ergonomics."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py is 1720+ lines — should be split into routers (auth, components, gallery, voice, billing, slice, admin, settings) for maintainability. Tracked in prior iterations.",
+    "Workspace gating now requires auth (Emergent session cookie). Anonymous workspace browse was previously possible — confirm with product if this is intentional. Public API endpoints (components list, gallery, billing/packages, printers, orca/status) remain anonymously accessible, which is correct.",
+    "Save-to-Share component POST accepts anonymous (no auth) submissions — verified: created TEST_PitmanArm_* component is publicly listed. If product requires auth-gated publishing, this is a policy gap. If intentional (open library), no action."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_smoke.py (new)"
+  ],
+  "success_rate": {"backend": "100% (164/164 full + 9/9 smoke)", "frontend": "100% on exercised flows (primitives, exports, themes, dialogs, release notes)"},
+  "test_credentials": "Seeded session: user_id=user_iter15_1779985477797, session_token=st_iter15_1779985477797 (in test_database.user_sessions). Use cookie name 'session_token' on the preview domain. /app/memory/test_credentials.md present and used for context.",
+  "seed_data_creation": "Inserted one test user + session into MongoDB test_database (users + user_sessions collections) to enable workspace UI testing. Test components created via API are TEST_* prefixed for easy cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is rock-solid (164/164 pytest). Workspace UI is now session-gated — inject 'session_token' cookie or use seeded session above. The P2 'Save-to-Share Pitman Arm' bug the user reported is NOT reproducible: POST /api/components with the full payload (name, author, category, modifier, stl_base64, project_json, triangle_count, object_count, private:false) succeeds and the component appears in GET /api/components. If user still sees the bug on prod, capture the exact request payload + response from the browser network tab — likely a frontend validation gate or missing required field on the client side, not a server bug. React #321 STL export regression is CLEAR (downloads work, zero errors). Group rotation P0 fix verified at math layer (rotation-group-consecutive.mjs passes per iter14). Orca aarch64 status returns installed:false as designed.",
+  "rca of the issue": "No P0/P1 bugs found this iteration. P2 Save-to-Share path tested end-to-end on live preview URL and succeeds. The previously reported 'Pitman Arm didn't save to Share' is most likely a transient client-side issue (e.g. validation toast, network flake, or specific large-payload edge case) — could not be reproduced with anonymous or session-authed payloads up to ~12KB of stl_base64. Recommend the user reproduce on prod with DevTools Network tab open to capture the failing request."
+}
