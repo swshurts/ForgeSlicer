@@ -238,9 +238,7 @@ export default function SweepInspectorBlock({ obj, updateDims }) {
           </div>
         )}
         {profile.kind === "sketch" && (
-          <div className="text-[10px] text-amber-400" data-testid="sweep-prof-sketch-hint">
-            Draw a closed 2D shape in Sketch mode (Tools→Sketch), then choose "Use as sweep profile" from its context menu. (UI hook in next iteration — for now this kind is a no-op.)
-          </div>
+          <SketchProfileControls profile={profile} setProfile={setProfile} />
         )}
       </div>
 
@@ -282,14 +280,134 @@ export default function SweepInspectorBlock({ obj, updateDims }) {
           <BezierControls path={path} setPath={setPath} />
         )}
         {path.kind === "sketch3d" && (
-          <div className="text-[10px] text-amber-400" data-testid="sweep-path-sketch3d-hint">
-            Polyline-from-sketch input is coming next iteration. For now: pick a different path kind.
-          </div>
+          <Sketch3DPathControls path={path} setPath={setPath} />
         )}
         {path.kind === "ref" && (
           <RefPicker path={path} setPath={setPath} scene={scene} currentId={obj.id} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Sketch-profile picker — lets the user pull the points from any
+// existing `sketch` object in the scene. The picker is the same UX
+// pattern as RefPicker below, but for 2D profiles instead of 3D
+// centerlines. Shows a point-count badge once a sketch is wired up
+// so the user can confirm the link works.
+function SketchProfileControls({ profile, setProfile }) {
+  const scene = useScene((s) => s.objects);
+  const sketches = (scene || []).filter((o) => o.type === "sketch" && Array.isArray(o.dims?.points) && o.dims.points.length >= 3);
+  const pointCount = Array.isArray(profile.points) ? profile.points.length : 0;
+  if (sketches.length === 0 && pointCount === 0) {
+    return (
+      <div className="text-[10px] text-amber-400" data-testid="sweep-prof-sketch-empty">
+        Draw a closed 2D shape in Sketch mode (toolbar → Sketch), then either right-click it and choose "Use sketch as Sweep profile", or come back here and pick it from this list.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <select
+        data-testid="sweep-prof-sketch-pick"
+        value=""
+        onChange={(e) => {
+          const id = e.target.value;
+          if (!id) return;
+          const src = sketches.find((o) => o.id === id);
+          if (!src) return;
+          setProfile({ points: src.dims.points.map(([x, y]) => [x, y]) });
+          e.target.value = "";
+        }}
+        className="w-full h-7 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 px-1.5"
+      >
+        <option value="">{pointCount > 0 ? `— Re-link to a sketch (${pointCount} pts loaded) —` : "— Pick a sketch —"}</option>
+        {sketches.map((o) => (
+          <option key={o.id} value={o.id}>{o.name} ({o.dims.points.length} pts)</option>
+        ))}
+      </select>
+      {pointCount > 0 && (
+        <div className="text-[10px] text-slate-500" data-testid="sweep-prof-sketch-count">
+          Profile: {pointCount} points (centered on its own centroid before sweeping).
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Sketch3D path controls — pull a 3D polyline from a 2D `sketch` object
+// in the scene (Y starts at 0) and let the user redistribute Y across the
+// points using a single "Rise" field. Rise applies a linear ramp so the
+// first point stays at 0 and the last point ends up at `rise`. This is
+// the simplest authoring affordance that still produces interesting 3D
+// paths (helical-staircase-like sweeps).
+function Sketch3DPathControls({ path, setPath }) {
+  const scene = useScene((s) => s.objects);
+  const sketches = (scene || []).filter((o) => o.type === "sketch" && Array.isArray(o.dims?.points) && o.dims.points.length >= 2);
+  const pointCount = Array.isArray(path.points) ? path.points.length : 0;
+  const rise = Number.isFinite(path.rise) ? path.rise : 0;
+
+  const linkSketch = (id) => {
+    const src = sketches.find((o) => o.id === id);
+    if (!src) return;
+    const n = src.dims.points.length;
+    const pts3D = src.dims.points.map(([x, z], i) => [
+      x,
+      n > 1 ? (i / (n - 1)) * rise : 0,
+      z,
+    ]);
+    setPath({ points: pts3D });
+  };
+  const setRise = (newRise) => {
+    const pts = Array.isArray(path.points) ? path.points : [];
+    if (pts.length < 2) { setPath({ rise: newRise }); return; }
+    const n = pts.length;
+    // Preserve XZ — just redistribute Y linearly from 0 → newRise.
+    const next = pts.map(([x, _y, z], i) => [x, (i / (n - 1)) * newRise, z]);
+    setPath({ points: next, rise: newRise });
+  };
+
+  if (sketches.length === 0 && pointCount === 0) {
+    return (
+      <div className="text-[10px] text-amber-400" data-testid="sweep-path-sketch3d-empty">
+        Draw a 2D polyline in Sketch mode (toolbar → Sketch · Pencil), then either right-click it and choose "Use sketch as Sweep path (3D)", or come back here and pick it from this list.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <select
+        data-testid="sweep-path-sketch3d-pick"
+        value=""
+        onChange={(e) => {
+          if (!e.target.value) return;
+          linkSketch(e.target.value);
+          e.target.value = "";
+        }}
+        className="w-full h-7 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 px-1.5"
+      >
+        <option value="">{pointCount > 0 ? `— Re-link to a sketch (${pointCount} pts loaded) —` : "— Pick a sketch —"}</option>
+        {sketches.map((o) => (
+          <option key={o.id} value={o.id}>{o.name} ({o.dims.points.length} pts)</option>
+        ))}
+      </select>
+      {pointCount > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField
+              testid="sweep-path-sketch3d-rise"
+              label="Rise (mm)"
+              value={rise}
+              onChange={(v) => setRise(Number.isFinite(v) ? v : 0)}
+              step={1}
+              title="Linear ramp on the Y axis — first point stays at 0, last point ends at this height. Use 0 for a flat (planar) path."
+            />
+            <div className="text-[10px] text-slate-500 self-center" data-testid="sweep-path-sketch3d-count">
+              {pointCount} polyline points
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

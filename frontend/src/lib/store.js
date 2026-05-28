@@ -528,6 +528,99 @@ export const useScene = create((set, get) => ({
   // overlay itself on commit / cancel.
   sketchMode: false,
   setSketchMode: (on) => set({ sketchMode: !!on }),
+
+  // ---------- Sketch → Sweep ----------
+  // Promote an existing 2D `sketch` object into one of the two compound
+  // descriptors of a NEW sweep object:
+  //
+  //   role = "profile" — use the sketch's points as a closed 2D profile
+  //                      swept along a default helix path. The user can
+  //                      switch the path to arc / bezier / sketch3d / ref
+  //                      in the Inspector afterwards.
+  //   role = "path"    — promote the sketch's [x, z] points to a 3D
+  //                      polyline [x, y, z] (y=0 by default, or distributed
+  //                      linearly from 0 → opts.rise across the points
+  //                      when a rise is requested) and sweep a default
+  //                      circular profile along it.
+  //
+  // The original sketch is preserved — users may want to keep iterating
+  // on the 2D shape while also referencing it from a sweep. The new
+  // sweep is placed at the source sketch's position so it visually
+  // overlays where the user expects.
+  addSweepFromSketch: (sketchId, role = "profile", opts = {}) => {
+    const s = get();
+    const src = s.objects.find((o) => o.id === sketchId);
+    if (!src || src.type !== "sketch") return null;
+    const points2D = Array.isArray(src.dims?.points) ? src.dims.points : [];
+    if (points2D.length < 3) return null;
+
+    get().pushHistory();
+    const baseId = newId("sweep");
+    const baseName = role === "profile"
+      ? `${src.name} → Sweep profile`
+      : `${src.name} → Sweep path`;
+
+    let dims;
+    if (role === "profile") {
+      dims = {
+        samples: 96,
+        twistDeg: 0,
+        profile: { kind: "sketch", points: points2D.map(([x, y]) => [x, y]) },
+        path: { kind: "helix", r: 12, pitch: 6, turns: 3 },
+      };
+    } else {
+      // path role — promote [x, z] → [x, y, z] with optional linear rise.
+      const rise = Number.isFinite(opts.rise) ? opts.rise : 0;
+      const n = points2D.length;
+      const points3D = points2D.map(([x, z], i) => [
+        x,
+        n > 1 ? (i / (n - 1)) * rise : 0,
+        z,
+      ]);
+      dims = {
+        samples: 128,
+        twistDeg: 0,
+        profile: { kind: "circle", r: 2, segments: 16 },
+        path: { kind: "sketch3d", points: points3D, rise },
+      };
+    }
+
+    const obj = {
+      id: baseId,
+      name: baseName,
+      type: "sweep",
+      modifier: src.modifier || "positive",
+      visible: true,
+      locked: false,
+      // Position the sweep at the build-plate origin — the swept geometry
+      // is centered on the path's own centroid by buildSweepGeometry, so
+      // placing the object at the origin keeps everything where the user
+      // drew it.
+      position: [0, role === "path" ? 0 : 10, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dims,
+      colorIndex: (src.modifier === "negative") ? 0 : 7,
+    };
+
+    // Auto-drop so the new sweep sits on the bed.
+    let placed = obj;
+    if (get().autoDropNew) {
+      try {
+        const bb = computeRotatedBBox(placed);
+        if (isFinite(bb.min.y)) {
+          placed = { ...placed, position: [placed.position[0], -bb.min.y, placed.position[2]] };
+        }
+      } catch (_) { /* non-fatal */ }
+    }
+
+    set((st) => ({
+      objects: [...st.objects, placed],
+      selectedId: placed.id,
+      selectedIds: [placed.id],
+    }));
+    return placed.id;
+  },
   // Texture Library dialog state — kept on the store (rather than on a
   // single component) so the right-click context menu can request the
   // dialog to open with a target object pre-selected, even though the

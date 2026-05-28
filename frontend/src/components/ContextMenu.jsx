@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair, Grid3X3 } from "lucide-react";
+import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair, Grid3X3, Waves, Spline } from "lucide-react";
+import { toast } from "sonner";
 import { useScene } from "../lib/store";
 import { flattenObjectsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -211,6 +212,11 @@ export default function ContextMenu({ position, onClose }) {
   // dialog can outlive the context menu (the menu unmounts on click;
   // the dialog is rendered once at Workspace level).
   const openTextureLibrary = useScene((s) => s.openTextureLibrary);
+  const addSweepFromSketch = useScene((s) => s.addSweepFromSketch);
+
+  // True when exactly one sketch primitive is selected — drives the
+  // visibility of the "Use sketch as Sweep profile / path" items.
+  const singleSketch = selectedObjs.length === 1 && selectedObjs[0]?.type === "sketch";
 
   // Re-assert the captured selection into the store immediately before any
   // mutating action runs, so reducers reading get().selectedIds see the
@@ -377,6 +383,34 @@ export default function ContextMenu({ position, onClose }) {
           onClose();
         }}
       />
+      {singleSketch && (
+        <>
+          <Item
+            icon={Waves}
+            label="Use sketch as Sweep profile"
+            testid="ctx-sketch-as-sweep-profile-btn"
+            onClick={() => {
+              restoreSelection();
+              const id = addSweepFromSketch(snapshot.ids[0], "profile");
+              if (id) toast.success("Sweep created — edit path in Inspector");
+              else toast.error("Need at least 3 sketch points to build a profile");
+              onClose();
+            }}
+          />
+          <Item
+            icon={Spline}
+            label="Use sketch as Sweep path (3D)"
+            testid="ctx-sketch-as-sweep-path-btn"
+            onClick={() => {
+              restoreSelection();
+              const id = addSweepFromSketch(snapshot.ids[0], "path");
+              if (id) toast.success("Sweep created — set rise in Inspector to lift Y");
+              else toast.error("Need at least 3 sketch points to build a path");
+              onClose();
+            }}
+          />
+        </>
+      )}
       <Item
         icon={Library}
         label={count > 1 ? "Save selection as Component…" : "Save as Component…"}
