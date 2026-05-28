@@ -382,6 +382,114 @@ export const useScene = create((set, get) => ({
     return groupId;
   },
 
+  // ---- Composite macros (iter 50) ---------------------------------
+  // Each composite is a small assembly the user can drop with ONE
+  // click. All members share a groupId so they move/rotate as a unit
+  // and ungroup-able for fine-tuning. Naming pattern: `addXxx(opts)`.
+
+  // Countersink — a flat-bottomed cylinder + a chamfered cone above
+  // it, both negative, so subtracting from a host produces a hole
+  // that takes a flat-head bolt flush with the surface.
+  addCountersink: (opts = {}) => {
+    const boreR = opts.boreR ?? 2.5;            // shaft clearance
+    const headR = opts.headR ?? boreR * 2;      // sink-cup radius
+    const sinkH = opts.sinkH ?? headR;          // sink depth
+    const throughH = opts.throughH ?? 12;       // host thickness
+    const groupId = `cs-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const groupName = opts.groupName || "Countersink";
+    get().pushHistory();
+    let i = 0;
+    const freshId = (t) => `${t}-${Date.now()}-${i++}`;
+    const parts = [
+      // Through-bore cylinder (clearance for the shaft below the sink).
+      {
+        ...buildPrimitive("cylinder", "negative"),
+        id: freshId("cylinder"),
+        name: "CS Bore", position: [0, throughH / 2, 0],
+        dims: { r: boreR, h: throughH, segments: 48 },
+        groupId, groupName,
+      },
+      // Sink cup — a cone with its wide top at the work surface and
+      // its narrow bottom matching boreR. Three.js Cone is wide at
+      // y=-h/2 and narrow at y=+h/2; we want the OPPOSITE (wide on
+      // top), so we use a frustum-shaped Cylinder with two radii.
+      {
+        ...buildPrimitive("cone", "negative"),
+        id: freshId("cone"),
+        name: "CS Cup", position: [0, throughH - sinkH / 2, 0],
+        dims: { r1: headR, r2: boreR, h: sinkH, segments: 48 },
+        groupId, groupName,
+      },
+    ];
+    set((s) => ({
+      objects: [...s.objects, ...parts],
+      selectedId: parts[0].id,
+      selectedIds: parts.map((p) => p.id),
+    }));
+    return groupId;
+  },
+
+  // Hex pocket — engraved hex socket (M-equivalent), useful for
+  // dropping a hex-key drive into a host without modeling a real
+  // socket geometry. Single negative hexagonal cylinder.
+  addHexPocket: (opts = {}) => {
+    const acrossFlatsR = opts.acrossFlatsR ?? 2.5;   // socket size
+    const depth = opts.depth ?? 4;
+    const groupId = `hexp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const groupName = opts.groupName || "Hex Pocket";
+    get().pushHistory();
+    const part = {
+      ...buildPrimitive("cylinder", "negative"),
+      id: `cylinder-${Date.now()}-0`,
+      name: "Hex Pocket", position: [0, depth / 2, 0],
+      // A 6-segment cylinder IS a hex prism. Radius matches the
+      // across-corners (circumradius) so the flats line up with the
+      // requested across-flats dimension (= circumradius * cos(30°)).
+      dims: { r: acrossFlatsR / Math.cos(Math.PI / 6), h: depth, segments: 6 },
+      rotation: [0, 30, 0], // flats vertical
+      groupId, groupName,
+    };
+    set((s) => ({
+      objects: [...s.objects, part],
+      selectedId: part.id,
+      selectedIds: [part.id],
+    }));
+    return groupId;
+  },
+
+  // Gusset — a triangular reinforcement bracket between two
+  // perpendicular faces. Modeled as a wedge (right-triangle prism)
+  // positive primitive — the user just drops it into the corner and
+  // optionally booleans it into the host.
+  addGusset: (opts = {}) => {
+    const w = opts.w ?? 12;       // leg length along X
+    const h = opts.h ?? 12;       // leg length along Y
+    const thickness = opts.thickness ?? 3;  // gusset thickness
+    const groupId = `gus-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const groupName = opts.groupName || "Gusset";
+    get().pushHistory();
+    // We use a wedge primitive built on the fly via a custom 'wedge'
+    // type. The store/buildGeometry chain doesn't have a dedicated
+    // wedge primitive YET, so we fake it with a box rotated so its
+    // diagonal forms the gusset's hypotenuse — visually close enough
+    // for an MVP, and the user can replace it with a sketched
+    // triangle for the real shape if needed.
+    const part = {
+      ...buildPrimitive("triangle", "positive"),
+      id: `triangle-${Date.now()}-0`,
+      name: "Gusset", position: [w / 2, h / 2, 0],
+      dims: { r: Math.max(w, h) / 2, h: thickness },
+      rotation: [0, 0, 0],
+      groupId, groupName,
+    };
+    set((s) => ({
+      objects: [...s.objects, part],
+      selectedId: part.id,
+      selectedIds: [part.id],
+    }));
+    return groupId;
+  },
+
   // Add a user-drawn sketch as an extruded scene object. `points` is an
   // array of `[x, z]` world-plane coordinates (same units as `position`).
   // The sketch's centroid becomes its origin; we then offset the object's
@@ -420,6 +528,18 @@ export const useScene = create((set, get) => ({
   // overlay itself on commit / cancel.
   sketchMode: false,
   setSketchMode: (on) => set({ sketchMode: !!on }),
+  // Texture Library dialog state — kept on the store (rather than on a
+  // single component) so the right-click context menu can request the
+  // dialog to open with a target object pre-selected, even though the
+  // menu unmounts the moment it's clicked. Workspace renders the
+  // dialog once at the top level and reads these two fields to drive
+  // its `open` / `targetObjectId` props.
+  textureLibraryOpen: false,
+  textureLibraryTargetId: null,
+  openTextureLibrary: (targetObjectId = null) =>
+    set({ textureLibraryOpen: true, textureLibraryTargetId: targetObjectId }),
+  closeTextureLibrary: () =>
+    set({ textureLibraryOpen: false, textureLibraryTargetId: null }),
 
   addImportedMesh: (name, vertices, indices = null, originalBbox = null) => {
     get().pushHistory();

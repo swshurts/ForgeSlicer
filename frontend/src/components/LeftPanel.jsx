@@ -148,6 +148,59 @@ function TextureLibraryButton({ onOpenTextureLib }) {
   );
 }
 
+// Countersink macro — drops a pre-grouped negative bore + negative
+// chamfered cup so subtracting from a host produces a flush-head
+// fastener hole in one click.
+function CountersinkButton() {
+  const addCountersink = useScene((s) => s.addCountersink);
+  return (
+    <button
+      data-testid="add-countersink-btn"
+      onClick={() => addCountersink()}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400 transition-all"
+      title="Add Countersink — negative bore + chamfered cup (for flush flat-head fasteners). Pre-grouped."
+    >
+      <CircleDashed size={18} strokeWidth={1.8} />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Countersink ⌀</span>
+    </button>
+  );
+}
+
+// Hex pocket — drops a negative hexagonal cylinder (single primitive)
+// so subtracting from a host yields a hex socket — useful for hex-key
+// drives or aligned bolt heads.
+function HexPocketButton() {
+  const addHexPocket = useScene((s) => s.addHexPocket);
+  return (
+    <button
+      data-testid="add-hex-pocket-btn"
+      onClick={() => addHexPocket()}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400 transition-all"
+      title="Add Hex Pocket — negative hex socket. Drop on a host, boolean-subtract."
+    >
+      <HexagonIcon size={18} strokeWidth={1.8} />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Hex Pocket ⌀</span>
+    </button>
+  );
+}
+
+// Gusset — drops a triangular positive reinforcement bracket the
+// user can rotate into the corner between two perpendicular faces.
+function GussetButton() {
+  const addGusset = useScene((s) => s.addGusset);
+  return (
+    <button
+      data-testid="add-gusset-btn"
+      onClick={() => addGusset()}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all"
+      title="Add Gusset — triangular reinforcement bracket for the inside-corner of two perpendicular faces."
+    >
+      <TriangleIcon size={18} strokeWidth={1.8} />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Gusset</span>
+    </button>
+  );
+}
+
 function SceneTreeItem({ obj }) {
   const selectedId = useScene((s) => s.selectedId);
   const selectedIds = useScene((s) => s.selectedIds);
@@ -268,7 +321,15 @@ export default function LeftPanel() {
   // with it — it just overlays the viewport when open, and the only
   // trigger is the Hardware button on the Composites tab.
   const [hardwareLibOpen, setHardwareLibOpen] = useState(false);
-  const [textureLibOpen, setTextureLibOpen] = useState(false);
+  // Texture Library dialog state lives on the global store so the
+  // right-click "Apply texture to face..." menu item can request it
+  // to open even though the context menu unmounts on click. Local
+  // setter just dispatches into the store; readers (the dialog) pull
+  // open + targetId off the same source of truth.
+  const textureLibraryOpen = useScene((s) => s.textureLibraryOpen);
+  const textureLibraryTargetId = useScene((s) => s.textureLibraryTargetId);
+  const openTextureLibrary = useScene((s) => s.openTextureLibrary);
+  const closeTextureLibrary = useScene((s) => s.closeTextureLibrary);
   // Tab persistence: remember the last picked palette so users coming back
   // to a project don't have to re-find their workflow.
   const [tab, setTab] = useState(() => {
@@ -323,7 +384,7 @@ export default function LeftPanel() {
       <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "55%" }}>
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
-        {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => setTextureLibOpen(true)} />}
+        {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} />}
         {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} />}
       </div>
 
@@ -348,7 +409,11 @@ export default function LeftPanel() {
       {outlinerCtx && <ContextMenu position={outlinerCtx} onClose={() => setOutlinerCtx(null)} />}
       <AIGenerateDialog open={aiOpen} onClose={() => setAiOpen(false)} />
       <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
-      <TextureLibraryDialog open={textureLibOpen} onClose={() => setTextureLibOpen(false)} />
+      <TextureLibraryDialog
+        open={textureLibraryOpen}
+        targetObjectId={textureLibraryTargetId}
+        onClose={closeTextureLibrary}
+      />
     </aside>
   );
 }
@@ -427,9 +492,12 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
         <FastenerPairButton />
         <HardwareLibraryButton onOpenHardwareLib={onOpenHardwareLib} />
         <TextureLibraryButton onOpenTextureLib={onOpenTextureLib} />
+        <CountersinkButton />
+        <HexPocketButton />
+        <GussetButton />
       </div>
       <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
-        More composites coming soon — chamfered countersinks, gussets, hex pockets.
+        Tip — composites are pre-grouped assemblies. Ungroup any of them to fine-tune individual members.
       </p>
     </>
   );

@@ -20,30 +20,59 @@ import { useScene } from "../../lib/store";
 import {
   HARDWARE_TABLE,
   HARDWARE_LENGTHS_BY_GRADE,
+  HARDWARE_TABLE_IMPERIAL,
+  HARDWARE_LENGTHS_BY_GRADE_IMPERIAL,
   hardwareToFastenerOpts,
 } from "../../lib/hardwareLibrary";
 
 export default function HardwareLibraryDialog({ open, onClose }) {
   const addFastenerPair = useScene((s) => s.addFastenerPair);
+  // Unit system: ISO metric ("metric") vs UNC/UNF imperial ("imperial").
+  // Switching units swaps the active grade table + length list. We
+  // preserve the user's chosen grade if it exists in the new table
+  // (it won't, since M5 ≠ #10-24) — so we snap to the first entry.
+  const [unitSystem, setUnitSystem] = useState("metric");
+  const TABLE = unitSystem === "metric" ? HARDWARE_TABLE : HARDWARE_TABLE_IMPERIAL;
+  const LENGTHS_BY_GRADE = unitSystem === "metric"
+    ? HARDWARE_LENGTHS_BY_GRADE
+    : HARDWARE_LENGTHS_BY_GRADE_IMPERIAL;
   const [gradeId, setGradeId] = useState("M5");
   const [length, setLength] = useState(20);
   const [workOverride, setWorkOverride] = useState("");
-  const spec = HARDWARE_TABLE.find((s) => s.id === gradeId) || HARDWARE_TABLE[2];
-  const lengths = HARDWARE_LENGTHS_BY_GRADE[gradeId] || [];
+  // When unit system flips, snap grade + length to legal values for
+  // the new table so the picker can't be in an invalid state.
+  React.useEffect(() => {
+    if (!TABLE.find((s) => s.id === gradeId)) {
+      const firstId = TABLE[Math.min(2, TABLE.length - 1)].id;
+      setGradeId(firstId);
+      const ls = LENGTHS_BY_GRADE[firstId] || [];
+      const first = ls[0];
+      setLength(Array.isArray(first) ? first[1] : first);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitSystem]);
+  const spec = TABLE.find((s) => s.id === gradeId) || TABLE[0];
+  const lengthsRaw = LENGTHS_BY_GRADE[gradeId] || [];
+  // Metric lengths are stored as plain numbers; imperial as
+  // [label, mm] tuples. Normalise into `{label, mm}` for the UI.
+  const lengths = lengthsRaw.map((entry) =>
+    Array.isArray(entry) ? { label: entry[0], mm: entry[1] } : { label: String(entry), mm: entry }
+  );
 
   // When the grade changes, snap the chosen length to the nearest
   // legal length for the new grade so the picker never lands in an
   // invalid state (e.g. M3 grade × 80mm).
   const handleGradeChange = (id) => {
     setGradeId(id);
-    const ls = HARDWARE_LENGTHS_BY_GRADE[id] || [];
-    if (!ls.includes(length)) {
-      // Pick the closest length in the new grade's list.
-      let best = ls[0];
-      let bestDiff = Math.abs(ls[0] - length);
-      for (const L of ls) {
-        const d = Math.abs(L - length);
-        if (d < bestDiff) { best = L; bestDiff = d; }
+    const ls = LENGTHS_BY_GRADE[id] || [];
+    // Normalise to numeric mm for comparison.
+    const lsMm = ls.map((entry) => (Array.isArray(entry) ? entry[1] : entry));
+    if (!lsMm.includes(length)) {
+      let best = lsMm[0];
+      let bestDiff = Math.abs(lsMm[0] - length);
+      for (const L of lsMm) {
+        const dD = Math.abs(L - length);
+        if (dD < bestDiff) { best = L; bestDiff = dD; }
       }
       setLength(best);
     }
@@ -71,7 +100,27 @@ export default function HardwareLibraryDialog({ open, onClose }) {
           <div className="flex items-center gap-2">
             <Bolt size={16} className="text-orange-400" />
             <h2 className="text-sm font-semibold text-slate-100">Hardware Library</h2>
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider">ISO metric</span>
+            {/* Unit-system toggle — sits next to the title so it
+                feels like a top-level switch, not a numeric option. */}
+            <div className="flex gap-0 ml-2 rounded border border-slate-700 overflow-hidden">
+              {[
+                { id: "metric",   label: "Metric" },
+                { id: "imperial", label: "UNC/UNF" },
+              ].map((u) => (
+                <button
+                  key={u.id}
+                  data-testid={`hardware-units-${u.id}`}
+                  onClick={() => setUnitSystem(u.id)}
+                  className={`h-6 px-2 text-[10px] uppercase tracking-wider transition-all ${
+                    unitSystem === u.id
+                      ? "bg-orange-500/20 text-orange-300"
+                      : "bg-slate-950 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {u.label}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             data-testid="hardware-library-close-btn"
@@ -87,7 +136,7 @@ export default function HardwareLibraryDialog({ open, onClose }) {
           <div>
             <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">Grade</label>
             <div className="grid grid-cols-4 gap-1.5">
-              {HARDWARE_TABLE.map((s) => (
+              {TABLE.map((s) => (
                 <button
                   key={s.id}
                   data-testid={`hardware-grade-${s.id}`}
@@ -103,7 +152,7 @@ export default function HardwareLibraryDialog({ open, onClose }) {
               ))}
             </div>
             <div className="text-[10px] text-slate-500 mt-1.5 font-mono leading-tight">
-              majorR {spec.majorR}mm · pitch {spec.pitch}mm · head ⌀{(spec.headR * 2).toFixed(1)}mm
+              majorR {spec.majorR.toFixed(2)}mm · pitch {spec.pitch.toFixed(3)}mm · head ⌀{(spec.headR * 2).toFixed(1)}mm
             </div>
           </div>
 
@@ -111,18 +160,18 @@ export default function HardwareLibraryDialog({ open, onClose }) {
           <div>
             <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">Length</label>
             <div className="flex flex-wrap gap-1.5">
-              {lengths.map((L) => (
+              {lengths.map(({ label, mm }) => (
                 <button
-                  key={L}
-                  data-testid={`hardware-length-${L}`}
-                  onClick={() => setLength(L)}
+                  key={mm}
+                  data-testid={`hardware-length-${label}`}
+                  onClick={() => setLength(mm)}
                   className={`h-7 px-2.5 rounded border text-[11px] font-medium transition-all ${
-                    length === L
+                    length === mm
                       ? "border-orange-500 bg-orange-500/20 text-orange-300"
                       : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
                   }`}
                 >
-                  {L}
+                  {label}{unitSystem === "metric" ? "" : '"'}
                 </button>
               ))}
             </div>
@@ -136,7 +185,7 @@ export default function HardwareLibraryDialog({ open, onClose }) {
             <input
               data-testid="hardware-work-thickness"
               type="number"
-              placeholder={`auto: ${Math.max(2, length - 5)}mm`}
+              placeholder={`auto: ${Math.max(2, length - 5).toFixed(1)}mm`}
               value={workOverride}
               onChange={(e) => setWorkOverride(e.target.value)}
               className="w-full h-7 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 placeholder-slate-600"
@@ -148,7 +197,7 @@ export default function HardwareLibraryDialog({ open, onClose }) {
 
           {/* Preview summary */}
           <div className="rounded border border-slate-800 bg-slate-950 p-2 text-[11px] font-mono text-slate-400" data-testid="hardware-preview">
-            Drop <span className="text-orange-300">{spec.id}×{length}</span> Fastener Pair · bolt ⌀{(spec.majorR * 2).toFixed(1)}mm × {length}mm · pitch {spec.pitch}mm · pre-grouped (Bolt + Bore + Counterbore + Nut)
+            Drop <span className="text-orange-300">{spec.id}×{length.toFixed(1)}mm</span> Fastener Pair · bolt ⌀{(spec.majorR * 2).toFixed(2)}mm × {length.toFixed(1)}mm · pitch {spec.pitch.toFixed(3)}mm · pre-grouped (Bolt + Bore + Counterbore + Nut)
           </div>
 
           {/* CTA */}

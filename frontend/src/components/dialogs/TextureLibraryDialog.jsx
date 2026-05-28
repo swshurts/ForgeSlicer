@@ -31,6 +31,8 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const [depth, setDepth] = useState(0.8);
   const [modifier, setModifier] = useState("positive");
   const [face, setFace] = useState("top");
+  const [wrap, setWrap] = useState("flat");
+  const [wrapRadius, setWrapRadius] = useState(0);
   const selectedPattern = TEXTURE_PATTERNS.find((p) => p.id === pattern) || TEXTURE_PATTERNS[0];
 
   // When the pattern changes, snap the tile/height defaults to ones
@@ -70,7 +72,7 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const handleDrop = () => {
     const id = addPrimitive("texture", modifier);
     // Overwrite the just-added default dims with the user's picks.
-    updateDims(id, { pattern, w, d, tileSize, height, depth });
+    updateDims(id, { pattern, w, d, tileSize, height, depth, wrap, wrapRadius });
     onClose();
   };
 
@@ -188,6 +190,47 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
             <div className="text-[10px] text-slate-500 mt-1.5 leading-tight">
               <b className="text-slate-400">tile</b>: pattern periodicity. <b className="text-slate-400">height</b>: relief depth above the base. <b className="text-slate-400">plate</b>: base-plate thickness — keep at least 0.4mm so subtractive overlap won't leave manifold gaps.
             </div>
+          </div>
+
+          {/* Wrap mode — turns a flat tile into a cylindrical wrap for
+              real-world grips (knurled flashlight bodies, hex-paneled
+              cylinders). Sphere wrap is V2 backlog. */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">Wrap to surface</label>
+            <div className="flex gap-1.5 mb-1.5">
+              {[
+                { id: "flat", label: "Flat" },
+                { id: "cylinder", label: "Cylinder" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  data-testid={`texture-wrap-${m.id}`}
+                  onClick={() => setWrap(m.id)}
+                  className={`flex-1 h-7 rounded border text-[11px] font-medium transition-all ${
+                    wrap === m.id
+                      ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                      : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {wrap === "cylinder" && (
+              <div>
+                <NumField
+                  testid="texture-wrap-radius"
+                  label="Cylinder radius (mm) · 0 = auto-fit"
+                  value={wrapRadius}
+                  onChange={setWrapRadius}
+                  min={0}
+                  step={1}
+                />
+                <div className="text-[10px] text-slate-500 mt-1 leading-tight">
+                  Wraps the X axis around a cylinder of this radius. Auto = w/(2π) so the texture tiles seamlessly once around.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Live summary */}

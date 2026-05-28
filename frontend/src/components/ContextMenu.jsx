@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair } from "lucide-react";
+import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair, Grid3X3 } from "lucide-react";
 import { useScene } from "../lib/store";
 import { flattenObjectsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -207,6 +207,10 @@ export default function ContextMenu({ position, onClose }) {
   const someGrouped = selectedObjs.some((o) => o.groupId);
   const allInSameGroup = selectedObjs.length > 0 &&
     selectedObjs.every((o) => o.groupId === selectedObjs[0].groupId && o.groupId);
+  // Texture-library dialog open trigger lives on the store so the
+  // dialog can outlive the context menu (the menu unmounts on click;
+  // the dialog is rendered once at Workspace level).
+  const openTextureLibrary = useScene((s) => s.openTextureLibrary);
 
   // Re-assert the captured selection into the store immediately before any
   // mutating action runs, so reducers reading get().selectedIds see the
@@ -357,6 +361,21 @@ export default function ContextMenu({ position, onClose }) {
         testid="ctx-park-bed-btn"
         disabled={count === 0}
         onClick={doParkOnBed}
+      />
+      <Item
+        icon={Grid3X3}
+        label="Apply texture to face…"
+        testid="ctx-apply-texture-btn"
+        disabled={count !== 1}
+        onClick={() => {
+          restoreSelection();
+          // Single-object only: a texture on a multi-selection is
+          // ambiguous (which face? whose bounds?). Disable above
+          // ensures count===1; we still guard here defensively.
+          const targetId = snapshot.primary || snapshot.ids[0];
+          if (targetId) openTextureLibrary(targetId);
+          onClose();
+        }}
       />
       <Item
         icon={Library}

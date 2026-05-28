@@ -207,6 +207,13 @@ export function buildGeometry(obj, scene = null) {
     if (er > 0.001) {
       return buildLatheCone(r, h, er, segs, d.edgeStyle === "chamfer" ? "chamfer" : "fillet");
     }
+    // Frustum support — when both `r1` and `r2` are provided we use
+    // CylinderGeometry with two different radii (a Three.js cylinder
+    // IS a frustum when its top/bottom radii differ). This is what
+    // the Countersink macro uses for the cup section.
+    if (d.r1 != null && d.r2 != null) {
+      return new THREE.CylinderGeometry(d.r1, d.r2, h, segs);
+    }
     return new THREE.ConeGeometry(r, h, segs);
   }
   if (t === "torus") {

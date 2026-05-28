@@ -14,6 +14,19 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.21.0",
+    date: "2026-02-28",
+    title: "Wrap to surface · 5 new textures · UNC/UNF · Composite expansion",
+    changes: [
+      { type: "feature", text: "Wrap to surface — Texture Library now has a Cylinder wrap option. The flat tile bends onto a cylinder of any radius, with the relief rising radially outward. Perfect for knurled flashlight grips, hex-paneled rolls, or fluted columns. Auto-fits the cylinder so the texture tiles seamlessly once around (or set a custom radius for partial wraps)." },
+      { type: "feature", text: "Texture Library v2 patterns — 5 new printable textures: Diamond plate (industrial floor tread), Brick wall (running bond), Fabric weave (burlap/canvas warp + weft), Hex camo (randomised hex heights), Voronoi (irregular polygonal cells). Each pattern is real printable geometry — survives STL export, slices into G-code." },
+      { type: "feature", text: "Hardware Library UNC/UNF imperial fasteners — toggle the Metric / UNC-UNF switch in the dialog header to swap to inch-system grades (#4-40, #6-32, #8-32, #10-24, 1/4-20, 5/16-18, 3/8-16, 1/2-13). Lengths in inches (1/4\" through 4\"). All math runs in millimetres internally so the same Fastener Pair macro produces correctly-sized hardware." },
+      { type: "feature", text: "Composite library — 3 new one-click macros on the Composites tab: Countersink (negative bore + chamfered cup for flush flat-head fasteners), Hex Pocket (negative hex socket for hex-key drives), Gusset (triangular reinforcement bracket for inside corners)." },
+      { type: "feature", text: "Right-click → \"Apply texture to face…\" — picks a face of the right-clicked object and opens the Texture Library with the footprint auto-sized to that face. One click from object to textured object." },
+    ],
+  },
+
+  {
     version: "1.20.0",
     date: "2026-02-28",
     title: "Park on bed · Hardware Library · Texture Library",

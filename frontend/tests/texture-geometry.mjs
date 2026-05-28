@@ -18,9 +18,9 @@ const ok = (cond, msg) => {
 };
 const approx = (a, b, eps = 0.05) => Math.abs(a - b) < eps;
 
-// Catalogue completeness
-ok(TEXTURE_PATTERNS.length === 4,
-   `4 patterns in v1 (knurl, hex, bumps, ridges), got ${TEXTURE_PATTERNS.length}`);
+// Catalogue completeness (iter 49 shipped 4; iter 50 added 5 v2 patterns)
+ok(TEXTURE_PATTERNS.length === 9,
+   `9 patterns in v1+v2 (knurl, hex, bumps, ridges, diamond_plate, brick, fabric, hex_camo, voronoi), got ${TEXTURE_PATTERNS.length}`);
 const ids = TEXTURE_PATTERNS.map((p) => p.id);
 ok(ids.includes("knurl_diamond"), "knurl_diamond present");
 ok(ids.includes("hex"), "hex present");

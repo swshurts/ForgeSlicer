@@ -60,3 +60,56 @@ export function hardwareToFastenerOpts(spec, length, workThicknessOverride = nul
     groupName: `Fastener ${spec.id}×${length}`,
   };
 }
+
+// ----- Imperial UNC / UNF coarse-thread inch fasteners (iter 50) -------
+// Inch-system equivalents. We map "1/4" → "1/4-20" (coarse) by default.
+// All dimensions stored in MILLIMETRES so the rest of the engine doesn't
+// care about units. Conversion: 1 inch = 25.4mm. Pitch for an imperial
+// thread = 25.4mm / TPI (threads per inch). Head dims sourced from
+// ANSI/ASME B18.6.3 (slotted hex cap screws, common shop dims).
+//
+// Format mirrors HARDWARE_TABLE — same field names — so the dialog
+// code can pick which table to render and `hardwareToFastenerOpts`
+// works against either without modification.
+export const HARDWARE_TABLE_IMPERIAL = [
+  // M-equivalent label, major diameter in inches (×25.4=mm), TPI, head dims
+  { id: "#4-40",  m: "4-40",   majorR: (0.112 * 25.4) / 2, pitch: 25.4 / 40, headR: 2.65, headH: 1.9, nutH: 2.5 },
+  { id: "#6-32",  m: "6-32",   majorR: (0.138 * 25.4) / 2, pitch: 25.4 / 32, headR: 3.20, headH: 2.4, nutH: 2.7 },
+  { id: "#8-32",  m: "8-32",   majorR: (0.164 * 25.4) / 2, pitch: 25.4 / 32, headR: 3.80, headH: 2.8, nutH: 3.2 },
+  { id: "#10-24", m: "10-24",  majorR: (0.190 * 25.4) / 2, pitch: 25.4 / 24, headR: 4.40, headH: 3.3, nutH: 3.6 },
+  { id: "1/4-20", m: "1/4-20", majorR: (0.250 * 25.4) / 2, pitch: 25.4 / 20, headR: 5.55, headH: 4.4, nutH: 5.6 },
+  { id: "5/16-18",m: "5/16-18",majorR: (0.3125 * 25.4) / 2,pitch: 25.4 / 18, headR: 6.95, headH: 5.4, nutH: 6.5 },
+  { id: "3/8-16", m: "3/8-16", majorR: (0.375 * 25.4) / 2, pitch: 25.4 / 16, headR: 8.35, headH: 6.4, nutH: 7.5 },
+  { id: "1/2-13", m: "1/2-13", majorR: (0.500 * 25.4) / 2, pitch: 25.4 / 13, headR: 11.15, headH: 8.3, nutH: 10.0 },
+];
+
+// Common imperial lengths in INCHES (we stringify into the picker but
+// store/use the millimetric equivalent). 1/4 = 6.35mm etc.
+const INCHES = [
+  ["1/4",    6.35],
+  ["3/8",    9.525],
+  ["1/2",    12.7],
+  ["5/8",    15.875],
+  ["3/4",    19.05],
+  ["1",      25.4],
+  ["1-1/4",  31.75],
+  ["1-1/2",  38.1],
+  ["2",      50.8],
+  ["2-1/2",  63.5],
+  ["3",      76.2],
+  ["4",      101.6],
+];
+
+// Filter by what's commonly available per grade. Short fasteners
+// don't exist in big diameters (M12 × 6mm makes no sense); long
+// ones don't fit small diameters (#4-40 × 4" snaps off).
+export const HARDWARE_LENGTHS_BY_GRADE_IMPERIAL = {
+  "#4-40":   INCHES.filter(([, mm]) => mm <= 25.4),
+  "#6-32":   INCHES.filter(([, mm]) => mm <= 38.1),
+  "#8-32":   INCHES.filter(([, mm]) => mm <= 50.8),
+  "#10-24":  INCHES.filter(([, mm]) => mm <= 63.5),
+  "1/4-20":  INCHES.filter(([, mm]) => mm <= 76.2),
+  "5/16-18": INCHES.filter(([, mm]) => mm <= 101.6),
+  "3/8-16":  INCHES,
+  "1/2-13":  INCHES.filter(([, mm]) => mm >= 12.7),
+};
