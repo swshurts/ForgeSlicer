@@ -980,3 +980,42 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - E2E note from the testing agent (pre-existing, NOT a feature bug): Playwright scripted change-events on React-controlled `<select>` elements don't reliably trigger React's onChange. Math-layer node tests cover this exhaustively, but if more frontend E2E is desired later, exposing `window.useScene` in dev builds would help.
 - See ROADMAP.md for the up-to-date backlog.
 
+
+## Iteration 49 (2026-02-28) — Park on bed + Hardware Library + Texture Library v1
+
+### What landed
+- ✅ **Park on bed** — right-click menu action that combines Center-on-bed (X/Z) + Drop-to-bed (Y) in a single history push. Rigid-body invariant for multi-part selections. Sits between "Center on bed" and the save-component group; test-id `ctx-park-bed-btn`.
+- ✅ **Hardware Library** — modal dialog backed by `lib/hardwareLibrary.js` (HARDWARE_TABLE + HARDWARE_LENGTHS_BY_GRADE + hardwareToFastenerOpts). 7 ISO metric grades (M3, M4, M5, M6, M8, M10, M12) × common shop lengths. ISO-standard coarse pitches + head dimensions baked in. workThickness auto-computed (length−5mm so 5mm of shaft pokes past the nut, clamped to 2mm minimum). Snap-to-closest length on grade change so the picker never lands in an invalid state. Drop creates a pre-grouped Fastener Pair (Bolt + Bore + Counterbore + Nut).
+- ✅ **Texture Library v1** — geometric/printable textures via a new `texture` primitive type backed by `lib/textureGeometry.js`. Patterns:
+  - **knurl_diamond** — diagonal cross-hatch (tool-handle grip)
+  - **hex** — honeycomb cells (vents, decorative)
+  - **bumps** — hemispherical bumps (anti-slip)
+  - **ridges_linear** — parallel half-cylinders (flashlight flutes)
+  - Each texture sits on a base plate so subtractive overlap onto a host won't leave manifold gaps. Positive (raised/union) or negative (engraved/subtract). Geometric — survives STL export, slices into G-code.
+- ✅ Release notes bumped to **v1.20.0** ("Park on bed · Hardware Library · Texture Library").
+
+### Tests added
+- `frontend/tests/park-on-bed.mjs` (~17 assertions) — single object, 3-cube rigid assembly, no-op for already-parked.
+- `frontend/tests/hardware-library.mjs` (~30 assertions) — table completeness, ISO-standard coarse-pitch sanity, hardwareToFastenerOpts mapping (incl. workThickness clamp + override).
+- `frontend/tests/texture-geometry.mjs` (~60 assertions) — all 4 patterns produce valid merged geometry, base plate at y=-depth, relief reaches at least half of height, triangle counts stay under 100k at default dims, footprint × tile-density scaling sensible.
+
+### Test report
+- `/app/test_reports/iteration_18.json` — backend 100% (no changes), frontend 100% on all 10 node tests + 3 new UI surfaces verified end-to-end.
+
+### Files touched
+- `frontend/src/components/ContextMenu.jsx` (doParkOnBed handler + menu item)
+- `frontend/src/lib/hardwareLibrary.js` (NEW)
+- `frontend/src/components/dialogs/HardwareLibraryDialog.jsx` (NEW)
+- `frontend/src/lib/textureGeometry.js` (NEW)
+- `frontend/src/components/dialogs/TextureLibraryDialog.jsx` (NEW)
+- `frontend/src/components/LeftPanel.jsx` (HardwareLibraryButton + TextureLibraryButton + both dialogs wired into Composites)
+- `frontend/src/lib/geometry.js` (new `texture` case)
+- `frontend/src/lib/store.js` (new `texture` primitive default + buildPrimitive halfH for texture)
+- `frontend/src/lib/releaseNotes.js` (v1.20.0 entry)
+- `frontend/tests/park-on-bed.mjs`, `hardware-library.mjs`, `texture-geometry.mjs` (NEW)
+
+### Texture Library v2 backlog
+- Patterns: diamond plate / tread, brick / fabric weave / decorative, hex camo, parametric voronoi.
+- Apply-to-face wire-up: right-click an object → "Apply texture to face..." passes the target into the dialog so the texture footprint auto-sizes to the picked face. (Dialog already accepts a `targetObjectId` prop; the context-menu action is the remaining piece.)
+- Imperial fastener grades (UNC/UNF) — to mirror Hardware Library's ISO metric coverage.
+

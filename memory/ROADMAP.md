@@ -15,6 +15,10 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
   - `profile.kind: "sketch"` — wire up "Use as sweep profile" from a sketch context menu so the user can sweep an arbitrary 2D drawing.
   - `path.kind: "sketch3d"` — let users draw a 3D polyline in sketch mode and use it as a sweep path.
 - ~~**Fastener Pair macro**~~ [DONE — iter 48]
+- **Texture Library v2** (follow-ups to iter 49):
+  - Additional patterns: diamond plate / tread, brick / fabric weave / decorative, hex camo, parametric voronoi.
+  - Right-click "Apply texture to face..." action that opens TextureLibraryDialog with `targetObjectId` set so the footprint auto-sizes to the picked face. Dialog already accepts the prop; remaining piece is wiring the menu item.
+  - Imperial fastener grades (UNC/UNF) in the Hardware Library to mirror ISO metric coverage.
 - **Composite library expansion** — chamfered countersinks, gussets, hex pockets (mentioned in the Composites footer as "coming soon" — flesh out with the same pattern Slot + Fastener Pair use).
 
 ## 🟢 P2 — Polish
