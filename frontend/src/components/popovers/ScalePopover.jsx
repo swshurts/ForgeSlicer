@@ -35,9 +35,12 @@ function writeLockPref(v) {
 
 export function ScalePopover({ anchor, onClose }) {
   const selectedId = useScene((s) => s.selectedId);
+  const selectedIds = useScene((s) => s.selectedIds);
   const objects = useScene((s) => s.objects);
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
+  const scaleSelectedMul = useScene((s) => s.scaleSelectedMul);
   const obj = objects.find((o) => o.id === selectedId);
+  const multi = selectedIds && selectedIds.length > 1;
   const [locked, setLockedState] = useState(readLockPref);
   const setLocked = (v) => { setLockedState(v); writeLockPref(v); };
 
@@ -46,7 +49,20 @@ export function ScalePopover({ anchor, onClose }) {
 
   const applyScale = (newScale) => {
     if (!obj) return;
-    setTransformWithHistory(obj.id, "scale", newScale);
+    if (multi) {
+      // Multi-select: convert the absolute new-scale into a multi-
+      // plicative factor relative to the primary's current scale, then
+      // apply to the whole selection so the assembly grows / shrinks
+      // as one rigid unit (members spread/contract around the primary).
+      const factor = [
+        obj.scale[0] ? newScale[0] / obj.scale[0] : 1,
+        obj.scale[1] ? newScale[1] / obj.scale[1] : 1,
+        obj.scale[2] ? newScale[2] / obj.scale[2] : 1,
+      ];
+      scaleSelectedMul(factor);
+    } else {
+      setTransformWithHistory(obj.id, "scale", newScale);
+    }
   };
 
   const setPercent = (axis, percentValue) => {
@@ -81,11 +97,16 @@ export function ScalePopover({ anchor, onClose }) {
 
   const labels = ["X", "Y", "Z"];
   return (
-    <PopoverShell title={obj ? `Scale — ${obj.name}` : "Scale"} icon={Scale3D} onClose={onClose} anchor={anchor} testid="scale-popover" width={340}>
+    <PopoverShell title={obj ? `Scale — ${obj.name}${multi ? ` +${selectedIds.length - 1}` : ""}` : "Scale"} icon={Scale3D} onClose={onClose} anchor={anchor} testid="scale-popover" width={340}>
       {!obj ? (
         <EmptyMsg>Select an object first.</EmptyMsg>
       ) : (
         <>
+          {multi && (
+            <div className="text-[10px] text-purple-300 bg-purple-500/10 border border-purple-500/30 rounded px-2 py-1.5 leading-snug">
+              Scaling the whole selection ({selectedIds.length}). Every member scales by the same factor and spreads outward from <span className="font-semibold">{obj.name}</span> so the assembly grows / shrinks as one unit.
+            </div>
+          )}
           <label
             className={`flex items-center gap-2 text-[11px] cursor-pointer select-none px-2 py-1.5 rounded border ${
               locked

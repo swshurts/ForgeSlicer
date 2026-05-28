@@ -704,6 +704,54 @@ export const useScene = create((set, get) => ({
       ),
     }));
   },
+  // Multiplicative group scaling: each selected member's scale is
+  // multiplied by `factor` (per-axis), AND their offset from the
+  // PRIMARY grows by the same factor so the whole assembly scales as
+  // a rigid unit centred on the primary. This matches the rotation
+  // pivot rule (primary stays put, others orbit / spread) and
+  // TinkerCad's "scale a group" semantics. `factor` is the MULTI-
+  // PLICATIVE delta (e.g. [2, 1, 1] to double the X width); the
+  // ScalePopover converts its absolute "200%" or "real-size mm"
+  // inputs into this multiplier before calling. Single-object
+  // selection is a no-op fast-path identical to setTransform.
+  scaleSelectedMul: (factor) => {
+    const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
+    if (ids.length === 0) return;
+    if (!factor || factor.every((v) => Math.abs(v - 1) < 1e-9)) return;
+    get().pushHistory();
+    set((s) => {
+      const primary = s.objects.find((o) => o.id === s.selectedId) || s.objects.find((o) => ids.includes(o.id));
+      if (!primary) return s;
+      const pivot = primary.position;
+      return {
+        objects: s.objects.map((o) => {
+          if (!ids.includes(o.id)) return o;
+          const nextScale = [
+            o.scale[0] * factor[0],
+            o.scale[1] * factor[1],
+            o.scale[2] * factor[2],
+          ];
+          // Primary scales in place — offset from itself is 0 so its
+          // position is unchanged. Keeps the gizmo / Inspector stable
+          // while the user adjusts values.
+          if (o.id === primary.id) {
+            return { ...o, scale: nextScale };
+          }
+          return {
+            ...o,
+            scale: nextScale,
+            position: [
+              pivot[0] + (o.position[0] - pivot[0]) * factor[0],
+              pivot[1] + (o.position[1] - pivot[1]) * factor[1],
+              pivot[2] + (o.position[2] - pivot[2]) * factor[2],
+            ],
+          };
+        }),
+      };
+    });
+  },
+
+
   rotateSelected: (delta) => {
     const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
     if (ids.length === 0) return;
@@ -711,12 +759,19 @@ export const useScene = create((set, get) => ({
     get().pushHistory();
     set((s) => {
       const targets = s.objects.filter((o) => ids.includes(o.id));
-      // Convert the rotation delta (degrees → radians) into a rotation
-      // matrix using three.js's Euler XYZ ordering — the SAME ordering
-      // the renderer uses per-object — so the rigid-body orbit and the
-      // per-object spin stay in sync visually. We import on-demand to
-      // keep the store cold-start cheap (three is already in the bundle
-      // via the viewport; this is a hot-path no-op import).
+      if (targets.length === 0) return s;
+      // Pivot for rigid-body group rotation. We use the PRIMARY selected
+      // object's position (the one the gizmo attaches to / the popover
+      // header names) so:
+      //   1. the primary stays still during the rotation
+      //   2. the gizmo doesn't jump out from under the user's cursor
+      //   3. the typed-rotation values match what a Blender/Fusion
+      //      "rotate around active" would do
+      // For single-object selection the pivot trivially equals the
+      // object's own position, so the orbit math collapses to a no-op
+      // (offset = 0) and behaviour is bit-identical to the original.
+      const primary = s.objects.find((o) => o.id === s.selectedId) || targets[0];
+      const pivot = primary.position;
       // eslint-disable-next-line global-require
       const THREE = require("three");
       const dEuler = new THREE.Euler(
@@ -726,53 +781,31 @@ export const useScene = create((set, get) => ({
         "XYZ",
       );
       const dMat = new THREE.Matrix4().makeRotationFromEuler(dEuler);
-      // Pivot = centroid of the selected objects' world positions.
-      // This is what users expect from a TinkerCad-style "group rotate":
-      // the whole assembly orbits around its shared center. For a
-      // single object this collapses to its own position so behaviour
-      // is unchanged.
-      let pivot = [0, 0, 0];
-      if (targets.length > 1) {
-        const sum = targets.reduce(
-          (acc, o) => [acc[0] + o.position[0], acc[1] + o.position[1], acc[2] + o.position[2]],
-          [0, 0, 0],
-        );
-        pivot = [sum[0] / targets.length, sum[1] / targets.length, sum[2] / targets.length];
-      } else if (targets.length === 1) {
-        pivot = [...targets[0].position];
-      }
-      const pivotV = new THREE.Vector3(pivot[0], pivot[1], pivot[2]);
       return {
         objects: s.objects.map((o) => {
           if (!ids.includes(o.id)) return o;
-          // 1) Tilt the object itself by the delta (so its local axes
-          //    rotate with the group — without this, members would
-          //    orbit the pivot but stay axis-aligned, which is wrong).
           const nextRotation = [
             o.rotation[0] + delta[0],
             o.rotation[1] + delta[1],
             o.rotation[2] + delta[2],
           ];
-          // 2) Orbit the object's center around the pivot. Skip this
-          //    when only one object is selected (its pivot == its own
-          //    position so the orbit is a no-op anyway — but avoiding
-          //    the math entirely keeps single-object rotations bit-
-          //    identical to the pre-fix behaviour).
-          if (targets.length <= 1) {
+          // Primary itself rotates in place (its offset from pivot is 0).
+          if (o.id === primary.id) {
             return { ...o, rotation: nextRotation };
           }
+          // Every other selected member orbits around the primary.
           const offset = new THREE.Vector3(
-            o.position[0] - pivotV.x,
-            o.position[1] - pivotV.y,
-            o.position[2] - pivotV.z,
+            o.position[0] - pivot[0],
+            o.position[1] - pivot[1],
+            o.position[2] - pivot[2],
           ).applyMatrix4(dMat);
           return {
             ...o,
             rotation: nextRotation,
             position: [
-              pivotV.x + offset.x,
-              pivotV.y + offset.y,
-              pivotV.z + offset.z,
+              pivot[0] + offset.x,
+              pivot[1] + offset.y,
+              pivot[2] + offset.z,
             ],
           };
         }),

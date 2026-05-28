@@ -14,6 +14,16 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.14.2",
+    date: "2026-02-27",
+    title: "Assembly tools — bed gizmo sync + group resize fix",
+    changes: [
+      { type: "fix", text: "Clicking Position / Rotation / Size in the toolbar now also switches the on-bed gizmo to match (translate arrows / rotation rings / scale handles). Before, you could be editing rotation values while the gizmo still showed translate arrows." },
+      { type: "fix", text: "Resizing a grouped Assembly used to scale only the primary member while the others stayed at their original size — making the primary balloon out and visually 'consume' its siblings. Now the whole assembly scales as one rigid unit: every member scales by the same factor AND spreads outward from the primary, so the proportions stay coherent (matches TinkerCad's group-resize semantics)." },
+    ],
+  },
+
+  {
     version: "1.14.1",
     date: "2026-02-27",
     title: "Assembly rotation — rigid-body fix",

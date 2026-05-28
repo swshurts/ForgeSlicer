@@ -256,7 +256,36 @@ function SelectedTransform() {
       if (transformMode === "translate") {
         setTransform(id, "position", [s.pos[0] + dPos[0], s.pos[1] + dPos[1], s.pos[2] + dPos[2]]);
       } else if (transformMode === "rotate") {
+        // Rigid-body group rotation: each other-selected member must
+        // ORBIT the primary (the object the gizmo is attached to) by
+        // the same delta, AND spin its own local axes by the same
+        // delta. Without the orbit, every member would just spin in
+        // place around its own center — which silently destroys the
+        // relative geometry of any offset assembly. We rebuild the
+        // rotation matrix from the accumulated drag delta (XYZ Euler
+        // order — matches the renderer's per-object Euler) and apply
+        // it to each member's start-of-drag offset from the primary.
+        // Using start positions (not last-frame positions) keeps the
+        // math exact and drift-free over long drags.
+        const primaryStart = start.primary.pos;
+        const dEuler = new THREE.Euler(
+          THREE.MathUtils.degToRad(dRot[0]),
+          THREE.MathUtils.degToRad(dRot[1]),
+          THREE.MathUtils.degToRad(dRot[2]),
+          "XYZ",
+        );
+        const dMat = new THREE.Matrix4().makeRotationFromEuler(dEuler);
+        const offset = new THREE.Vector3(
+          s.pos[0] - primaryStart[0],
+          s.pos[1] - primaryStart[1],
+          s.pos[2] - primaryStart[2],
+        ).applyMatrix4(dMat);
         setTransform(id, "rotation", [s.rot[0] + dRot[0], s.rot[1] + dRot[1], s.rot[2] + dRot[2]]);
+        setTransform(id, "position", [
+          primaryStart[0] + offset.x,
+          primaryStart[1] + offset.y,
+          primaryStart[2] + offset.z,
+        ]);
       } else if (transformMode === "scale") {
         setTransform(id, "scale", [s.scl[0] * sRatio[0], s.scl[1] * sRatio[1], s.scl[2] * sRatio[2]]);
       }

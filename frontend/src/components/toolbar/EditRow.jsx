@@ -28,6 +28,18 @@ export default function EditRow({
 }) {
   const transformMode = useScene((s) => s.transformMode);
   const setTransformMode = useScene((s) => s.setTransformMode);
+  // When the user clicks Position / Rotation / Size in the popover row
+  // we ALSO switch the on-bed gizmo to the matching transform mode so
+  // the two stay in lockstep — users were getting confused seeing
+  // translate-arrows on the bed while editing rotation values. Cut /
+  // Slicer / Duplicate / Mirror don't have a corresponding gizmo mode
+  // so they leave the gizmo alone.
+  const POPOVER_TO_GIZMO = { position: "translate", rotation: "rotate", scale: "scale" };
+  const handlePopoverClick = (id) => {
+    const mode = POPOVER_TO_GIZMO[id];
+    if (mode) setTransformMode(mode);
+    togglePopover(id);
+  };
   const snapEnabled = useScene((s) => s.snapEnabled);
   const setSnapEnabled = useScene((s) => s.setSnapEnabled);
   const gridVisible = useScene((s) => s.gridVisible);
@@ -121,7 +133,7 @@ export default function EditRow({
           title={p.title}
           disabled={p.disabled}
           active={openPopover === p.id}
-          onClick={() => togglePopover(p.id)}
+          onClick={() => handlePopoverClick(p.id)}
         />
       ))}
 
