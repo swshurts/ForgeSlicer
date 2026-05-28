@@ -10,6 +10,7 @@ import Viewport from "./Viewport";
 import SketchOverlay from "./SketchOverlay";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import HelpDialog from "./HelpDialog";
+import SettingsDialog from "./dialogs/SettingsDialog";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
@@ -24,6 +25,7 @@ export default function Workspace() {
   const [savePrinterOpen, setSavePrinterOpen] = useState(false);
   const [saveComponentOpen, setSaveComponentOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -36,6 +38,7 @@ export default function Workspace() {
       else if (name === "share_gallery") setShareOpen(true);
       else if (name === "slicer") setOrcaOpen(true);
       else if (name === "help") setHelpOpen(true);
+      else if (name === "settings") setSettingsOpen(true);
     };
     window.addEventListener("forgeslicer:open-dialog", handler);
     return () => window.removeEventListener("forgeslicer:open-dialog", handler);
@@ -373,6 +376,7 @@ export default function Workspace() {
       <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
       <SaveComponentDialog open={saveComponentOpen} onClose={() => setSaveComponentOpen(false)} />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} onTryVoice={handleTryVoice} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {importBanner && (
         <div
           data-testid="import-banner"

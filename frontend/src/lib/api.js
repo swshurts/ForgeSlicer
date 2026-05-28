@@ -154,6 +154,14 @@ export const orcaApi = {
     );
     return data;
   },
+  reinstall: async ({ force = false } = {}) => {
+    const { data } = await axios.post(
+      `${API}/slice/orca/reinstall`,
+      null,
+      { params: { force }, timeout: 30000 },
+    );
+    return data;
+  },
   slice: async ({
     stlBase64, printerProfile, processProfile, filamentProfile,
     printerPresetName, printerVendor,

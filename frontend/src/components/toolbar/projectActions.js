@@ -19,10 +19,21 @@ import {
 import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "../../lib/workerClient";
 
 export function makeProjectActions({ store, setBusyMsg }) {
-  // `store` is the zustand getter (`useScene` / `useScene.getState`).
-  // We always read state fresh inside each handler so the closure
-  // never goes stale across re-renders.
-  const get = typeof store === "function" ? store : () => store;
+  // `store` is the zustand HOOK (`useScene`). We want a non-hook
+  // accessor for use inside event handlers — calling the hook directly
+  // (e.g. `useScene()` from a click handler) invokes Zustand's
+  // useSyncExternalStore + useCallback machinery outside a render
+  // context, which React 19 production rejects with the cryptic
+  // "Minified React error #321" (invalid hook call). Always go through
+  // `.getState()` instead. The fallback path handles tests / other
+  // callers that pass a plain object or a custom getter.
+  const get = (() => {
+    if (typeof store === "function" && typeof store.getState === "function") {
+      return () => store.getState();
+    }
+    if (typeof store === "function") return store;
+    return () => store;
+  })();
 
   return {
     // ---- Boolean (union / subtract / intersect of last two or selected) ----
@@ -136,6 +147,10 @@ export function makeProjectActions({ store, setBusyMsg }) {
         const { bytes } = await exportSTLBytesAsync(s.objects);
         downloadBlob(new Blob([bytes], { type: "model/stl" }), `${safe}.stl`);
       } catch (e) {
+        // Log the full stack so a future failure isn't just an opaque
+        // alert message — saved us hours on the React #321 bug.
+        // eslint-disable-next-line no-console
+        console.error("[export-stl] failed:", e);
         if (typeof window !== "undefined" && window.alert) window.alert(e.message);
       } finally { setBusyMsg(""); }
     },

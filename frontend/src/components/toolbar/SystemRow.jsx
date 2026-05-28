@@ -12,7 +12,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   FilePlus2, FileUp, FileDown, Save, Upload, Layers, Eye,
-  Hexagon, Globe, Library, Printer, ChevronDown, Sparkles, CircleHelp,
+  Hexagon, Globe, Library, Printer, ChevronDown, Sparkles, CircleHelp, Settings as SettingsIcon,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { getSlicersForPrinter } from "../../lib/presets";
@@ -188,6 +188,14 @@ export default function SystemRow({
         className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-orange-300 hover:bg-slate-800 flex items-center justify-center"
       >
         <CircleHelp size={16} />
+      </button>
+      <button
+        data-testid="settings-btn"
+        onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", { detail: { name: "settings" } }))}
+        title="Settings — Appearance & Engine"
+        className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-orange-300 hover:bg-slate-800 flex items-center justify-center"
+      >
+        <SettingsIcon size={16} />
       </button>
       <ThemeSwitcher />
       <UserMenu returnPath="/workspace" />

@@ -14,6 +14,19 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.15.0",
+    date: "2026-02-27",
+    title: "Bolts + Nuts, Settings panel, Save Assembly, Export STL fix",
+    changes: [
+      { type: "fix", text: "Critical fix — Export STL and Save-to-Share crashed with \"Minified React error #321\" on production. Root cause: `useScene` (Zustand hook) was being called as a regular function from inside event handlers, which React 19 production builds reject as an invalid hook call. Action handlers now go through `.getState()` so the hook machinery never fires from a click. Same fix unblocks every other project action (New / Open / Save / Boolean / Import / Export 3MF)." },
+      { type: "feature", text: "New Bolt + Nut primitives — parametric ISO-metric inspired. Bolt = hex (or button) head + threaded shaft sweeping a helix tube. Nut = hex prism with an inner thread helix. Editable: thread diameter, pitch, length, head/flat dimensions. Pitch-match a bolt to a nut for screw compatibility." },
+      { type: "feature", text: "Settings dialog (cog icon in the toolbar). Two tabs: Appearance (theme + per-page pinning) and Engine (OrcaSlicer status + Reinstall button + force-redownload toggle). Reinstall runs in the background and the status pill polls automatically." },
+      { type: "feature", text: "Save Assembly to Components — every Outliner group header now has a small Save icon next to the chevron. Click it to push the named assembly (e.g. \"Pitman Arm\") into the component library; the Save dialog opens pre-filled with the group's name + your selected members." },
+      { type: "improvement", text: "Export STL errors now log a full stack to the browser console (not just the alert text) so future bugs of this kind take seconds to diagnose instead of hours." },
+    ],
+  },
+
+  {
     version: "1.14.3",
     date: "2026-02-27",
     title: "Assembly rotation as a unit + rename groups",
