@@ -318,6 +318,75 @@ export function buildGeometry(obj) {
     merged.translate(0, -Hnut / 2, 0);
     return merged;
   }
+  if (t === "spline") {
+    // Splined shaft: a cylindrical core with N longitudinal ridges
+    // running along its Y axis. Each tooth is built as a thin
+    // BoxGeometry (rectangular profile), TubeGeometry along an axis
+    // (rounded), or a custom triangular wedge — then rotated around
+    // the shaft's axis to its angular slot before being merged with
+    // the core.
+    //
+    // Two equivalent inputs are exposed for the tooth size: `toothWidthDeg`
+    // (the angular span the tooth occupies on the cylinder, deg) and
+    // `width` (the chord at the outer surface, mm). The Inspector
+    // converts between them and clamps so they always agree with the
+    // arithmetic constraint `teeth * toothWidthDeg < 360`.
+    const Rcore = Math.max(0.5, d.r || 6);
+    const H = Math.max(1, d.h || 30);
+    const N = Math.max(2, Math.min(64, Math.round(d.teeth || 8)));
+    const toothH = Math.max(0.1, d.toothHeight || 1.2);
+    const toothDeg = Math.max(1, Math.min(360 / N - 0.5, d.toothWidthDeg || 12));
+    const profile = d.profile || "rectangular";
+    const segs = Math.max(24, d.segments || 32);
+    // 1. Core cylinder.
+    const core = new THREE.CylinderGeometry(Rcore, Rcore, H, segs);
+    core.translate(0, H / 2, 0);
+    // 2. One canonical tooth at angle 0 (extending along +X from the
+    //    core's surface outward by `toothH`). We pre-build the chord
+    //    width so each tooth's footprint matches `toothDeg` precisely.
+    //    `chord = 2 * R * sin(deg/2)` — converting angular span at
+    //    the cylinder's outer surface into a linear chord.
+    const chord = 2 * Rcore * Math.sin((toothDeg * Math.PI) / 360);
+    const teeth = [];
+    for (let i = 0; i < N; i++) {
+      const theta = (i * 2 * Math.PI) / N;
+      let g;
+      if (profile === "rounded") {
+        // Half-cylinder tooth: radius = chord/2 sticking outward.
+        g = new THREE.CylinderGeometry(chord / 2, chord / 2, H, 16, 1);
+        g.translate(0, H / 2, 0);
+        // Push outward so its INSIDE edge sits flush with the core.
+        g.translate(Rcore + chord / 2 - chord / 6, 0, 0);
+      } else if (profile === "triangular") {
+        // Wedge: 3-vertex prism cross-section. Built from a tiny
+        // CylinderGeometry with 3 radial segments collapsed flat —
+        // easier than a custom BufferGeometry for our scale.
+        g = new THREE.CylinderGeometry(0.001, chord / 2, H, 3, 1);
+        // The 3-segment cylinder has flats at +X and we want the
+        // pointed end facing radially outward → rotate so its apex
+        // points along +X.
+        g.translate(0, H / 2, 0);
+        g.rotateZ(-Math.PI / 2);  // lay it on its side
+        g.translate(Rcore + toothH / 2, 0, 0);
+        // Scale X so the tooth's radial reach matches toothH (the
+        // CylinderGeometry's height becomes its radial reach after
+        // the Z-rotation).
+        g.scale(toothH / H, 1, 1);
+      } else {
+        // "rectangular" — flat-topped tooth (the default).
+        g = new THREE.BoxGeometry(toothH, H, chord);
+        g.translate(Rcore + toothH / 2, H / 2, 0);
+      }
+      // Rotate the tooth into its angular slot around the shaft axis.
+      g.rotateY(theta);
+      teeth.push(g);
+    }
+    // 3. Merge core + teeth. Re-centre on Y so bbox sits symmetrically
+    //    around origin (matches every other primitive's centring rule).
+    const merged = _mergeGeometries([core, ...teeth]);
+    merged.translate(0, -H / 2, 0);
+    return merged;
+  }
   if (t === "pipe") {
     // Hollow cylinder. We could CSG-subtract two cylinders but the
     // user expectation is "one solid pipe primitive", so we build
@@ -474,6 +543,14 @@ export function getBaseSize(obj) {
   if (t === "nut") {
     const flatR = d.flatR || 8;
     return { x: 2 * flatR, y: d.h || 5, z: 2 * flatR };
+  }
+  // Spline bbox: outer radius is core + tooth height; height is the
+  // shaft's full length along Y.
+  if (t === "spline") {
+    const Rcore = d.r || 6;
+    const tH = d.toothHeight || 1.2;
+    const outerR = Rcore + tH;
+    return { x: 2 * outerR, y: d.h || 30, z: 2 * outerR };
   }
   if (t === "circle") {
     const r = d.r || 10;

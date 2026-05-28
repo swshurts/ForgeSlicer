@@ -873,3 +873,25 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 ### Pending P2 (next session)
 - Sketch → Path sweep
 - Slice progress reporting (subprocess stdout → SSE → UI %)
+
+## Iteration 52 (2026-02-27) — Splined Shaft + Slice Progress SSE + Unsaved-Draft Indicator
+- ✅ **Spline primitive** (P2 backlog + user request). New `spline` primitive: a cylindrical core with N longitudinal teeth ridges running along its Y axis. Editable: `r` (core radius), `h` (length), `teeth` (count), `toothHeight`, `toothWidthDeg`, `profile` (rectangular | triangular | rounded). Geometry: core CylinderGeometry + N rotated tooth-cross-sections merged via `_mergeGeometries`. Cross-sections per profile:
+  - **rectangular**: thin BoxGeometry (flat-top teeth, standard ISO)
+  - **triangular**: 3-segment CylinderGeometry collapsed and rotated to face radially (V-shape involute / serration)
+  - **rounded**: half-cylinder (knurled grip)
+  Inspector lives in `components/SplineInspectorBlock.jsx` and exposes BOTH `toothWidthDeg` (angular span) AND `width` (chord mm at outer surface). They're related by `width = 2·R·sin(deg/2)`. When a typed width can't fit at the current N (would exceed 360° angular coverage minus 0.5° gap per tooth), the inspector pops a "Nearest fit" dialog with up to 3 (N, width) options — never silently snaps. Toggle the object's modifier to "negative" and the same teeth become a splined-bore cutter for the matching shaft (CSG-subtract workflow).
+- ✅ **Slice progress reporting (SSE)** (P2 backlog #2). Backend:
+  - `_PROGRESS` dict keyed by job id, holding `{percent, stage, done, error}`.
+  - `_PROGRESS_RE = re.compile(r"\b(\d{1,3})\s*%")` matches both OrcaSlicer stdout flavours: `"Slicing plate 1/1, 23%"` and `"[42%] Exporting 3mf"`.
+  - `_tail_stdout(proc, job_id)` reads `proc.stdout` line-by-line in parallel with `proc.stderr.read()` via `asyncio.gather` (so neither pipe deadlocks). Updates the slot in place; returns full stdout bytes for the existing error-detection code.
+  - `GET /api/slice/orca/progress/<job_id>` is a Server-Sent Events stream. Auto-creates a slot when the client subscribes BEFORE the slice POST has registered it, so the "subscribe pre-slice" flow works without races. Bails after 150s of no updates.
+  - `POST /api/slice/orca/slice` now accepts `job_id` (client-supplied) and echoes it back in the response.
+  - Frontend: `SlicerPopover` generates a client-side job id (crypto.randomUUID, sanitised), opens `EventSource` BEFORE the slice POST, then surfaces a progress bar with stage text below the Slice button. Stream auto-closes on `done: true` or error.
+  - **4 new pytest tests** in `backend/tests/test_orca_progress.py` cover regex matching, tail draining, % clamping, and per-job isolation. All pass; 11/11 backend tests green total.
+- ✅ **Unsaved-draft indicator on NumberField**. When `draft !== null` (user has typed but not yet committed), the input border turns amber AND a tiny amber pulsing dot sits in the input gutter with tooltip "Unsaved edit — press Enter to commit". Affects EVERY numeric field across the popovers + Inspector. Zero state-flow changes — just visual reinforcement of the commit-on-Enter contract added in iter 51.
+- ✅ **Release notes v1.16.0** added.
+- Files touched: `frontend/src/lib/store.js` (spline default dims), `frontend/src/lib/geometry.js` (spline geometry builder + bbox), `frontend/src/components/RightPanel.jsx` (size helper + Inspector wiring), `frontend/src/components/SplineInspectorBlock.jsx` (NEW), `frontend/src/components/toolbar/AddPrimitiveButton.jsx` + `frontend/src/components/LeftPanel.jsx` (Spline button), `frontend/src/components/popovers/PopoverShell.jsx` (draft indicator), `backend/orca_engine.py` (progress + SSE + slice integration), `backend/tests/test_orca_progress.py` (NEW), `frontend/src/components/popovers/SlicerPopover.jsx` (SSE subscription + progress bar UI), `frontend/src/lib/api.js` (job_id passthrough), `frontend/src/lib/releaseNotes.js`.
+
+### Pending P2 (next session)
+- **Sketch → Path sweep** — substantial work (sketch overlay second-pass + ExtrudeGeometry-along-curve refactor). Deferred to a dedicated session.
+- **Fastener Pair macro** (suggested but not yet built — Bolt + Nut + 2 negative bore cylinders pre-grouped)

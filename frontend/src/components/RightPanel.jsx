@@ -6,6 +6,7 @@ import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { evaluateSceneStatsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
 import { printersApi } from "../lib/api";
+import SplineInspectorBlock from "./SplineInspectorBlock";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
 
@@ -516,6 +517,11 @@ function estimateHalfExtents(o) {
     const flatR = d.flatR || 8;
     return [flatR * s[0], (d.h || 5) / 2 * s[1], flatR * s[2]];
   }
+  // spline shaft: outer radius (core + tooth) on XZ; full length on Y.
+  if (o.type === "spline") {
+    const outerR = (d.r || 6) + (d.toothHeight || 1.2);
+    return [outerR * s[0], (d.h || 30) / 2 * s[1], outerR * s[2]];
+  }
   if (o.originalBbox) return [o.originalBbox.x / 2 * s[0], o.originalBbox.y / 2 * s[1], o.originalBbox.z / 2 * s[2]];
   return [10, 10, 10];
 }
@@ -844,6 +850,17 @@ function Inspector() {
             Pitch must match the mating bolt. Add a negative cylinder &amp; Boolean-subtract for a real bore.
           </div>
         </div>
+      )}
+
+      {/* Spline — splined shaft. The Inspector accepts both `width` (chord
+          on outer surface, mm) and `angle` (per-tooth angular span, deg).
+          They're two views of the same dimension: width = 2·R·sin(deg/2).
+          When a width value can't be accommodated (because N teeth at
+          that width would exceed the cylinder's circumference), we
+          surface a "nearest fit" dialog so the user can pick a count
+          that satisfies the constraint. */}
+      {obj.type === "spline" && (
+        <SplineInspectorBlock obj={obj} updateDims={updateDims} />
       )}
 
       {(obj.type === "circle" || obj.type === "square2d" || obj.type === "triangle" || obj.type === "polygon") && (

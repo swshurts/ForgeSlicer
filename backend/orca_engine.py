@@ -54,6 +54,7 @@ import logging
 import os
 import re
 import platform
+import secrets
 import shutil
 import sys
 import tempfile
@@ -277,6 +278,11 @@ class OrcaSliceRequest(BaseModel):
     process_vendor: Optional[str] = None  # default "BBL"
     filament_preset_name: Optional[str] = None
     filament_vendor: Optional[str] = None  # default "BBL"
+    # Optional client-supplied job id. When provided, the client can
+    # subscribe to /api/slice/orca/progress/<id> BEFORE the slice POST
+    # returns and see live % progress as the slicer runs. When omitted
+    # the server generates a fresh id (response includes it).
+    job_id: Optional[str] = None
     # User-friendly summary so the response stats can reference what
     # was requested (echoed back, not validated server-side).
     description: Optional[str] = None
@@ -412,6 +418,11 @@ class OrcaSliceResponse(BaseModel):
     gcode: str
     stats: OrcaSliceStats
     engine: str = "orca"
+    # Progress job id — the client can subscribe to live updates via
+    # /api/slice/orca/progress/<job_id> while the slice runs. Most
+    # clients won't need this since /slice blocks until done; it's
+    # only useful for slow slices where a progress bar improves UX.
+    job_id: Optional[str] = None
 
 
 class OrcaStatusResponse(BaseModel):
@@ -431,6 +442,91 @@ class OrcaStatusResponse(BaseModel):
 
 router = APIRouter(prefix="/slice/orca", tags=["slice"])
 
+
+
+# ---- Slice progress tracking (SSE) -----------------------------------------
+# The OrcaSlicer CLI prints `=> Slicing plate N` and `Generating support`
+# style status lines as it works. We tail stdout via a background reader
+# and surface the parsed percent + stage to an in-memory `_PROGRESS`
+# dict keyed by a short job id. The /slice endpoint returns the job id;
+# the /progress/<id> SSE endpoint streams updates until the slice
+# finishes (or errors out). When `done == True` the client closes the
+# stream and reads the final result via the slice POST's HTTP response.
+_PROGRESS: dict[str, dict] = {}
+
+# OrcaSlicer 1.x stdout includes percentage hints in two flavours:
+#   "Slicing plate 1/1, 23%"  ← from --slice paths
+#   "[23%] export"            ← from --export-3mf paths (some builds)
+# We match the % token greedily; the stage label is the rest of the line.
+_PROGRESS_RE = re.compile(r"\b(\d{1,3})\s*%")
+
+
+async def _tail_stdout(proc: asyncio.subprocess.Process, job_id: str) -> bytes:
+    """Drain `proc.stdout` line-by-line, parse % progress, and update
+    the shared progress slot. Returns the full captured stdout bytes
+    so the caller can keep its existing error-detection logic."""
+    chunks: list[bytes] = []
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        chunks.append(line)
+        text = line.decode(errors="replace").strip()
+        m = _PROGRESS_RE.search(text)
+        if m:
+            pct = max(0, min(100, int(m.group(1))))
+            stage = text.replace(m.group(0), "").strip(" -:[]") or "slicing"
+            slot = _PROGRESS.get(job_id)
+            if slot is not None:
+                slot.update(percent=pct, stage=stage[:80])
+        elif text and not text.startswith("Orca"):
+            slot = _PROGRESS.get(job_id)
+            if slot is not None and not slot.get("done"):
+                slot["stage"] = text[:80]
+    return b"".join(chunks)
+
+
+@router.get("/progress/{job_id}")
+async def orca_progress(job_id: str):
+    """Server-Sent Events stream of slice progress.
+    The client opens an EventSource on this endpoint right after kicking
+    off the slice POST. Each `data:` frame is the JSON progress dict.
+    Closes when `done == True` or after ~150s of no updates.
+
+    To support the "subscribe BEFORE the slice POST" pattern (so the
+    progress bar starts at 0% the moment the user clicks Slice rather
+    than first appearing after the first stdout line), this endpoint
+    creates an empty progress slot when called for an unknown id. The
+    slice POST then finds the existing slot and updates it in place.
+    Slot ids must look like a typical token (≤ 32 chars, urlsafe) to
+    prevent users from creating arbitrary keys in the dict.
+    """
+    if not (1 <= len(job_id) <= 32 and all(c.isalnum() or c in "-_" for c in job_id)):
+        raise HTTPException(status_code=400, detail="malformed job id")
+    if job_id not in _PROGRESS:
+        _PROGRESS[job_id] = {"percent": 0, "stage": "waiting for slicer", "done": False, "error": None}
+    from fastapi.responses import StreamingResponse
+    async def gen():
+        idle = 0
+        last = None
+        while True:
+            slot = _PROGRESS.get(job_id)
+            if slot is None:
+                break
+            snap = dict(slot)
+            if snap != last:
+                yield f"data: {json.dumps(snap)}\n\n"
+                last = snap
+                idle = 0
+            else:
+                idle += 1
+            if snap.get("done") or snap.get("error"):
+                break
+            if idle > 300:
+                yield f"data: {json.dumps({'percent': snap.get('percent', 0), 'stage': 'no updates', 'done': True, 'error': 'progress stream timed out'})}\n\n"
+                break
+            await asyncio.sleep(0.5)
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 @router.get("/status", response_model=OrcaStatusResponse)
 async def orca_status():
@@ -622,6 +718,11 @@ async def orca_slice(req: OrcaSliceRequest):
         )
 
     workdir = Path(tempfile.mkdtemp(prefix="orca-"))
+    # Use the client-supplied job id if present so the SSE subscription
+    # they opened pre-slice ties to the same progress slot. Otherwise
+    # generate a fresh one for the response.
+    job_id = (req.job_id or secrets.token_urlsafe(8))[:32]
+    _PROGRESS[job_id] = {"percent": 0, "stage": "starting", "done": False, "error": None}
     try:
         stl_path = workdir / "model.stl"
         stl_path.write_bytes(stl_bytes)
@@ -739,14 +840,24 @@ async def orca_slice(req: OrcaSliceRequest):
             env={**os.environ, "HOME": str(workdir)},   # avoid touching the real $HOME
         )
         try:
+            # Drain stdout via our tail-reader (parses % progress into
+            # _PROGRESS[job_id] for the SSE endpoint), and collect
+            # stderr in parallel. asyncio.gather lets both pumps run
+            # concurrently — without this stderr can fill its pipe
+            # and deadlock the slicer for large outputs.
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=SLICE_TIMEOUT_SEC,
+                asyncio.gather(_tail_stdout(proc, job_id), proc.stderr.read()),
+                timeout=SLICE_TIMEOUT_SEC,
             )
+            await proc.wait()
         except asyncio.TimeoutError:
             try:
                 proc.kill()
             except Exception:
                 pass
+            slot = _PROGRESS.get(job_id)
+            if slot is not None:
+                slot.update(done=True, error="slice timeout", percent=100)
             raise HTTPException(
                 status_code=504,
                 detail=f"OrcaSlicer slice exceeded {SLICE_TIMEOUT_SEC}s and was killed.",
@@ -811,6 +922,9 @@ async def orca_slice(req: OrcaSliceRequest):
         # `*.gcode` inside the archive as a defensive fallback.
         gcode_text = _extract_gcode_from_3mf(out_3mf)
         layers, filament_mm = _scan_gcode_stats(gcode_text)
+        slot = _PROGRESS.get(job_id)
+        if slot is not None:
+            slot.update(percent=100, stage="done", done=True)
         return OrcaSliceResponse(
             gcode=gcode_text,
             stats=OrcaSliceStats(
@@ -821,7 +935,15 @@ async def orca_slice(req: OrcaSliceRequest):
                 filament_mm=filament_mm,
             ),
             engine="orca",
+            job_id=job_id,
         )
+    except HTTPException as e:
+        # Surface the failure on the SSE stream so the UI can stop the
+        # spinner instead of waiting for the 150s idle timeout.
+        slot = _PROGRESS.get(job_id)
+        if slot is not None:
+            slot.update(done=True, error=str(e.detail)[:200])
+        raise
     finally:
         # Always clean the workdir — profiles + STL + the 3MF can be
         # several megabytes each and we don't want them piling up on the

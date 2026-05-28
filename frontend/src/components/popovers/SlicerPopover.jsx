@@ -12,7 +12,7 @@ import {
 import { useScene, useSliceSettings } from "../../lib/store";
 import { sliceToGCODEAsync } from "../../lib/workerClient";
 import { downloadText, exportSceneToSTLBytes } from "../../lib/exporters";
-import { orcaApi, apiErrorMessage } from "../../lib/api";
+import { orcaApi, apiErrorMessage, API as API_BASE } from "../../lib/api";
 import { buildOrcaPayload } from "../../lib/orcaProfiles";
 import GcodePreviewDialog from "../GcodePreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
@@ -85,6 +85,38 @@ export function SlicerPopover({ anchor, onClose }) {
   // tell the user up front whether the OrcaSlicer engine is available.
   // null = not yet probed; { installed: bool, ...detail fields }.
   const [orcaStatus, setOrcaStatus] = useState(null);
+  // Live slice progress (Orca engine only). When the backend kicks off
+  // a slice, it returns a job_id and we open an EventSource on
+  // /api/slice/orca/progress/<id> to stream % + stage. null when no
+  // slice is in flight or when running the built-in engine.
+  const [progress, setProgress] = useState(null);
+  const progressJobRef = React.useRef(null);
+  const progressSrcRef = React.useRef(null);
+  const subscribeProgress = (jobId) => {
+    // Close any previous subscription before opening a new one.
+    if (progressSrcRef.current) { try { progressSrcRef.current.close(); } catch { /* noop */ } }
+    progressJobRef.current = jobId;
+    const url = `${API_BASE}/slice/orca/progress/${encodeURIComponent(jobId)}`;
+    let es;
+    try { es = new EventSource(url); } catch { return; }
+    progressSrcRef.current = es;
+    setProgress({ percent: 0, stage: "starting", done: false });
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        setProgress(data);
+        if (data.done) { try { es.close(); } catch { /* noop */ } progressSrcRef.current = null; }
+      } catch { /* ignore malformed events */ }
+    };
+    es.onerror = () => {
+      try { es.close(); } catch { /* noop */ }
+      progressSrcRef.current = null;
+    };
+  };
+  // Close any open SSE on unmount so a returning popover doesn't leak streams.
+  useEffect(() => () => {
+    if (progressSrcRef.current) { try { progressSrcRef.current.close(); } catch { /* noop */ } }
+  }, []);
   const pickEngine = (id) => {
     setEngine(id);
     try { window.localStorage.setItem("forge.slice.engine", id); } catch { /* noop */ }
@@ -148,8 +180,17 @@ export function SlicerPopover({ anchor, onClose }) {
           sparseInfillPattern: orcaPattern,
           enableSupport: orcaSupports, ironing: orcaIroning,
         });
+        // Pre-generate a job id and open the SSE stream BEFORE the
+        // slice POST so the user sees a progress bar tick from 0 →
+        // 100 % in real time (the POST is synchronous and would
+        // otherwise only return after the slice is already done).
+        const jobId = (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        ).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+        subscribeProgress(jobId);
         const r = await orcaApi.slice({
           stlBase64: b64,
+          jobId,
           printerProfile: payload.printerProfile,
           processProfile: payload.processProfile,
           filamentProfile: payload.filamentProfile,
@@ -339,6 +380,21 @@ export function SlicerPopover({ anchor, onClose }) {
         {busy ? "Slicing..." : "Slice & Export GCODE"}
       </button>
       {error && <div className="text-xs text-red-400" data-testid="popover-slice-error">{error}</div>}
+      {busy && engine === "orca" && progress && !progress.done && (
+        <div data-testid="popover-slice-progress" className="bg-slate-950 border border-orange-500/40 rounded p-2 space-y-1">
+          <div className="flex items-center justify-between text-[10px] font-mono">
+            <span className="text-orange-300 truncate flex-1 mr-2" title={progress.stage}>{progress.stage || "slicing"}</span>
+            <span className="text-orange-200">{progress.percent || 0}%</span>
+          </div>
+          <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
+            <div
+              data-testid="popover-slice-progress-fill"
+              className="h-full bg-gradient-to-r from-orange-500 to-amber-300 transition-all duration-200"
+              style={{ width: `${progress.percent || 0}%` }}
+            />
+          </div>
+        </div>
+      )}
       {stats && (
         <div className="bg-slate-950 border border-slate-700 rounded p-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] font-mono" data-testid="popover-slice-stats">
           <span className="text-slate-500">Layers</span><span className="text-orange-400 text-right">{stats.layers}</span>

@@ -39,6 +39,17 @@ const PRIMITIVE_DEFAULTS = {
   //        must match the mating bolt. `flatR` is the hex flat radius
   //        (across-flats / 2).
   nut:      { dims: { r: 5, pitch: 1.5, h: 5, flatR: 8, segments: 48 } },
+  // spline (1.16): a splined SHAFT — N longitudinal ridges (teeth)
+  //        running along a cylindrical core. Models the splined-shaft
+  //        side of mechanical couplings (gears, drive hubs, etc.). The
+  //        Inspector exposes both `width` (chord on outer surface, mm)
+  //        and `angle` (per-tooth angular span, deg) — they're two
+  //        views on the same constraint. `profile` picks the cross-
+  //        section: rectangular (flat-top), triangular (involute/
+  //        serration), or rounded (knurl-like). When the user toggles
+  //        the object's modifier to "negative" the same geometry cuts
+  //        matching grooves into another part (the bore side).
+  spline:   { dims: { r: 6, h: 30, teeth: 8, toothHeight: 1.2, toothWidthDeg: 12, profile: "rectangular", segments: 32 } },
   // ---- 2D shapes ----
   // Stored as thin extrusions (h = 1 mm by default — a "2D wafer").
   // The Extrude action in the inspector promotes them to 3D parts by

@@ -5,7 +5,7 @@
 // composition-only and a future "command palette" feature can drop
 // the same menu from a different entry point.
 import React, { useState } from "react";
-import { Box, Circle, Cylinder, Cone, Hexagon as HexIcon, Square, Triangle, Plus, ChevronDown, Tornado, CircleDashed, TriangleRight, Bolt, Nut } from "lucide-react";
+import { Box, Circle, Cylinder, Cone, Hexagon as HexIcon, Square, Triangle, Plus, ChevronDown, Tornado, CircleDashed, TriangleRight, Bolt, Nut, Cog } from "lucide-react";
 import { useScene } from "../../lib/store";
 
 const PRIMITIVES = [
@@ -21,6 +21,8 @@ const PRIMITIVES = [
   // ---- Threaded fasteners (1.15) — keep in sync with LeftPanel.PRIMS_3D ----
   { type: "bolt",      label: "Bolt",      Icon: Bolt },
   { type: "nut",       label: "Nut",       Icon: Nut },
+  // ---- Mechanical interfaces (1.16) ----
+  { type: "spline",    label: "Spline",    Icon: Cog },
   { type: "circle",    label: "2D Circle (extrude later)", Icon: Circle },
   { type: "square2d",  label: "2D Square (extrude later)", Icon: Square },
   { type: "triangle",  label: "2D Triangle (extrude later)", Icon: Triangle },

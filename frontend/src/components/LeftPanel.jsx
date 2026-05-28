@@ -4,7 +4,7 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut,
+  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -22,6 +22,8 @@ const PRIMS_3D = [
   // ---- Threaded fasteners (1.15) — keep in sync with AddPrimitiveButton.PRIMITIVES ----
   { type: "bolt", label: "Bolt", icon: Bolt },
   { type: "nut", label: "Nut", icon: Nut },
+  // ---- Mechanical interfaces (1.16) ----
+  { type: "spline", label: "Spline", icon: Cog },
 ];
 
 // 2D primitives — render as thin wafers; the user extrudes via the

@@ -163,7 +163,8 @@ export const orcaApi = {
     return data;
   },
   slice: async ({
-    stlBase64, printerProfile, processProfile, filamentProfile,
+    stlBase64, jobId,
+    printerProfile, processProfile, filamentProfile,
     printerPresetName, printerVendor,
     processPresetName, processVendor,
     filamentPresetName, filamentVendor,
@@ -172,6 +173,7 @@ export const orcaApi = {
       `${API}/slice/orca/slice`,
       {
         stl_base64: stlBase64,
+        job_id: jobId || null,
         printer_profile: printerProfile || {},
         process_profile: processProfile || {},
         filament_profile: filamentProfile || {},

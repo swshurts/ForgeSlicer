@@ -64,8 +64,27 @@ export function NumberField({ label, value, onChange, step = 1, suffix, testid, 
             if (e.key === "ArrowUp") { e.preventDefault(); onChange((Number.isFinite(value) ? value : 0) + step); }
             if (e.key === "ArrowDown") { e.preventDefault(); onChange((Number.isFinite(value) ? value : 0) - step); }
           }}
-          className="h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 pr-7 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none font-mono disabled:opacity-50"
+          className={`h-8 w-full bg-slate-950 rounded text-sm text-white px-2 pr-7 focus:ring-1 outline-none font-mono disabled:opacity-50 ${
+            // While the user has an in-flight draft (typed but not yet
+            // committed), tint the border amber so they know the value
+            // shown ISN'T yet applied to the scene — avoids the classic
+            // "I typed 45° and clicked Rotate again, where did my value go" frustration.
+            draft !== null
+              ? "border border-amber-400 focus:border-amber-400 focus:ring-amber-400"
+              : "border border-slate-700 focus:border-orange-500 focus:ring-orange-500"
+          }`}
         />
+        {/* Tiny amber dot when a draft is unsaved — extra affordance
+            next to the input so the state reads at-a-glance even when
+            the border is too thin to notice. */}
+        {draft !== null && (
+          <span
+            data-testid={testid ? `${testid}-draft-indicator` : undefined}
+            title="Unsaved edit — press Enter to commit"
+            className="absolute right-2 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"
+            style={{ marginRight: suffix ? 14 : 0 }}
+          />
+        )}
         {suffix && <span className="absolute right-2 text-[10px] text-slate-500 font-mono">{suffix}</span>}
       </div>
     </label>

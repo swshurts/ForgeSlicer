@@ -14,6 +14,17 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.16.0",
+    date: "2026-02-27",
+    title: "Splined Shaft primitive + Slice progress + draft indicator",
+    changes: [
+      { type: "feature", text: "New Spline primitive — a splined SHAFT with N longitudinal teeth running along its Y axis. Editable: core diameter, length, teeth count, tooth depth, tooth angle (deg) AND tooth width (mm) — the Inspector keeps both in sync via width = 2·R·sin(deg/2). When you ask for a width that won't fit at the current tooth count, a small nearest-fit dialog offers 2-3 alternative (count, width) pairs so you pick — never silently snapped. Tooth profile selectable: Rectangular (ISO splines), Triangular (involute/serration), or Rounded (knurled grip). Toggle the object to Negative and you get a splined-bore cutter for the matching shaft." },
+      { type: "feature", text: "Slice progress bar — when slicing via OrcaSlicer, the popover now shows a live % / stage progress bar instead of just \"Slicing…\". Driven by a Server-Sent Events stream parsed from OrcaSlicer's stdout. No more wondering if a long slice is stuck." },
+      { type: "improvement", text: "Tiny amber dot + amber input border appears in every numeric field (Position / Rotation / Size / dimensions) when you've typed a value but haven't committed yet. Hover for a tooltip: \"Unsaved edit — press Enter to commit\". Avoids the classic \"I typed 45 then clicked Rotate again and lost my value\" frustration." },
+    ],
+  },
+
+  {
     version: "1.15.1",
     date: "2026-02-27",
     title: "Rotation double-fire fix",
