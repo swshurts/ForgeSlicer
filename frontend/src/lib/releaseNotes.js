@@ -14,6 +14,17 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.20.0",
+    date: "2026-02-28",
+    title: "Park on bed · Hardware Library · Texture Library",
+    changes: [
+      { type: "feature", text: "Park on bed — right-click → \"Park on bed\" centers your selection on X/Z AND drops it to the build plate on Y in a single action. Multi-part selections park as a rigid unit (internal distances stay exact). The most common pre-print sequence is now one click." },
+      { type: "feature", text: "Hardware Library — Composites → Hardware opens a dialog where you pick an ISO metric grade (M3, M4, M5, M6, M8, M10, M12) and a common length (5–150mm), then drop the matching Fastener Pair onto the plate. ISO-standard pitches and head dimensions baked in; work-thickness auto-calculated so 5mm of shaft pokes past the nut for thread engagement (overridable)." },
+      { type: "feature", text: "Texture Library v1 — Composites → Textures opens a dialog with 4 printable geometric textures (Knurl diamond, Hex grid, Bumps, Linear ridges). Pick pattern + footprint + tile size + relief height, choose raised (union) or engraved (subtract), drop on plate. Textures are real geometry that survives STL export and slices into G-code — no image maps. Diamond plate / brick / fabric / hex camo / voronoi coming in v2." },
+    ],
+  },
+
+  {
     version: "1.19.0",
     date: "2026-02-28",
     title: "Sweep preset library · Fastener Pair macro · ref-export fix",

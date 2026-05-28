@@ -4,10 +4,12 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves,
+  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
+import HardwareLibraryDialog from "./dialogs/HardwareLibraryDialog";
+import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
 
 const PRIMS_3D = [
   { type: "cube", label: "Cube", icon: Box },
@@ -95,7 +97,7 @@ function FastenerPairButton() {
     <button
       data-testid="add-fastener-pair-btn"
       onClick={() => addFastenerPair()}
-      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all col-span-2"
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all"
       title="Add Fastener Pair — Bolt + Nut + Bore + Counterbore, pre-grouped as a single drop-in fastener."
     >
       <div className="flex items-center gap-1">
@@ -104,6 +106,44 @@ function FastenerPairButton() {
         <Nut size={16} strokeWidth={1.8} />
       </div>
       <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Fastener Pair</span>
+    </button>
+  );
+}
+
+// Hardware Library — opens a dialog that lets the user pick a standard
+// ISO metric grade (M3-M12) + length, then drops the matching Fastener
+// Pair onto the build plate. Same group/ungroup semantics as the bare
+// Fastener Pair button. Uses an external `onOpenHardwareLib` callback
+// (passed down from Workspace) so dialog state stays at the page level.
+function HardwareLibraryButton({ onOpenHardwareLib }) {
+  return (
+    <button
+      data-testid="open-hardware-library-btn"
+      onClick={onOpenHardwareLib}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all"
+      title="Hardware Library — pick a standard ISO metric size (M3-M12 × common lengths) and drop the matching fastener pair."
+    >
+      <Bolt size={18} strokeWidth={1.8} />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Hardware</span>
+    </button>
+  );
+}
+
+// Texture Library — opens a dialog where the user picks a geometric
+// printable texture (knurl, hex grid, bumps, ridges) + dims, then
+// drops a single positive/negative texture primitive onto the plate.
+// Same lifecycle as any other primitive — moveable, rotatable,
+// boolean-able. Geometric (not visual-only) so it survives STL export.
+function TextureLibraryButton({ onOpenTextureLib }) {
+  return (
+    <button
+      data-testid="open-texture-library-btn"
+      onClick={onOpenTextureLib}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all"
+      title="Texture Library — geometric printable textures (knurl, hex, bumps, ridges). Union or subtract onto a surface."
+    >
+      <Grid3X3 size={18} strokeWidth={1.8} />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Textures</span>
     </button>
   );
 }
@@ -223,6 +263,12 @@ export default function LeftPanel() {
   const objects = useScene((s) => s.objects);
   const [outlinerCtx, setOutlinerCtx] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
+  // Hardware library dialog state lives here (instead of being lifted
+  // to Workspace) because nothing outside LeftPanel needs to coordinate
+  // with it — it just overlays the viewport when open, and the only
+  // trigger is the Hardware button on the Composites tab.
+  const [hardwareLibOpen, setHardwareLibOpen] = useState(false);
+  const [textureLibOpen, setTextureLibOpen] = useState(false);
   // Tab persistence: remember the last picked palette so users coming back
   // to a project don't have to re-find their workflow.
   const [tab, setTab] = useState(() => {
@@ -277,7 +323,7 @@ export default function LeftPanel() {
       <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "55%" }}>
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
-        {tab === "composites" && <TabComposites />}
+        {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => setTextureLibOpen(true)} />}
         {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} />}
       </div>
 
@@ -301,6 +347,8 @@ export default function LeftPanel() {
       </div>
       {outlinerCtx && <ContextMenu position={outlinerCtx} onClose={() => setOutlinerCtx(null)} />}
       <AIGenerateDialog open={aiOpen} onClose={() => setAiOpen(false)} />
+      <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
+      <TextureLibraryDialog open={textureLibOpen} onClose={() => setTextureLibOpen(false)} />
     </aside>
   );
 }
@@ -364,7 +412,7 @@ function Tab2D() {
   );
 }
 
-function TabComposites() {
+function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
   return (
     <>
       <SectionHeader
@@ -377,6 +425,8 @@ function TabComposites() {
         <SlotButton modifier="negative" />
         <SlotButton modifier="positive" />
         <FastenerPairButton />
+        <HardwareLibraryButton onOpenHardwareLib={onOpenHardwareLib} />
+        <TextureLibraryButton onOpenTextureLib={onOpenTextureLib} />
       </div>
       <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
         More composites coming soon — chamfered countersinks, gussets, hex pockets.

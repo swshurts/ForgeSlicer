@@ -123,7 +123,72 @@ export default function ContextMenu({ position, onClose }) {
     onClose();
   };
 
-  // ---- Snapshot selection at mount ---------------------------------------
+  // "Park on bed" — combines Center-on-bed + Drop-to-bed in a single
+  // history-pushable action. The most common pre-print operation:
+  // land the assembly flat on the plate AND center it. Without this
+  // the user has to invoke two menu items separately (and burn two
+  // undo slots). Math is identical to the individual actions; we
+  // just compute both translations from the same world-AABB pass so
+  // we only iterate the scene once. Rigid-body invariant preserved
+  // because every selected member translates by the same (dx, dy, dz).
+  const doParkOnBed = () => {
+    restoreSelection();
+    const ids = snapshot.ids;
+    if (ids.length === 0) { onClose(); return; }
+    try {
+      const st = useScene.getState();
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity;
+      let minZ = Infinity, maxZ = -Infinity;
+      for (const id of ids) {
+        const o = st.objects.find((x) => x.id === id);
+        if (!o) continue;
+        try {
+          const bb = computeRotatedBBox(o);
+          const px = o.position?.[0] ?? 0;
+          const py = o.position?.[1] ?? 0;
+          const pz = o.position?.[2] ?? 0;
+          const wx0 = px + bb.min.x;
+          const wx1 = px + bb.max.x;
+          const wy0 = py + bb.min.y;
+          const wz0 = pz + bb.min.z;
+          const wz1 = pz + bb.max.z;
+          if (wx0 < minX) minX = wx0;
+          if (wx1 > maxX) maxX = wx1;
+          if (wy0 < minY) minY = wy0;
+          if (wz0 < minZ) minZ = wz0;
+          if (wz1 > maxZ) maxZ = wz1;
+        } catch (_) {
+          const px = o.position?.[0] ?? 0;
+          const py = o.position?.[1] ?? 0;
+          const pz = o.position?.[2] ?? 0;
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (py < minY) minY = py;
+          if (pz < minZ) minZ = pz;
+          if (pz > maxZ) maxZ = pz;
+        }
+      }
+      if (!isFinite(minX) || !isFinite(minZ) || !isFinite(minY)) { onClose(); return; }
+      const dx = -(minX + maxX) / 2;
+      const dy = -minY;
+      const dz = -(minZ + maxZ) / 2;
+      // Short-circuit if already parked within 0.5mm on every axis —
+      // don't burn an undo slot on a no-op.
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(dz) < 0.5) {
+        onClose(); return;
+      }
+      st.pushHistory();
+      useScene.setState((s) => ({
+        objects: s.objects.map((o) =>
+          ids.includes(o.id)
+            ? { ...o, position: [o.position[0] + dx, o.position[1] + dy, o.position[2] + dz] }
+            : o
+        ),
+      }));
+    } catch (_) { /* non-fatal */ }
+    onClose();
+  };
   // We DO NOT subscribe to the store's selectedIds here. The menu represents
   // a frozen moment in time (the right-click). Any transient external
   // selection change (e.g. an onPointerMissed event from the canvas right
@@ -284,6 +349,14 @@ export default function ContextMenu({ position, onClose }) {
         testid="ctx-center-bed-btn"
         disabled={count === 0}
         onClick={doCenterOnBed}
+      />
+      <Item
+        icon={ArrowDownToLine}
+        label={count > 1 ? "Park on bed (as unit)" : "Park on bed"}
+        hint="↧"
+        testid="ctx-park-bed-btn"
+        disabled={count === 0}
+        onClick={doParkOnBed}
       />
       <Item
         icon={Library}

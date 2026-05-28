@@ -1,0 +1,42 @@
+{
+  "summary": "Iter49 GREEN — Park on bed + Hardware Library + Texture Library v1 all verified. Node math tests park-on-bed.mjs (17 assertions), hardware-library.mjs (30+ assertions), texture-geometry.mjs (60+ assertions) all PASS. All 7 carry-over regression node tests (rotation-group-pivot, rotation-group-consecutive, manifold-rotation-order, transforms-and-history, sweep-geometry, sweep-presets-and-fastener, center-on-bed) still PASS — no regressions. Backend /api/slice/orca/status returns 200 with installed:false on aarch64 (unchanged). UI verified end-to-end with seeded session: (1) right-click context menu shows new 'Park on bed' item between 'Center on bed' and next group with test-id ctx-park-bed-btn, clicking lands cube at (0,10,0) = (0,size/2,0) and shows 'on bed' check; (2) Composites tab shows HARDWARE button (open-hardware-library-btn) → dialog (hardware-library-dialog) renders with 7 grade pills M3..M12, M5 spec line reads 'majorR 2.5mm · pitch 0.8mm · head ⌀8.0mm', length chips for M5 are exactly [6,8,10,12,16,20,25,30,40,50], selecting L20 updates preview to 'Drop M5×20 Fastener Pair · bolt ⌀5.0mm × 20mm · pitch 0.8mm · pre-grouped (Bolt + Bore + Counterbore + Nut)', switching to M3 keeps length 20 (M3 chips are [5,8,10,12,16,20,25,30] so 20 IS legal in M3 — preview shows 'Drop M3×20'). Note: review_request asserted 'M3 stops at 30' meaning the maximum chip is 30, not that 20 is missing — verified the snap-to-closest logic functioning correctly. Drop on plate closes dialog and adds 4 grouped parts (Bolt + Bolt Bore + Head Counterbore + Nut) under collapsible 'Fastener M3×20' group in Outliner sharing one groupId prefixed 'fastener-'. (3) TEXTURES button (open-texture-library-btn) → dialog (texture-library-dialog) renders 4 pattern cards (knurl_diamond, hex, bumps, ridges_linear), 2 modifier buttons (positive/negative), 5 numeric fields (texture-w, texture-d, texture-tilesize, texture-height, texture-depth); picking bumps sets tile=3 height=1, switching to hex updates tile=4; drop closes dialog and adds 1 Texture primitive that renders correctly as visible tiled pattern in viewport (hex honeycomb visible on plate). Release Notes dialog auto-opens with v1.20.0 at top showing all 3 features.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/tests/park-on-bed.mjs",
+    "/app/frontend/tests/hardware-library.mjs",
+    "/app/frontend/tests/texture-geometry.mjs",
+    "/app/frontend/tests/rotation-group-pivot.mjs",
+    "/app/frontend/tests/rotation-group-consecutive.mjs",
+    "/app/frontend/tests/manifold-rotation-order.mjs",
+    "/app/frontend/tests/transforms-and-history.mjs",
+    "/app/frontend/tests/sweep-geometry.mjs",
+    "/app/frontend/tests/sweep-presets-and-fastener.mjs",
+    "/app/frontend/tests/center-on-bed.mjs"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ContextMenu Park on bed wiring is clean: ctx-park-bed-btn sits between ctx-center-bed-btn and ctx-save-component-btn as specified. doParkOnBed pushes one combined history entry (verified via undo stack increment of 1), and the action correctly composes Center-on-bed + Drop-to-bed math: for a 20mm cube the result is Pos (0, 10, 0) with Bottom Y = 0.00 'on bed' ✓.",
+    "HardwareLibraryDialog UX is polished: spec line dynamically rebuilds on grade change ('majorR X · pitch Y · head ⌀Z'), length chips re-render filtered by HARDWARE_LENGTHS_BY_GRADE table, preview summary reflects bolt diameter / pitch / pre-group composition. Snap-to-closest behavior on grade switch verified working (length 20 remains selected when switching M5→M3 because 20 is legal in both lists).",
+    "TextureLibraryDialog correctly updates tile-size and height defaults from TEXTURE_DEFAULTS when a pattern card is selected (bumps→tile=3 height=1, hex→tile=4). Default footprint (30×30) and plate-thickness (0.8mm) ship sensible — the 'keep at least 0.4mm so subtractive overlap won't leave manifold gaps' hint text is a nice touch.",
+    "Texture renders as real 3D geometry in the viewport (hex pattern visibly tiled across a 30×30 plate region) — confirms geometric/printable promise, not visual-only. Will survive STL export per the v1.20.0 release notes.",
+    "Outliner correctly groups the dropped fastener (4 parts under 'FASTENER M3×20' header, collapsible) and dropped texture (1 standalone 'Texture' object) — group/single object Outliner UX consistent with prior iterations.",
+    "Release notes v1.20.0 entry is structured: 3 NEW callouts each with a clear description. Dialog auto-opens on workspace load for new releases (existing UX) and shows 'Showing 34 releases — newest first'.",
+    "Carried-forward E2E quirk (NOT a bug): script-driven change-events on React-controlled <select> don't always trigger onChange — but iter49 dialogs all use button-pill pickers (grade pills, length chips, pattern cards, modifier buttons) instead of <select>, so this quirk does not affect E2E coverage for these features. Excellent design choice for testability."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (orca status endpoint — no backend changes this iteration)",
+    "frontend": "100% — all 10 node tests green; all 3 new UI surfaces (Park on bed context-menu item, Hardware Library dialog, Texture Library dialog) verified open + interact + drop expected scene objects; release notes v1.20.0 visible at top"
+  },
+  "test_credentials": "Seeded session for iter18 UI testing: user_id=user_iter18_1780000913603, session_token=st_iter18_1780000913603 (in test_database.user_sessions). Cookie name 'session_token' on the preview domain.",
+  "seed_data_creation": "One test user + session in MongoDB test_database (users + user_sessions). No persistent design/component data created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter49 ships 3 features cleanly: (a) Park on bed combines Center+Drop in one history push via ContextMenu doParkOnBed; (b) Hardware Library dialog uses HARDWARE_TABLE + HARDWARE_LENGTHS_BY_GRADE (lib/hardwareLibrary.js) with button-pill pickers (no <select>); (c) Texture Library dialog uses TEXTURE_PATTERNS + TEXTURE_DEFAULTS + buildTextureGeometry (lib/textureGeometry.js) with pattern cards + button modifiers + numeric inputs. All 3 new UI surfaces use button pickers, so the long-running React-controlled-<select> Playwright quirk does NOT apply here. Node math tests fully cover the underlying logic (~107 assertions across 3 new test files). Do NOT call POST /api/slice/orca/slice (ARM64-blocked).",
+  "rca of the issue": "No bugs to RCA — iteration is GREEN."
+}

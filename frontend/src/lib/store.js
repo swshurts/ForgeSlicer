@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 import { computeRotatedBBox } from "./geometry";
 import { SWEEP_DEFAULTS } from "./sweepGeometry";
+import { TEXTURE_DEFAULTS } from "./textureGeometry";
 import { cutObjectByPlane } from "./csg";
 import { cutObjectByPlaneAsync } from "./workerClient";
 import {
@@ -80,6 +81,14 @@ const PRIMITIVE_DEFAULTS = {
   //        profile swept along a helix — so users see what Sweep actually
   //        does the moment they add it.
   sweep:    { dims: { ...SWEEP_DEFAULTS } },
+  // ---- Texture (v1.20, iter 49) ----
+  // texture: tiled geometric pattern (knurl / hex / bumps / ridges)
+  //          baked as a single merged BufferGeometry on top of a thin
+  //          base plate. Positive textures union onto a host surface;
+  //          negatives engrave. The user picks the pattern + dims via
+  //          the Texture Library dialog OR via the Inspector's
+  //          TextureInspectorBlock once the object is selected.
+  texture:  { dims: { ...TEXTURE_DEFAULTS } },
 };
 
 let nextId = 1;
@@ -101,6 +110,14 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     const p = def.dims.path || {};
     if (p.kind === "helix") halfH = (p.turns * p.pitch) / 2;
     else halfH = 10;
+  }
+  else if (type === "texture") {
+    // Texture sits with its base plate at y=0 down to y=-depth, and
+    // relief rising up to y=height. Halfway between those is what
+    // we want as the centroid for the auto-drop pass.
+    const depth = def.dims.depth ?? 0.8;
+    const height = def.dims.height ?? 1.0;
+    halfH = (depth + height) / 2;
   }
   else if (def.dims.h != null) halfH = def.dims.h / 2;
   else if (def.dims.z != null) halfH = def.dims.z / 2;

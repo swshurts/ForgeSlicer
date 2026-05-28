@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeVertices, mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { buildSweepGeometry } from "./sweepGeometry";
+import { buildTextureGeometry } from "./textureGeometry";
 
 /**
  * Merge a small list of buffer geometries into one. Three.js's bundled
@@ -470,6 +471,15 @@ export function buildGeometry(obj, scene = null) {
     const swept = buildSweepGeometry(obj, scene);
     if (swept) return swept;
     return new THREE.BoxGeometry(2, 2, 2);
+  }
+
+  if (t === "texture") {
+    // Tiled geometric pattern (knurl, hex, bumps, ridges) baked as a
+    // single merged BufferGeometry. The texture object itself behaves
+    // like any other primitive — positive textures union onto a host
+    // surface (raised relief), negatives engrave into it. See
+    // `lib/textureGeometry.js` for the pattern implementations.
+    return buildTextureGeometry(obj);
   }
 
   if (t === "imported" && obj.geometry) {
