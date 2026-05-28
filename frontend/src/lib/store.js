@@ -2,8 +2,22 @@ import { create } from "zustand";
 import * as THREE from "three";
 import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 import { computeRotatedBBox } from "./geometry";
+import { SWEEP_DEFAULTS } from "./sweepGeometry";
 import { cutObjectByPlane } from "./csg";
 import { cutObjectByPlaneAsync } from "./workerClient";
+import {
+  applyTranslate,
+  applyScaleMul,
+  applyRigidRotate,
+  isZeroDelta,
+  isIdentityFactor,
+} from "./transforms";
+import {
+  cloneObjects,
+  pushHistoryState,
+  undoState,
+  redoState,
+} from "./historyStack";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -58,6 +72,14 @@ const PRIMITIVE_DEFAULTS = {
   square2d: { dims: { side: 20, h: 1 } },
   triangle: { dims: { r: 12, h: 1 } },
   polygon:  { dims: { r: 12, sides: 6, h: 1 } },
+  // ---- Sweep (v1.18, iter 46) ----
+  // sweep: extrudes a 2D profile along a 3D path so the profile stays
+  //        perpendicular to the path tangent at every sample. Profile
+  //        descriptors live in `dims.profile`; path descriptors in
+  //        `dims.path`. The default preset is a helical spring — circular
+  //        profile swept along a helix — so users see what Sweep actually
+  //        does the moment they add it.
+  sweep:    { dims: { ...SWEEP_DEFAULTS } },
 };
 
 let nextId = 1;
@@ -72,6 +94,14 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
   // legacy z/h/r heuristic so untouched primitives behave as before.
   let halfH;
   if (type === "helix") halfH = (def.dims.turns * def.dims.pitch) / 2;
+  else if (type === "sweep") {
+    // Sweep's vertical extent depends on the path kind. For helix we
+    // know it analytically; for everything else we punt to the auto-
+    // drop pass downstream (computeRotatedBBox handles it).
+    const p = def.dims.path || {};
+    if (p.kind === "helix") halfH = (p.turns * p.pitch) / 2;
+    else halfH = 10;
+  }
   else if (def.dims.h != null) halfH = def.dims.h / 2;
   else if (def.dims.z != null) halfH = def.dims.z / 2;
   else if (def.dims.r != null) halfH = def.dims.r;
@@ -86,30 +116,25 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     position: [0, halfH, 0],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
-    dims: { ...def.dims },
+    dims: type === "sweep"
+      // Sweep dims contain nested `profile` and `path` descriptors —
+      // a shallow `{ ...def.dims }` would make every new sweep share
+      // the SAME object references for those nested dicts and an
+      // edit on one would silently leak into another. Deep-copy them.
+      ? {
+          ...def.dims,
+          profile: { ...def.dims.profile },
+          path: { ...def.dims.path },
+        }
+      : { ...def.dims },
     colorIndex: modifier === "negative" ? 0 : 7,
     ...overrides,
   };
 };
 
-// Deep clone helper. Preserves typed arrays for imported geometry.
-const cloneObjects = (objects) =>
-  objects.map((o) => ({
-    ...o,
-    position: [...o.position],
-    rotation: [...o.rotation],
-    scale: [...o.scale],
-    dims: { ...o.dims },
-    originalBbox: o.originalBbox ? { ...o.originalBbox } : undefined,
-    geometry: o.geometry
-      ? {
-          vertices: o.geometry.vertices, // shared reference (immutable in store)
-          indices: o.geometry.indices,
-        }
-      : undefined,
-  }));
-
-const HISTORY_LIMIT = 60;
+// Deep clone helper for scene snapshots lives in `./historyStack.js`
+// so the history machinery can be unit-tested in isolation. The
+// previous in-file copy was identical — we import it now.
 
 const defaultPrinterId = "custom";
 const defaultFilamentId = "pla";
@@ -167,38 +192,21 @@ export const useScene = create((set, get) => ({
   // ---- internals ----
   pushHistory: () => {
     const s = get();
-    const snap = cloneObjects(s.objects);
-    const next = [...s.history, snap];
-    if (next.length > HISTORY_LIMIT) next.shift();
-    set({ history: next, redoStack: [] });
+    set(pushHistoryState(s.history, s.objects));
   },
 
   undo: () => {
     const s = get();
-    if (s.history.length === 0) return;
-    const last = s.history[s.history.length - 1];
-    const cur = cloneObjects(s.objects);
-    set({
-      objects: last,
-      history: s.history.slice(0, -1),
-      redoStack: [...s.redoStack, cur],
-      selectedId: null,
-      selectedIds: [],
-    });
+    const next = undoState(s.history, s.redoStack, s.objects);
+    if (!next) return;
+    set({ ...next, selectedId: null, selectedIds: [] });
   },
 
   redo: () => {
     const s = get();
-    if (s.redoStack.length === 0) return;
-    const next = s.redoStack[s.redoStack.length - 1];
-    const cur = cloneObjects(s.objects);
-    set({
-      objects: next,
-      redoStack: s.redoStack.slice(0, -1),
-      history: [...s.history, cur],
-      selectedId: null,
-      selectedIds: [],
-    });
+    const next = redoState(s.history, s.redoStack, s.objects);
+    if (!next) return;
+    set({ ...next, selectedId: null, selectedIds: [] });
   },
 
   // ---- profile actions ----
@@ -779,137 +787,38 @@ export const useScene = create((set, get) => ({
   translateSelected: (delta) => {
     const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
     if (ids.length === 0) return;
-    if (!delta || delta.every((v) => Math.abs(v) < 1e-6)) return;
+    if (isZeroDelta(delta)) return;
     get().pushHistory();
-    set((s) => ({
-      objects: s.objects.map((o) =>
-        ids.includes(o.id)
-          ? { ...o, position: [o.position[0] + delta[0], o.position[1] + delta[1], o.position[2] + delta[2]] }
-          : o
-      ),
-    }));
+    set((s) => ({ objects: applyTranslate(s.objects, ids, delta) }));
   },
   // Multiplicative group scaling: each selected member's scale is
   // multiplied by `factor` (per-axis), AND their offset from the
-  // PRIMARY grows by the same factor so the whole assembly scales as
-  // a rigid unit centred on the primary. This matches the rotation
-  // pivot rule (primary stays put, others orbit / spread) and
-  // TinkerCad's "scale a group" semantics. `factor` is the MULTI-
-  // PLICATIVE delta (e.g. [2, 1, 1] to double the X width); the
-  // ScalePopover converts its absolute "200%" or "real-size mm"
-  // inputs into this multiplier before calling. Single-object
-  // selection is a no-op fast-path identical to setTransform.
+  // PRIMARY grows by the same factor so the whole assembly scales
+  // as a rigid unit centred on the primary. Pure-function impl is
+  // in `./transforms.js → applyScaleMul`.
   scaleSelectedMul: (factor) => {
     const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
     if (ids.length === 0) return;
-    if (!factor || factor.every((v) => Math.abs(v - 1) < 1e-9)) return;
+    if (isIdentityFactor(factor)) return;
     get().pushHistory();
-    set((s) => {
-      const primary = s.objects.find((o) => o.id === s.selectedId) || s.objects.find((o) => ids.includes(o.id));
-      if (!primary) return s;
-      const pivot = primary.position;
-      return {
-        objects: s.objects.map((o) => {
-          if (!ids.includes(o.id)) return o;
-          const nextScale = [
-            o.scale[0] * factor[0],
-            o.scale[1] * factor[1],
-            o.scale[2] * factor[2],
-          ];
-          // Primary scales in place — offset from itself is 0 so its
-          // position is unchanged. Keeps the gizmo / Inspector stable
-          // while the user adjusts values.
-          if (o.id === primary.id) {
-            return { ...o, scale: nextScale };
-          }
-          return {
-            ...o,
-            scale: nextScale,
-            position: [
-              pivot[0] + (o.position[0] - pivot[0]) * factor[0],
-              pivot[1] + (o.position[1] - pivot[1]) * factor[1],
-              pivot[2] + (o.position[2] - pivot[2]) * factor[2],
-            ],
-          };
-        }),
-      };
-    });
+    set((s) => ({
+      objects: applyScaleMul(s.objects, ids, s.selectedId, factor),
+    }));
   },
 
 
+  // Rigid-body rotation around the primary's position. Quaternion-
+  // composed math lives in `./transforms.js → applyRigidRotate` so
+  // it can be unit-tested without a Zustand harness. See that
+  // module for the rationale on quaternion vs Euler-addition.
   rotateSelected: (delta) => {
     const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
     if (ids.length === 0) return;
-    if (!delta || delta.every((v) => Math.abs(v) < 1e-6)) return;
+    if (isZeroDelta(delta)) return;
     get().pushHistory();
-    set((s) => {
-      const targets = s.objects.filter((o) => ids.includes(o.id));
-      if (targets.length === 0) return s;
-      // Pivot = primary's position. Children orbit around it; primary
-      // stays put. This stops the gizmo / Inspector header from
-      // jumping out from under the user's cursor mid-edit.
-      const primary = s.objects.find((o) => o.id === s.selectedId) || targets[0];
-      const pivot = primary.position;
-      // Build the world-space rotation delta as a quaternion. Quaternions
-      // (unlike per-axis Euler addition) compose cleanly when the assembly
-      // is already non-trivially rotated AND the new delta is applied in
-      // world space. This is what stops consecutive rotations from
-      // scattering the assembly — every child's offset orbits and its
-      // local orientation rotates by the SAME world delta, computed once
-      // from the requested delta-Euler.
-      const dEuler = new THREE.Euler(
-        (delta[0] * Math.PI) / 180,
-        (delta[1] * Math.PI) / 180,
-        (delta[2] * Math.PI) / 180,
-        "XYZ",
-      );
-      const dQ = new THREE.Quaternion().setFromEuler(dEuler);
-      return {
-        objects: s.objects.map((o) => {
-          if (!ids.includes(o.id)) return o;
-          // Compose the child's current quaternion with the world
-          // delta: `newQ = dQ · childQ`. Then re-extract Euler XYZ so
-          // the renderer (and Inspector display) sees the new
-          // orientation. This is mathematically identical to applying
-          // `dQ` in world space — Euler subtraction couldn't represent
-          // arbitrary world rotations once the body had drifted off
-          // an axis-aligned start, which is what scattered assemblies.
-          const childQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-            (o.rotation[0] * Math.PI) / 180,
-            (o.rotation[1] * Math.PI) / 180,
-            (o.rotation[2] * Math.PI) / 180,
-            "XYZ",
-          ));
-          const newChildQ = dQ.clone().multiply(childQ);
-          const newChildEuler = new THREE.Euler().setFromQuaternion(newChildQ, "XYZ");
-          const nextRotation = [
-            Math.round((newChildEuler.x * 180 / Math.PI) * 1e4) / 1e4,
-            Math.round((newChildEuler.y * 180 / Math.PI) * 1e4) / 1e4,
-            Math.round((newChildEuler.z * 180 / Math.PI) * 1e4) / 1e4,
-          ];
-          // Primary itself rotates in place — its offset from pivot
-          // is zero, so the orbit math collapses to a no-op for it.
-          if (o.id === primary.id) {
-            return { ...o, rotation: nextRotation };
-          }
-          // Every non-primary member orbits the pivot by the same dQ.
-          const offset = new THREE.Vector3(
-            o.position[0] - pivot[0],
-            o.position[1] - pivot[1],
-            o.position[2] - pivot[2],
-          ).applyQuaternion(dQ);
-          return {
-            ...o,
-            rotation: nextRotation,
-            position: [
-              pivot[0] + offset.x,
-              pivot[1] + offset.y,
-              pivot[2] + offset.z,
-            ],
-          };
-        }),
-      };
-    });
+    set((s) => ({
+      objects: applyRigidRotate(s.objects, ids, s.selectedId, delta),
+    }));
   },
 
   // selectObject:

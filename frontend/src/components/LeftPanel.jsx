@@ -4,7 +4,7 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog,
+  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -24,6 +24,8 @@ const PRIMS_3D = [
   { type: "nut", label: "Nut", icon: Nut },
   // ---- Mechanical interfaces (1.16) ----
   { type: "spline", label: "Spline", icon: Cog },
+  // ---- Sweep (1.18) — profile-along-path extrusion ----
+  { type: "sweep", label: "Sweep", icon: Waves },
 ];
 
 // 2D primitives — render as thin wafers; the user extrudes via the

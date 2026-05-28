@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeVertices, mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { buildSweepGeometry } from "./sweepGeometry";
 
 /**
  * Merge a small list of buffer geometries into one. Three.js's bundled
@@ -167,8 +168,12 @@ function buildShape2D(type, d) {
 /**
  * Build a three.js BufferGeometry for a primitive description.
  * Returns geometry centered at object origin so transforms apply correctly.
+ *
+ * `scene` is optional and only used by `type:"sweep"` with a `kind:"ref"`
+ * path descriptor — the sweep needs to look up the referenced object's
+ * centerline. Every other primitive type ignores it.
  */
-export function buildGeometry(obj) {
+export function buildGeometry(obj, scene = null) {
   const t = obj.type;
   const d = obj.dims || {};
 
@@ -453,6 +458,18 @@ export function buildGeometry(obj) {
     g.translate(0, -(d.h || 1) / 2, 0);
     g.computeVertexNormals();
     return g;
+  }
+
+  if (t === "sweep") {
+    // Manual extrusion of a 2D profile along a 3D path with Frenet
+    // frames (true sweep — profile stays perpendicular to the path
+    // tangent at every sample). Falls back to a tiny placeholder box
+    // if the descriptors are degenerate (e.g. <3 sketch points, or a
+    // dangling `kind:"ref"` with the source object deleted) so the
+    // object stays visible in the outliner and can be re-edited.
+    const swept = buildSweepGeometry(obj, scene);
+    if (swept) return swept;
+    return new THREE.BoxGeometry(2, 2, 2);
   }
 
   if (t === "imported" && obj.geometry) {

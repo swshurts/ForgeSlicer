@@ -14,6 +14,16 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.18.0",
+    date: "2026-02-28",
+    title: "Sweep primitive · Live profile-along-path extrusion",
+    changes: [
+      { type: "feature", text: "New SWEEP primitive — extrude a 2D profile along a 3D path. The profile stays perpendicular to the path tangent at every sample (true sweep, like Fusion / SolidWorks). Profile kinds: Circle, Rectangle, Polygon (Sketch coming next iteration). Path kinds: Helix (radius / pitch / turns), Arc (radius / sweep angle), Bezier (4 control points), Sketch-3D polyline, OR you can ride an existing Helix's centerline via \"From Object\" — handy for drawing a square-section spring around a known helix axis. Twist any sweep around the path tangent for spiral cable wraps / corkscrews. Every field re-bakes the geometry live in the Inspector." },
+      { type: "improvement", text: "Refactor — heavy quaternion math and history machinery extracted from store.js into dedicated lib/transforms.js + lib/historyStack.js modules. No behavior change; the rigid-body group rotation fix from v1.17 is now unit-testable in isolation. /app/memory/PRD.md split into PRD.md (static spec), CHANGELOG.md (append-only history), ROADMAP.md (prioritised backlog) — easier to keep current as the app grows." },
+    ],
+  },
+
+  {
     version: "1.17.1",
     date: "2026-02-28",
     title: "STL preview matches viewport — rotation-order fix",

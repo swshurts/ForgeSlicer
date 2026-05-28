@@ -7,6 +7,7 @@ import { evaluateSceneStatsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
 import { printersApi } from "../lib/api";
 import SplineInspectorBlock from "./SplineInspectorBlock";
+import SweepInspectorBlock from "./SweepInspectorBlock";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
 
@@ -522,6 +523,28 @@ function estimateHalfExtents(o) {
     const outerR = (d.r || 6) + (d.toothHeight || 1.2);
     return [outerR * s[0], (d.h || 30) / 2 * s[1], outerR * s[2]];
   }
+  // sweep: bbox is hard to compute analytically without sampling the
+  // curve. We approximate with the path's bounding-radius times the
+  // profile's largest extent so the half-extents read REASONABLE in
+  // the Inspector dimensions row. The accurate bbox lives in
+  // computeRotatedBBox (geometry.js) — which actually samples the
+  // built geometry — and is what drop-to-bed uses.
+  if (o.type === "sweep") {
+    const p = d.path || {};
+    const prof = d.profile || {};
+    const profR = prof.r ?? Math.max(prof.w || 0, prof.h || 0) / 2 ?? 2;
+    if (p.kind === "helix") {
+      const ext = (p.r ?? 12) + profR;
+      const height = (p.pitch ?? 6) * (p.turns ?? 3) / 2 + profR;
+      return [ext * s[0], height * s[1], ext * s[2]];
+    }
+    if (p.kind === "arc") {
+      const ext = (p.r ?? 20) + profR;
+      return [ext * s[0], profR * s[1], ext * s[2]];
+    }
+    // Bezier / sketch3d / ref — fall back to a generous default.
+    return [30 * s[0], 30 * s[1], 30 * s[2]];
+  }
   if (o.originalBbox) return [o.originalBbox.x / 2 * s[0], o.originalBbox.y / 2 * s[1], o.originalBbox.z / 2 * s[2]];
   return [10, 10, 10];
 }
@@ -861,6 +884,14 @@ function Inspector() {
           that satisfies the constraint. */}
       {obj.type === "spline" && (
         <SplineInspectorBlock obj={obj} updateDims={updateDims} />
+      )}
+
+      {/* Sweep — profile-along-path extrusion. The block surfaces the two
+          compound descriptors (profile, path) as switchable sub-panels so
+          the user only sees fields that apply to the currently-selected
+          kind (helix vs arc vs bezier vs sketched curve). */}
+      {obj.type === "sweep" && (
+        <SweepInspectorBlock obj={obj} updateDims={updateDims} />
       )}
 
       {(obj.type === "circle" || obj.type === "square2d" || obj.type === "triangle" || obj.type === "polygon") && (

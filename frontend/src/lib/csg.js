@@ -49,8 +49,8 @@ function bakeNegativeScale(geom, obj) {
   return { geom: baked, positiveScale: [Math.abs(sx), Math.abs(sy), Math.abs(sz)] };
 }
 
-function makeBrush(obj, opts = {}) {
-  let geom = buildGeometry(obj);
+function makeBrush(obj, opts = {}, scene = null) {
+  let geom = buildGeometry(obj, scene);
   const { geom: prepped, positiveScale } = bakeNegativeScale(geom, obj);
   const mat = new THREE.MeshStandardMaterial();
   const b = new Brush(prepped, mat);

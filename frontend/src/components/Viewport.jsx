@@ -23,12 +23,25 @@ function colorForObject(obj) {
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 
-function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onContextMenu }) {
+function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onContextMenu, scene }) {
   const meshRef = useRef();
+  // For sweep objects with `kind:"ref"` paths we have to invalidate the
+  // memo whenever the SOURCE object's relevant fields change — depend
+  // on a derived signature of the source so a ref-sweep updates live
+  // when the user edits the helix it rides along. Other primitive types
+  // don't read the scene and ignore this dep.
+  const refSig = obj.type === "sweep" && obj.dims?.path?.kind === "ref" && scene?.objects
+    ? (() => {
+        const src = scene.objects.find((o) => o.id === obj.dims.path.objectId);
+        return src
+          ? JSON.stringify({ d: src.dims, p: src.position, r: src.rotation, s: src.scale, t: src.type })
+          : "missing";
+      })()
+    : null;
   const geom = useMemo(
-    () => buildGeometry(obj),
+    () => buildGeometry(obj, scene),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [obj.type, JSON.stringify(obj.dims)]
+    [obj.type, JSON.stringify(obj.dims), refSig]
   );
   const color = colorForObject(obj);
 
@@ -714,6 +727,7 @@ export default function Viewport() {
             measureMode={measureMode}
             onMeasureHit={handleMeasureClick}
             onContextMenu={handleContextMenu}
+            scene={{ objects }}
           />
         ))}
 
