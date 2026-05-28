@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.18.1",
+    date: "2026-02-28",
+    title: "Center on bed — right-click menu",
+    changes: [
+      { type: "feature", text: "Right-click → \"Center on bed\" — translates the selected item or assembly so its combined X/Z bounding-box center sits at the build-plate origin. Y is preserved (use Drop-to-bed for the vertical case). For multi-part selections it centers the whole group as a RIGID UNIT — internal distances are kept exactly so a Pitman Arm stays a Pitman Arm. Sits right under Drop-to-bed in the context menu." },
+    ],
+  },
+
+  {
     version: "1.18.0",
     date: "2026-02-28",
     title: "Sweep primitive · Live profile-along-path extrusion",

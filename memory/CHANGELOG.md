@@ -941,3 +941,13 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - Sweep MVP follow-ups: sketch→profile + sketch3d→path wire-up; thread `scene` through `csg.js` so ref-sweeps export correctly.
 - See ROADMAP.md for the up-to-date backlog.
 
+
+## Iteration 47 (2026-02-28) — Center on Bed (right-click)
+- ✅ **"Center on bed" added to the right-click context menu** (sits directly under "Drop to bed"). Translates the selected item or assembly so its combined X/Z bounding-box center lands at the build-plate origin (0, _, 0). Y is preserved — the existing Drop-to-bed action remains the way to land an assembly on the plate vertically.
+- For multi-part selections, the centering is **rigid-body**: every member translates by the same dx/dz so internal pairwise distances are preserved exactly (a grouped Pitman Arm stays a Pitman Arm).
+- Bbox-center vs centroid-of-positions: we deliberately use the AABB center because that matches what users expect visually — when one part is much larger than the others, the visible centre of the assembly sits closer to the big part. Centroid-of-positions would skew toward whichever side has more parts.
+- Edge cases handled: no-op early-out if already centered (within 0.5mm), defensive fallback for primitives whose bbox can't be computed (uses their raw position), pushes history only when a real translation will happen.
+- Test: new `frontend/tests/center-on-bed.mjs` — 16 assertions covering single object, 3-cube assembly rigid-body invariant, Y preservation, and the bbox-center vs position-centroid distinction.
+- Release notes bumped to **v1.18.1**.
+- Files: `frontend/src/components/ContextMenu.jsx` (new doCenterOnBed handler + menu item with Crosshair icon + testid `ctx-center-bed-btn`), `frontend/src/lib/releaseNotes.js`, `frontend/tests/center-on-bed.mjs` (NEW).
+

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library } from "lucide-react";
+import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair } from "lucide-react";
 import { useScene } from "../lib/store";
 import { flattenObjectsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -55,6 +55,70 @@ export default function ContextMenu({ position, onClose }) {
           ),
         }));
       }
+    } catch (_) { /* non-fatal */ }
+    onClose();
+  };
+
+  // Center the selection on the build plate's origin (X=0, Z=0). Y is
+  // preserved — users have a dedicated Drop-to-bed action for the
+  // vertical case, and conflating them would make "Center" land an
+  // assembly inside the build plate. Multi-part selections center as a
+  // RIGID UNIT: we compute the combined world-AABB on the XZ plane,
+  // then translate every selected member by the same dx/dz so internal
+  // relationships are preserved (a grouped Pitman Arm stays together).
+  //
+  // Why combined-bbox center and not centroid-of-positions? Because
+  // when one part is much larger than the others, the visual centre
+  // of the assembly sits closer to the big part — using the bbox
+  // center matches the eye's expectation. Using mean-of-positions
+  // would skew the assembly toward whichever side has more parts.
+  const doCenterOnBed = () => {
+    restoreSelection();
+    const ids = snapshot.ids;
+    if (ids.length === 0) { onClose(); return; }
+    try {
+      const st = useScene.getState();
+      let minX = Infinity, maxX = -Infinity;
+      let minZ = Infinity, maxZ = -Infinity;
+      for (const id of ids) {
+        const o = st.objects.find((x) => x.id === id);
+        if (!o) continue;
+        try {
+          const bb = computeRotatedBBox(o);
+          const wx0 = (o.position?.[0] ?? 0) + bb.min.x;
+          const wx1 = (o.position?.[0] ?? 0) + bb.max.x;
+          const wz0 = (o.position?.[2] ?? 0) + bb.min.z;
+          const wz1 = (o.position?.[2] ?? 0) + bb.max.z;
+          if (wx0 < minX) minX = wx0;
+          if (wx1 > maxX) maxX = wx1;
+          if (wz0 < minZ) minZ = wz0;
+          if (wz1 > maxZ) maxZ = wz1;
+        } catch (_) {
+          // Defensive: an exotic primitive without a computable bbox
+          // falls back to its raw position so we still center
+          // *something* rather than crash.
+          const px = o.position?.[0] ?? 0;
+          const pz = o.position?.[2] ?? 0;
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (pz < minZ) minZ = pz;
+          if (pz > maxZ) maxZ = pz;
+        }
+      }
+      if (!isFinite(minX) || !isFinite(minZ)) { onClose(); return; }
+      const cx = (minX + maxX) / 2;
+      const cz = (minZ + maxZ) / 2;
+      // Short-circuit if already centered within 0.5mm — no point
+      // pushing a no-op history entry that wastes an undo slot.
+      if (Math.abs(cx) < 0.5 && Math.abs(cz) < 0.5) { onClose(); return; }
+      st.pushHistory();
+      useScene.setState((s) => ({
+        objects: s.objects.map((o) =>
+          ids.includes(o.id)
+            ? { ...o, position: [o.position[0] - cx, o.position[1], o.position[2] - cz] }
+            : o
+        ),
+      }));
     } catch (_) { /* non-fatal */ }
     onClose();
   };
@@ -212,6 +276,14 @@ export default function ContextMenu({ position, onClose }) {
         testid="ctx-drop-bed-btn"
         disabled={count === 0}
         onClick={doDropToBed}
+      />
+      <Item
+        icon={Crosshair}
+        label={count > 1 ? "Center on bed (as unit)" : "Center on bed"}
+        hint="⊕"
+        testid="ctx-center-bed-btn"
+        disabled={count === 0}
+        onClick={doCenterOnBed}
       />
       <Item
         icon={Library}
