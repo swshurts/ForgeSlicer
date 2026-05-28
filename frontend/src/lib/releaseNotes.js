@@ -14,6 +14,17 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.14.3",
+    date: "2026-02-27",
+    title: "Assembly rotation as a unit + rename groups",
+    changes: [
+      { type: "fix", text: "Assembly rotation: rotating a grouped assembly via the Rotation popover now keeps members as a rigid unit. Previously the auto-Drop-to-Bed was snapping each member to Y=0 independently right after the rotation, which broke the vertical alignment of any assembly. The drop is now a single group-level translation that lands the lowest world-Y point on the bed without disturbing relative offsets." },
+      { type: "fix", text: "Fixed a runtime error (THREE.Euler is not a constructor) that could cause the rotation orbit math to silently no-op in some builds — three.js is now imported directly at the top of the store module." },
+      { type: "feature", text: "Rename assemblies inline: double-click the assembly name in the Outliner (e.g. \"Group\" → \"Pitman Arm\"), type the new name, press Enter. Esc cancels. The name is stamped onto every member so it stays consistent if you re-export or re-import the group." },
+    ],
+  },
+
+  {
     version: "1.14.2",
     date: "2026-02-27",
     title: "Assembly tools — bed gizmo sync + group resize fix",

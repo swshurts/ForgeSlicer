@@ -17,6 +17,7 @@ export function RotationPopover({ anchor, onClose }) {
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
   const rotateSelected = useScene((s) => s.rotateSelected);
   const dropToBed = useScene((s) => s.dropToBed);
+  const dropSelectionToBed = useScene((s) => s.dropSelectionToBed);
   const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const obj = objects.find((o) => o.id === selectedId);
   const multi = selectedIds && selectedIds.length > 1;
@@ -25,7 +26,12 @@ export function RotationPopover({ anchor, onClose }) {
     if (multi) {
       const delta = [0, 0, 0]; delta[i] = v - obj.rotation[i];
       rotateSelected(delta);
-      if (autoDropOnRotate) setTimeout(() => selectedIds.forEach((id) => dropToBed(id, false)), 0);
+      // Auto-drop the whole assembly as a unit (single dy translation
+      // that lands the lowest world-Y point on the bed). The old code
+      // looped `dropToBed(id)` per-member which independently snapped
+      // each piece to Y=0, ruining the rigid-body relative offsets of
+      // any assembly.
+      if (autoDropOnRotate) setTimeout(() => dropSelectionToBed(false), 0);
     } else {
       const r = [...obj.rotation]; r[i] = v;
       setTransformWithHistory(obj.id, "rotation", r);
@@ -50,7 +56,7 @@ export function RotationPopover({ anchor, onClose }) {
           </div>
           <button
             data-testid="popover-drop-to-bed"
-            onClick={() => (multi ? selectedIds.forEach((id) => dropToBed(id)) : dropToBed(obj.id))}
+            onClick={() => (multi ? dropSelectionToBed() : dropToBed(obj.id))}
             className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-slate-700"
           >
             <ArrowDownToLine size={13} /> Drop {multi ? "all" : ""} to Bed

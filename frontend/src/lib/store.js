@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import * as THREE from "three";
 import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 import { computeRotatedBBox } from "./geometry";
 import { cutObjectByPlane } from "./csg";
@@ -516,6 +517,47 @@ export const useScene = create((set, get) => ({
     }
   },
 
+  // Drop the WHOLE selection to the bed as a single rigid unit.
+  // Finds the lowest world-Y across every selected object (after its
+  // current rotation has been applied to its bbox) and translates all
+  // of them by the same dy so the bottom-most point lands on Y=0 —
+  // preserving every member's relative offset. Use this instead of
+  // looping `dropToBed(id)` per-member, which would snap each piece
+  // to the bed independently and destroy a multi-part assembly's
+  // vertical alignment (e.g. a standoff's bolt-hole would float in
+  // mid-air while the shell sat on the bed).
+  dropSelectionToBed: (withHistory = true) => {
+    const s = get();
+    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
+    if (ids.length === 0) return;
+    if (ids.length === 1) { get().dropToBed(ids[0], withHistory); return; }
+    let worldMinY = Infinity;
+    for (const id of ids) {
+      const o = s.objects.find((x) => x.id === id);
+      if (!o) continue;
+      try {
+        const bb = computeRotatedBBox(o);
+        const wy = (o.position?.[1] ?? 0) + bb.min.y;
+        if (wy < worldMinY) worldMinY = wy;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("dropSelectionToBed: bbox failed for", o?.id, err);
+      }
+    }
+    if (!Number.isFinite(worldMinY)) return;
+    if (Math.abs(worldMinY) < 1e-3) return;
+    if (withHistory) s.pushHistory();
+    const dy = -worldMinY;
+    set((st) => ({
+      objects: st.objects.map((o) =>
+        ids.includes(o.id)
+          ? { ...o, position: [o.position[0], o.position[1] + dy, o.position[2]] }
+          : o
+      ),
+    }));
+  },
+
+
   duplicateObject: (id) => {
     get().pushHistory();
     set((s) => {
@@ -674,6 +716,25 @@ export const useScene = create((set, get) => ({
     }));
     return gid;
   },
+  // Rename every member of a group to share the new group name.
+  // We stamp the name onto each member's `groupName` field rather than
+  // store it on a separate "group" entity — the codebase models groups
+  // implicitly via shared `groupId`, and every read site that needs
+  // the name picks the first member's `groupName`, so a consistent
+  // stamp keeps everything in sync without a schema change.
+  renameGroup: (groupId, newName) => {
+    if (!groupId || !newName) return;
+    const trimmed = String(newName).trim();
+    if (!trimmed) return;
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        o.groupId === groupId ? { ...o, groupName: trimmed } : o
+      ),
+    }));
+  },
+
+
   ungroupSelected: () => {
     const ids = get().selectedIds.length ? get().selectedIds : (get().selectedId ? [get().selectedId] : []);
     if (ids.length === 0) return;
@@ -772,8 +833,6 @@ export const useScene = create((set, get) => ({
       // (offset = 0) and behaviour is bit-identical to the original.
       const primary = s.objects.find((o) => o.id === s.selectedId) || targets[0];
       const pivot = primary.position;
-      // eslint-disable-next-line global-require
-      const THREE = require("three");
       const dEuler = new THREE.Euler(
         (delta[0] * Math.PI) / 180,
         (delta[1] * Math.PI) / 180,

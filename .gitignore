@@ -148,3 +148,4 @@ backend/bin/.cache/
 backend/bin/.orca_install_lock
 frontend/node_modules/.cache/default-development/31.pack
 frontend/node_modules/.cache/default-development/30.pack
+frontend/node_modules/.cache/default-development/36.pack

@@ -405,13 +405,27 @@ function renderGroupedOutliner(objects) {
 
 function GroupHeader({ groupId, name, members }) {
   const [expanded, setExpanded] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
   const selectObject = useScene((s) => s.selectObject);
   const selectedIds = useScene((s) => s.selectedIds);
+  const renameGroup = useScene((s) => s.renameGroup);
   const groupSelected = members.every((m) => selectedIds.includes(m.id));
+  // Keep `draft` in sync if the name changes externally (e.g. undo)
+  // while not editing. Once the user is typing we trust the local draft.
+  React.useEffect(() => { if (!editing) setDraft(name); }, [name, editing]);
+  const commit = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next && next !== name) renameGroup(groupId, next);
+    else setDraft(name);
+  };
+  const cancel = () => { setEditing(false); setDraft(name); };
   return (
     <div className="mb-1" data-testid={`group-${groupId}`}>
       <div
         onClick={() => {
+          if (editing) return;  // don't reselect while renaming
           // Select all members; expand-toggle via the chevron only.
           selectObject(members[0].id);
         }}
@@ -429,7 +443,31 @@ function GroupHeader({ groupId, name, members }) {
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </button>
         <Layers size={12} className="text-purple-400" />
-        <span className="flex-1 truncate">{name}</span>
+        {editing ? (
+          <input
+            data-testid={`group-name-input-${groupId}`}
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commit(); }
+              else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+            }}
+            className="flex-1 min-w-0 bg-slate-950 border border-purple-500 rounded px-1 py-0.5 text-[11px] uppercase tracking-wider font-semibold text-white outline-none"
+            maxLength={64}
+          />
+        ) : (
+          <span
+            data-testid={`group-name-${groupId}`}
+            className="flex-1 truncate cursor-text"
+            onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            title="Double-click to rename this assembly"
+          >
+            {name}
+          </span>
+        )}
         <span className="text-[9px] font-mono text-slate-500">{members.length}</span>
       </div>
       {expanded && (

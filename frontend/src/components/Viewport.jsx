@@ -311,44 +311,20 @@ function SelectedTransform() {
           } else if (!dragging && draggingRef.current) {
             draggingRef.current = false;
             dragStartRef.current = null;
-            // Auto-drop after rotation drag completes. Honour multi-select /
-            // grouping: if the selection has more than one part (e.g. a
-            // standoff = positive shell + negative bolt hole), translate the
-            // WHOLE set down by the same dy so the bottom-most point lands
-            // on Y=0 but members keep their relative offsets. Otherwise a
-            // rotated standoff would have the cylinder drop and the bolt
-            // hole stay floating in mid-air.
+            // Auto-drop after rotation drag completes. Translate the
+            // WHOLE selection by the same dy so the bottom-most point
+            // lands on Y=0 — preserving every member's relative offset
+            // inside an assembly. See `dropSelectionToBed` for the
+            // group-aware math (used by both the gizmo and the popover
+            // so the two stay in lockstep).
             if (autoDropOnRotate && transformMode === "rotate") {
               setTimeout(() => {
                 const st = useScene.getState();
                 const ids = st.selectedIds.length ? st.selectedIds : [obj.id];
                 if (ids.length <= 1) {
-                  dropToBed(obj.id, false);
-                  return;
-                }
-                let worldMinY = Infinity;
-                for (const id of ids) {
-                  const o2 = st.objects.find((x) => x.id === id);
-                  if (!o2) continue;
-                  try {
-                    const bb = computeRotatedBBox(o2);
-                    const wy = (o2.position?.[1] ?? 0) + bb.min.y;
-                    if (wy < worldMinY) worldMinY = wy;
-                  } catch (err) {
-                    // eslint-disable-next-line no-console
-                    console.warn("auto-drop-on-rotate: bbox failed for", o2?.id, err);
-                  }
-                }
-                if (isFinite(worldMinY) && Math.abs(worldMinY) > 1e-3) {
-                  st.pushHistory();
-                  const dy = -worldMinY;
-                  useScene.setState((s) => ({
-                    objects: s.objects.map((o3) =>
-                      ids.includes(o3.id)
-                        ? { ...o3, position: [o3.position[0], o3.position[1] + dy, o3.position[2]] }
-                        : o3
-                    ),
-                  }));
+                  st.dropToBed(obj.id, false);
+                } else {
+                  st.dropSelectionToBed(false);
                 }
               }, 0);
             }
