@@ -55,6 +55,7 @@ import os
 import re
 import platform
 import shutil
+import sys
 import tempfile
 import time
 import zipfile
@@ -491,8 +492,6 @@ async def orca_status():
         binary_path=str(install.binary) if install.binary else None,
         detail=detail,
     )
-
-
 @router.get("/preset")
 async def orca_preset(vendor: str, kind: str, name: str):
     """Return the fully-flattened (inherits-walked) bundled OrcaSlicer
@@ -535,6 +534,64 @@ async def orca_preset(vendor: str, kind: str, name: str):
         "name": name,
         "preset": merged,
     }
+
+
+@router.post("/reinstall")
+async def orca_reinstall(force: bool = False):
+    """Admin: trigger a fresh OrcaSlicer install in the background.
+    Useful when an admin wants to refresh the bundled presets / pick
+    up a new upstream release without redeploying the whole app.
+
+    Returns 202 (Accepted) immediately with the job's lock-file path —
+    the install runs in a background process (`scripts/install_orca.py`)
+    and the existing `/api/slice/orca/status` endpoint surfaces its
+    progress via the same `lock_age_s` / "installing" detail it uses
+    for the first-boot install. No SSE needed; clients poll status.
+
+    `force=true` removes the existing extracted AppImage so the
+    installer re-downloads from GitHub even if the binary already
+    works (use sparingly — it's a ~119 MB download).
+    """
+    if _install_in_progress():
+        raise HTTPException(
+            status_code=409,
+            detail="An OrcaSlicer install is already running. Poll /api/slice/orca/status for progress.",
+        )
+    arch = platform.machine()
+    if arch not in ("x86_64", "amd64"):
+        # The AppImage is x86_64-only. Returning 400 here so the admin
+        # UI can show "not supported on this server" instead of silently
+        # firing a no-op install.
+        raise HTTPException(
+            status_code=400,
+            detail=f"OrcaSlicer AppImage is x86_64-only; this server reports {arch!r}. The built-in slicer remains available.",
+        )
+    script = Path(__file__).resolve().parent / "scripts" / "install_orca.py"
+    if not script.exists():
+        raise HTTPException(status_code=500, detail=f"Installer script not found at {script}")
+    argv = [sys.executable, str(script)]
+    if force:
+        argv.append("--force")
+    # Fire-and-forget: spawn the installer as a detached subprocess so
+    # the request returns immediately. The installer manages its own
+    # `.orca_install_lock` file (which the status endpoint already
+    # surfaces), so we don't need to track the PID here.
+    try:
+        await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,   # decouple from this request's process group
+        )
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to launch installer: {e}")
+    return {
+        "status": "started",
+        "force": bool(force),
+        "argv": argv,
+        "lock_file": "/app/backend/bin/.orca_install_lock",
+    }
+
 
 
 

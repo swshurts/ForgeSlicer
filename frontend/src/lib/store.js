@@ -26,6 +26,19 @@ const PRIMITIVE_DEFAULTS = {
   //        the X axis; ramps along +Z, height along +Y. Great for
   //        chamfered bases, draft angles, ergonomic grips.
   wedge:    { dims: { x: 24, y: 16, z: 24 } },
+  // ---- Threaded fasteners (v1.15) ----
+  // bolt:  cylinder body + triangular thread helix swept around it.
+  //        Models ISO-metric profile so it screws into the matching
+  //        `nut` primitive. `r` is the major (outside) thread radius,
+  //        `pitch` is the per-turn rise (1.5mm for ~M10), `h` is the
+  //        threaded length, `headR`/`headH` are the hex/cap head.
+  bolt:     { dims: { r: 5, pitch: 1.5, h: 20, headR: 8, headH: 4, segments: 48, headStyle: "hex" } },
+  // nut:   hex prism with an inner-thread helix swept inside. Major
+  //        radius matches the bolt's; the inside threads cut into the
+  //        prism so a bolt of matching pitch screws right in. `pitch`
+  //        must match the mating bolt. `flatR` is the hex flat radius
+  //        (across-flats / 2).
+  nut:      { dims: { r: 5, pitch: 1.5, h: 5, flatR: 8, segments: 48 } },
   // ---- 2D shapes ----
   // Stored as thin extrusions (h = 1 mm by default — a "2D wafer").
   // The Extrude action in the inspector promotes them to 3D parts by

@@ -4,7 +4,7 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles, Tornado, CircleDashed, TriangleRight,
+  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -19,6 +19,9 @@ const PRIMS_3D = [
   { type: "helix", label: "Helix", icon: Tornado },
   { type: "pipe", label: "Pipe", icon: CircleDashed },
   { type: "wedge", label: "Wedge", icon: TriangleRight },
+  // ---- Threaded fasteners (1.15) — keep in sync with AddPrimitiveButton.PRIMITIVES ----
+  { type: "bolt", label: "Bolt", icon: Bolt },
+  { type: "nut", label: "Nut", icon: Nut },
 ];
 
 // 2D primitives — render as thin wafers; the user extrudes via the
@@ -421,6 +424,26 @@ function GroupHeader({ groupId, name, members }) {
     else setDraft(name);
   };
   const cancel = () => { setEditing(false); setDraft(name); };
+  // Save the assembly as a reusable component. Selects every member of
+  // this group, switches the project name to the group's name (which
+  // the SaveComponentDialog uses as its default save name), then
+  // dispatches the existing global "open-dialog" event the Workspace
+  // already listens for. The dialog auto-detects the multi-selection
+  // and defaults to "save selection only" so the user just confirms +
+  // adds tags.
+  const saveAsComponent = (e) => {
+    e.stopPropagation();
+    const ids = members.map((m) => m.id);
+    if (ids.length === 0) return;
+    const st = useScene.getState();
+    // Replace the selection with exactly this group's members.
+    useScene.setState({ selectedIds: ids, selectedId: ids[ids.length - 1] });
+    // Seed the SaveComponentDialog's default name with the group name.
+    if (typeof st.setProjectName === "function") {
+      st.setProjectName(name);
+    }
+    window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", { detail: { name: "save_component" } }));
+  };
   return (
     <div className="mb-1" data-testid={`group-${groupId}`}>
       <div
@@ -468,6 +491,14 @@ function GroupHeader({ groupId, name, members }) {
             {name}
           </span>
         )}
+        <button
+          data-testid={`group-save-${groupId}`}
+          onClick={saveAsComponent}
+          title="Save this assembly to your Component Library"
+          className="text-slate-500 hover:text-purple-300 transition-colors p-0.5 rounded hover:bg-slate-700/60"
+        >
+          <Save size={11} />
+        </button>
         <span className="text-[9px] font-mono text-slate-500">{members.length}</span>
       </div>
       {expanded && (

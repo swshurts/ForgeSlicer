@@ -505,6 +505,17 @@ function estimateHalfExtents(o) {
   if (o.type === "pipe") return [(d.r || 12) * s[0], (d.h || 30) / 2 * s[1], (d.r || 12) * s[2]];
   // wedge: same as cube dims (x/y/z) but the shape is a ramp.
   if (o.type === "wedge") return [(d.x || 24) / 2 * s[0], (d.y || 16) / 2 * s[1], (d.z || 24) / 2 * s[2]];
+  // bolt: head diameter dominates XZ; Y is total head+shaft height.
+  if (o.type === "bolt") {
+    const outerR = Math.max(d.r || 5, d.headR || 8);
+    const totalH = (d.headH || 4) + (d.h || 20);
+    return [outerR * s[0], (totalH / 2) * s[1], outerR * s[2]];
+  }
+  // nut: hex flat-to-flat diameter on XZ; Y is the nut height.
+  if (o.type === "nut") {
+    const flatR = d.flatR || 8;
+    return [flatR * s[0], (d.h || 5) / 2 * s[1], flatR * s[2]];
+  }
   if (o.originalBbox) return [o.originalBbox.x / 2 * s[0], o.originalBbox.y / 2 * s[1], o.originalBbox.z / 2 * s[2]];
   return [10, 10, 10];
 }
@@ -781,6 +792,56 @@ function Inspector() {
           </div>
           <div className="mt-1 text-[10px] text-slate-500">
             Ramps from y=0 at +z to y={(obj.dims.y || 16).toFixed(1)} at −z.
+          </div>
+        </div>
+      )}
+
+      {/* Bolt — ISO-metric inspired. `r` is the major thread radius
+          (peak-to-peak diameter = 2r); pitch is per-turn rise; h is the
+          threaded shank length. The head sits BELOW the shaft so the
+          bolt sits flat on the bed head-down. */}
+      {obj.type === "bolt" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField testid="dim-bolt-r"     label="Thread ⌀ (M)" value={(obj.dims.r || 5) * 2}      onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })}            step={1} />
+            <NumberField testid="dim-bolt-pitch" label="Pitch"        value={obj.dims.pitch || 1.5}      onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.25, v) })}          step={0.25} suffix="mm/turn" />
+            <NumberField testid="dim-bolt-h"     label="Shank"        value={obj.dims.h || 20}           onChange={(v) => updateDims(obj.id, { h: Math.max(1, v) })}                 step={1} />
+            <NumberField testid="dim-bolt-headD" label="Head ⌀"       value={(obj.dims.headR || 8) * 2}  onChange={(v) => updateDims(obj.id, { headR: Math.max(1, v / 2) })}         step={1} />
+            <NumberField testid="dim-bolt-headH" label="Head height"  value={obj.dims.headH || 4}        onChange={(v) => updateDims(obj.id, { headH: Math.max(0.5, v) })}           step={0.5} />
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <label className="flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer">
+              <input
+                data-testid="dim-bolt-head-style"
+                type="checkbox"
+                checked={obj.dims.headStyle === "button"}
+                onChange={(e) => updateDims(obj.id, { headStyle: e.target.checked ? "button" : "hex" })}
+                className="accent-orange-500"
+              />
+              Button head (smooth, not hex)
+            </label>
+            <div className="text-[10px] text-slate-500 self-center">
+              ~M{(((obj.dims.r || 5) * 2) | 0)} × {(((obj.dims.headH || 4) + (obj.dims.h || 20))).toFixed(0)} mm
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nut — hex prism with inner thread helix. Pitch MUST match the
+          mating bolt or a real bolt won't screw in. flatR is the
+          across-flats radius (so AF wrench size = 2 × flatR). */}
+      {obj.type === "nut" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField testid="dim-nut-r"     label="Thread ⌀ (M)" value={(obj.dims.r || 5) * 2}     onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })}     step={1} />
+            <NumberField testid="dim-nut-pitch" label="Pitch"        value={obj.dims.pitch || 1.5}     onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.25, v) })}   step={0.25} suffix="mm/turn" />
+            <NumberField testid="dim-nut-h"     label="Height"       value={obj.dims.h || 5}           onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })}        step={0.5} />
+            <NumberField testid="dim-nut-flatR" label="A/F width"    value={(obj.dims.flatR || 8) * 2} onChange={(v) => updateDims(obj.id, { flatR: Math.max(1, v / 2) })}  step={1} suffix="mm" />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500 leading-snug">
+            Pitch must match the mating bolt. Add a negative cylinder &amp; Boolean-subtract for a real bore.
           </div>
         </div>
       )}

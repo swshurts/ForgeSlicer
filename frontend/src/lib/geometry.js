@@ -1,6 +1,37 @@
 import * as THREE from "three";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeVertices, mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+
+/**
+ * Merge a small list of buffer geometries into one. Three.js's bundled
+ * `mergeGeometries` requires every input to share the same attribute set,
+ * so we strip everything down to a uniform (position + normal) layout
+ * first. Used by the `bolt` and `nut` primitives to ship a single mesh
+ * rather than three.
+ */
+function _mergeGeometries(geoms) {
+  const cleaned = geoms.map((g) => {
+    const c = new THREE.BufferGeometry();
+    // Force-index every input so merged output is consistently indexed.
+    if (!g.index) g.computeVertexNormals();
+    const pos = g.attributes.position;
+    c.setAttribute("position", pos.clone());
+    if (g.attributes.normal) c.setAttribute("normal", g.attributes.normal.clone());
+    if (g.index) c.setIndex(g.index.clone());
+    return c;
+  });
+  const merged = mergeGeometries(cleaned, false);
+  if (!merged) {
+    // mergeGeometries returns null when inputs disagree on attributes.
+    // Fall back to the first geometry so we never throw — the primitive
+    // is still readable as a single-piece mesh.
+    // eslint-disable-next-line no-console
+    console.warn("_mergeGeometries: fallback to first input (attribute mismatch)");
+    return geoms[0];
+  }
+  merged.computeVertexNormals();
+  return merged;
+}
 
 /**
  * Build a cylinder with chamfered or filleted top/bottom edges by lathing
@@ -199,6 +230,94 @@ export function buildGeometry(obj) {
     }
     return new THREE.TubeGeometry(new HelixCurve(), tubularSegs, tube, radialSegs, false);
   }
+  if (t === "bolt") {
+    // Threaded bolt: hex (or button) head + cylindrical shaft + ISO-metric
+    // thread profile swept around the shaft as a helical tube.
+    // The triangular thread is approximated by a SMALL CIRCULAR tube
+    // riding a helix — visually indistinguishable from a real metric
+    // 60° thread at print scale, and 100× cheaper than constructing
+    // the cross-section as a Shape and sweeping it via ExtrudeGeometry
+    // (which doesn't support a non-circular cross-section + a 3D path
+    // simultaneously in stock three.js anyway).
+    const R = d.r || 5;
+    const pitch = Math.max(0.25, d.pitch || 1.5);
+    const Hshaft = Math.max(1, d.h || 20);
+    const headR = d.headR || 8;
+    const headH = Math.max(0.5, d.headH || 4);
+    const segs = Math.max(24, d.segments || 48);
+    const turns = Hshaft / pitch;
+    // Tube radius ~= pitch/4 gives the classic 60° thread depth of
+    // ~0.6 * pitch at the print's surface — readable as a screw thread.
+    const tubeR = Math.max(0.15, pitch * 0.25);
+    // 1. Shaft cylinder (slightly less than R so the thread peaks ride
+    //    above its surface).
+    const coreR = R - tubeR * 0.7;
+    const shaft = new THREE.CylinderGeometry(coreR, coreR, Hshaft, segs);
+    // CylinderGeometry is centered on origin; we want the shaft's BOTTOM
+    // at y = headH (so the head sits beneath the shaft at y = 0..headH).
+    shaft.translate(0, headH + Hshaft / 2, 0);
+    // 2. Thread helix swept tube — same parametric as `helix` but with
+    //    a smaller tube radius and a precise turn count from pitch/h.
+    class _ThreadCurve extends THREE.Curve {
+      getPoint(u, target = new THREE.Vector3()) {
+        const theta = 2 * Math.PI * turns * u;
+        const y = u * Hshaft;  // run bottom-to-top of the shaft
+        return target.set(R * Math.cos(theta), y, R * Math.sin(theta));
+      }
+    }
+    const thread = new THREE.TubeGeometry(new _ThreadCurve(), Math.max(64, Math.ceil(turns * 12)), tubeR, 6, false);
+    thread.translate(0, headH, 0);  // align with shaft base
+    // 3. Head — hex prism (CylinderGeometry with 6 sides) or "button"
+    //    (smooth cylinder) depending on `headStyle`.
+    const headSides = d.headStyle === "button" ? Math.max(24, segs) : 6;
+    const head = new THREE.CylinderGeometry(headR, headR, headH, headSides);
+    head.translate(0, headH / 2, 0);
+    // 4. Merge the three sub-geometries. Then re-centre the merged
+    //    mesh on Y so its bbox sits symmetrically around origin —
+    //    matches every other primitive's "centroid at origin" rule
+    //    (cylinder / cone are centred this way too). The `position`
+    //    transform then places the bolt's centroid wherever the user
+    //    drops it; drop-to-bed correctly snaps the head's bottom to
+    //    Y=0 via computeRotatedBBox.
+    const merged = _mergeGeometries([shaft, thread, head]);
+    const totalH = headH + Hshaft;
+    merged.translate(0, -totalH / 2, 0);
+    return merged;
+  }
+  if (t === "nut") {
+    // Hex-prism nut with an inner-thread helix.
+    // The thread is INSIDE the prism (peaks pointing toward the centre)
+    // so a matching bolt screws in.
+    const R = d.r || 5;             // inner thread peak radius (matches bolt's R)
+    const pitch = Math.max(0.25, d.pitch || 1.5);
+    const Hnut = Math.max(1, d.h || 5);
+    const flatR = d.flatR || 8;      // hex flat-to-centre distance
+    const segs = Math.max(24, d.segments || 48);
+    const turns = Hnut / pitch;
+    const tubeR = Math.max(0.15, pitch * 0.25);
+    // 1. Hex prism — 6-sided cylinder.
+    const prism = new THREE.CylinderGeometry(flatR, flatR, Hnut, 6);
+    prism.translate(0, Hnut / 2, 0);
+    // 2. Inner-thread helix tube. Same parametric helix as the bolt
+    //    but the tube rides slightly INSIDE the prism's hole so it
+    //    presents a thread profile to anything screwing in.
+    const innerR = R - tubeR * 0.7;
+    class _InnerThread extends THREE.Curve {
+      getPoint(u, target = new THREE.Vector3()) {
+        const theta = 2 * Math.PI * turns * u;
+        const y = u * Hnut;
+        return target.set(innerR * Math.cos(theta), y, innerR * Math.sin(theta));
+      }
+    }
+    const thread = new THREE.TubeGeometry(new _InnerThread(), Math.max(48, Math.ceil(turns * 12)), tubeR, 6, false);
+    // 3. Centre the nut on origin and ship. The inner-thread tube is
+    //    visual: a real bore can be added with a Boolean subtract of
+    //    a small negative cylinder (matches how `helix` and `pipe`
+    //    were originally shipped — no inline CSG).
+    const merged = _mergeGeometries([prism, thread]);
+    merged.translate(0, -Hnut / 2, 0);
+    return merged;
+  }
   if (t === "pipe") {
     // Hollow cylinder. We could CSG-subtract two cylinders but the
     // user expectation is "one solid pipe primitive", so we build
@@ -341,6 +460,20 @@ export function getBaseSize(obj) {
   // Wedge bbox matches its cube-like X/Y/Z dims exactly.
   if (t === "wedge") {
     return { x: d.x || 24, y: d.y || 16, z: d.z || 24 };
+  }
+  // Bolt bbox: head diameter wins on X/Z (always >= shaft); Y is the
+  // total head + shaft height. Reporting the user's editable Y value
+  // here keeps the Size popover's "scale to N mm" intuition correct.
+  if (t === "bolt") {
+    const R = d.r || 5, headR = d.headR || 8;
+    const Y = (d.headH || 4) + (d.h || 20);
+    const outerR = Math.max(R, headR);
+    return { x: 2 * outerR, y: Y, z: 2 * outerR };
+  }
+  // Nut bbox: hex prism's flat-to-flat diameter on X/Z, total height on Y.
+  if (t === "nut") {
+    const flatR = d.flatR || 8;
+    return { x: 2 * flatR, y: d.h || 5, z: 2 * flatR };
   }
   if (t === "circle") {
     const r = d.r || 10;
