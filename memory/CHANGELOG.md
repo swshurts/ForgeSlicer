@@ -900,3 +900,44 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - **Refactor `frontend/src/lib/store.js`** — file is >1300 lines; split rotation/CSG math + group ops into dedicated modules.
 - **PRD.md split** — file is at 940+ lines; should split into PRD.md / CHANGELOG.md / ROADMAP.md.
 
+
+## Iteration 46 (2026-02-28) — Sweep primitive (P1) + Refactor
+### What landed
+- ✅ **Sweep primitive (P1)** — extrudes a 2D PROFILE along a 3D PATH so the profile stays perpendicular to the path tangent at every sample (Frenet-frame true sweep). Live-editable in the Inspector.
+  - Profile kinds: `circle`, `rect`, `polygon` (✅), `sketch` (placeholder for next iter)
+  - Path kinds: `helix`, `arc`, `bezier`, `sketch3d`, `ref` (✅ — `sketch3d` UI hookup deferred)
+  - Default preset: helical spring (circle profile × helix path × 3 turns) so the user sees what Sweep DOES the moment they click it
+  - Twist field rotates the profile linearly along the path tangent (corkscrew / spiral cable wraps)
+  - `ref` path option lets a sweep ride another helix/sweep's centerline — UI dropdown lists pickable objects; if none exist surfaces an amber empty-state hint
+- ✅ **Refactor** — `lib/store.js` split into focused modules without changing any behaviour:
+  - `lib/transforms.js` — pure `applyTranslate` / `applyScaleMul` / `applyRigidRotate` / `isZeroDelta` / `isIdentityFactor`. Quaternion-composed rigid-body rotation logic now unit-testable in isolation.
+  - `lib/historyStack.js` — pure `cloneObjects` / `pushHistoryState` / `undoState` / `redoState` + `HISTORY_LIMIT` constant.
+  - `store.js` dropped from 1265 → 1147 lines.
+- ✅ **PRD.md split** — was 932 lines, now:
+  - `PRD.md` (44 lines) — static product spec + companion-doc index
+  - `CHANGELOG.md` (~902 lines) — append-only iteration history
+  - `ROADMAP.md` (NEW) — prioritised P0/P1/P2/P3 backlog
+- ✅ Release notes bumped to **v1.18.0** ("Sweep primitive · Live profile-along-path extrusion").
+
+### Tests added
+- `frontend/tests/transforms-and-history.mjs` — ~40 assertions covering every extracted helper, including the 5-rotation rigid-body invariant.
+- `frontend/tests/sweep-geometry.mjs` — 52 assertions across 12 profile × path combos + twist effect + degenerate-input null + helix-sweep bounding-volume invariant.
+
+### Test report
+- `/app/test_reports/iteration_16.json` — backend 173/173 pytest, frontend 5 node test files all GREEN, UI smoke verified Sweep button in both surfaces, Sweep adds to scene, Inspector exposes profile/path/Samples/Twist°/R/Pitch/Turns, geometry live-rebuilds on kind switch.
+
+### Files touched
+- `frontend/src/lib/sweepGeometry.js` (NEW), `frontend/src/lib/transforms.js` (NEW), `frontend/src/lib/historyStack.js` (NEW), `frontend/src/components/SweepInspectorBlock.jsx` (NEW)
+- `frontend/src/lib/store.js`, `frontend/src/lib/geometry.js`, `frontend/src/components/Viewport.jsx`, `frontend/src/components/RightPanel.jsx`, `frontend/src/components/LeftPanel.jsx`, `frontend/src/components/toolbar/AddPrimitiveButton.jsx`, `frontend/src/lib/releaseNotes.js`, `frontend/src/lib/csg.js`
+- `frontend/tests/transforms-and-history.mjs` (NEW), `frontend/tests/sweep-geometry.mjs` (NEW)
+- `/app/memory/PRD.md` (rewritten — static-only), `/app/memory/CHANGELOG.md` (NEW), `/app/memory/ROADMAP.md` (NEW)
+
+### Known MVP limitations (deferred — not bugs)
+- `profile.kind: "sketch"` is a no-op (UI surfaces an amber hint pointing at next iter)
+- `path.kind: "sketch3d"` similarly waiting for Sketch3D wire-up
+- Sweep objects with `path.kind: "ref"` fall back to a placeholder cube during **STL EXPORT** (CSG path doesn't thread scene context yet). The **live viewport** renders correctly. Tracked for next iteration.
+
+### Pending (next session)
+- Sweep MVP follow-ups: sketch→profile + sketch3d→path wire-up; thread `scene` through `csg.js` so ref-sweeps export correctly.
+- See ROADMAP.md for the up-to-date backlog.
+

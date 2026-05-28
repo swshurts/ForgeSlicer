@@ -10,11 +10,10 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 *(none open as of 2026-02-28)*
 
 ## 🟡 P1 — Next features
-- **Sketch → Path Sweep (in-flight, iter 46)** — extrude a 2D closed profile along a 3D curve.
-  - Profile source: closed sketch (also planned: parametric profile e.g. circle / rectangle).
-  - Path source: open sketch OR existing object's centerline (spline, helix) OR parametric path (helix / arc / bezier).
-  - Live-editable parameters in the Inspector (samples, twist, profile/path source).
-  - Orientation: profile stays perpendicular to the path tangent at every sample (true sweep, like Fusion / SolidWorks).
+- **Sweep MVP follow-ups (iter 46 deferred)**:
+  - `profile.kind: "sketch"` — wire up "Use as sweep profile" from a sketch context menu so the user can sweep an arbitrary 2D drawing.
+  - `path.kind: "sketch3d"` — let users draw a 3D polyline in sketch mode and use it as a sweep path.
+  - Thread `scene` context through `lib/csg.js` so `path.kind: "ref"` sweeps export correctly (today they fall back to a placeholder cube during STL export only; live viewport is fine).
 - **Fastener Pair macro** — Bolt + Nut + 2 negative bore cylinders pre-grouped as one drop-in assembly.
 
 ## 🟢 P2 — Polish
