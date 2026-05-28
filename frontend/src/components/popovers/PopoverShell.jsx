@@ -16,9 +16,19 @@ export function NumberField({ label, value, onChange, step = 1, suffix, testid, 
   // collapse the scale to 0 mid-edit and freeze the lock math). Commit on
   // Enter or blur.
   const [draft, setDraft] = React.useState(null);
+  // Guard against double-commits when Enter is pressed: commit() runs
+  // first, then `e.currentTarget.blur()` synchronously fires the input's
+  // blur, which would call commit() AGAIN — but with the STALE draft
+  // closure that still holds the typed value, because React hasn't
+  // flushed setDraft(null) yet. For delta-based onChange handlers (like
+  // multi-select rotation: delta = new - current) this manifested as a
+  // doubled rotation (typing 45° rotated by 90°) and corrupted the
+  // assembly because the orbit math ran twice.
+  const justCommittedRef = React.useRef(false);
   const display = draft !== null ? draft : (Number.isFinite(value) ? String(value) : "");
 
   const commit = () => {
+    if (justCommittedRef.current) { justCommittedRef.current = false; return; }
     if (draft === null) return;
     const v = parseFloat(draft);
     setDraft(null);
@@ -40,7 +50,16 @@ export function NumberField({ label, value, onChange, step = 1, suffix, testid, 
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); commit(); e.currentTarget.blur(); }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+              // Mark "just committed" so the synchronous blur fired by
+              // e.currentTarget.blur() doesn't re-run commit with the
+              // stale draft closure. See the explanation on
+              // `justCommittedRef` above.
+              justCommittedRef.current = true;
+              e.currentTarget.blur();
+            }
             if (e.key === "Escape") { setDraft(null); e.currentTarget.blur(); }
             if (e.key === "ArrowUp") { e.preventDefault(); onChange((Number.isFinite(value) ? value : 0) + step); }
             if (e.key === "ArrowDown") { e.preventDefault(); onChange((Number.isFinite(value) ? value : 0) - step); }
