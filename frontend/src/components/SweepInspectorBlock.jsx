@@ -38,6 +38,97 @@ const PATH_KINDS = [
   { id: "ref",      label: "From Object", hint: "Ride an existing helix's centerline" },
 ];
 
+// Curated SWEEP PRESETS — each card writes a complete `dims` payload
+// so one click promotes a generic helical-spring sweep into a finished
+// shape. Tuned to be visually distinct, mechanically useful, and to
+// showcase what every (profile × path) combination can do.
+//
+// Format: `apply` is called with `(updateDims)` and must overwrite the
+// FULL dims dict (samples + twist + profile + path) so the preset
+// isn't contaminated by leftover fields from the previous descriptor.
+const SWEEP_PRESETS = [
+  {
+    id: "helical-spring",
+    label: "Helical spring",
+    hint: "Circular wire wound 4 turns",
+    apply: () => ({
+      samples: 128, twistDeg: 0,
+      profile: { kind: "circle", r: 1.5, segments: 16 },
+      path:    { kind: "helix", r: 12, pitch: 5, turns: 4 },
+    }),
+  },
+  {
+    id: "watch-spring",
+    label: "Watch spring",
+    hint: "Thin flat ribbon wound tight",
+    apply: () => ({
+      samples: 200, twistDeg: 0,
+      profile: { kind: "rect", w: 4, h: 0.4 },
+      path:    { kind: "helix", r: 18, pitch: 1.2, turns: 8 },
+    }),
+  },
+  {
+    id: "twisted-cable",
+    label: "Twisted cable",
+    hint: "Square profile twisted 360° along an arc",
+    apply: () => ({
+      samples: 160, twistDeg: 360,
+      profile: { kind: "polygon", r: 2.5, sides: 4 },
+      path:    { kind: "arc", r: 30, angleDeg: 270 },
+    }),
+  },
+  {
+    id: "corkscrew",
+    label: "Corkscrew",
+    hint: "Triangular profile, deep pitch, double-twist",
+    apply: () => ({
+      samples: 192, twistDeg: 720,
+      profile: { kind: "polygon", r: 2, sides: 3 },
+      path:    { kind: "helix", r: 8, pitch: 10, turns: 3 },
+    }),
+  },
+  {
+    id: "rope",
+    label: "Rope",
+    hint: "Pentagon profile, gentle 180° twist along an S-bezier",
+    apply: () => ({
+      samples: 160, twistDeg: 180,
+      profile: { kind: "polygon", r: 3, sides: 5 },
+      path:    { kind: "bezier", p0: [-30, 0, 0], c1: [-10, 25, -10], c2: [10, -25, 10], p1: [30, 0, 0] },
+    }),
+  },
+  {
+    id: "hex-bar",
+    label: "Hex bar arc",
+    hint: "Hex profile bent around a quarter-circle (handle / bracket)",
+    apply: () => ({
+      samples: 64, twistDeg: 0,
+      profile: { kind: "polygon", r: 4, sides: 6 },
+      path:    { kind: "arc", r: 25, angleDeg: 90 },
+    }),
+  },
+  {
+    id: "spiral-staircase",
+    label: "Spiral railing",
+    hint: "Square profile spiraling up — for railings / DNA models",
+    apply: () => ({
+      samples: 224, twistDeg: 0,
+      profile: { kind: "rect", w: 1.5, h: 1.5 },
+      path:    { kind: "helix", r: 14, pitch: 8, turns: 5 },
+    }),
+  },
+  {
+    id: "tornado",
+    label: "Tornado funnel",
+    hint: "Decorative helix that widens via outer-rim profile",
+    apply: () => ({
+      samples: 192, twistDeg: 0,
+      profile: { kind: "circle", r: 4, segments: 12 },
+      path:    { kind: "helix", r: 20, pitch: 12, turns: 2 },
+    }),
+  },
+];
+
 export default function SweepInspectorBlock({ obj, updateDims }) {
   const d = obj.dims || {};
   const profile = d.profile || { kind: "circle", r: 2, segments: 16 };
@@ -53,6 +144,36 @@ export default function SweepInspectorBlock({ obj, updateDims }) {
     <div className="space-y-3 mt-3">
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-400">
         <Waves size={11} /> Sweep
+      </div>
+
+      {/* Preset library — one click rewrites the FULL dims payload to a
+          curated combo. The dropdown labels include a one-line "hint" so
+          the user can pick by intent ("rope", "watch spring") instead of
+          guessing what each profile×path combination does. */}
+      <div className="rounded border border-orange-500/30 bg-orange-500/5 px-2 py-2">
+        <label className="text-[10px] uppercase tracking-wider text-orange-400 block mb-1">Preset library</label>
+        <select
+          data-testid="sweep-preset-picker"
+          value=""
+          onChange={(e) => {
+            const preset = SWEEP_PRESETS.find((p) => p.id === e.target.value);
+            if (!preset) return;
+            // Apply rewrites the whole dims payload. We then reset the
+            // <select>'s value so the same preset can be re-picked
+            // after the user has tweaked away from it.
+            updateDims(preset.apply());
+            e.target.value = "";
+          }}
+          className="w-full h-7 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 px-1.5"
+        >
+          <option value="">— Apply a preset… —</option>
+          {SWEEP_PRESETS.map((p) => (
+            <option key={p.id} value={p.id} title={p.hint}>{p.label}</option>
+          ))}
+        </select>
+        <div className="text-[10px] text-slate-500 mt-1 leading-tight">
+          Tweak any preset using the controls below — your edits stay.
+        </div>
       </div>
 
       {/* Common controls — affect every kind */}

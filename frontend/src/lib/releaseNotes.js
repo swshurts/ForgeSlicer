@@ -14,6 +14,17 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.19.0",
+    date: "2026-02-28",
+    title: "Sweep preset library · Fastener Pair macro · ref-export fix",
+    changes: [
+      { type: "feature", text: "Sweep preset library — pick from 8 hand-tuned cards in the Sweep Inspector (Helical spring, Watch spring, Twisted cable, Corkscrew, Rope, Hex bar arc, Spiral railing, Tornado funnel). One click rewrites the full Sweep dims; you can tweak every field afterward without resetting." },
+      { type: "feature", text: "Fastener Pair macro — single \"Fastener Pair\" button under Composites drops a Bolt + Nut + bore cylinder + head counterbore, all pre-grouped so they move as one fastener (and ungroup-able for fine-tuning). The 4 parts share matching pitch/major-radius so the threads visually mate, and the layout is built so dropping it onto a 12mm-thick host gives you a flush-headed, fully-threaded fastener with one click." },
+      { type: "fix", text: "Sweep objects with path-source \"From Object\" (ref-sweeps) now export correctly to STL — the engine resolves the reference at export time via a module-level scene context, so a sweep that rides another helix is part of the final mesh just as it appears in the viewport." },
+    ],
+  },
+
+  {
     version: "1.18.1",
     date: "2026-02-28",
     title: "Center on bed — right-click menu",

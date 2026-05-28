@@ -49,8 +49,20 @@ function bakeNegativeScale(geom, obj) {
   return { geom: baked, positiveScale: [Math.abs(sx), Math.abs(sy), Math.abs(sz)] };
 }
 
+// Module-level scene context for ref-resolving primitives (specifically
+// the Sweep primitive's `path.kind: "ref"` which looks up another
+// object's centerline at geometry-build time). Set by the public entry
+// points (`evaluateScene`, `evaluateSceneByColor`, `combineTwo`,
+// `cutObjectByPlane`) before they kick off any `makeBrush` calls; read
+// inside `makeBrush` via `buildGeometry(obj, _sceneContext)`. We use a
+// module-scoped variable rather than threading `scene` through ~10
+// call sites because (a) CSG is single-threaded per call anyway, so
+// there's no reentrancy hazard, and (b) it keeps the function
+// signatures unchanged — pure refactor, no signature churn.
+let _sceneContext = null;
+
 function makeBrush(obj, opts = {}, scene = null) {
-  let geom = buildGeometry(obj, scene);
+  let geom = buildGeometry(obj, scene || _sceneContext);
   const { geom: prepped, positiveScale } = bakeNegativeScale(geom, obj);
   const mat = new THREE.MeshStandardMaterial();
   const b = new Brush(prepped, mat);
@@ -218,6 +230,15 @@ function isValidGeometry(g) {
  * Returns: { geometry: BufferGeometry, triangleCount, empty:boolean, ... }
  */
 export function evaluateScene(objects) {
+  _sceneContext = { objects };
+  try {
+    return _evaluateSceneImpl(objects);
+  } finally {
+    _sceneContext = null;
+  }
+}
+
+function _evaluateSceneImpl(objects) {
   const visibles = objects.filter((o) => o.visible !== false);
   const positives = visibles.filter((o) => o.modifier !== "negative");
   const negatives = visibles.filter((o) => o.modifier === "negative");
@@ -366,6 +387,15 @@ function stripToPositionIndex(g) {
  * visible positive object.
  */
 export function evaluateSceneByColor(objects) {
+  _sceneContext = { objects };
+  try {
+    return _evaluateSceneByColorImpl(objects);
+  } finally {
+    _sceneContext = null;
+  }
+}
+
+function _evaluateSceneByColorImpl(objects) {
   const visibles = objects.filter((o) => o.visible !== false);
   const positives = visibles.filter((o) => o.modifier !== "negative");
   const negatives = visibles.filter((o) => o.modifier === "negative");

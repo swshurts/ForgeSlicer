@@ -84,6 +84,30 @@ function SlotButton({ modifier }) {
   );
 }
 
+// Fastener Pair macro — drops a Bolt + Nut + 2 negative bore cylinders
+// (through-bore + head counterbore) all sharing a groupId so the user
+// can move/rotate the whole fastener as one unit and ungroup later
+// for fine-tuning. Always positive; the bore parts are stamped as
+// negative inside the macro so this button doesn't need a modifier.
+function FastenerPairButton() {
+  const addFastenerPair = useScene((s) => s.addFastenerPair);
+  return (
+    <button
+      data-testid="add-fastener-pair-btn"
+      onClick={() => addFastenerPair()}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all col-span-2"
+      title="Add Fastener Pair — Bolt + Nut + Bore + Counterbore, pre-grouped as a single drop-in fastener."
+    >
+      <div className="flex items-center gap-1">
+        <Bolt size={16} strokeWidth={1.8} />
+        <span className="text-slate-500 text-xs">+</span>
+        <Nut size={16} strokeWidth={1.8} />
+      </div>
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Fastener Pair</span>
+    </button>
+  );
+}
+
 function SceneTreeItem({ obj }) {
   const selectedId = useScene((s) => s.selectedId);
   const selectedIds = useScene((s) => s.selectedIds);
@@ -352,6 +376,7 @@ function TabComposites() {
       <div className="grid grid-cols-2 gap-2 p-3">
         <SlotButton modifier="negative" />
         <SlotButton modifier="positive" />
+        <FastenerPairButton />
       </div>
       <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
         More composites coming soon — chamfered countersinks, gussets, hex pockets.

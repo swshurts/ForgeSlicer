@@ -239,8 +239,8 @@ function manifoldToGeometry(manifold) {
  * component is technically supported but goes through extra topology
  * work — pre-baking is faster and more numerically stable.
  */
-function buildObjectManifold(wasm, obj) {
-  let geom = buildGeometry(obj);
+function buildObjectManifold(wasm, obj, scene = null) {
+  let geom = buildGeometry(obj, scene);
   const sx = obj.scale[0], sy = obj.scale[1], sz = obj.scale[2];
   const negCount = (sx < 0 ? 1 : 0) + (sy < 0 ? 1 : 0) + (sz < 0 ? 1 : 0);
   const posScale = [Math.abs(sx), Math.abs(sy), Math.abs(sz)];
@@ -346,6 +346,9 @@ export async function evaluateSceneAsync(objects) {
   const visibles = (objects || []).filter((o) => o.visible !== false);
   const positives = visibles.filter((o) => o.modifier !== "negative");
   const negatives = visibles.filter((o) => o.modifier === "negative");
+  // Scene context for ref-resolving primitives (Sweep path.kind:"ref").
+  // The full `objects` list is the canonical scene at evaluation time.
+  const scene = { objects };
 
   if (positives.length === 0) {
     return {
@@ -361,7 +364,7 @@ export async function evaluateSceneAsync(objects) {
   const skipped = [];
   for (const p of positives) {
     try {
-      posManifolds.push(buildObjectManifold(wasm, p));
+      posManifolds.push(buildObjectManifold(wasm, p, scene));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(`[manifoldEngine] failed positive "${p.name}":`, err.message);
@@ -403,7 +406,7 @@ export async function evaluateSceneAsync(objects) {
     const negSkipped = [];
     for (const n of negatives) {
       try {
-        negManifolds.push(buildObjectManifold(wasm, n));
+        negManifolds.push(buildObjectManifold(wasm, n, scene));
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn(`[manifoldEngine] failed negative "${n.name}":`, err.message);
@@ -453,6 +456,7 @@ export async function evaluateSceneByColorAsync(objects) {
   const positives = visibles.filter((o) => o.modifier !== "negative");
   const negatives = visibles.filter((o) => o.modifier === "negative");
   if (positives.length === 0) return { groups: [], totalTriangles: 0 };
+  const scene = { objects };
 
   const byColor = new Map();
   for (const p of positives) {
@@ -468,7 +472,7 @@ export async function evaluateSceneByColorAsync(objects) {
     const negManifolds = [];
     const negSkipped = [];
     for (const n of negatives) {
-      try { negManifolds.push(buildObjectManifold(wasm, n)); }
+      try { negManifolds.push(buildObjectManifold(wasm, n, scene)); }
       catch (err) { negSkipped.push(n.name); }
     }
     if (negSkipped.length > 0) {
@@ -494,7 +498,7 @@ export async function evaluateSceneByColorAsync(objects) {
     const posManifolds = [];
     const posSkipped = [];
     for (const p of ps) {
-      try { posManifolds.push(buildObjectManifold(wasm, p)); }
+      try { posManifolds.push(buildObjectManifold(wasm, p, scene)); }
       catch (err) { posSkipped.push(p.name); }
     }
     if (posSkipped.length > 0) {

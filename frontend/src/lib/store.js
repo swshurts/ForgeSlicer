@@ -288,6 +288,83 @@ export const useScene = create((set, get) => ({
     return obj.id;
   },
 
+  // Fastener Pair macro — drops a coordinated Bolt + Nut + 2 negative
+  // bore cylinders pre-grouped as one drop-in assembly. The four parts
+  // share a `groupId` so they move/rotate/scale as a unit; the user
+  // can ungroup to fine-tune individual members.
+  //
+  // Geometry layout (all parts share matching pitch + major radius so
+  // the bolt threads visually mate with the nut threads):
+  //   - Bolt: head at Y=0, shaft running upward through the work
+  //   - Bore #1 (negative): coplanar with the bolt shaft, extending
+  //                         through the host part — carves the through-hole
+  //   - Bore #2 (negative): the COUNTERBORE for the bolt head (recess
+  //                         the head into the host part for a flush fit)
+  //   - Nut: positioned at the FAR side of where a typical 10mm-thick
+  //         host part would be, so threads engage past the work face
+  //
+  // `opts.boltR` / `opts.pitch` / `opts.workThickness` let downstream
+  // callers customise; defaults match the bolt primitive's defaults
+  // (M10 ish — 5mm major radius, 1.5mm pitch).
+  addFastenerPair: (opts = {}) => {
+    const boltR = opts.boltR ?? 5;
+    const pitch = opts.pitch ?? 1.5;
+    const workThickness = opts.workThickness ?? 12;
+    const headR = opts.headR ?? boltR * 1.6;
+    const headH = opts.headH ?? Math.max(3, boltR * 0.7);
+    const shaftH = opts.shaftH ?? workThickness + 8;
+    const nutH = opts.nutH ?? Math.max(3, boltR * 1.0);
+    const groupId = `fastener-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const groupName = opts.groupName || "Fastener Pair";
+    get().pushHistory();
+    // Generate distinct IDs since `buildPrimitive` stamps a millisecond-
+    // resolution id-stem; four parts created in the same tick would
+    // collide. We use a small counter postfix to guarantee uniqueness.
+    let i = 0;
+    const freshId = (type) => `${type}-${Date.now()}-${i++}`;
+    const counterboreDepth = headH + 0.2;
+    const parts = [
+      // Bolt — head at Y=0, shaft rising upward.
+      {
+        ...buildPrimitive("bolt", "positive"),
+        id: freshId("bolt"),
+        name: "Bolt", position: [0, 0, 0],
+        dims: { r: boltR, pitch, h: shaftH, headR, headH, segments: 48, headStyle: "hex" },
+        groupId, groupName,
+      },
+      // Through-bore for the shaft — clearance fit (+0.4mm).
+      {
+        ...buildPrimitive("cylinder", "negative"),
+        id: freshId("cylinder"),
+        name: "Bolt Bore", position: [0, headH + workThickness / 2, 0],
+        dims: { r: boltR + 0.4, h: workThickness, segments: 48 },
+        groupId, groupName,
+      },
+      // Counterbore — recess the head into the work surface.
+      {
+        ...buildPrimitive("cylinder", "negative"),
+        id: freshId("cylinder"),
+        name: "Head Counterbore", position: [0, counterboreDepth / 2, 0],
+        dims: { r: headR + 0.5, h: counterboreDepth, segments: 48 },
+        groupId, groupName,
+      },
+      // Nut — threaded onto the far side of the work surface.
+      {
+        ...buildPrimitive("nut", "positive"),
+        id: freshId("nut"),
+        name: "Nut", position: [0, headH + workThickness + nutH / 2, 0],
+        dims: { r: boltR, pitch, h: nutH, flatR: headR, segments: 48 },
+        groupId, groupName,
+      },
+    ];
+    set((s) => ({
+      objects: [...s.objects, ...parts],
+      selectedId: parts[0].id,
+      selectedIds: parts.map((p) => p.id),
+    }));
+    return groupId;
+  },
+
   // Add a user-drawn sketch as an extruded scene object. `points` is an
   // array of `[x, z]` world-plane coordinates (same units as `position`).
   // The sketch's centroid becomes its origin; we then offset the object's
