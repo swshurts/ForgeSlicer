@@ -845,43 +845,59 @@ export const useScene = create((set, get) => ({
     set((s) => {
       const targets = s.objects.filter((o) => ids.includes(o.id));
       if (targets.length === 0) return s;
-      // Pivot for rigid-body group rotation. We use the PRIMARY selected
-      // object's position (the one the gizmo attaches to / the popover
-      // header names) so:
-      //   1. the primary stays still during the rotation
-      //   2. the gizmo doesn't jump out from under the user's cursor
-      //   3. the typed-rotation values match what a Blender/Fusion
-      //      "rotate around active" would do
-      // For single-object selection the pivot trivially equals the
-      // object's own position, so the orbit math collapses to a no-op
-      // (offset = 0) and behaviour is bit-identical to the original.
+      // Pivot = primary's position. Children orbit around it; primary
+      // stays put. This stops the gizmo / Inspector header from
+      // jumping out from under the user's cursor mid-edit.
       const primary = s.objects.find((o) => o.id === s.selectedId) || targets[0];
       const pivot = primary.position;
+      // Build the world-space rotation delta as a quaternion. Quaternions
+      // (unlike per-axis Euler addition) compose cleanly when the assembly
+      // is already non-trivially rotated AND the new delta is applied in
+      // world space. This is what stops consecutive rotations from
+      // scattering the assembly — every child's offset orbits and its
+      // local orientation rotates by the SAME world delta, computed once
+      // from the requested delta-Euler.
       const dEuler = new THREE.Euler(
         (delta[0] * Math.PI) / 180,
         (delta[1] * Math.PI) / 180,
         (delta[2] * Math.PI) / 180,
         "XYZ",
       );
-      const dMat = new THREE.Matrix4().makeRotationFromEuler(dEuler);
+      const dQ = new THREE.Quaternion().setFromEuler(dEuler);
       return {
         objects: s.objects.map((o) => {
           if (!ids.includes(o.id)) return o;
+          // Compose the child's current quaternion with the world
+          // delta: `newQ = dQ · childQ`. Then re-extract Euler XYZ so
+          // the renderer (and Inspector display) sees the new
+          // orientation. This is mathematically identical to applying
+          // `dQ` in world space — Euler subtraction couldn't represent
+          // arbitrary world rotations once the body had drifted off
+          // an axis-aligned start, which is what scattered assemblies.
+          const childQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+            (o.rotation[0] * Math.PI) / 180,
+            (o.rotation[1] * Math.PI) / 180,
+            (o.rotation[2] * Math.PI) / 180,
+            "XYZ",
+          ));
+          const newChildQ = dQ.clone().multiply(childQ);
+          const newChildEuler = new THREE.Euler().setFromQuaternion(newChildQ, "XYZ");
           const nextRotation = [
-            o.rotation[0] + delta[0],
-            o.rotation[1] + delta[1],
-            o.rotation[2] + delta[2],
+            Math.round((newChildEuler.x * 180 / Math.PI) * 1e4) / 1e4,
+            Math.round((newChildEuler.y * 180 / Math.PI) * 1e4) / 1e4,
+            Math.round((newChildEuler.z * 180 / Math.PI) * 1e4) / 1e4,
           ];
-          // Primary itself rotates in place (its offset from pivot is 0).
+          // Primary itself rotates in place — its offset from pivot
+          // is zero, so the orbit math collapses to a no-op for it.
           if (o.id === primary.id) {
             return { ...o, rotation: nextRotation };
           }
-          // Every other selected member orbits around the primary.
+          // Every non-primary member orbits the pivot by the same dQ.
           const offset = new THREE.Vector3(
             o.position[0] - pivot[0],
             o.position[1] - pivot[1],
             o.position[2] - pivot[2],
-          ).applyMatrix4(dMat);
+          ).applyQuaternion(dQ);
           return {
             ...o,
             rotation: nextRotation,

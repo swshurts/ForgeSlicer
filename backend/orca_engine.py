@@ -315,6 +315,38 @@ _PROFILE_KINDS = {
 }
 
 
+# Universal fallback presets — ALWAYS present in OrcaSlicer's bundled
+# `resources/profiles/` tree regardless of which AppImage release we
+# extract. When the frontend doesn't specify a system preset name
+# (e.g., picked a printer we haven't mapped), we resolve through these
+# so the JSON we emit is built on top of a fully-flat real preset chain
+# instead of a hand-rolled config dict.
+#
+# Verified at https://github.com/SoftFever/OrcaSlicer/tree/main/resources/profiles/Custom
+# Custom/machine/MyKlipper 0.4 nozzle.json — generic Klipper printer
+# Custom/process/0.20mm Standard @MyKlipper.json — generic standard profile
+# OrcaFilamentLibrary/filament/Generic PLA @System.json — universal PLA
+_FALLBACK_PRESETS = {
+    "machine": ("Custom", "MyKlipper 0.4 nozzle"),
+    "process": ("Custom", "0.20mm Standard @MyKlipper"),
+    "filament": ("OrcaFilamentLibrary", "Generic PLA @System"),
+}
+
+
+def _resolve_fallback_preset(
+    profiles_root: Path,
+    kind: str,
+) -> tuple[dict, str, str]:
+    """Walk the fallback preset chain. Returns (flat_config_dict,
+    vendor, preset_name). Raises FileNotFoundError if even the
+    fallback is missing — meaning this OrcaSlicer install is broken
+    or non-standard, and the caller should surface a 503.
+    """
+    vendor, name = _FALLBACK_PRESETS[kind]
+    config = _load_system_preset(profiles_root, vendor, kind, name)
+    return config, vendor, name
+
+
 def _load_system_preset(
     profiles_root: Path,
     vendor: str,
@@ -364,6 +396,51 @@ def _load_system_preset(
     return merged
 
 
+def _orca_stringify(value):
+    """Coerce a JSON value into OrcaSlicer's expected on-disk format.
+
+    OrcaSlicer's bundled preset JSONs store EVERY config value as a
+    string (even numbers like `"0.4"`, `"350"`, `[true]` → `["1"]`),
+    because its `load_from_json` parser uses `set_deserialize(key,
+    string_value, ...)` for every config option. When it encounters
+    a JSON array-of-numbers like `[0.4]`, `parse_str_arr` returns
+    false and the parse loop is BROKEN early — leaving any later
+    keys (including the critical `type` metadata) unread, which
+    surfaces as the cryptic "unknown config type" CLI error.
+
+    This helper converts:
+        * bools  → "1" / "0"   (Orca's serialization format)
+        * ints   → "<int>"     (e.g., 350 → "350")
+        * floats → "<float>"   (e.g., 0.4 → "0.4" — strip trailing
+                                zeros so "0.40000" doesn't appear)
+        * lists  → list of stringified scalars (recurses one level)
+        * dicts  → dict of stringified values (recurses one level —
+                   OrcaSlicer doesn't actually use nested dicts for
+                   config keys, but handle it gracefully)
+        * other  → str(value) (last-resort coercion)
+        * strings → unchanged
+    """
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        # Format floats compactly — `repr` keeps precision but adds
+        # noise like "0.4" → "0.4" (ok) vs "0.30000000000000004"
+        # (bad). Strip a trailing ".0" so "350.0" becomes "350" to
+        # match the integer-ish format Orca's bundled JSONs use.
+        if isinstance(value, float):
+            if value.is_integer():
+                return str(int(value))
+            return ("%g" % value)
+        return str(value)
+    if isinstance(value, list):
+        return [_orca_stringify(item) for item in value]
+    if isinstance(value, dict):
+        return {k: _orca_stringify(v) for k, v in value.items()}
+    if value is None:
+        return ""
+    return value  # str — unchanged
+
+
 def _stage_user_profile(
     base: dict,
     overrides: dict,
@@ -377,31 +454,65 @@ def _stage_user_profile(
     rewrites the metadata so OrcaSlicer's CLI sees a self-contained
     user profile. `from: "User"` is required for any non-system path
     per OrcaSlicer.cpp's `--load-settings` validator.
+
+    KEY-ORDERING INVARIANT
+    ----------------------
+    OrcaSlicer's `load_from_json` parses keys in JSON-iteration order
+    and BREAKS out of the loop the moment it hits a malformed config
+    key (e.g., a JSON array containing numbers instead of strings).
+    Any keys after the breakpoint are silently dropped. To guarantee
+    the metadata fields (`type`, `from`, `name`, `instantiation`,
+    `version`) make it into `key_values` regardless of which config
+    keys may be malformed, we stamp them FIRST in the output dict.
+    Python 3.7+ guarantees dict insertion order is preserved in
+    `json.dumps`, so this works as long as `out` is built head-down.
+
+    VALUE-FORMAT INVARIANT
+    ----------------------
+    OrcaSlicer's bundled JSONs store config values as STRINGS
+    (`"350"`, `["0.4"]`). Numeric / array-of-number values trigger
+    `parse_str_arr → false → break`. We coerce every non-metadata
+    value via `_orca_stringify` so any caller that sends raw Python
+    numbers still produces an Orca-valid file.
     """
-    out = dict(base)
-    out.pop("inherits", None)
-    # Apply user overrides last so they win over the system defaults.
-    # Skip metadata-only keys in the overrides dict — those are
-    # caller-supplied annotations, not slicer params.
-    for k, v in (overrides or {}).items():
-        if k in ("type", "name", "from", "setting_id", "instantiation", "inherits"):
-            continue
-        out[k] = v
-    # Re-stamp the required metadata. `from` MUST be "User" / "user" /
-    # "system" or OrcaSlicer's load_config_file rejects the file with
-    # `:file X's from <value> unsupported`. `instantiation` must be the
-    # string "true" (not a JSON bool) so Orca treats the JSON as a
-    # concrete instance rather than a base template.
-    out["type"] = {
+    type_name = {
         "machine": "machine",
         "process": "process",
         "filament": "filament",
     }[kind]
-    out["from"] = "User"
-    out["instantiation"] = "true"
-    out["name"] = overrides.get("name") if overrides else None
-    if not out["name"]:
-        out["name"] = leaf_name
+    leaf_overrides = overrides or {}
+    chosen_name = leaf_overrides.get("name") or leaf_name or f"ForgeSlicer {type_name}"
+
+    # 1) Build the metadata header FIRST. These four keys MUST land
+    #    in OrcaSlicer's `key_values` map even if a later config-key
+    #    parse breaks the loop, so they ride at the top.
+    out: dict = {
+        "type": type_name,
+        "name": chosen_name,
+        "from": "User",
+        "instantiation": "true",
+        # Orca's parser also reads `version` into key_values; not
+        # required by `--load-settings` validation, but cheap to
+        # include and helps when the file gets diffed during import.
+        "version": "01.10.00.00",
+    }
+
+    # 2) Layer in the resolved system-preset base (already flattened
+    #    by `_load_system_preset`). Drop its metadata keys — we own
+    #    those — and drop `inherits` since we're producing a flat
+    #    user profile.
+    metadata_keys = {"type", "name", "from", "setting_id",
+                     "instantiation", "inherits", "version"}
+    for k, v in (base or {}).items():
+        if k in metadata_keys:
+            continue
+        out[k] = _orca_stringify(v)
+
+    # 3) Apply user overrides on top so they win over base defaults.
+    for k, v in leaf_overrides.items():
+        if k in metadata_keys:
+            continue
+        out[k] = _orca_stringify(v)
     return out
 
 
@@ -747,6 +858,7 @@ async def orca_slice(req: OrcaSliceRequest):
         profile_args: list[str] = []
         for file_key, kind, preset_name, vendor, raw_profile in preset_specs:
             base: dict = {}
+            resolved_preset_name: Optional[str] = None
             if preset_name:
                 if profiles_root is None:
                     # The caller asked for a system preset but we have no
@@ -768,19 +880,45 @@ async def orca_slice(req: OrcaSliceRequest):
                     base = _load_system_preset(
                         profiles_root, vendor or "BBL", kind, preset_name,
                     )
-                except FileNotFoundError as e:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"OrcaSlicer system preset not found for "
-                            f"{file_key}: {preset_name!r} under vendor "
-                            f"{vendor or 'BBL'!r}. Original error: {e}"
-                        ),
+                    resolved_preset_name = preset_name
+                except FileNotFoundError:
+                    # Named preset wasn't found — drop to the fallback
+                    # below instead of failing the whole slice. This is
+                    # the common case when the frontend picks a printer
+                    # we haven't mapped to a bundled preset.
+                    logger.warning(
+                        "OrcaSlicer system preset %r not found under vendor "
+                        "%r (kind=%s); falling back to bundled %s preset.",
+                        preset_name, vendor, kind, kind,
                     )
                 except (RuntimeError, json.JSONDecodeError) as e:
                     raise HTTPException(
                         status_code=500,
                         detail=f"Failed to resolve {file_key} preset {preset_name!r}: {e}",
+                    )
+
+            # When no system preset was loaded (no name given OR the
+            # named preset was missing), ride the universal fallback
+            # chain so the file we write is built on top of a real
+            # OrcaSlicer-validated config rather than synthesised
+            # from scratch.
+            if not base and profiles_root is not None:
+                try:
+                    base, _, resolved_preset_name = _resolve_fallback_preset(
+                        profiles_root, kind,
+                    )
+                except FileNotFoundError as e:
+                    # Even the fallback's missing — this OrcaSlicer
+                    # install is broken. Surface 503 so the UI can
+                    # fall back to the built-in slicer cleanly.
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            f"OrcaSlicer is installed but its bundled "
+                            f"fallback {kind} preset is missing "
+                            f"({e}). The install may be corrupted; "
+                            f"try `POST /api/slice/orca/reinstall?force=true`."
+                        ),
                     )
 
             # Skip writing the file entirely only when BOTH the system-preset
@@ -794,7 +932,8 @@ async def orca_slice(req: OrcaSliceRequest):
             # here. This protects against the new-frontend / no-preset-root
             # combination that previously produced an empty `{}` file.
             leaf_name = (
-                preset_name
+                resolved_preset_name
+                or preset_name
                 or (raw_profile.get("name") if isinstance(raw_profile, dict) else None)
                 or f"ForgeSlicer {kind}"
             )

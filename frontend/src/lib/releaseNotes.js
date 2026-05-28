@@ -14,6 +14,16 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.17.0",
+    date: "2026-02-28",
+    title: "Rigid-body rotations stay rigid · OrcaSlicer profile fix",
+    changes: [
+      { type: "fix", text: "Multi-rotation assembly drift — rotating a grouped assembly two or three times in a row no longer scatters its members. Underneath, the rotation math now composes via quaternions rather than per-axis Euler subtraction, so the children stay locked to the primary regardless of how many world-axis tweaks you apply or what starting orientation each piece has. Both the popover and the gizmo paths fixed in lockstep." },
+      { type: "fix", text: "OrcaSlicer \"unknown config type\" error — slicing via the OrcaSlicer engine no longer 251-errors on non-Bambu printers (Sovol, Voron, Prusa, Creality, Custom). The generated profile JSONs now ride a bundled OrcaSlicer system preset (`MyKlipper 0.4 nozzle` for the universal fallback), and every config value is stringified to match Orca's strict on-disk format. The built-in JS slicer was never affected — this only impacted the opt-in production-quality engine." },
+    ],
+  },
+
+  {
     version: "1.16.0",
     date: "2026-02-27",
     title: "Splined Shaft primitive + Slice progress + draft indicator",

@@ -1,0 +1,51 @@
+{
+  "summary": "Iter14 P0 bug-fix validation for ForgeSlicer. Both reported P0 bugs verified fixed: (1) OrcaSlicer 'unknown config type' error — metadata-first JSON ordering + stringification confirmed via 10 new staging tests + 5 fallback-preset tests; (2) Consecutive group rotations preserve rigid-body distances — confirmed via new 5-rotation regression test. Backend pytest 163/164 in single run (1 flaky failure = brute-force rate-limit state leakage from prior test, passes in isolation → effective 164/164). Frontend math tests pass. Orca status endpoint returns graceful installed:false on aarch64. Workspace URL loads (HTTP 200).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login (test isolation)", "issue": "test_local_auth.py::TestLogin::test_unknown_email_returns_401 fails (429 instead of 401) when run as part of full suite due to brute-force lockout state from prior failed-login tests in same module. Passes 100% when run in isolation. Not a regression introduced by this iteration's Orca fixes. Suggest adding rate-limiter reset fixture between TestLogin tests or marking tests with autouse cleanup."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "backend_orca_profile_staging_10_tests": "PASS 10/10 — metadata stamped at top of dict (verified first 4 keys are ['type','name','from','instantiation']); Sovol SV06 Ace production input reproduction stays valid JSON; layer_height stringified ('0.2' not 0.2); list-of-numbers like [0.4] becomes ['0.4']; bools → '1'/'0'; None → ''",
+    "backend_orca_fallback_preset_5_tests": "PASS 5/5 — fallback chain constants match exact Orca preset names ('MyKlipper 0.4 nozzle', '0.20mm Standard @MyKlipper', 'Generic PLA @System'); _resolve_fallback_preset returns flat chain for machine/process/filament kinds; raises on missing inherits target",
+    "backend_full_pytest_regression": "PASS 163/164 in one shot (test_orca_progress.py ignored per instructions). The 1 failure is an unrelated test-isolation issue (rate-limit state from prior tests in test_local_auth.py); passes when run alone → effective 164/164",
+    "backend_orca_status_endpoint": "PASS — GET /api/slice/orca/status returns HTTP 200 with installed:false, arch:aarch64, source:missing, build_in_progress:false, helpful detail message. Graceful as designed.",
+    "frontend_rotation_group_consecutive": "PASS — 11 OK lines, exit 0. After 5 sequential rotations on 4-piece assembly, all 6 pairwise distances stay invariant (10.0, 10.0, 15.0, 14.1421, 11.1803, 11.1803); primary stays at origin; all 3 satellites match composed-quaternion expected positions (Δ < 1e-4)",
+    "frontend_rotation_group_pivot": "PASS — 6 OK lines, exit 0. Single-rotation invariants still hold (sphere (-8,20,0) after 90° Z rotation of cube primary, distance 21.5407 preserved, single-object rotation doesn't translate)",
+    "frontend_workspace_smoke": "PASS — https://orca-cad-slice.preview.emergentagent.com/workspace returns HTTP 200"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_orca_profile_staging.py",
+    "/app/backend/tests/test_orca_fallback_preset.py",
+    "/app/test_reports/pytest/iter14_new_tests.xml",
+    "/app/test_reports/pytest/iter14_full.xml",
+    "/app/frontend/tests/rotation-group-consecutive.mjs",
+    "/app/frontend/tests/rotation-group-pivot.mjs"
+  ],
+  "action_items": [
+    "(Optional / low priority) Add an autouse fixture to test_local_auth.py::TestLogin that resets the in-memory brute-force lockout cache before each test, so the full suite is deterministic without test-order dependency. Currently 163/164 in one run, 164/164 in isolation."
+  ],
+  "critical_code_review_comments": [
+    "_stage_user_profile correctly stamps metadata FIRST (type, name, from, instantiation, version) and the order is preserved through json.dumps because Python 3.7+ dicts are insertion-ordered — this is the correct fix for OrcaSlicer's load_from_json early-break behaviour on malformed keys.",
+    "_orca_stringify recurses into lists and converts bool→'1'/'0', None→'', numbers→str, which prevents the [0.4]-style numeric arrays that previously broke load_from_json mid-iteration. Good defensive coercion.",
+    "Quaternion-based rotateSelected + Viewport.handleChange (newQ · startQ⁻¹) is the correct mathematical fix for the Euler-additive composition bug — verified by the 5-rotation regression that produces sub-1e-4 deviation from the analytically composed positions.",
+    "test_orca_progress.py correctly ignored on aarch64 (OrcaSlicer AppImage is x86_64-only) — engine returns graceful installed:false instead of crashing on /api/slice/orca/status."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% effective (164/164 — the single full-run failure is a known test-isolation artifact, not a regression)",
+    "frontend": "100% (math tests 17/17 OK lines across both files; workspace HTTP 200)"
+  },
+  "test_credentials": "Not required for this iteration — Orca status is unauthenticated; math tests are pure node scripts.",
+  "seed_data_creation": "None — tests are pure-function / math regressions; no DB writes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter14 validated both P0 fixes from the Orca/Rotation batch. Key files now covered by regression: backend/tests/test_orca_profile_staging.py (10), backend/tests/test_orca_fallback_preset.py (5), frontend/tests/rotation-group-consecutive.mjs (11 OK assertions). The only nuisance to know about: running the full backend pytest suite triggers brute-force lockout for test_local_auth.py::TestLogin::test_unknown_email_returns_401 (returns 429 instead of 401) due to in-memory rate-limiter state from prior tests in the same module — isolated run passes. To get a clean 164/164 in one shot, either reset the limiter between tests or run test_local_auth.py separately. test_orca_progress.py must continue to be ignored on this aarch64 preview pod (Orca AppImage is x86_64-only). Use REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d '=' -f2) for pytest.",
+  "rca of the issue": "P0 #1 (Orca 'unknown config type'): OrcaSlicer's load_from_json parses keys in JSON-iteration order and BREAKS the loop on the first malformed value (e.g., numeric array [0.4] vs expected ['0.4']). Any keys after the breakpoint — including 'type' — are silently dropped, so key_values['type'] is empty → 'unknown config type of file'. Fix landed in _stage_user_profile: (a) stamp the 5 metadata keys (type, name, from, instantiation, version) FIRST in the dict so they survive even if a later value is malformed; (b) coerce all values via _orca_stringify so no numeric/bool/list-of-number ever reaches Orca. Verified by the 10 staging tests including a faithful Sovol SV06 Ace production-input reproducer. P0 #2 (group rotation drift): Prior code did `rotation += delta` on Euler angles, but Euler addition is NOT associative for non-axis-aligned rotations — concrete example: starting (45,0,0) and rotating 45° around world Y, XYZ Euler decomposition gives (54.74, 30, -35.26), so the naive subtraction yields a wrong delta-Euler and children drift. Fix landed in rotateSelected + Viewport.handleChange: compute quaternion delta as newQ · startQ⁻¹ and apply it to each child, then decompose to Euler only for storage. Verified by 5 consecutive 30°/45°/60° rotations on a 4-piece assembly with all 6 pairwise distances staying invariant within 1e-4."
+}

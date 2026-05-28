@@ -256,31 +256,61 @@ function SelectedTransform() {
       if (transformMode === "translate") {
         setTransform(id, "position", [s.pos[0] + dPos[0], s.pos[1] + dPos[1], s.pos[2] + dPos[2]]);
       } else if (transformMode === "rotate") {
-        // Rigid-body group rotation: each other-selected member must
-        // ORBIT the primary (the object the gizmo is attached to) by
-        // the same delta, AND spin its own local axes by the same
-        // delta. Without the orbit, every member would just spin in
-        // place around its own center — which silently destroys the
-        // relative geometry of any offset assembly. We rebuild the
-        // rotation matrix from the accumulated drag delta (XYZ Euler
-        // order — matches the renderer's per-object Euler) and apply
-        // it to each member's start-of-drag offset from the primary.
-        // Using start positions (not last-frame positions) keeps the
-        // math exact and drift-free over long drags.
+        // Rigid-body group rotation via QUATERNION delta so the
+        // assembly stays cohesive across consecutive rotations.
+        //
+        // ❌ Previous bug: we subtracted Euler components
+        // (`dRot = newRot - startRot`) and rebuilt the rotation
+        // matrix with `Matrix4.makeRotationFromEuler`. For any
+        // primary that starts with a non-trivial rotation (e.g.,
+        // already (45,0,0)) and is then rotated around a world
+        // axis, the Euler XYZ decomposition of the new orientation
+        // contains cross-axis values (e.g., (54.74, 30, -35.26) for
+        // a +45°-around-world-Y rotation of a (45,0,0)-rotated
+        // body). Naive Euler subtraction yields a delta-Euler that
+        // expands to a DIFFERENT rotation matrix than the actual
+        // world delta — every member orbits the wrong way and
+        // distances skew over consecutive rotations, scattering
+        // the assembly.
+        //
+        // ✓ Fix: compute the world-space rotation as `newQ ·
+        // startQ⁻¹` and apply that quaternion to (a) each child's
+        // start-of-drag offset from the primary (rigid orbit) and
+        // (b) each child's start-of-drag quaternion (so the child's
+        // local orientation tracks the same world rotation, not a
+        // bogus Euler-decomposed approximation).
         const primaryStart = start.primary.pos;
-        const dEuler = new THREE.Euler(
-          THREE.MathUtils.degToRad(dRot[0]),
-          THREE.MathUtils.degToRad(dRot[1]),
-          THREE.MathUtils.degToRad(dRot[2]),
+        const startQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          THREE.MathUtils.degToRad(start.primary.rot[0]),
+          THREE.MathUtils.degToRad(start.primary.rot[1]),
+          THREE.MathUtils.degToRad(start.primary.rot[2]),
           "XYZ",
-        );
-        const dMat = new THREE.Matrix4().makeRotationFromEuler(dEuler);
+        ));
+        const newQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          THREE.MathUtils.degToRad(newRot[0]),
+          THREE.MathUtils.degToRad(newRot[1]),
+          THREE.MathUtils.degToRad(newRot[2]),
+          "XYZ",
+        ));
+        const dQ = newQ.clone().multiply(startQ.clone().invert());
         const offset = new THREE.Vector3(
           s.pos[0] - primaryStart[0],
           s.pos[1] - primaryStart[1],
           s.pos[2] - primaryStart[2],
-        ).applyMatrix4(dMat);
-        setTransform(id, "rotation", [s.rot[0] + dRot[0], s.rot[1] + dRot[1], s.rot[2] + dRot[2]]);
+        ).applyQuaternion(dQ);
+        const childStartQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          THREE.MathUtils.degToRad(s.rot[0]),
+          THREE.MathUtils.degToRad(s.rot[1]),
+          THREE.MathUtils.degToRad(s.rot[2]),
+          "XYZ",
+        ));
+        const childNewQ = dQ.clone().multiply(childStartQ);
+        const childNewEuler = new THREE.Euler().setFromQuaternion(childNewQ, "XYZ");
+        setTransform(id, "rotation", [
+          Math.round(THREE.MathUtils.radToDeg(childNewEuler.x) * 1e4) / 1e4,
+          Math.round(THREE.MathUtils.radToDeg(childNewEuler.y) * 1e4) / 1e4,
+          Math.round(THREE.MathUtils.radToDeg(childNewEuler.z) * 1e4) / 1e4,
+        ]);
         setTransform(id, "position", [
           primaryStart[0] + offset.x,
           primaryStart[1] + offset.y,
