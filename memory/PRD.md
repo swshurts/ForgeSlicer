@@ -914,3 +914,18 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - **Refactor `frontend/src/lib/store.js`** — file is now >1300 lines; split rotation/CSG math + group ops into dedicated modules.
 - **PRD.md split** — file is at 916 lines; should split into PRD.md (problem statement / personas / static) + CHANGELOG.md (append-only history) + ROADMAP.md (P0/P1/P2 backlog).
 
+
+## Iteration 45 (2026-02-28) — Eye-icon STL preview rotation-order fix
+- ✅ **STL Preview / gallery thumbnail no longer shows disjointed parts** when an assembly has been rotated.
+  - Root cause: `manifold-3d`'s `m.rotate([rx, ry, rz])` applies rotations in *global X → Y → Z* order (per its docs). THREE.Euler('XYZ') — used by every viewport / inspector / gizmo path — is the *opposite* (global Z → Y → X). The two produce the same result for axis-aligned rotations but DIFFER materially for any part with non-trivial multi-axis Euler values. After the rigid-body group fix landed in iter 44, every child of a rotated assembly carries multi-axis Euler — so the export pipeline started visibly disagreeing with the viewport.
+  - Reproduced numerically: same Euler `(45°, 90°, 0)`, point `(1,0,0)` → viewport lands it at `(0, 0.707, -0.707)`, buggy manifold lands it at `(0, 0, -1)`. Distance 0.77.
+  - Fix: in `manifoldEngine.js → buildObjectManifold`, replace `m.rotate([rx,ry,rz])` with `m.transform(mat.elements)` where `mat = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz, "XYZ"))`. `Matrix4.elements` is already column-major, exactly what manifold-3d's `Mat4` type expects. Manifold's `transform` is order-agnostic so the bake-order mismatch is eliminated by construction. BVH path was already correct (uses Three.js Object3D.matrixWorld) — only the manifold path needed this fix.
+  - Test: new `frontend/tests/manifold-rotation-order.mjs` runs 60 viewport↔manifold agreement assertions across 10 typical post-group-rotation Euler values × 6 probe vectors, plus a buggy-path divergence check to confirm the bug was real.
+- Files: `frontend/src/lib/manifoldEngine.js` (transform replaces rotate), `frontend/tests/manifold-rotation-order.mjs` (NEW), `frontend/src/lib/releaseNotes.js` (v1.17.1 entry).
+
+### Pending (next session)
+- **Save Assembly to Gallery/Share silent failure (P2)** — could not reproduce in preview; awaiting user repro on prod with DevTools network capture.
+- **Sketch → Path sweep (P1)** — deferred.
+- **Refactor `frontend/src/lib/store.js`** — file is >1300 lines; split rotation/CSG math + group ops into dedicated modules.
+- **PRD.md split** — file is at 940+ lines; should split into PRD.md / CHANGELOG.md / ROADMAP.md.
+

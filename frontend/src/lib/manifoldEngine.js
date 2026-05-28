@@ -284,7 +284,36 @@ function buildObjectManifold(wasm, obj) {
   const ry = obj.rotation[1] || 0;
   const rz = obj.rotation[2] || 0;
   if (rx !== 0 || ry !== 0 || rz !== 0) {
-    const next = m.rotate([rx, ry, rz]);
+    // ❌ Previous bug: `m.rotate([rx, ry, rz])` applies rotations in
+    // *global X → Y → Z* order (per manifold-3d docs: "From the
+    // global reference frame, a model will be rotated in x-y-z
+    // order"). Three.js' default `Euler('XYZ')` — which the viewport
+    // and every other renderer uses — applies the matrix Rx·Ry·Rz
+    // RIGHT-to-LEFT to vectors, i.e. global *Z → Y → X*. The two
+    // orders produce DIFFERENT final orientations the moment a part
+    // has non-trivial rotations on more than one axis. After the
+    // rigid-body group fix, every child gets a multi-axis Euler
+    // when the assembly is rotated — so the STL preview / export
+    // ended up showing parts in visibly different positions than
+    // the live viewport. Visual symptom: "disjointed parts" in the
+    // eyeball preview even though the viewport looked correct.
+    //
+    // ✓ Fix: bake the rotation via the same THREE.Euler('XYZ') the
+    // viewport uses, then feed the resulting column-major Mat4 to
+    // `m.transform()`. Manifold's `transform` is order-agnostic
+    // (just multiplies vertices by the matrix), so the bake-order
+    // mismatch is eliminated by construction.
+    const rotEuler = new THREE.Euler(
+      THREE.MathUtils.degToRad(rx),
+      THREE.MathUtils.degToRad(ry),
+      THREE.MathUtils.degToRad(rz),
+      "XYZ",
+    );
+    const rotMat = new THREE.Matrix4().makeRotationFromEuler(rotEuler);
+    // THREE.Matrix4.elements is already column-major, exactly what
+    // manifold-3d's Mat4 type expects. Pass the 16-element array
+    // directly; manifold ignores the last row.
+    const next = m.transform(Array.from(rotMat.elements));
     m.delete();
     m = next;
   }

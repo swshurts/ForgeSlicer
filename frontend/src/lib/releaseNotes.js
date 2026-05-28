@@ -14,6 +14,15 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.17.1",
+    date: "2026-02-28",
+    title: "STL preview matches viewport — rotation-order fix",
+    changes: [
+      { type: "fix", text: "The eyeball STL Preview no longer shows assembly parts in different positions than the live viewport. Under the hood the manifold-3d engine was rotating objects in global X→Y→Z order while THREE.Euler('XYZ') uses global Z→Y→X — the two are opposite, so any part with non-trivial multi-axis rotations (e.g. every child after a group rotation) ended up displaced in the export. Now the engine bakes rotations via the same column-major matrix the viewport uses, so the preview is bit-for-bit faithful to what you'll get in the slicer and the saved gallery thumbnail." },
+    ],
+  },
+
+  {
     version: "1.17.0",
     date: "2026-02-28",
     title: "Rigid-body rotations stay rigid · OrcaSlicer profile fix",
