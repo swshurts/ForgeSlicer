@@ -23,8 +23,9 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - **Save Assembly to Gallery/Share silent-failure follow-up** — only triggers if user reports a recurrence on prod with DevTools network payload + response captured.
 
 ## 🔵 P3 — Experimental / future
-- ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53] (was originally an enhancement suggestion — landed as the closing polish item)
-- Direct ARM64 OrcaSlicer build for preview-pod parity (currently x86_64 AppImage only). **← Next focus per user.**
+- ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53]
+- ~~**ARM64 OrcaSlicer**~~ [DONE — iter 54] (upstream's official aarch64 Flatpak, invoked through the runtime's ld-linux loader to bypass bwrap sandboxing)
+- **Search for community OrcaSlicer ARM64 binaries** — user-requested follow-up: check whether any community fork ships a true headless / non-flatpak ARM64 build that would let us drop the GNOME runtime dependency (~280 MB on disk). Acceptable today, but lighter is better.
 - Live multi-user editing (CRDT / Yjs).
 - Photo → reference plane (drop a photo, snap dims to known features).
 
