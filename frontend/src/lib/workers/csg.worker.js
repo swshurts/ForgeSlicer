@@ -169,7 +169,25 @@ self.addEventListener("message", async (e) => {
         const r = await evaluateSmart(payload.objects);
         if (r.empty) throw new Error("Scene is empty. Add at least one positive component.");
         const bytes = geometryToSTLBytes(r.geometry);
-        result = { bytes, triangleCount: r.triangleCount, manifoldVerified: !!r.manifoldVerified };
+        // Compute bbox from the merged geometry — useful for the gallery card
+        // and STL preview's bed-clearance chip. Done in the worker so the
+        // main thread doesn't have to re-walk the vertex buffer.
+        let bbox = null;
+        try {
+          const g = r.geometry;
+          if (g) {
+            g.computeBoundingBox && g.computeBoundingBox();
+            const bb = g.boundingBox;
+            if (bb) {
+              bbox = {
+                x: +(bb.max.x - bb.min.x).toFixed(2),
+                y: +(bb.max.y - bb.min.y).toFixed(2),
+                z: +(bb.max.z - bb.min.z).toFixed(2),
+              };
+            }
+          }
+        } catch (_) { /* non-fatal */ }
+        result = { bytes, triangleCount: r.triangleCount, manifoldVerified: !!r.manifoldVerified, bbox };
         transfers.push(bytes.buffer);
         break;
       }

@@ -807,6 +807,12 @@ class GalleryItemCreate(BaseModel):
     # zero open edges). Surfaces as a "Manifold ✓" badge on Gallery cards
     # so remixers see at a glance that a design will slice/print cleanly.
     manifold_verified: bool = False
+    # Model extents in millimetres (axis-aligned bounding box of the
+    # baked STL). Surfaces as an "X×Y×Z mm" chip on Gallery cards + the
+    # STL Preview's stats overlay so makers can eyeball whether a design
+    # fits their bed before downloading. Optional — legacy items don't
+    # have it and will render without the chip.
+    bbox_mm: Optional[dict] = None  # {"x": float, "y": float, "z": float}
 
 
 class GalleryItemMeta(BaseModel):
@@ -830,6 +836,8 @@ class GalleryItemMeta(BaseModel):
     material: str = "pla"
     # Surfaces in the Gallery as a "Manifold ✓" badge when true.
     manifold_verified: bool = False
+    # Model extents in mm (X/Y/Z). Optional — None on legacy items.
+    bbox_mm: Optional[dict] = None
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -900,6 +908,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         "license": (item.license or "cc-by-4.0").strip()[:40],
         "material": (item.material or "pla").strip().lower()[:20],
         "manifold_verified": bool(item.manifold_verified),
+        "bbox_mm": item.bbox_mm if isinstance(item.bbox_mm, dict) else None,
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
@@ -921,6 +930,7 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         license=doc["license"],
         material=doc.get("material", "pla"),
         manifold_verified=doc.get("manifold_verified", False),
+        bbox_mm=doc.get("bbox_mm"),
     )
 
 
@@ -948,6 +958,7 @@ def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
         license=d.get("license", "cc-by-4.0"),
         material=d.get("material", "pla"),
         manifold_verified=bool(d.get("manifold_verified", False)),
+        bbox_mm=d.get("bbox_mm") if isinstance(d.get("bbox_mm"), dict) else None,
     )
 
 

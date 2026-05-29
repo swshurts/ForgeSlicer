@@ -49,7 +49,22 @@ export async function exportSceneToSTLBytes(objects) {
   const { geometry, triangleCount, empty } = evaluateScene(objects);
   if (empty) throw new Error("Scene is empty. Add at least one positive component.");
   const dv = geometryToSTLBinary(geometry);
-  return { bytes: new Uint8Array(dv.buffer), triangleCount };
+  // Bbox is read by Gallery + STL Preview to render an "extent" chip.
+  let bbox = null;
+  try {
+    if (geometry) {
+      geometry.computeBoundingBox && geometry.computeBoundingBox();
+      const bb = geometry.boundingBox;
+      if (bb) {
+        bbox = {
+          x: +(bb.max.x - bb.min.x).toFixed(2),
+          y: +(bb.max.y - bb.min.y).toFixed(2),
+          z: +(bb.max.z - bb.min.z).toFixed(2),
+        };
+      }
+    }
+  } catch (_) { /* non-fatal */ }
+  return { bytes: new Uint8Array(dv.buffer), triangleCount, bbox };
 }
 
 // ---------- 3MF Export (minimal valid 3MF) ----------

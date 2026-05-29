@@ -7,10 +7,11 @@ import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import {
   Download, Hexagon, ArrowLeft, Trash2, RefreshCw, GitFork, Repeat,
   PlusSquare, MinusSquare, Star, Search, Plus, BadgeCheck, Tag, Scale, Layers,
-  Lock, Globe, Share2, ShieldCheck,
+  Lock, Globe, Share2, ShieldCheck, Ruler, AlertTriangle,
 } from "lucide-react";
 import { getLicense } from "../lib/licenses";
 import { MATERIALS, getMaterial } from "../lib/materials";
+import { useScene } from "../lib/store";
 
 const PLACEHOLDERS = [
   "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
@@ -123,6 +124,14 @@ function GalleryCard({ item, idx, onDelete }) {
   const thumb = item.thumbnail_base64
     ? `data:image/png;base64,${item.thumbnail_base64}`
     : PLACEHOLDERS[idx % PLACEHOLDERS.length];
+  // Pull the current user's printer build volume so we can show a
+  // bed-clearance chip ("fits / too big") right on the card. Falls
+  // back gracefully when the bbox isn't recorded (legacy items).
+  const buildVolume = useScene((s) => s.buildVolume);
+  const bbox = item.bbox_mm && Number.isFinite(item.bbox_mm.x) ? item.bbox_mm : null;
+  const fitsBed = bbox && buildVolume
+    ? (bbox.x <= buildVolume.x && bbox.z <= buildVolume.y && bbox.y <= buildVolume.z)
+    : null;  // null = unknown — don't show the chip
   return (
     <div className="group bg-slate-900 border border-slate-800 rounded-lg overflow-hidden hover:border-orange-500/60 transition-all" data-testid={`gallery-card-${item.id}`}>
       <div className="aspect-square bg-slate-950 overflow-hidden relative">
@@ -130,6 +139,24 @@ function GalleryCard({ item, idx, onDelete }) {
         <div className="absolute top-2 right-2 bg-black/70 backdrop-blur text-[10px] font-mono text-orange-400 px-1.5 py-0.5 rounded">
           {item.triangle_count.toLocaleString()} △
         </div>
+        {bbox && (
+          <div
+            data-testid={`gallery-bbox-${item.id}`}
+            className="absolute top-7 right-2 bg-black/70 backdrop-blur text-[10px] font-mono text-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1"
+            title={`Extents: ${bbox.x} × ${bbox.y} × ${bbox.z} mm` + (fitsBed === false ? ` — does NOT fit your ${buildVolume?.x}×${buildVolume?.y}×${buildVolume?.z} mm bed` : fitsBed === true ? ` — fits your ${buildVolume?.x}×${buildVolume?.y}×${buildVolume?.z} mm bed` : "")}
+          >
+            <Ruler size={10} className="text-slate-400" /> {bbox.x}×{bbox.y}×{bbox.z}
+          </div>
+        )}
+        {fitsBed === false && (
+          <div
+            data-testid={`gallery-bed-too-big-${item.id}`}
+            className="absolute top-12 right-2 bg-amber-500/20 backdrop-blur text-[10px] font-mono text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/40 flex items-center gap-1"
+            title="Larger than your current printer's build volume — pick a bigger printer or scale down after Remix."
+          >
+            <AlertTriangle size={10} /> too big
+          </div>
+        )}
         {item.remix_of && (
           <div className="absolute top-2 left-2 bg-black/70 backdrop-blur text-[10px] font-mono text-cyan-300 px-1.5 py-0.5 rounded flex items-center gap-1">
             <Repeat size={10} /> remix

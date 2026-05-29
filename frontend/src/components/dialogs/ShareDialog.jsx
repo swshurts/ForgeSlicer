@@ -54,7 +54,7 @@ export function ShareDialog({ open, onClose }) {
   const handleShare = async () => {
     setError(""); setBusy(true); setDone(null);
     try {
-      const { bytes, triangleCount, manifoldVerified } = await exportSTLBytesAsync(objects);
+      const { bytes, triangleCount, manifoldVerified, bbox } = await exportSTLBytesAsync(objects);
       const b64 = bytesToBase64(bytes);
       const thumb = getThumbnail();
       const remixOf = useScene.getState().remixOf;
@@ -77,6 +77,7 @@ export function ShareDialog({ open, onClose }) {
         license: licenseId,
         material: materialId,
         manifold_verified: !!manifoldVerified,
+        bbox_mm: bbox || undefined,
       });
       setDone(created);
     } catch (e) {

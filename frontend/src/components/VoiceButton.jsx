@@ -461,6 +461,8 @@ export default function VoiceButton() {
         data-testid="voice-btn"
         title="Voice commands require microphone access (MediaRecorder API)."
         disabled
+        aria-label="Voice command (unsupported)"
+        aria-pressed={false}
         className="h-8 px-2.5 rounded text-[11px] font-semibold uppercase tracking-wider border bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed flex items-center gap-1.5"
       >
         <MicOff size={12} /> Voice
@@ -527,6 +529,9 @@ export default function VoiceButton() {
         data-testid="voice-btn"
         onClick={onMainClick}
         disabled={busy}
+        aria-label={mode === "go" ? "Voice command (Go mode)" : "Voice command"}
+        aria-pressed={stage === "recording" || stage === "confirming" || goRunningRef.current}
+        aria-busy={busy}
         title={
           stage === "recording" ? "Listening… stops automatically when you pause." :
           stage === "grace" ? "Reviewing transcript — say 'Run' or 'Cancel' in a moment." :

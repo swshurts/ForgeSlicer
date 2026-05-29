@@ -7,6 +7,13 @@ import { TEXTURE_DEFAULTS } from "./textureGeometry";
 import { cutObjectByPlane } from "./csg";
 import { cutObjectByPlaneAsync } from "./workerClient";
 import {
+  buildSlot,
+  buildFastenerPair,
+  buildCountersink,
+  buildHexPocket,
+  buildGusset,
+} from "./composites";
+import {
   applyTranslate,
   applyScaleMul,
   applyRigidRotate,
@@ -324,59 +331,11 @@ export const useScene = create((set, get) => ({
   // callers customise; defaults match the bolt primitive's defaults
   // (M10 ish — 5mm major radius, 1.5mm pitch).
   addFastenerPair: (opts = {}) => {
-    const boltR = opts.boltR ?? 5;
-    const pitch = opts.pitch ?? 1.5;
-    const workThickness = opts.workThickness ?? 12;
-    const headR = opts.headR ?? boltR * 1.6;
-    const headH = opts.headH ?? Math.max(3, boltR * 0.7);
-    const shaftH = opts.shaftH ?? workThickness + 8;
-    const nutH = opts.nutH ?? Math.max(3, boltR * 1.0);
-    const groupId = `fastener-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const groupName = opts.groupName || "Fastener Pair";
     get().pushHistory();
-    // Generate distinct IDs since `buildPrimitive` stamps a millisecond-
-    // resolution id-stem; four parts created in the same tick would
-    // collide. We use a small counter postfix to guarantee uniqueness.
-    let i = 0;
-    const freshId = (type) => `${type}-${Date.now()}-${i++}`;
-    const counterboreDepth = headH + 0.2;
-    const parts = [
-      // Bolt — head at Y=0, shaft rising upward.
-      {
-        ...buildPrimitive("bolt", "positive"),
-        id: freshId("bolt"),
-        name: "Bolt", position: [0, 0, 0],
-        dims: { r: boltR, pitch, h: shaftH, headR, headH, segments: 48, headStyle: "hex" },
-        groupId, groupName,
-      },
-      // Through-bore for the shaft — clearance fit (+0.4mm).
-      {
-        ...buildPrimitive("cylinder", "negative"),
-        id: freshId("cylinder"),
-        name: "Bolt Bore", position: [0, headH + workThickness / 2, 0],
-        dims: { r: boltR + 0.4, h: workThickness, segments: 48 },
-        groupId, groupName,
-      },
-      // Counterbore — recess the head into the work surface.
-      {
-        ...buildPrimitive("cylinder", "negative"),
-        id: freshId("cylinder"),
-        name: "Head Counterbore", position: [0, counterboreDepth / 2, 0],
-        dims: { r: headR + 0.5, h: counterboreDepth, segments: 48 },
-        groupId, groupName,
-      },
-      // Nut — threaded onto the far side of the work surface.
-      {
-        ...buildPrimitive("nut", "positive"),
-        id: freshId("nut"),
-        name: "Nut", position: [0, headH + workThickness + nutH / 2, 0],
-        dims: { r: boltR, pitch, h: nutH, flatR: headR, segments: 48 },
-        groupId, groupName,
-      },
-    ];
+    const { parts, groupId, primaryId } = buildFastenerPair(opts, { buildPrimitive, newId });
     set((s) => ({
       objects: [...s.objects, ...parts],
-      selectedId: parts[0].id,
+      selectedId: primaryId,
       selectedIds: parts.map((p) => p.id),
     }));
     return groupId;
@@ -385,107 +344,39 @@ export const useScene = create((set, get) => ({
   // ---- Composite macros (iter 50) ---------------------------------
   // Each composite is a small assembly the user can drop with ONE
   // click. All members share a groupId so they move/rotate as a unit
-  // and ungroup-able for fine-tuning. Naming pattern: `addXxx(opts)`.
+  // and ungroup-able for fine-tuning. Pure builders live in
+  // `lib/composites.js`; the store actions are thin pushHistory + set
+  // wrappers so undo captures the entire assembly in one snapshot.
 
-  // Countersink — a flat-bottomed cylinder + a chamfered cone above
-  // it, both negative, so subtracting from a host produces a hole
-  // that takes a flat-head bolt flush with the surface.
   addCountersink: (opts = {}) => {
-    const boreR = opts.boreR ?? 2.5;            // shaft clearance
-    const headR = opts.headR ?? boreR * 2;      // sink-cup radius
-    const sinkH = opts.sinkH ?? headR;          // sink depth
-    const throughH = opts.throughH ?? 12;       // host thickness
-    const groupId = `cs-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const groupName = opts.groupName || "Countersink";
     get().pushHistory();
-    let i = 0;
-    const freshId = (t) => `${t}-${Date.now()}-${i++}`;
-    const parts = [
-      // Through-bore cylinder (clearance for the shaft below the sink).
-      {
-        ...buildPrimitive("cylinder", "negative"),
-        id: freshId("cylinder"),
-        name: "CS Bore", position: [0, throughH / 2, 0],
-        dims: { r: boreR, h: throughH, segments: 48 },
-        groupId, groupName,
-      },
-      // Sink cup — a cone with its wide top at the work surface and
-      // its narrow bottom matching boreR. Three.js Cone is wide at
-      // y=-h/2 and narrow at y=+h/2; we want the OPPOSITE (wide on
-      // top), so we use a frustum-shaped Cylinder with two radii.
-      {
-        ...buildPrimitive("cone", "negative"),
-        id: freshId("cone"),
-        name: "CS Cup", position: [0, throughH - sinkH / 2, 0],
-        dims: { r1: headR, r2: boreR, h: sinkH, segments: 48 },
-        groupId, groupName,
-      },
-    ];
+    const { parts, groupId, primaryId } = buildCountersink(opts, { buildPrimitive, newId });
     set((s) => ({
       objects: [...s.objects, ...parts],
-      selectedId: parts[0].id,
+      selectedId: primaryId,
       selectedIds: parts.map((p) => p.id),
     }));
     return groupId;
   },
 
-  // Hex pocket — engraved hex socket (M-equivalent), useful for
-  // dropping a hex-key drive into a host without modeling a real
-  // socket geometry. Single negative hexagonal cylinder.
   addHexPocket: (opts = {}) => {
-    const acrossFlatsR = opts.acrossFlatsR ?? 2.5;   // socket size
-    const depth = opts.depth ?? 4;
-    const groupId = `hexp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const groupName = opts.groupName || "Hex Pocket";
     get().pushHistory();
-    const part = {
-      ...buildPrimitive("cylinder", "negative"),
-      id: `cylinder-${Date.now()}-0`,
-      name: "Hex Pocket", position: [0, depth / 2, 0],
-      // A 6-segment cylinder IS a hex prism. Radius matches the
-      // across-corners (circumradius) so the flats line up with the
-      // requested across-flats dimension (= circumradius * cos(30°)).
-      dims: { r: acrossFlatsR / Math.cos(Math.PI / 6), h: depth, segments: 6 },
-      rotation: [0, 30, 0], // flats vertical
-      groupId, groupName,
-    };
+    const { parts, groupId, primaryId } = buildHexPocket(opts, { buildPrimitive, newId });
     set((s) => ({
-      objects: [...s.objects, part],
-      selectedId: part.id,
-      selectedIds: [part.id],
+      objects: [...s.objects, ...parts],
+      selectedId: primaryId,
+      selectedIds: parts.map((p) => p.id),
     }));
     return groupId;
   },
 
-  // Gusset — a triangular reinforcement bracket between two
-  // perpendicular faces. Modeled as a wedge (right-triangle prism)
-  // positive primitive — the user just drops it into the corner and
-  // optionally booleans it into the host.
   addGusset: (opts = {}) => {
-    const w = opts.w ?? 12;       // leg length along X
-    const h = opts.h ?? 12;       // leg length along Y
-    const thickness = opts.thickness ?? 3;  // gusset thickness
-    const groupId = `gus-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-    const groupName = opts.groupName || "Gusset";
     get().pushHistory();
-    // We use a wedge primitive built on the fly via a custom 'wedge'
-    // type. The store/buildGeometry chain doesn't have a dedicated
-    // wedge primitive YET, so we fake it with a box rotated so its
-    // diagonal forms the gusset's hypotenuse — visually close enough
-    // for an MVP, and the user can replace it with a sketched
-    // triangle for the real shape if needed.
-    const part = {
-      ...buildPrimitive("triangle", "positive"),
-      id: `triangle-${Date.now()}-0`,
-      name: "Gusset", position: [w / 2, h / 2, 0],
-      dims: { r: Math.max(w, h) / 2, h: thickness },
-      rotation: [0, 0, 0],
-      groupId, groupName,
-    };
+    const { parts, groupId, primaryId } = buildGusset(opts, { buildPrimitive, newId });
     set((s) => ({
-      objects: [...s.objects, part],
-      selectedId: part.id,
-      selectedIds: [part.id],
+      objects: [...s.objects, ...parts],
+      selectedId: primaryId,
+      selectedIds: parts.map((p) => p.id),
     }));
     return groupId;
   },
@@ -688,79 +579,19 @@ export const useScene = create((set, get) => ({
   },
 
   // ---------- Composite primitives ----------
-  // Slot / racetrack hole — a rectangular cube capped by two half-cylinders.
-  // Built as a real grouped assembly (1 cube + 2 cylinders) so the user can
-  // still edit individual radii/lengths after the fact instead of being
-  // locked into a baked single-mesh. Default is NEGATIVE so the slot carves
-  // a hole through a parent plate (the common rack-mount use-case).
-  // Parameters (all millimetres):
-  //   width  — short axis of the slot (matches bolt diameter family). 6 ≈ M5 clearance.
-  //   length — OAL of the slot, cap-to-cap. Must be >= width; the rectangular
-  //            middle has length (length - width).
-  //   depth  — slot height (i.e. plate thickness it carves through).
-  // Returns the assembly's groupId.
+  // Slot / racetrack hole — see `lib/composites.js#buildSlot` for the
+  // construction details. The store action is the thin pushHistory +
+  // set wrapper so the slot lands as a single undo step. Returns the
+  // assembly's groupId.
   addSlot: (modifier = "negative", overrides = {}) => {
-    const width = Math.max(0.1, overrides.width ?? 6);
-    const length = Math.max(width, overrides.length ?? 10);
-    const depth = Math.max(0.1, overrides.depth ?? 6.5);
-    const middle = length - width;             // length of the rectangular core
-    const radius = width / 2;
-
     get().pushHistory();
-    const gid = `slot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    const groupName = `Slot ${width}×${length}×${depth}`;
-    const baseY = depth / 2;                   // half-height so bottom sits on Y=0
-
-    // Cube body: x = width, z (extrude depth in our convention) = depth,
-    // y (length) = middle. When middle === 0 (e.g. width==length, a round
-    // pill) we still emit a degenerate 0-length cube to keep the group's
-    // member count consistent; CSG handles 0-length boxes gracefully.
-    const cube = {
-      id: newId("cube"),
-      name: "Slot · core",
-      type: "cube",
-      modifier,
-      visible: true,
-      locked: false,
-      position: [0, baseY, 0],
-      rotation: [0, 0, 0],
-      scale: [1, 1, 1],
-      dims: { x: width, y: middle, z: depth },
-      // Slot defaults to orange when positive; negative slots use the cyan
-      // negative tint so colorIndex doesn't matter visually.
-      colorIndex: modifier === "negative" ? 0 : 7,
-      groupId: gid,
-      groupName,
-    };
-    // Two cylinders at each end of the long (Z) axis. Cylinders default to
-    // axis = Y in three.js BoxGeometry/CylinderGeometry; rotate -90° about
-    // X so they sit flat (axis along world Y), matching the cube's depth.
-    // Cylinder z-position is +/- middle/2 so its centre lines up with the
-    // cube's end face.
-    const halfCap = middle / 2;
-    const capA = {
-      id: newId("cylinder"),
-      name: "Slot · cap A",
-      type: "cylinder",
-      modifier,
-      visible: true,
-      locked: false,
-      position: [0, baseY, +halfCap],
-      rotation: [0, 0, 0],
-      scale: [1, 1, 1],
-      dims: { r: radius, h: depth, segments: 48 },
-      colorIndex: modifier === "negative" ? 0 : 7,
-      groupId: gid,
-      groupName,
-    };
-    const capB = { ...capA, id: newId("cylinder"), name: "Slot · cap B", position: [0, baseY, -halfCap] };
-
+    const { parts, groupId, primaryId } = buildSlot({ modifier, ...overrides }, { buildPrimitive, newId });
     set((s) => ({
-      objects: [...s.objects, cube, capA, capB],
-      selectedId: cube.id,
-      selectedIds: [cube.id, capA.id, capB.id],
+      objects: [...s.objects, ...parts],
+      selectedId: primaryId,
+      selectedIds: parts.map((p) => p.id),
     }));
-    return gid;
+    return groupId;
   },
 
   // Atomic "boolean replace" — remove a set of objects AND insert one or more

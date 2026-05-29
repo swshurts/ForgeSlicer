@@ -62,6 +62,7 @@ function PreviewMesh({ geometry }) {
 export default function STLPreviewDialog({ open, onClose }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
+  const buildVolume = useScene((s) => s.buildVolume);
   const [bytes, setBytes] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -182,19 +183,50 @@ export default function STLPreviewDialog({ open, onClose }) {
 
           {/* Stats overlay */}
           {parsed && (
-            <div data-testid="stl-preview-stats" className="absolute bottom-3 left-3 bg-slate-900/95 border border-slate-700 rounded px-3 py-2 text-[10px] font-mono text-slate-200 space-y-0.5">
-              <div><span className="text-slate-500">tris</span> <span className="text-orange-400">{parsed.triCount.toLocaleString()}</span></div>
-              {size && (
-                <div><span className="text-slate-500">bbox</span> <span className="text-orange-400">{size.x} × {size.y} × {size.z} mm</span></div>
-              )}
-              {bytes && <div><span className="text-slate-500">size</span> <span className="text-orange-400">{(bytes.byteLength / 1024).toFixed(1)} KB</span></div>}
-            </div>
+            <StlPreviewStats parsed={parsed} bytes={bytes} size={size} buildVolume={buildVolume} />
           )}
           <div className="absolute top-3 left-3 text-[10px] text-slate-500 bg-slate-900/80 border border-slate-700 rounded px-2 py-1 select-none">
             drag to orbit · scroll to zoom · right-click to pan
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Stats overlay — extracted so we can add the bed-clearance evaluation
+// without making the main render unreadable. Surfaces:
+//   • tri count + bbox + KB (the always-on debug-ish info)
+//   • a "fits / TOO BIG" pill computed against the current printer's
+//     build volume. Mapping note: the store's `buildVolume.y` is the
+//     plate-Z axis (depth), and `buildVolume.z` is the height (Y up
+//     in three.js coords). Mirrors the same mapping used in Gallery's
+//     bed-clearance chip so behaviour is consistent across the app.
+function StlPreviewStats({ parsed, bytes, size, buildVolume }) {
+  const fits = size && buildVolume
+    ? (parseFloat(size.x) <= buildVolume.x
+        && parseFloat(size.z) <= buildVolume.y
+        && parseFloat(size.y) <= buildVolume.z)
+    : null;
+  return (
+    <div data-testid="stl-preview-stats" className="absolute bottom-3 left-3 bg-slate-900/95 border border-slate-700 rounded px-3 py-2 text-[10px] font-mono text-slate-200 space-y-0.5">
+      <div><span className="text-slate-500">tris</span> <span className="text-orange-400">{parsed.triCount.toLocaleString()}</span></div>
+      {size && (
+        <div><span className="text-slate-500">bbox</span> <span className="text-orange-400">{size.x} × {size.y} × {size.z} mm</span></div>
+      )}
+      {bytes && <div><span className="text-slate-500">size</span> <span className="text-orange-400">{(bytes.byteLength / 1024).toFixed(1)} KB</span></div>}
+      {buildVolume && (
+        <div>
+          <span className="text-slate-500">bed</span>{" "}
+          <span className="text-slate-300">{buildVolume.x}×{buildVolume.y}×{buildVolume.z}</span>
+          {fits === true && (
+            <span data-testid="stl-preview-fits" className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/40">fits ✓</span>
+          )}
+          {fits === false && (
+            <span data-testid="stl-preview-too-big" className="ml-2 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40">too big</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

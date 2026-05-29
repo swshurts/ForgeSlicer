@@ -1,0 +1,51 @@
+{
+  "summary": "ForgeSlicer iter 52 P2 polish batch — full coverage of voice button aria attrs, STL preview bed-clearance chip (both states), Gallery bbox + too-big chips (both states + legacy null safety), backend gallery POST/GET bbox_mm round-trip, composite store smoke (slot/fastener/countersink/hexPocket/gusset), and undo-after-composite. Plus regression on sketch-to-sweep (iter 51 P1). Everything PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/tests/composites-smoke.mjs",
+    "/app/frontend/tests/sketch-to-sweep.mjs"
+  ],
+  "tests_executed": {
+    "node_unit_tests": {
+      "composites-smoke.mjs": "PASS (50+ assertions: slot 3 parts + shared groupId, fastener 4 parts with [+, -, -, +] modifiers, countersink cyl+cone both negative, hex pocket cyl with segments=6, gusset 1 positive triangle)",
+      "sketch-to-sweep.mjs": "PASS (9 assertions — iter 51 P1 sweep-from-sketch regression intact)"
+    },
+    "backend_api": {
+      "POST /api/gallery with bbox_mm": "201 — round-trips {x:40,y:20,z:60} and {x:300,y:100,z:50}",
+      "POST /api/gallery without bbox_mm (legacy)": "201 — server returns bbox_mm: null",
+      "GET /api/gallery": "200 — legacy items show bbox_mm=null, new items carry the bbox object"
+    },
+    "frontend_ui": {
+      "Voice button aria attrs": "data-testid='voice-btn' has aria-pressed='false' and aria-label='Voice command' in idle state — matches spec",
+      "Gallery bbox chip": "gallery-bbox-<id> renders '300×100×50' as expected; absent for legacy item (no crash on null bbox_mm)",
+      "Gallery too-big chip": "gallery-bed-too-big-<id> renders 'too big' for 300×100×50 item against 220×220×250 custom printer; absent on 40×20×60 item (fits)",
+      "STL Preview stats overlay": "data-testid='stl-preview-stats' shows tris/bbox/size/bed lines. Default 20mm cube vs 220×220×250 → 'fits ✓' chip (stl-preview-fits). Shrunk buildVolume 10×10×10 vs same 20mm cube → 'too big' chip (stl-preview-too-big). Both states verified visually + by selector count.",
+      "Composite store smoke (in-browser)": "All 5 builders produce expected scene objects via window.__forgeStore (slot=3, fastener=4, countersink=2, hexPocket=1, gusset=1)",
+      "Undo composite": "addSlot (3 parts) → undo() → 0 objects in a single step ✓"
+    }
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Gallery.GalleryCard mapping (bbox.x↔BV.x, bbox.z↔BV.y, bbox.y↔BV.z) is consistent with STLPreviewStats — both correctly treat BV.y as plate-depth and BV.z as height, matching three.js Y-up convention noted in the iter 52 brief. No mismatch.",
+    "/app/frontend/src/lib/store.js: 1481→1312 lines (~11.4% reduction) by extracting pure builders into lib/composites.js — good separation. Composite builders are pure (no store ref), making them unit-testable in node, as evidenced by the passing composites-smoke.mjs.",
+    "VoiceButton.jsx aria-pressed expression `stage === 'recording' || stage === 'confirming' || goRunningRef.current` correctly covers both ad-hoc recording and Go-mode loop — matches spec.",
+    "Backend GalleryItemCreate/GalleryItemMeta optional bbox_mm field is properly Optional[BBox] with default None — backwards-compatible.",
+    "Minor: 401 errors observed on /api/me/* during UI smoke (expected — the seeded session_token wasn't bound to a profile fetch path); harmless and unrelated to iter 52 scope."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Seeded ad-hoc mongo session_token st_test_1780016552993 → cleaned up after run. No new persistent credentials.",
+  "seed_data_creation": "Created 3 TEST_ gallery items (with bbox / without bbox / too-big bbox) for the chip-rendering UI smoke; all 3 deleted via DELETE /api/gallery/<id> at teardown (all returned 200).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iter 52 P2 polish items pass end-to-end. Node tests under /app/frontend/tests/ (composites-smoke.mjs, sketch-to-sweep.mjs, sweep-geometry.mjs) are the fastest regression gate — run with `cd /app/frontend && node tests/<name>.mjs`. For UI smoke against the gallery chips, you can POST a synthetic item with bbox_mm via curl (see other_misc_info in the brief) and inspect with selectors `gallery-bbox-<id>` / `gallery-bed-too-big-<id>`. STL preview can be triggered programmatically: open via `[data-testid=stl-preview-btn]`. The window.__forgeStore handle is exposed for direct store mutation (useful for forcing fits/too-big states by shrinking buildVolume to 10×10×10).",
+  "rca of the issue": "N/A — no defects found."
+}

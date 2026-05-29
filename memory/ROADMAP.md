@@ -16,7 +16,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
   - ~~`path.kind: "sketch3d"` — let users draw a 2D polyline and use it as a 3D sweep path (with optional linear Y-rise).~~ [DONE — iter 51]
 - ~~**Fastener Pair macro**~~ [DONE — iter 48]
 - **Texture Library v2** (follow-ups to iter 49):
-  - Additional patterns: diamond plate / tread, brick / fabric weave / decorative, hex camo, parametric voronoi.
+  - ~~Additional patterns: diamond plate / tread, brick / fabric weave / decorative, hex camo, parametric voronoi.~~ [DONE — iter 50] (all 9 patterns live in `textureGeometry.js` + TextureLibraryDialog)
   - ~~Right-click "Apply texture to face..." action that opens TextureLibraryDialog with `targetObjectId` set so the footprint auto-sizes to the picked face.~~ [DONE — iter 50]
   - Imperial fastener grades (UNC/UNF) in the Hardware Library to mirror ISO metric coverage. [DONE — iter 50]
 - **Composite library expansion** — chamfered countersinks, gussets, hex pockets (mentioned in the Composites footer as "coming soon" — flesh out with the same pattern Slot + Fastener Pair use). [DONE — iter 50]
