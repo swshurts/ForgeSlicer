@@ -36,6 +36,20 @@ function StatusPill({ ok, error }) {
 }
 
 export default function EngineComparisonDialog({ open, busy, result, onClose, onRerun }) {
+  // Close on Escape — gives keyboard users parity with the X button +
+  // backdrop click. Bound only while the dialog is open so we don't
+  // intercept Escape elsewhere in the app.
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
   if (!open) return null;
 
   const builtin = result?.builtin;
@@ -66,6 +80,9 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="engine-compare-title"
         className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
@@ -73,7 +90,7 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
         <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-700">
           <GitCompare size={18} className="text-orange-400" />
           <div className="flex-1">
-            <h2 className="text-base font-bold text-slate-100">Engine Comparison</h2>
+            <h2 id="engine-compare-title" className="text-base font-bold text-slate-100">Engine Comparison</h2>
             <div className="text-[11px] text-slate-400">
               {busy
                 ? "Slicing in both engines…"

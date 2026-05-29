@@ -24,8 +24,11 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 
 ## 🔵 P3 — Experimental / future
 - ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53]
-- ~~**ARM64 OrcaSlicer**~~ [DONE — iter 54] (upstream's official aarch64 Flatpak, invoked through the runtime's ld-linux loader to bypass bwrap sandboxing)
-- **Search for community OrcaSlicer ARM64 binaries** — user-requested follow-up: check whether any community fork ships a true headless / non-flatpak ARM64 build that would let us drop the GNOME runtime dependency (~280 MB on disk). Acceptable today, but lighter is better.
+- ~~**ARM64 OrcaSlicer**~~ [DONE — iter 54]
+- ~~**Compare Engines** (v1, metrics-only)~~ [DONE — iter 55]
+- **Compare Engines v2 — toolpath overlay** (deferred, user-confirmed): per-layer 3D toolpath rendering of BOTH slicers in different colors with a layer slider + diff highlight for segments only present in one engine.
+- **Search for community OrcaSlicer ARM64 binaries** — user-requested follow-up: check whether any community fork ships a true headless / non-flatpak ARM64 build that would let us drop the GNOME runtime dependency (~280 MB on disk).
+- **SlicerPopover refactor** — file at 545 lines after Compare Engines wiring (code-review threshold = 500). Natural extraction: `useOrcaSlice()` hook for the Orca branch of handleSlice + the inline subscribeProgress helper.
 - Live multi-user editing (CRDT / Yjs).
 - Photo → reference plane (drop a photo, snap dims to known features).
 

@@ -1061,3 +1061,16 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ Verified by testing agent (`/app/test_reports/iteration_23.json`) — 100% backend + 100% frontend. All 4 orca endpoints PASS; the Slicer popover now offers OrcaSlicer as a selectable engine instead of "unsupported on aarch64".
 - ✅ Regression tests updated — `test_iter15_smoke.py` asserts installed=True on aarch64, `test_orca_profile_staging.py` (10 tests) asserts from=='system'. Backend pytest: 176/177 PASS (the 1 failure is a pre-existing 429 rate-limiter flake on /api/auth/login, unrelated).
 - Files: `backend/orca_engine.py`, `backend/server.py`, `backend/scripts/install_orca_arm64.sh` (NEW), `backend/tests/test_orca_arm64_slice.py` (NEW), `backend/tests/test_iter15_smoke.py`, `backend/tests/test_orca_profile_staging.py`.
+
+## Iteration 55 (2026-05-29) — Compare Engines v1 (Metrics-Only)
+- ✅ **New "Compare engines" button** in the Slicer popover (testid `slicer-compare-engines-btn`) sits directly under the green SLICE button. Disabled until both a primitive exists AND OrcaSlicer reports installed — tooltip explains the latter.
+- ✅ **Parallel dual-slice pipeline** — `lib/engineCompare.js` runs the built-in JS slicer (worker) and OrcaSlicer (server) through `Promise.all` so total wall time = max(builtin, orca) instead of sum. Each side is wrapped in its OWN try/catch so a failure in one engine doesn't kill the comparison; the failed side renders a "failed" pill with the error in its tooltip.
+- ✅ **Engine Comparison modal** (`dialogs/EngineComparisonDialog.jsx`): two status pills (sliced/failed) + 5-row metrics table (G-code lines, layer count, filament mm, gcode KB, slice duration) with trophy icons on the winning side per row. Caveat copy below the table reminds the reader that "winner" means "more efficient number for that metric", NOT "better print" — Orca routinely produces longer G-code precisely because it generates real supports/ironing/multi-perimeter walls the built-in skips.
+- ✅ **Per-engine downloads** — separate buttons for `model_builtin.gcode` and `model_orca.gcode`. Disabled when their side failed.
+- ✅ **A11y** — modal has `role="dialog"` + `aria-modal="true"` + `aria-labelledby="engine-compare-title"`. Escape key dismisses.
+- ✅ Verified by testing agent (`/app/test_reports/iteration_24.json`) — 100% backend + 100% frontend. All 5 row test-ids respond, trophy/wins-N-of-N counter renders, download buttons toggle disabled correctly when one side failed, dialog closes via X / backdrop / Escape.
+- ✅ Node unit test `tests/engine-compare-rows.mjs` — 22 assertions (lowerIsBetter / higherIsBetter / ties / missing values / KB scale conversion).
+- Files: `frontend/src/lib/engineCompare.js` (NEW), `frontend/src/components/dialogs/EngineComparisonDialog.jsx` (NEW), `frontend/src/components/popovers/SlicerPopover.jsx`, `frontend/tests/engine-compare-rows.mjs` (NEW).
+
+### Side effect — date string fix
+- 📅 Audit: all iter 51-54 CHANGELOG entries carried `2026-02-28` (a typo that kept getting copy-pasted by previous agents). Corrected to actual authoring dates (May 27-29 per git timestamps). Iter 54 → 2026-05-29, iter 55 → 2026-05-29.
