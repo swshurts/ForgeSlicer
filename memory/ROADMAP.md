@@ -22,10 +22,10 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - **Composite library expansion** — chamfered countersinks, gussets, hex pockets (mentioned in the Composites footer as "coming soon" — flesh out with the same pattern Slot + Fastener Pair use). [DONE — iter 50]
 
 ## 🟢 P2 — Polish
-- **Refactor `lib/store.js` further** — now at 1147 lines after iter 46 split. Group ops + sketch state could still come out (target <800 lines).
-- **Eyeball preview & gallery thumbnail callouts** — overlay X/Y/Z extents + bed clearance on the rendered preview so it goes from "looks right" to "ready to print" at a glance.
+- **Refactor `lib/store.js` further** — 1481→1312 lines after iter 52 (composites extracted to `lib/composites.js`). Still above the <800 target; remaining candidates are `applyCut` (~75 lines), `duplicateSelected` (~80 lines), and project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines).
+- ~~**Eyeball preview & gallery thumbnail callouts** — overlay X/Y/Z extents + bed clearance on the rendered preview so it goes from "looks right" to "ready to print" at a glance.~~ [DONE — iter 52]
 - **Save Assembly to Gallery/Share silent-failure follow-up** — user reported "Pitman Arm didn't save" but could not be reproduced in preview testing. If it recurs on prod, capture full DevTools network payload + response so we can trace it.
-- **Voice button a11y** — add `aria-pressed` to the mic button and a `data-testid` for the Group / Combo button (flagged by iter 15 testing agent).
+- ~~**Voice button a11y** — add `aria-pressed` to the mic button and a `data-testid` for the Group / Combo button (flagged by iter 15 testing agent).~~ [DONE — iter 52] (`aria-pressed` + `aria-label` on `voice-btn`; the Group / Combo testids `ctx-group-btn` and `leftpanel-tab-composites` already exist)
 
 ## 🔵 P3 — Experimental / future
 - Direct ARM64 OrcaSlicer build for preview-pod parity (currently x86_64 AppImage only).
