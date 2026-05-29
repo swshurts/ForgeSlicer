@@ -7,15 +7,17 @@
 import React, { useEffect, useState } from "react";
 import {
   Sliders, AlertTriangle, CheckCircle2, Download, Eye,
-  Cpu, Zap, Loader2, Send, Activity,
+  Cpu, Zap, Loader2, Send, Activity, GitCompare,
 } from "lucide-react";
 import { useScene, useSliceSettings } from "../../lib/store";
 import { sliceToGCODEAsync } from "../../lib/workerClient";
 import { downloadText, exportSceneToSTLBytes } from "../../lib/exporters";
 import { orcaApi, apiErrorMessage, API as API_BASE } from "../../lib/api";
 import { buildOrcaPayload } from "../../lib/orcaProfiles";
+import { compareEngines } from "../../lib/engineCompare";
 import GcodePreviewDialog from "../GcodePreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
+import EngineComparisonDialog from "../dialogs/EngineComparisonDialog";
 import { PopoverShell, NumberField } from "./PopoverShell";
 import OrcaProfileEditor from "./OrcaProfileEditor";
 
@@ -57,6 +59,13 @@ export function SlicerPopover({ anchor, onClose }) {
   const [lastDownload, setLastDownload] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [sendToPrinterOpen, setSendToPrinterOpen] = useState(false);
+  // Engine-comparison modal state — open=true while the dialog is
+  // visible; result holds the {builtin, orca, comparison} payload
+  // produced by lib/engineCompare.js. `busy` tracks the in-flight
+  // dual-slice (shared with the SLICE button so we don't double-fire).
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareResult, setCompareResult] = useState(null);
+  const [compareBusy, setCompareBusy] = useState(false);
   // Engine selector — persisted to localStorage so the user's choice
   // survives a refresh. Defaults to "builtin" so first-time users get
   // the instant slice without a server round-trip.
@@ -233,6 +242,42 @@ export function SlicerPopover({ anchor, onClose }) {
     downloadText(lastDownload.gcode, lastDownload.filename, "text/plain");
   };
 
+  // "Compare engines" — runs the SAME scene through both slicers in
+  // parallel and pops the comparison dialog. Re-uses the user's
+  // current OrcaSlicer settings (printer / process / filament + the
+  // four CLI tunables) so the comparison is faithful to what they'd
+  // actually print. Opens the dialog immediately in "busy" state so
+  // the user sees the spinner without waiting for the round-trip.
+  const handleCompare = async () => {
+    setError("");
+    setCompareBusy(true);
+    setCompareResult(null);
+    setCompareOpen(true);
+    try {
+      const orcaPayload = buildOrcaPayload({
+        printerId: orcaPrinter, processId: orcaProcess, filamentId: orcaFilament,
+        wallLoops: orcaWalls, sparseInfillDensity: orcaInfillPct,
+        sparseInfillPattern: orcaPattern,
+        enableSupport: orcaSupports, ironing: orcaIroning,
+      });
+      const r = await compareEngines({
+        objects,
+        settings,
+        buildVolume,
+        orcaPayload,
+      });
+      setCompareResult(r);
+    } catch (e) {
+      // Top-level failure (e.g., compareEngines itself threw outside
+      // its per-side try/catch). Surface in the popover error slot so
+      // the user sees what happened even after closing the modal.
+      setError(apiErrorMessage(e) || e.message || String(e));
+      setCompareOpen(false);
+    } finally {
+      setCompareBusy(false);
+    }
+  };
+
   // Whether the Orca tab is selectable — disabled when the server tells
   // us it's not installed yet. The "Built-in" tab is always selectable.
   const orcaReady = orcaStatus?.installed === true;
@@ -379,6 +424,22 @@ export function SlicerPopover({ anchor, onClose }) {
         <Activity size={16} />
         {busy ? "Slicing..." : "Slice & Export GCODE"}
       </button>
+      {/* Compare engines — runs the same scene through built-in + Orca
+          in parallel and pops a side-by-side metrics table. Disabled
+          until OrcaSlicer reports installed (otherwise the comparison
+          would always have an empty Orca column). */}
+      <button
+        data-testid="slicer-compare-engines-btn"
+        onClick={handleCompare}
+        disabled={busy || compareBusy || objects.length === 0 || !orcaReady}
+        title={orcaReady
+          ? "Slice with both engines and see a side-by-side comparison"
+          : "OrcaSlicer engine isn't available on this server — comparison needs both."}
+        className="w-full h-9 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 border border-slate-700 disabled:cursor-not-allowed text-slate-200 font-semibold rounded transition-colors text-xs flex items-center justify-center gap-2"
+      >
+        <GitCompare size={14} />
+        {compareBusy ? "Comparing engines…" : "Compare engines (Built-in vs Orca)"}
+      </button>
       {error && <div className="text-xs text-red-400" data-testid="popover-slice-error">{error}</div>}
       {busy && engine === "orca" && progress && !progress.done && (
         <div data-testid="popover-slice-progress" className="bg-slate-950 border border-orange-500/40 rounded p-2 space-y-1">
@@ -448,6 +509,13 @@ export function SlicerPopover({ anchor, onClose }) {
         gcode={lastDownload?.gcode}
         filename={lastDownload?.filename}
         onClose={() => setSendToPrinterOpen(false)}
+      />
+      <EngineComparisonDialog
+        open={compareOpen}
+        busy={compareBusy}
+        result={compareResult}
+        onClose={() => setCompareOpen(false)}
+        onRerun={handleCompare}
       />
     </PopoverShell>
   );

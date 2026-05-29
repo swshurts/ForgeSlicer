@@ -1,0 +1,52 @@
+{
+  "summary": "ForgeSlicer iter 55 — Compare Engines (metrics-only) verified end-to-end on the live preview pod. UI: 'slicer-compare-engines-btn' renders directly under SLICE & EXPORT GCODE, is enabled when a primitive exists AND Orca is installed, and fires both slices in parallel. The dialog opens immediately in busy state, completes in ~0.4s, and renders all 5 expected rows (gcodeLines/layers/filamentMM/gcodeBytes/durationSec) with status pills, Total wall time subtitle, download buttons, Run again, and X close. Failure isolation works as designed — Orca returned HTTP 500 with default 'bambu_a1' preset, the dialog rendered the failed pill with the error in the status card, builtin side still rendered its column with no trophies on Orca-failed rows, and the download-orca button was correctly disabled. Backend regression /api/slice/orca/slice still returns 200 (cube, 125 KB gcode). Frontend unit-row regression (22/22) and backend regression both pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/slice/orca/slice (via compareEngines using buildOrcaPayload defaults bambu_a1/standard/pla)", "issue": "Returns HTTP 500 — 'process not compatible with printer. run found error, return -17, exit code 239'. Failure was caught and surfaced cleanly by the Compare dialog, but it means the default Orca profile (bambu_a1) does not match what the backend's preset chain validates. The backend smoke test passes only because it uses 'MyKlipper 0.4 nozzle' (Custom vendor). Pre-existing — not introduced by this iter — but Compare engines exposes it because most users will hit defaults."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/tests/engine-compare-rows.mjs",
+    "/app/backend/tests/test_orca_arm64_slice.py"
+  ],
+  "action_items": [
+    "Investigate why buildOrcaPayload defaults (bambu_a1/standard/pla) produce a profile combo that backend rejects with 'process not compatible with printer' (return -17, exit 239). Either swap the defaults to the known-good MyKlipper/0.20mm Standard chain, or fix the bambu_a1 preset wiring. Compare engines works correctly — this is an upstream preset issue surfaced by the dialog's clear error display.",
+    "Optional: add an Escape-key handler to EngineComparisonDialog for keyboard parity (currently dismissable only via X or backdrop)."
+  ],
+  "critical_code_review_comments": [
+    "engineCompare.js — clean and well-isolated. Promise.all + per-side try/catch matches spec. apiErrorMessage(e) wraps the orca error nicely so the failed pill tooltip stays readable.",
+    "EngineComparisonDialog.jsx — no accessibility role='dialog'/aria-modal on the modal container, and no focus trap. The X close button has aria-label so that's good. Consider adding role='dialog' aria-modal='true' to the inner panel for screen readers.",
+    "SlicerPopover.jsx is now 522 lines — past the 500-line readable-module threshold. The Orca branch in handleSlice + the inline subscribeProgress helper would naturally extract to a hook (useOrcaSlice).",
+    "buildComparisonRows: the `scale` field (KB conversion) is applied before winner comparison — correct. Decimals/units only affect render — also correct."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (regression + unit)", "frontend": "100% (all Compare-engines testids respond as spec'd; failure-isolation path validated)"},
+  "test_credentials": "Ephemeral mongo-seeded session st_test_1780071998779 / user_test1780071998779 — CLEANED UP at end of run via db.user_sessions.deleteOne + db.users.deleteOne. No persistent test data.",
+  "seed_data_creation": "One mongo user + session, deleted at teardown.",
+  "evidence": {
+    "frontend/tests/engine-compare-rows.mjs": "22/22 assertions PASS (row math, ties, missing-side, KB scale, zero-survives-isFinite)",
+    "POST /api/slice/orca/slice (regression cube)": "200 — gcode 125,481 bytes / 5,027 lines / 50 layers / 245.34 mm filament / 0.17 s (ARM64 OrcaSlicer 2.3.2)",
+    "GET /api/slice/orca/status": "200 — installed=true, arch=aarch64, source=app-aarch64, version=OrcaSlicer-2.3.2:",
+    "UI: slicer-compare-engines-btn": "rendered directly under popover-slice-btn, enabled with 1 cube + Orca installed, title='Slice with both engines and see a side-by-side comparison'",
+    "UI: engine-compare-dialog opens busy": "Loader2 spinner + 'Slicing in both engines…' visible immediately on click",
+    "UI: all 5 comparison rows render": "engine-compare-row-gcodeLines=[G-code lines / 2,076 / —], -layers=[Layer count / 99 / —], -filamentMM=[Filament used / 1081.6 mm / —], -gcodeBytes=[G-code size / 114.5 KB / —], -durationSec=[Slice duration / 0.40 s / —]. Orca side rendered '—' because Orca failed — failure isolation working.",
+    "UI: status pills": "engine-compare-builtin-status='sliced' (green); engine-compare-orca-status='failed' (amber) with full error message visible in card body",
+    "UI: Total wall time subtitle": "'Total wall time 0.40 s' shown in dialog header",
+    "UI: trophy count": "0 — correct, because Orca side is null on every row so no winner can be declared (matches buildComparisonRows spec)",
+    "UI: download-builtin-btn": "enabled, click triggered download named 'model_builtin.gcode'",
+    "UI: download-orca-btn": "disabled (correct — Orca failed), no download triggered",
+    "UI: rerun-btn": "fires both slices again without closing the dialog; busy state re-enters and resolves",
+    "UI: close-btn (X)": "dismisses the modal cleanly; slicer popover behind it stays open",
+    "Regression: popover-slice-btn (single-engine slice)": "Untitled_Project.gcode downloaded successfully — no regression"
+  },
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Compare engines UI is wired correctly and matches spec. The flow that exercises the Orca SUCCESS path requires a known-good preset combo — the backend regression uses 'MyKlipper 0.4 nozzle' / '0.20mm Standard @MyKlipper' / 'Generic PLA @System'. The frontend's buildOrcaPayload defaults to 'bambu_a1'/'standard'/'pla' which the backend currently rejects with return -17 / exit 239 ('process not compatible with printer'). Either switch the defaults or open the OrcaProfileEditor and pick MyKlipper/0.20mm Standard/Generic PLA before clicking Compare. The Compare dialog handles this failure mode gracefully — that path is the one validated in this iter. Test cube is provided by clicking the 'Cube' button under ADD POSITIVE in LeftPanel.",
+  "rca of the issue": "The Orca 500 inside Compare engines is a preset-mismatch in buildOrcaPayload's defaults — when bambu_a1 is paired with 'standard' process + 'pla' filament, the resulting JSON does not pass OrcaSlicer's printer/process compatibility validator (return -17, code 239). The Compare engines code itself is correct: it catches the error, populates orca.error, sets orca.ok=false, suppresses trophies (winner=null when one side is null), disables the orca download button, and renders the error in the status pill's adjacent card. The HTTP 500 is the backend correctly reporting the validator's exit code through orca_engine.py — no orchestration bug. Mitigation: change the localStorage defaults in SlicerPopover.jsx from 'bambu_a1'/'standard'/'pla' to a preset triplet that is in the backend's _FALLBACK_PRESETS chain (e.g. 'mykllipper_04'/'standard_020'/'generic_pla' mapped via buildOrcaPayload to MyKlipper 0.4 nozzle / 0.20mm Standard @MyKlipper / Generic PLA @System)."
+}

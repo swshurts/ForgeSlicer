@@ -867,7 +867,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - **Sketch → Path sweep** — substantial work (sketch overlay second-pass + ExtrudeGeometry-along-curve refactor). Deferred to a dedicated session.
 - **Fastener Pair macro** (suggested but not yet built — Bolt + Nut + 2 negative bore cylinders pre-grouped)
 
-## Iteration 44 (2026-02-28) — P0 OrcaSlicer profile + Consecutive rotation fixes
+## Iteration 44 (2026-05-28) — P0 OrcaSlicer profile + Consecutive rotation fixes
 - ✅ **OrcaSlicer "unknown config type" error eliminated** — root cause traced via OrcaSlicer C++ source: `load_from_json` parses keys in JSON-iteration order and BREAKS the loop on the first malformed value (e.g. a JSON array containing numbers like `[0.4]` instead of strings like `["0.4"]`). Any keys after the breakpoint — including `type` — are silently dropped, surfacing the cryptic "unknown config type of file printer.json" CLI error.
   - **Fix #1**: `_stage_user_profile` now stamps the 5 metadata keys (`type`, `name`, `from`, `instantiation`, `version`) FIRST in the dict so they survive even if a later config value is malformed. Python 3.7+ guarantees dict insertion order is preserved through `json.dumps`.
   - **Fix #2**: new `_orca_stringify` helper recurses into the value and coerces numbers/bools/None/lists-of-numbers into the string format Orca expects (`350 → "350"`, `0.4 → "0.4"`, `[0.4] → ["0.4"]`, `True → "1"`, `None → ""`).
@@ -886,7 +886,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - **PRD.md split** — file is at 916 lines; should split into PRD.md (problem statement / personas / static) + CHANGELOG.md (append-only history) + ROADMAP.md (P0/P1/P2 backlog).
 
 
-## Iteration 45 (2026-02-28) — Eye-icon STL preview rotation-order fix
+## Iteration 45 (2026-05-28) — Eye-icon STL preview rotation-order fix
 - ✅ **STL Preview / gallery thumbnail no longer shows disjointed parts** when an assembly has been rotated.
   - Root cause: `manifold-3d`'s `m.rotate([rx, ry, rz])` applies rotations in *global X → Y → Z* order (per its docs). THREE.Euler('XYZ') — used by every viewport / inspector / gizmo path — is the *opposite* (global Z → Y → X). The two produce the same result for axis-aligned rotations but DIFFER materially for any part with non-trivial multi-axis Euler values. After the rigid-body group fix landed in iter 44, every child of a rotated assembly carries multi-axis Euler — so the export pipeline started visibly disagreeing with the viewport.
   - Reproduced numerically: same Euler `(45°, 90°, 0)`, point `(1,0,0)` → viewport lands it at `(0, 0.707, -0.707)`, buggy manifold lands it at `(0, 0, -1)`. Distance 0.77.
@@ -901,7 +901,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - **PRD.md split** — file is at 940+ lines; should split into PRD.md / CHANGELOG.md / ROADMAP.md.
 
 
-## Iteration 46 (2026-02-28) — Sweep primitive (P1) + Refactor
+## Iteration 46 (2026-05-28) — Sweep primitive (P1) + Refactor
 ### What landed
 - ✅ **Sweep primitive (P1)** — extrudes a 2D PROFILE along a 3D PATH so the profile stays perpendicular to the path tangent at every sample (Frenet-frame true sweep). Live-editable in the Inspector.
   - Profile kinds: `circle`, `rect`, `polygon` (✅), `sketch` (placeholder for next iter)
@@ -942,7 +942,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - See ROADMAP.md for the up-to-date backlog.
 
 
-## Iteration 47 (2026-02-28) — Center on Bed (right-click)
+## Iteration 47 (2026-05-28) — Center on Bed (right-click)
 - ✅ **"Center on bed" added to the right-click context menu** (sits directly under "Drop to bed"). Translates the selected item or assembly so its combined X/Z bounding-box center lands at the build-plate origin (0, _, 0). Y is preserved — the existing Drop-to-bed action remains the way to land an assembly on the plate vertically.
 - For multi-part selections, the centering is **rigid-body**: every member translates by the same dx/dz so internal pairwise distances are preserved exactly (a grouped Pitman Arm stays a Pitman Arm).
 - Bbox-center vs centroid-of-positions: we deliberately use the AABB center because that matches what users expect visually — when one part is much larger than the others, the visible centre of the assembly sits closer to the big part. Centroid-of-positions would skew toward whichever side has more parts.
@@ -952,7 +952,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - Files: `frontend/src/components/ContextMenu.jsx` (new doCenterOnBed handler + menu item with Crosshair icon + testid `ctx-center-bed-btn`), `frontend/src/lib/releaseNotes.js`, `frontend/tests/center-on-bed.mjs` (NEW).
 
 
-## Iteration 48 (2026-02-28) — Sweep MVP follow-ups + Fastener Pair macro
+## Iteration 48 (2026-05-28) — Sweep MVP follow-ups + Fastener Pair macro
 
 ### What landed
 - ✅ **Sweep ref-export fix** — Sweeps with `path.kind: "ref"` (the "From Object" path option) now export to STL with the source object's centerline-driven geometry baked in. Underneath: a module-level `_sceneContext` in `lib/csg.js` set/cleared at the entry points (`evaluateScene`, `evaluateSceneByColor`); `lib/manifoldEngine.js` signature-extends `buildObjectManifold(wasm, obj, scene)` and threads `scene` through both `evaluateSceneAsync` and `evaluateSceneByColorAsync`. Closes one of the three known MVP limitations from iter 46.
@@ -981,7 +981,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - See ROADMAP.md for the up-to-date backlog.
 
 
-## Iteration 49 (2026-02-28) — Park on bed + Hardware Library + Texture Library v1
+## Iteration 49 (2026-05-28) — Park on bed + Hardware Library + Texture Library v1
 
 ### What landed
 - ✅ **Park on bed** — right-click menu action that combines Center-on-bed (X/Z) + Drop-to-bed (Y) in a single history push. Rigid-body invariant for multi-part selections. Sits between "Center on bed" and the save-component group; test-id `ctx-park-bed-btn`.
@@ -1020,7 +1020,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - Imperial fastener grades (UNC/UNF) — to mirror Hardware Library's ISO metric coverage.
 
 
-## Iteration 51 (2026-02-28) — Sketch → Sweep Wiring (Profile + 3D Path)
+## Iteration 51 (2026-05-28) — Sketch → Sweep Wiring (Profile + 3D Path)
 - ✅ **Use sketch as Sweep profile** — right-click a single `sketch` object → "Use sketch as Sweep profile" creates a new sweep that uses the sketch's 2D points as a `profile.kind: "sketch"` swept along a default helix path. Original sketch is preserved so users can iterate on the 2D shape and re-link.
 - ✅ **Use sketch as Sweep path (3D)** — right-click → "Use sketch as Sweep path (3D)" creates a new sweep with a default circular profile swept along the sketch's points promoted to 3D (`[x, 0, z]`). A new `Rise (mm)` inspector field on `path.kind: "sketch3d"` redistributes Y linearly from 0 → rise across the polyline so users can lift a planar path into a helical/staircase-like 3D sweep with one number.
 - ✅ **SweepInspectorBlock** — replaced the "next iteration" placeholders. `profile.kind: "sketch"` now renders a sketch-picker (lists every scene sketch with point counts). `path.kind: "sketch3d"` renders the same picker plus the Rise field. Re-linking just updates `points` so the user's other sweep params (samples / twist / profile) stay intact.
@@ -1028,7 +1028,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ Verified by testing agent (`/app/test_reports/iteration_20.json`) — 6/6 acceptance criteria PASS, 9/10 micro-assertions verified directly (10th was a test-selector nit, functionality intact per screenshot). Geometry pipeline already covered by `tests/sweep-geometry.mjs`; added `tests/sketch-to-sweep.mjs` (9/9 assertions pass) for the new profile/path/rise math.
 - Files: `frontend/src/lib/store.js`, `frontend/src/components/ContextMenu.jsx`, `frontend/src/components/SweepInspectorBlock.jsx`, `frontend/tests/sketch-to-sweep.mjs` (NEW).
 
-## Iteration 52 (2026-02-28) — P2 Polish Batch (a11y · Bed-Clearance Callouts · Store Refactor)
+## Iteration 52 (2026-05-28) — P2 Polish Batch (a11y · Bed-Clearance Callouts · Store Refactor)
 - ✅ **Voice button a11y** — `voice-btn` now carries `aria-pressed` (true during `recording` / `confirming` / Go-mode loop, false otherwise) and `aria-label`. Disabled (unsupported-browser) variant also gets the labels. Screen readers can announce mic state without parsing the visual style.
 - ✅ **STL Preview bed-clearance pill** — `STLPreviewDialog` stats overlay extended with a `bed` line showing the current printer's build volume plus a green `fits ✓` (data-testid `stl-preview-fits`) or amber `too big` (data-testid `stl-preview-too-big`) chip computed against the merged STL bbox. Works for any printer the user has selected.
 - ✅ **Gallery card extent + bed-clearance callouts** — every gallery item with a `bbox_mm` field now renders a `X×Y×Z mm` chip (data-testid `gallery-bbox-<id>`); when the extent exceeds the viewer's current printer build volume, an amber `too big` chip (data-testid `gallery-bed-too-big-<id>`) is added so users see at a glance whether a remix will fit their bed. Legacy items without `bbox_mm` render neither chip and don't crash.
@@ -1038,7 +1038,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ Verified by testing agent (`/app/test_reports/iteration_21.json`) — 100% backend + 100% frontend. Zero issues, zero action items, zero regressions on iter 51 sketch-to-sweep.
 - Files: `frontend/src/components/VoiceButton.jsx`, `frontend/src/components/STLPreviewDialog.jsx`, `frontend/src/components/Gallery.jsx`, `frontend/src/components/dialogs/ShareDialog.jsx`, `frontend/src/lib/composites.js` (NEW), `frontend/src/lib/store.js`, `frontend/src/lib/exporters.js`, `frontend/src/lib/workers/csg.worker.js`, `backend/server.py`, `frontend/tests/composites-smoke.mjs` (NEW).
 
-## Iteration 53 (2026-02-28) — Closing P2 Refactor + Remix Auto-Fit
+## Iteration 53 (2026-05-29) — Closing P2 Refactor + Remix Auto-Fit
 - ✅ **store.js refactor continued** — extracted `applyCut` to `lib/cutActions.js` (`buildCutDelta`, pure async) and `duplicateSelected` + `mirrorSelectedInPlace` to `lib/selectionActions.js` (`duplicateSelectedDelta`, `mirrorSelectedInPlaceDelta`, pure). store.js: 1313 → 1164 lines (~28% total reduction since iter 51 baseline of 1481).
 - ✅ **"Resize to fit my bed" on Remix** — new `useScene.resizeSceneToBed({ targetFraction = 0.95 })` action computes the combined world AABB, derives a uniform scale factor = `0.95 * min(BV.x/dx, BV.z/dy, BV.y/dz)`, and applies it to every object's `scale` + `position` (centred on bed origin, base on Y=0). History-atomic.
 - ✅ **Gallery Remix UX** — when a card's `bbox_mm` exceeds the viewer's current printer build volume, the Remix button switches from orange `gallery-remix-<id>` to amber `gallery-remix-fit-<id>` labelled "Remix · fit bed" and routes to `/workspace?remix=<id>&fit=1`. Otherwise the original orange Remix button is unchanged.
@@ -1047,7 +1047,7 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ Node unit tests added — `tests/resize-to-bed.mjs` (6 assertions, all PASS).
 - Files: `frontend/src/lib/cutActions.js` (NEW), `frontend/src/lib/selectionActions.js` (NEW), `frontend/src/lib/store.js`, `frontend/src/components/Gallery.jsx`, `frontend/src/components/Workspace.jsx`, `frontend/tests/resize-to-bed.mjs` (NEW).
 
-## Iteration 54 (2026-02-28) — ARM64 OrcaSlicer Engine
+## Iteration 54 (2026-05-29) — ARM64 OrcaSlicer Engine
 - ✅ **OrcaSlicer 2.3.2 now runs natively on aarch64** — preview pod can produce real production-quality gcode (125 KB / 5027 lines / 50 layers in 0.11s for a 10mm cube test).
 - ✅ **Distribution choice**: upstream OrcaSlicer publishes ARM64 binaries ONLY as a Flatpak. We install that Flatpak system-wide via `flatpak install --system` (gives us a 90 MB `orca-slicer` ELF + the GNOME 49 runtime). The K8s pod denies user namespaces so `flatpak run` (bwrap) fails — workaround: invoke the binary directly through the runtime's `ld-linux-aarch64.so.1` with a hand-crafted `--library-path`. Bypasses the sandbox entirely.
 - ✅ **New `scripts/install_orca_arm64.sh`** — idempotent installer. Detects already-installed flatpak via `flatpak info`, downloads the 109 MB `.flatpak` bundle from the upstream GitHub release only when needed, installs flatpak + ostree apt deps on first boot, lays a launcher at `/app/backend/bin/orca-aarch64/OrcaSlicer` plus `resources` + `share` symlinks for profile resolution.
