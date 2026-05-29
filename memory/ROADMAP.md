@@ -18,7 +18,8 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 
 ## 🟢 P2 — Polish
 - **Refactor `lib/store.js` further** — 1481→1164 lines after iter 53. Further extraction candidates: project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines).
-- **Tutorial coverage** — Voice, Slicer/OrcaSlicer/Compare-engines, Gallery/Share/Remix PDFs still missing. Same `tutorial_lib.py` pattern as Hardware / Sweep / Getting Started — ~30 min per new PDF.
+- ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
+- **HelpDialog.jsx split** — file is ~770 lines after the Tutorials tab (above the 700 guideline). Natural extraction: lift the long-form section components (Voice lexicon, AI, Shortcuts, Account) into `frontend/src/components/help/sections/*.jsx`.
 - **Save Assembly to Gallery silent-failure follow-up** — only acts if user reports it on prod with DevTools payload.
 
 ## 🔵 P3 — Experimental / future

@@ -1094,3 +1094,19 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ Verified by testing agent (`/app/test_reports/iteration_25.json`) — 11/11 frontend checks PASS, zero issues, zero action items. All 4 PDFs HTTP 200 application/pdf; all 6 menu items present + functional.
 - ✅ Updated `frontend/public/docs/README.md` with the new contents + regen instructions.
 - Files: `scripts/tutorial_lib.py` (NEW), `scripts/build_getting_started_tutorial.py` (NEW), `scripts/build_hardware_tutorial.py` (NEW), `scripts/build_sweep_tutorial.py` (NEW), `scripts/build_all_tutorials.py` (NEW), `scripts/build_texture_tutorial.py` (REFACTORED), `frontend/src/components/toolbar/HelpMegaMenu.jsx` (NEW), `frontend/src/components/toolbar/SystemRow.jsx`, `frontend/public/docs/*.pdf` (4 files), `frontend/public/docs/README.md`.
+
+
+## Iteration 58 (2026-05-29) — Tutorial PDF Suite v2 + Inline Viewer
+- ✅ **Three additional tutorial PDFs** generated via the shared `tutorial_lib.py` chrome:
+  - `ForgeSlicer-Voice-Tutorial.pdf` (8 sections, 15 KB) — how voice control works, mic states, phrasing principles (be explicit, pronouns, chain in one breath), full lexicon by category, AI-generation triggers (auto-submit vs pre-fill), end-to-end phone-stand walkthrough, troubleshooting matrix.
+  - `ForgeSlicer-Slicer-Tutorial.pdf` (8 sections, 14 KB) — engines + profile inheritance, Send-to-Slicer flow, **Compare Engines A/B workflow with metric definitions** (print time, filament, peak temp, support volume, wall path length…), four compare-engine recipes (speed-vs-quality / support style / material / wall count sweep), send-to-desktop hand-off formats, troubleshooting.
+  - `ForgeSlicer-Gallery-Tutorial.pdf` (8 sections, 15 KB) — anatomy of a shared item (11 fields), publish flow, component library save/add/verify, **nine-license comparison matrix** (CC-BY / CC0 / MIT / Apache / GPL / LGPL / AGPL / CC-BY-SA / CC-BY-NC / CC-BY-ND / ForgeSlicer Standard), remix + attribution + Resize-to-my-bed, filter/search/author-profile, troubleshooting.
+- ✅ **HelpDialog refactor — Tutorials tab with inline PDF viewer** (`components/HelpDialog.jsx`):
+  - New `Tutorials` component with a thin 224-px picker rail on the left listing all 7 PDFs (testids `tutorial-pick-<file>`) and an `<iframe src="/docs/<file>.pdf#toolbar=0&navpanes=0">` (testid `tutorial-iframe`) filling the rest. The picker rail highlights the active tutorial in orange.
+  - Sub-toolbar above the iframe with `Open in new tab` (testid `tutorial-open-new-tab`, target=_blank) and `Download` (testid `tutorial-download`, download attribute) buttons.
+  - Added `tutorials` entry to SECTIONS (second in the sidebar, right after Index) and to the Index cards grid so first-time users land on it from the table of contents (`help-card-tutorials`).
+  - Section content overrides parent padding for the tutorials view so the iframe fills the full content area.
+  - Imports `TUTORIALS` from `HelpMegaMenu.jsx` (exported) — single source of truth between dropdown and dialog.
+- ✅ **HelpMegaMenu** updated to include all 7 PDFs with `data-testid` per entry.
+- ✅ Verified by testing agent (`/app/test_reports/iteration_26.json`) — **13/13 frontend assertions PASS**, zero issues, zero action items, zero retest needed. All 3 new PDFs HTTP 200 application/pdf; iframe src toggles correctly when switching tutorials.
+- Files: `scripts/build_voice_tutorial.py` (NEW), `scripts/build_slicer_tutorial.py` (NEW), `scripts/build_gallery_tutorial.py` (NEW), `frontend/public/docs/ForgeSlicer-Voice-Tutorial.pdf` (NEW), `frontend/public/docs/ForgeSlicer-Slicer-Tutorial.pdf` (NEW), `frontend/public/docs/ForgeSlicer-Gallery-Tutorial.pdf` (NEW), `frontend/src/components/HelpDialog.jsx` (Tutorials component + Index card + SECTIONS entry + render switch), `frontend/src/components/toolbar/HelpMegaMenu.jsx` (TUTORIALS exported + 3 new entries), `frontend/public/docs/README.md`.
