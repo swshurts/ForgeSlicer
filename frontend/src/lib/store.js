@@ -4,8 +4,6 @@ import { PRINTERS, FILAMENTS, getPrinter, getFilament } from "./presets";
 import { computeRotatedBBox } from "./geometry";
 import { SWEEP_DEFAULTS } from "./sweepGeometry";
 import { TEXTURE_DEFAULTS } from "./textureGeometry";
-import { cutObjectByPlane } from "./csg";
-import { cutObjectByPlaneAsync } from "./workerClient";
 import {
   buildSlot,
   buildFastenerPair,
@@ -13,6 +11,8 @@ import {
   buildHexPocket,
   buildGusset,
 } from "./composites";
+import { duplicateSelectedDelta, mirrorSelectedInPlaceDelta } from "./selectionActions";
+import { buildCutDelta } from "./cutActions";
 import {
   applyTranslate,
   applyScaleMul,
@@ -1003,108 +1003,20 @@ export const useScene = create((set, get) => ({
   // the position about the bed center on that axis. The newly created copies
   // become the new selection so subsequent transforms operate on them.
   duplicateSelected: ({ mirrorAxis = null, offset = 5 } = {}) => {
-    const s = get();
-    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
-    if (ids.length === 0) return;
+    const delta = duplicateSelectedDelta(get(), { mirrorAxis, offset, newId });
+    if (!delta) return;
     get().pushHistory();
-    const axisIdx = { x: 0, y: 1, z: 2 }[mirrorAxis] ?? -1;
-    // If ANY source object is in a group, the whole duplication batch gets a
-    // SINGLE fresh groupId so the copies form their OWN assembly (rather than
-    // joining the original assembly and bloating it on every duplicate). When
-    // none of the sources are grouped, leave groupId undefined so copies are
-    // top-level. The new group name is the source group name + " copy" so
-    // the outliner header reads sensibly.
-    const sourceObjs = ids.map((id) => s.objects.find((o) => o.id === id)).filter(Boolean);
-    const anyGrouped = sourceObjs.some((o) => o.groupId);
-    const newGroupId = anyGrouped ? newId("group") : null;
-    const seedGroupName = sourceObjs.find((o) => o.groupName)?.groupName;
-    const newGroupName = anyGrouped
-      ? `${seedGroupName || "Assembly"} ${mirrorAxis ? `(mirror ${mirrorAxis.toUpperCase()})` : "copy"}`
-      : undefined;
-    set((st) => {
-      const copies = [];
-      for (const id of ids) {
-        const src = st.objects.find((o) => o.id === id);
-        if (!src) continue;
-        const copy = {
-          ...src,
-          id: newId(src.type),
-          name: src.name + (mirrorAxis ? ` (mirror ${mirrorAxis.toUpperCase()})` : " copy"),
-          position: [...src.position],
-          rotation: [...src.rotation],
-          scale: [...src.scale],
-          dims: { ...src.dims },
-          originalBbox: src.originalBbox ? { ...src.originalBbox } : undefined,
-          geometry: src.geometry ? {
-            vertices: src.geometry.vertices,
-            indices: src.geometry.indices,
-          } : undefined,
-          // Override the spread-inherited groupId: copies form their own new
-          // assembly (or none, if sources weren't grouped).
-          groupId: newGroupId || undefined,
-          groupName: newGroupName,
-        };
-        if (axisIdx >= 0) {
-          // Mirror the copy so it sits ADJACENT to the original along the
-          // chosen axis (not on top of it). Negating position only works
-          // when the source isn't centred on that axis — at position[ax]=0,
-          // -0 is still 0 and the copy stacks invisibly on the original.
-          // Computing the source's world-space extent on this axis and
-          // shifting the copy by that extent + a small gap guarantees a
-          // visible, non-overlapping mirror in every case.
-          const axisKey = ["x", "y", "z"][axisIdx];
-          let extent = 0;
-          try {
-            const bb = computeRotatedBBox(src);
-            extent = Math.abs((bb.max?.[axisKey] ?? 0) - (bb.min?.[axisKey] ?? 0));
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn("mirror bbox fallback:", err);
-          }
-          copy.scale[axisIdx] = -copy.scale[axisIdx];
-          copy.position[axisIdx] = src.position[axisIdx] + extent + offset;
-          if (mirrorAxis === "y") copy.position[1] = Math.max(0, copy.position[1]);
-        } else {
-          // Plain duplicate — shift slightly so it's visible.
-          copy.position[0] += offset;
-          copy.position[2] += offset;
-        }
-        copies.push(copy);
-      }
-      const newIds = copies.map((c) => c.id);
-      return {
-        objects: [...st.objects, ...copies],
-        selectedIds: newIds,
-        selectedId: newIds[newIds.length - 1] || st.selectedId,
-      };
-    });
+    set(delta);
   },
 
   // In-place mirror: flip the selection on the given axis WITHOUT creating
-  // a duplicate. Useful for fixing asymmetric AI-generated meshes. Uses
-  // the bbox extent so the part stays put on the bed (its origin doesn't
-  // jump when scale flips sign).
+  // a duplicate. Useful for fixing asymmetric AI-generated meshes. Pure
+  // logic lives in `selectionActions.js`; this is the history-aware wrapper.
   mirrorSelectedInPlace: (axis) => {
-    const s = get();
-    const axisIdx = { x: 0, y: 1, z: 2 }[axis];
-    if (axisIdx === undefined) return;
-    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
-    if (ids.length === 0) return;
+    const delta = mirrorSelectedInPlaceDelta(get(), axis);
+    if (!delta) return;
     get().pushHistory();
-    set((st) => {
-      const updated = st.objects.map((o) => {
-        if (!ids.includes(o.id)) return o;
-        const next = {
-          ...o,
-          scale: [...o.scale],
-          position: [...o.position],
-          rotation: [...o.rotation],
-        };
-        next.scale[axisIdx] = -next.scale[axisIdx];
-        return next;
-      });
-      return { objects: updated };
-    });
+    set(delta);
   },
 
   setTransformMode: (mode) => set({ transformMode: mode }),
@@ -1117,83 +1029,23 @@ export const useScene = create((set, get) => ({
   setCutPlane: (patch) => set((st) => ({ cutPlane: { ...st.cutPlane, ...patch } })),
 
   // Apply the current cut plane to the currently-selected object(s).
-  // `keep` is "both" | "upper" | "lower" — controls which piece(s) survive.
-  // For each selected object: subtract the appropriate half-space, replace
-  // the original with up to two new "imported mesh" objects representing
-  // the resulting pieces. History-atomic so Ctrl+Z restores everything in
-  // one step.
+  // `keep` is "both" | "upper" | "lower". Pure cut logic lives in
+  // `cutActions.js`; this wrapper handles history + scene replacement
+  // so the multi-piece cut lands as a single undo step.
   applyCut: async (keep = "both") => {
-    const s = get();
-    const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
-    if (ids.length === 0) return { ok: false, error: "Nothing selected" };
-    const plane = s.cutPlane;
-    const newObjects = [];
-    const errors = [];
-    for (const id of ids) {
-      const src = s.objects.find((o) => o.id === id);
-      if (!src) continue;
-      try {
-        // Prefer the manifold-3d worker path so cuts are guaranteed
-        // watertight; the workerClient automatically falls back to
-        // the synchronous BVH-CSG cutter if the worker can't be
-        // constructed (test environments, very old browsers).
-        let result;
-        try {
-          result = await cutObjectByPlaneAsync(src, plane, {
-            upper: keep === "both" || keep === "upper",
-            lower: keep === "both" || keep === "lower",
-          });
-        } catch (manifoldErr) {
-          // Manifold rejected (NotManifold on a corrupted import etc.) —
-          // fall back to BVH so the user still gets a result instead of
-          // a hard error.
-          // eslint-disable-next-line no-console
-          console.warn("[applyCut] manifold cut failed, falling back to BVH:", manifoldErr.message);
-          result = cutObjectByPlane(src, plane, {
-            upper: keep === "both" || keep === "upper",
-            lower: keep === "both" || keep === "lower",
-          });
-        }
-        const pieces = [];
-        if (result.upper) pieces.push({ part: result.upper, suffix: keep === "both" ? "upper" : "" });
-        if (result.lower) pieces.push({ part: result.lower, suffix: keep === "both" ? "lower" : "" });
-        if (pieces.length === 0) {
-          errors.push(`${src.name}: cut produced empty geometry`);
-          continue;
-        }
-        for (const { part, suffix } of pieces) {
-          newObjects.push({
-            id: newId("cut"),
-            name: suffix ? `${src.name} (${suffix})` : `${src.name} (cut)`,
-            type: "imported",
-            modifier: src.modifier || "positive",
-            visible: true,
-            position: [0, 0, 0],   // pieces stay in world space; their geom is already baked
-            rotation: [0, 0, 0],
-            scale: [1, 1, 1],
-            dims: {},
-            color: src.color,
-            geometry: { vertices: part.vertices, indices: part.indices },
-            originalBbox: src.originalBbox,
-          });
-        }
-      } catch (e) {
-        errors.push(`${src.name}: ${e.message || e}`);
-      }
-    }
+    const delta = await buildCutDelta(get(), keep, newId);
+    if (!delta) return { ok: false, error: "Nothing selected" };
+    const { newObjects, errors, removedIds } = delta;
     if (newObjects.length === 0) {
       return { ok: false, error: errors.join("; ") || "Cut produced no geometry" };
     }
     get().pushHistory();
-    set((st) => {
-      const remaining = st.objects.filter((o) => !ids.includes(o.id));
-      return {
-        objects: [...remaining, ...newObjects],
-        selectedIds: newObjects.map((o) => o.id),
-        selectedId: newObjects[newObjects.length - 1].id,
-        cutMode: false,
-      };
-    });
+    set((st) => ({
+      objects: [...st.objects.filter((o) => !removedIds.includes(o.id)), ...newObjects],
+      selectedIds: newObjects.map((o) => o.id),
+      selectedId: newObjects[newObjects.length - 1].id,
+      cutMode: false,
+    }));
     return { ok: true, pieces: newObjects.length, errors };
   },
 
@@ -1237,6 +1089,100 @@ export const useScene = create((set, get) => ({
       measurements: [],
       pendingMeasurePoint: null,
     });
+  },
+
+  // Auto-fit the entire scene to the current printer's build volume.
+  // Useful after a Remix import when the source design was authored for
+  // a bigger bed. Computes the combined world AABB, scales every object
+  // uniformly so the longest axis ≈ `targetFraction` × the shortest
+  // build-volume axis (default 95%), and re-positions each object so
+  // the assembly keeps its centre on the bed origin and its base on Y=0.
+  //
+  // Returns { ok: true, scaleFactor } on success, { ok: false, reason }
+  // when there's nothing to scale or the math is degenerate.
+  resizeSceneToBed: ({ targetFraction = 0.95 } = {}) => {
+    const s = get();
+    const objs = s.objects;
+    if (!objs || objs.length === 0) return { ok: false, reason: "Scene is empty" };
+
+    // Combined world AABB across every visible object.
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+    let any = false;
+    for (const o of objs) {
+      if (o.visible === false) continue;
+      try {
+        const bb = computeRotatedBBox(o);
+        const px = o.position?.[0] ?? 0;
+        const py = o.position?.[1] ?? 0;
+        const pz = o.position?.[2] ?? 0;
+        const wx0 = px + bb.min.x, wx1 = px + bb.max.x;
+        const wy0 = py + bb.min.y, wy1 = py + bb.max.y;
+        const wz0 = pz + bb.min.z, wz1 = pz + bb.max.z;
+        if (wx0 < minX) minX = wx0;
+        if (wx1 > maxX) maxX = wx1;
+        if (wy0 < minY) minY = wy0;
+        if (wy1 > maxY) maxY = wy1;
+        if (wz0 < minZ) minZ = wz0;
+        if (wz1 > maxZ) maxZ = wz1;
+        any = true;
+      } catch (_) { /* skip un-bbox-able primitives (sweeps with ref paths etc.) */ }
+    }
+    if (!any) return { ok: false, reason: "Could not compute scene bounds" };
+
+    const dx = maxX - minX;
+    const dy = maxY - minY;
+    const dz = maxZ - minZ;
+    const longest = Math.max(dx, dy, dz);
+    if (longest <= 0.001) return { ok: false, reason: "Scene has zero extent" };
+
+    // Build-volume axis mapping: BV.x → world X, BV.y → world Z (depth),
+    // BV.z → world Y (height). The bed-fit target is the largest box
+    // that fits inside that volume — limited by whichever axis ratio
+    // demands the smallest scale.
+    const bv = s.buildVolume || { x: 220, y: 220, z: 250 };
+    const fitX = (bv.x * targetFraction) / dx;
+    const fitZ = (bv.y * targetFraction) / dz;
+    const fitY = (bv.z * targetFraction) / dy;
+    const scaleFactor = Math.min(fitX, fitY, fitZ);
+    if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+      return { ok: false, reason: "Could not compute scale factor" };
+    }
+    // Skip the work if we're already inside 1% of target — avoids burning
+    // an undo slot on a no-op resize.
+    if (Math.abs(scaleFactor - 1) < 0.01) {
+      return { ok: false, reason: "Already fits bed", scaleFactor };
+    }
+
+    // Centre of the source AABB (used so the rescaled assembly stays
+    // centred on the bed instead of drifting toward +X/+Z).
+    const cx = (minX + maxX) / 2;
+    const cz = (minZ + maxZ) / 2;
+
+    get().pushHistory();
+    set((st) => ({
+      objects: st.objects.map((o) => {
+        // Rescale each object's position relative to the assembly centre,
+        // then multiply its existing scale by the same factor. Y is
+        // handled separately so we can drop the resulting assembly to
+        // Y=0 in the same pass (no need for a follow-up dropToBed call).
+        const px = (o.position?.[0] ?? 0) - cx;
+        const pz = (o.position?.[2] ?? 0) - cz;
+        const py = o.position?.[1] ?? 0;
+        const newY = (py - minY) * scaleFactor;
+        return {
+          ...o,
+          position: [px * scaleFactor, newY, pz * scaleFactor],
+          scale: [
+            (o.scale?.[0] ?? 1) * scaleFactor,
+            (o.scale?.[1] ?? 1) * scaleFactor,
+            (o.scale?.[2] ?? 1) * scaleFactor,
+          ],
+        };
+      }),
+    }));
+    return { ok: true, scaleFactor };
   },
 
   loadProject: (state) => {

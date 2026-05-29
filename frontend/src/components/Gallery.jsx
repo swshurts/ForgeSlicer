@@ -229,11 +229,18 @@ function GalleryCard({ item, idx, onDelete }) {
         )}
         <div className="mt-3 flex items-center gap-2">
           <Link
-            to={`/workspace?remix=${item.id}`}
-            data-testid={`gallery-remix-${item.id}`}
-            className="flex-1 h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center justify-center gap-1"
+            to={fitsBed === false ? `/workspace?remix=${item.id}&fit=1` : `/workspace?remix=${item.id}`}
+            data-testid={fitsBed === false ? `gallery-remix-fit-${item.id}` : `gallery-remix-${item.id}`}
+            title={fitsBed === false
+              ? "Remix and auto-resize to fit your current printer bed"
+              : "Open this design in the workspace for editing"}
+            className={`flex-1 h-8 text-white text-xs font-semibold rounded flex items-center justify-center gap-1 ${
+              fitsBed === false
+                ? "bg-amber-600 hover:bg-amber-700"
+                : "bg-orange-500 hover:bg-orange-600"
+            }`}
           >
-            <GitFork size={12} /> Remix
+            <GitFork size={12} /> {fitsBed === false ? "Remix · fit bed" : "Remix"}
           </Link>
           <a
             data-testid={`gallery-download-${item.id}`}

@@ -60,12 +60,14 @@ export default function Workspace() {
   }, []);
 
   const remixId = searchParams.get("remix");
+  const remixFit = searchParams.get("fit") === "1";
   const addComponentParam = searchParams.get("addComponent");
   const addImportedMesh = useScene((s) => s.addImportedMesh);
   const addRawObject = useScene((s) => s.addRawObject);
   const setProjectName = useScene((s) => s.setProjectName);
   const setRemixOf = useScene((s) => s.setRemixOf);
   const loadProject = useScene((s) => s.loadProject);
+  const resizeSceneToBed = useScene((s) => s.resizeSceneToBed);
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const serialize = useScene((s) => s.serialize);
@@ -179,6 +181,20 @@ export default function Workspace() {
                 setRemixOf(remixId);
                 setSearchParams({}, { replace: true });
                 projectLoaded = true;
+                // ?fit=1 — auto-scale to fit the user's printer bed.
+                // Defer one frame so the loaded objects are present before
+                // we compute their AABB.
+                if (remixFit) {
+                  setTimeout(() => {
+                    const r = resizeSceneToBed();
+                    if (r?.ok) {
+                      toast.success(`Resized ${(r.scaleFactor * 100).toFixed(0)}% to fit your bed`);
+                    } else if (r?.reason && r.reason !== "Already fits bed") {
+                      // eslint-disable-next-line no-console
+                      console.warn("Remix auto-fit skipped:", r.reason);
+                    }
+                  }, 30);
+                }
               }
             } catch (jsonErr) {
               // Fall through to STL fallback below if the project JSON is malformed.
@@ -202,6 +218,12 @@ export default function Workspace() {
         setProjectName(`Remix of ${mesh.name}`);
         setRemixOf(remixId);
         setSearchParams({}, { replace: true });
+        if (remixFit) {
+          setTimeout(() => {
+            const r = resizeSceneToBed();
+            if (r?.ok) toast.success(`Resized ${(r.scaleFactor * 100).toFixed(0)}% to fit your bed`);
+          }, 30);
+        }
       } catch (e) {
         console.warn("Remix load failed:", e);
       }
