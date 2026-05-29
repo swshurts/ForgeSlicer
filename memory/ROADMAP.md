@@ -10,25 +10,21 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 *(none open as of 2026-02-28)*
 
 ## 🟡 P1 — Next features
-- **Sweep MVP follow-ups (iter 46 deferred — all 3 closed)**:
-  - ~~Thread `scene` context through `lib/csg.js` so `path.kind: "ref"` sweeps export correctly~~ [DONE — iter 48]
-  - ~~`profile.kind: "sketch"` — wire up "Use as sweep profile" from a sketch context menu so the user can sweep an arbitrary 2D drawing.~~ [DONE — iter 51]
-  - ~~`path.kind: "sketch3d"` — let users draw a 2D polyline and use it as a 3D sweep path (with optional linear Y-rise).~~ [DONE — iter 51]
-- ~~**Fastener Pair macro**~~ [DONE — iter 48]
-- **Texture Library v2** (follow-ups to iter 49):
-  - ~~Additional patterns: diamond plate / tread, brick / fabric weave / decorative, hex camo, parametric voronoi.~~ [DONE — iter 50] (all 9 patterns live in `textureGeometry.js` + TextureLibraryDialog)
-  - ~~Right-click "Apply texture to face..." action that opens TextureLibraryDialog with `targetObjectId` set so the footprint auto-sizes to the picked face.~~ [DONE — iter 50]
-  - Imperial fastener grades (UNC/UNF) in the Hardware Library to mirror ISO metric coverage. [DONE — iter 50]
-- **Composite library expansion** — chamfered countersinks, gussets, hex pockets (mentioned in the Composites footer as "coming soon" — flesh out with the same pattern Slot + Fastener Pair use). [DONE — iter 50]
+*(all P1 items complete as of iter 53)*
+- ~~Sweep MVP follow-ups~~ [DONE — iter 51]
+- ~~Fastener Pair macro~~ [DONE — iter 48]
+- ~~Texture v2 patterns + apply-to-face + UNC/UNF imperial fasteners~~ [DONE — iter 50]
+- ~~Composite library expansion — Countersinks / Gussets / Hex Pockets~~ [DONE — iter 50]
 
 ## 🟢 P2 — Polish
-- **Refactor `lib/store.js` further** — 1481→1312 lines after iter 52 (composites extracted to `lib/composites.js`). Still above the <800 target; remaining candidates are `applyCut` (~75 lines), `duplicateSelected` (~80 lines), and project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines).
-- ~~**Eyeball preview & gallery thumbnail callouts** — overlay X/Y/Z extents + bed clearance on the rendered preview so it goes from "looks right" to "ready to print" at a glance.~~ [DONE — iter 52]
-- **Save Assembly to Gallery/Share silent-failure follow-up** — user reported "Pitman Arm didn't save" but could not be reproduced in preview testing. If it recurs on prod, capture full DevTools network payload + response so we can trace it.
-- ~~**Voice button a11y** — add `aria-pressed` to the mic button and a `data-testid` for the Group / Combo button (flagged by iter 15 testing agent).~~ [DONE — iter 52] (`aria-pressed` + `aria-label` on `voice-btn`; the Group / Combo testids `ctx-group-btn` and `leftpanel-tab-composites` already exist)
+- **Refactor `lib/store.js` further** — 1481→1164 lines after iter 53 (composites + selectionActions + cutActions extracted). Roughly 28% reduction. Future candidates: project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines), `addSweepFromSketch` (~80 lines, could move to `composites.js`), Texture / Hardware dialog state (~25 lines).
+- ~~**Eyeball preview & gallery thumbnail callouts**~~ [DONE — iter 52]
+- ~~**Voice button a11y**~~ [DONE — iter 52]
+- **Save Assembly to Gallery/Share silent-failure follow-up** — only triggers if user reports a recurrence on prod with DevTools network payload + response captured.
 
 ## 🔵 P3 — Experimental / future
-- Direct ARM64 OrcaSlicer build for preview-pod parity (currently x86_64 AppImage only).
+- ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53] (was originally an enhancement suggestion — landed as the closing polish item)
+- Direct ARM64 OrcaSlicer build for preview-pod parity (currently x86_64 AppImage only). **← Next focus per user.**
 - Live multi-user editing (CRDT / Yjs).
 - Photo → reference plane (drop a photo, snap dims to known features).
 
