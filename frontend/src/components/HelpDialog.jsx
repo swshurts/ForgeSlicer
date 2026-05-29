@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
   FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles, Scissors,
-  UserCircle,
+  UserCircle, FileText, ExternalLink, Download,
 } from "lucide-react";
+import { TUTORIALS } from "./toolbar/HelpMegaMenu";
 
 // ---------- Section content ----------
 // Each section is a function returning JSX so we can keep the file readable
@@ -12,6 +13,7 @@ import {
 function Index({ onJump }) {
   const cards = [
     { id: "quickstart",   icon: Rocket,    title: "Quick Start",       desc: "3-step tour: add a primitive, carve a hole, export." },
+    { id: "tutorials",    icon: FileText,  title: "Tutorial PDFs",     desc: "Seven illustrated long-form guides — read inline or download." },
     { id: "primitives",   icon: Box,       title: "Primitives",        desc: "Cube, sphere, cylinder, cone, torus, 2D shapes, composites." },
     { id: "modifiers",    icon: Plus,      title: "Positive & Negative", desc: "How parts add material vs. carve material out." },
     { id: "transforms",   icon: Move3D,    title: "Transforms",        desc: "Move, rotate, scale, drop-to-bed, mirror." },
@@ -539,8 +541,103 @@ function Shortcuts() {
   );
 }
 
+// ---------- Tutorials tab — inline PDF viewer over the shared catalog ----------
+// The TUTORIALS list is imported from HelpMegaMenu so both UIs stay in sync.
+// Layout: a thin tutorial-picker rail on the left, an iframe filling the rest.
+// We pin the picker rail INSIDE the content area (the outer left rail still
+// shows the global section nav) so users can flip between PDFs without losing
+// their place in the manual.
+function Tutorials() {
+  const [activeFile, setActiveFile] = useState(TUTORIALS[0]?.file);
+  const active = TUTORIALS.find((t) => t.file === activeFile) || TUTORIALS[0];
+  if (!active) {
+    return <P>No tutorial PDFs are available — try regenerating them with <Code>python3 scripts/build_all_tutorials.py</Code>.</P>;
+  }
+  return (
+    <div data-testid="help-section-tutorials" className="h-full flex flex-col">
+      {/* Header */}
+      <div className="px-6 pt-5 pb-3 border-b border-slate-800">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <FileText size={18} className="text-orange-400" />
+          Tutorial PDFs
+        </h2>
+        <p className="text-[12px] text-slate-400 mt-1 leading-snug">
+          Long-form illustrated guides, generated server-side from ForgeSlicer source.
+          Pick one from the list — it renders inline below. Use the buttons in the
+          top-right of the viewer to open in a new tab or download a copy.
+        </p>
+      </div>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Tutorial picker rail */}
+        <div className="w-56 border-r border-slate-800 overflow-y-auto bg-slate-950/40" data-testid="tutorial-list">
+          {TUTORIALS.map((t) => {
+            const isActive = t.file === activeFile;
+            return (
+              <button
+                key={t.file}
+                data-testid={`tutorial-pick-${t.file.replace(/\.pdf$/, "").toLowerCase()}`}
+                onClick={() => setActiveFile(t.file)}
+                className={`w-full text-left px-3 py-2 border-b border-slate-800/60 transition-colors ${
+                  isActive
+                    ? "bg-orange-500/10 border-l-2 border-l-orange-500"
+                    : "hover:bg-slate-800/40 border-l-2 border-l-transparent"
+                }`}
+              >
+                <div className={`text-[12px] font-semibold ${isActive ? "text-orange-200" : "text-slate-200"}`}>
+                  {t.title}
+                </div>
+                <div className="text-[10px] text-slate-500 leading-tight mt-0.5 line-clamp-2">
+                  {t.desc}
+                </div>
+                <div className="text-[9.5px] text-slate-600 mt-0.5 font-mono">{t.minutes} min</div>
+              </button>
+            );
+          })}
+        </div>
+        {/* Viewer */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+          <div className="h-9 border-b border-slate-800 flex items-center px-3 gap-2 bg-slate-900/60">
+            <FileText size={13} className="text-orange-400" />
+            <div className="text-[11.5px] font-semibold text-slate-200 truncate flex-1">{active.title}</div>
+            <a
+              data-testid="tutorial-open-new-tab"
+              href={`/docs/${active.file}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open in a new tab"
+              className="h-7 px-2 rounded text-[10px] text-slate-300 hover:bg-slate-800 hover:text-orange-300 flex items-center gap-1"
+            >
+              <ExternalLink size={11} /> Open
+            </a>
+            <a
+              data-testid="tutorial-download"
+              href={`/docs/${active.file}`}
+              download={active.file}
+              title="Download PDF"
+              className="h-7 px-2 rounded text-[10px] text-slate-300 hover:bg-slate-800 hover:text-orange-300 flex items-center gap-1"
+            >
+              <Download size={11} /> Download
+            </a>
+          </div>
+          {/* iframe — #toolbar=0 hides the default PDF chrome on Chromium so
+              the embedded view feels native. Browsers without a PDF viewer
+              still get the fallback link below. */}
+          <iframe
+            key={active.file}
+            data-testid="tutorial-iframe"
+            title={active.title}
+            src={`/docs/${active.file}#toolbar=0&navpanes=0`}
+            className="flex-1 w-full bg-slate-100"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SECTIONS = [
   { id: "index",      label: "Index",              icon: BookOpen,  Component: null },
+  { id: "tutorials",  label: "Tutorials (PDF)",    icon: FileText,  Component: null /* rendered inline */ },
   { id: "quickstart", label: "Quick Start",        icon: Rocket,    Component: QuickStart },
   { id: "primitives", label: "Primitives",         icon: Box,       Component: Primitives },
   { id: "modifiers",  label: "Positive & Negative", icon: Plus,     Component: Modifiers },
@@ -653,9 +750,14 @@ export default function HelpDialog({ open, onClose, onTryVoice }) {
           </aside>
 
           {/* Content */}
-          <section className="flex-1 overflow-y-auto p-6" data-testid="help-content">
+          <section
+            className={`flex-1 ${active === "tutorials" ? "overflow-hidden p-0" : "overflow-y-auto p-6"}`}
+            data-testid="help-content"
+          >
             {active === "index" ? (
               <Index onJump={setActive} />
+            ) : active === "tutorials" ? (
+              <Tutorials />
             ) : active === "voice" ? (
               <VoiceCommands onTry={onTryVoice} />
             ) : ActiveComponent ? (

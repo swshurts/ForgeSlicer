@@ -18,9 +18,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { CircleHelp, BookOpen, MessageCircle, ChevronRight, FileText, ExternalLink } from "lucide-react";
 
 // Tutorial catalog — single source of truth for the dropdown.
-// Order is intentional: Getting Started first (broadest), then alphabetical
-// by topic to match the dialog labels.
-const TUTORIALS = [
+// Order is intentional: Getting Started first (broadest), then by topic to
+// match the dialog labels. Exported so HelpDialog's Tutorials tab reuses it.
+export const TUTORIALS = [
   {
     file: "ForgeSlicer-Getting-Started.pdf",
     title: "Getting Started",
@@ -44,6 +44,24 @@ const TUTORIALS = [
     title: "Sweep + Sketch",
     desc: "Helix, arc, bezier, hand-drawn paths — curved geometry done right.",
     minutes: 25,
+  },
+  {
+    file: "ForgeSlicer-Voice-Tutorial.pdf",
+    title: "Voice Commands",
+    desc: "Hands-free CAD via Whisper + GPT-5.2 — lexicon, phrasing, AI gen.",
+    minutes: 15,
+  },
+  {
+    file: "ForgeSlicer-Slicer-Tutorial.pdf",
+    title: "Slicer + Compare Engines",
+    desc: "Send to OrcaSlicer, run A/B engine compares, read every metric.",
+    minutes: 18,
+  },
+  {
+    file: "ForgeSlicer-Gallery-Tutorial.pdf",
+    title: "Gallery + Sharing",
+    desc: "Publish, remix, license your designs; build a component library.",
+    minutes: 12,
   },
 ];
 
