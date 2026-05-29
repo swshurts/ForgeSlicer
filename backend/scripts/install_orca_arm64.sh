@@ -1,0 +1,153 @@
+#!/bin/bash
+# Install OrcaSlicer on aarch64 (ARM64) hosts.
+#
+# Why this script exists
+# ----------------------
+# Upstream OrcaSlicer publishes **AppImages for x86_64 only** (see the
+# release page at https://github.com/OrcaSlicer/OrcaSlicer/releases).
+# The only ARM64 binary they ship is the **Linux Flatpak bundle**.
+# This script installs that flatpak (and its GNOME runtime), then
+# wires a launcher at `/app/backend/bin/orca-aarch64/OrcaSlicer` that
+# invokes the bundled binary through the runtime's `ld-linux-aarch64.so.1`
+# directly — bypassing flatpak's `bwrap` sandbox (which fails in K8s
+# pods because user namespaces are denied).
+#
+# Resulting layout (compatible with `orca_engine.resolve_install`):
+#   /app/backend/bin/orca-aarch64/
+#     OrcaSlicer            ← bash wrapper (this script writes it)
+#     resources/profiles/   ← symlink to flatpak share/OrcaSlicer/profiles
+#     share/                ← symlink to flatpak share/
+#
+# Idempotency
+# -----------
+# Re-running the script with the same version is a no-op (flatpak's
+# `install --or-update` short-circuits). Pass `--force` to wipe the
+# launcher dir + re-install the flatpak.
+#
+# Usage
+#   sudo backend/scripts/install_orca_arm64.sh           # install / update
+#   sudo backend/scripts/install_orca_arm64.sh --force   # re-install
+set -euo pipefail
+
+VERSION="${ORCA_VERSION:-v2.3.2}"
+FLATPAK_URL="https://github.com/OrcaSlicer/OrcaSlicer/releases/download/${VERSION}/OrcaSlicer-Linux-flatpak_V${VERSION#v}_aarch64.flatpak"
+TARGET_DIR="/app/backend/bin/orca-aarch64"
+FLATPAK_APP_ID="com.orcaslicer.OrcaSlicer"
+FORCE=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    -h|--help)
+      grep '^# ' "$0" | sed 's/^# //'
+      exit 0
+      ;;
+  esac
+done
+
+# Architecture gate — this installer is aarch64-only. The x86_64
+# AppImage path is handled by `install_orca.py`.
+ARCH="$(uname -m)"
+if [ "$ARCH" != "aarch64" ] && [ "$ARCH" != "arm64" ]; then
+  echo "install_orca_arm64.sh: this host is $ARCH, not aarch64 — use install_orca.py instead." >&2
+  exit 2
+fi
+
+echo "==> Installing OrcaSlicer ${VERSION} (aarch64) via Flatpak"
+
+# 1. Make sure flatpak + ostree are present. This is one apt-get away
+#    on Debian; on RHEL-likes it's `dnf install flatpak`.
+if ! command -v flatpak >/dev/null 2>&1; then
+  echo "    Installing flatpak + ostree (apt-get) ..."
+  apt-get update -qq
+  apt-get install -y --no-install-recommends flatpak ostree
+fi
+
+# 2. Register Flathub for the GNOME runtime. The flatpak bundle
+#    depends on `org.gnome.Platform/49` + `org.freedesktop.Platform.GL.default`
+#    + `org.freedesktop.Platform.codecs-extra` — these come from Flathub.
+flatpak remote-add --if-not-exists flathub \
+  https://flathub.org/repo/flathub.flatpakrepo >/dev/null
+
+# 3. Force-reinstall handling — wipe the flatpak install state first
+#    so the next step re-downloads cleanly. We don't touch the runtime
+#    cache (only the app) since the runtime is shared across versions.
+if [ "$FORCE" = "1" ]; then
+  echo "    Forcing reinstall — uninstalling existing app + clearing launcher dir."
+  flatpak uninstall -y --noninteractive --system "$FLATPAK_APP_ID" 2>/dev/null || true
+  rm -rf "$TARGET_DIR"
+fi
+
+# 4. Download the bundle + install. Already-installed is a no-op:
+#    `flatpak install` errors with "already installed" rather than
+#    silently succeeding, so we probe first. For real upgrades (same
+#    bundle, newer version) we wipe with --force or upgrade manually
+#    via `flatpak update`.
+INSTALLED_VERSION="$(flatpak info "$FLATPAK_APP_ID" 2>/dev/null | awk '/^[[:space:]]*Version:/ {print $2; exit}' || true)"
+if [ -n "$INSTALLED_VERSION" ]; then
+  echo "    $FLATPAK_APP_ID already installed (version: $INSTALLED_VERSION) — skipping download."
+else
+  DL_DIR="$(mktemp -d)"
+  trap 'rm -rf "$DL_DIR"' EXIT
+  echo "    Downloading $(basename "$FLATPAK_URL") ..."
+  curl -sSL --fail -o "$DL_DIR/orca.flatpak" "$FLATPAK_URL"
+  echo "    $(du -h "$DL_DIR/orca.flatpak" | awk '{print $1}') downloaded — installing ..."
+  flatpak install --system -y --noninteractive "$DL_DIR/orca.flatpak"
+fi
+
+# 5. Locate the flatpak's "active" symlink — the runtime loader and
+#    library paths resolve through this so future Orca updates Just Work.
+APP_ROOT="/var/lib/flatpak/app/${FLATPAK_APP_ID}/${ARCH}/master/active/files"
+GNOME_ROOT="/var/lib/flatpak/runtime/org.gnome.Platform/${ARCH}/49/active/files"
+GL_ROOT="/var/lib/flatpak/runtime/org.freedesktop.Platform.GL.default/${ARCH}/25.08/active/files"
+
+if [ ! -x "$APP_ROOT/bin/orca-slicer" ]; then
+  echo "ERROR: flatpak install completed but binary is missing at $APP_ROOT/bin/orca-slicer" >&2
+  exit 3
+fi
+
+# 6. Lay down the launcher + symlinks. `orca_engine.resolve_install`
+#    looks for `OrcaSlicer` (legacy source-build name) in the install
+#    dir; we name our wrapper exactly that.
+mkdir -p "$TARGET_DIR"
+cat > "$TARGET_DIR/OrcaSlicer" <<EOF
+#!/bin/bash
+# Auto-generated by install_orca_arm64.sh. Invokes the flatpak'd
+# OrcaSlicer binary directly through its runtime's ld-linux loader —
+# bypasses bwrap sandboxing (which fails in K8s pods without
+# user-namespace support). See install_orca_arm64.sh for the why.
+set -euo pipefail
+
+APP_ROOT="$APP_ROOT"
+GNOME_ROOT="$GNOME_ROOT"
+GL_ROOT="$GL_ROOT"
+
+if [ ! -x "\$APP_ROOT/bin/orca-slicer" ]; then
+  echo "OrcaSlicer ARM64 not installed at \$APP_ROOT — run install_orca_arm64.sh first." >&2
+  exit 127
+fi
+
+# Force C locale for numeric I/O — mirrors upstream's flatpak entrypoint
+# (otherwise European locales break decimal parsing of slice configs).
+export LC_NUMERIC=C
+
+exec "\$GNOME_ROOT/lib/ld-linux-aarch64.so.1" \\
+  --library-path "\$APP_ROOT/lib:\$APP_ROOT/lib64:\$GNOME_ROOT/lib:\$GNOME_ROOT/lib/aarch64-linux-gnu:\$GL_ROOT/lib:\$GL_ROOT/lib/aarch64-linux-gnu" \\
+  "\$APP_ROOT/bin/orca-slicer" "\$@"
+EOF
+chmod +x "$TARGET_DIR/OrcaSlicer"
+
+# Symlinks so orca_engine._resources_root finds the profiles tree.
+ln -sfn "$APP_ROOT/share" "$TARGET_DIR/share"
+ln -sfn "$APP_ROOT/share/OrcaSlicer" "$TARGET_DIR/resources"
+
+# 7. Smoke check — make sure the wrapper actually prints --help.
+if ! "$TARGET_DIR/OrcaSlicer" --help >/dev/null 2>&1; then
+  echo "ERROR: $TARGET_DIR/OrcaSlicer --help failed — investigate manually." >&2
+  exit 4
+fi
+
+VERSION_LINE="$("$TARGET_DIR/OrcaSlicer" --help 2>&1 | head -1)"
+echo "==> Installed: $VERSION_LINE"
+echo "==> Launcher:  $TARGET_DIR/OrcaSlicer"
+echo "==> Profiles:  $TARGET_DIR/resources/profiles (-> $APP_ROOT/share/OrcaSlicer/profiles)"

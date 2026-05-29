@@ -48,7 +48,7 @@ def test_stage_user_profile_stamps_all_required_metadata_for_empty_inputs():
     for key in REQUIRED_KEYS:
         assert key in out, f"missing metadata key: {key}"
     assert out["type"] == "machine"
-    assert out["from"] == "User"
+    assert out["from"] == "system"
     assert out["instantiation"] == "true"
     assert out["name"] == "Custom A1"
 
@@ -81,7 +81,7 @@ def test_stage_user_profile_strips_metadata_overrides_then_restamps():
         leaf_name="Fallback Name",
     )
     assert out["type"] == "machine"
-    assert out["from"] == "User"
+    assert out["from"] == "system"
     assert out["instantiation"] == "true"
     # Override-supplied `name` IS allowed (caller can rename); only the
     # other three metadata fields are locked.
@@ -176,7 +176,7 @@ def test_stage_user_profile_sovol_sv06_ace_reproduces_production_input():
     raw_profile = {
         "type": "machine",
         "name": "Sovol SV06 Plus Ace",
-        "from": "User",
+        "from": "system",
         "instantiation": "true",
         "printer_model": "Sovol SV06 Plus Ace",
         "printer_variant": "0.4",
@@ -209,7 +209,7 @@ def test_stage_user_profile_sovol_sv06_ace_reproduces_production_input():
     assert parsed["printer_model"] == "Sovol SV06 Plus Ace"
     # Metadata.
     assert parsed["type"] == "machine"
-    assert parsed["from"] == "User"
+    assert parsed["from"] == "system"
 
 
 def test_stage_user_profile_process_profile_stringifies_layer_height():

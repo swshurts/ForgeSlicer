@@ -1,0 +1,36 @@
+{
+  "summary": "ForgeSlicer iter 54 — ARM64 OrcaSlicer support FULLY VERIFIED. All 4 targeted backend endpoints pass on the live preview pod; the E2E cube slice produces real gcode (125 KB / 5027 lines / 50 layers); the frontend Slicer popover now offers OrcaSlicer as a selectable engine (no longer 'unsupported on aarch64'); and the existing pytest regression suite (37 orca-adjacent tests across iter15/staging/engine/install/fallback) is green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_orca_arm64_slice.py",
+    "/app/backend/tests/test_iter15_smoke.py",
+    "/app/backend/tests/test_orca_profile_staging.py",
+    "/app/backend/tests/test_orca_engine.py",
+    "/app/backend/tests/test_install_orca.py",
+    "/app/backend/tests/test_orca_fallback_preset.py",
+    "/app/test_reports/pytest/iter23_orca.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend: orca_engine.py has grown to 1000+ lines — fine for now but consider splitting profile-staging, install, and slice-runner into sibling modules in a future iter.",
+    "Frontend SlicerPopover.jsx — orcaReady flag relies entirely on /api/slice/orca/status; consider adding a 'last polled' timestamp so users can manually retry status without reloading."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Used /app/memory/test_credentials.md mongo-seed pattern. Created ephemeral session st_test_1780068655060 for user_test1780068655060 — DELETED at end of run.",
+  "seed_data_creation": "Ephemeral test user + session (deleted post-test). No persistent test data.",
+  "evidence": {
+    "GET /api/slice/orca/status": "200 — {installed:true, arch:'aarch64', source:'app-aarch64', version:'OrcaSlicer-2.3.2:', binary_path:'/app/backend/bin/orca-aarch64/OrcaSlicer', build_in_progress:false}",
+    "POST /api/slice/orca/slice (cube 10mm)": "200 — gcode 125481 bytes / 5027 lines / 50 layers / 245.34mm filament / 0.12s, contains G1, M104/M109, OrcaSlicer 2.3.2 header",
+    "POST /api/slice/orca/reinstall": "200 — {status:'started', argv:['bash','/app/backend/scripts/install_orca_arm64.sh'], lock_file:'/app/backend/bin/.orca_install_lock'} — confirms aarch64 routing to flatpak installer (previously rejected with 400 'AppImage is x86_64-only')",
+    "GET /api/slice/orca/preset?vendor=Custom&kind=process&name=0.20mm Standard @MyKlipper": "200 — flattened {vendor,kind,name,preset} JSON returned",
+    "GET /api/slice/orca/preset?vendor=OrcaFilamentLibrary&kind=filament&name=Generic PLA @System": "200 — preset.from='system' confirmed (validates base/ subdir lookup in _load_system_preset for v2.3.x layout)",
+    "Frontend Slicer popover": "menu-slicer-btn opens popover; slicer-engine-orca button is enabled, label 'OrcaSlicer / server-side', clickable, becomes active (bg-purple-500/15 border-purple-500/60). No 'unsupported on aarch64' string in DOM.",
+    "pytest regression": "37/37 PASS — test_iter15_smoke.py, test_orca_profile_staging.py, test_orca_engine.py, test_install_orca.py, test_orca_fallback_preset.py"
+  },
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "ARM64 OrcaSlicer is live on the preview pod via flatpak runtime. Binary at /app/backend/bin/orca-aarch64/OrcaSlicer is a bash launcher that exec's ld-linux-aarch64.so.1 against the flatpak share. /api/slice/orca/status returns arch='aarch64', source='app-aarch64', version='OrcaSlicer-2.3.2:'. Frontend SlicerPopover uses orcaReady = orcaStatus?.installed === true to gate the slicer-engine-orca button — currently true on the preview. The smoke test /app/backend/tests/test_orca_arm64_slice.py exercises the full slice path (cube STL → gcode) and is the canonical regression for this engine. To repeat the workspace UI test, seed a mongo session per /app/memory/test_credentials.md and inject session_token cookie before navigating to /workspace.",
+  "rca of the issue": "N/A — no defects found. iter 54 lands cleanly. Note: status.version string ends with a trailing colon ('OrcaSlicer-2.3.2:') because the upstream launcher echoes 'OrcaSlicer-2.3.2: <buildhash>' and the parser keeps the prefix-with-colon; cosmetic only, smoke test asserts startswith('OrcaSlicer-2.3.') which is the documented contract."
+}

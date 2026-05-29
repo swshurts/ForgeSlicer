@@ -1671,7 +1671,17 @@ async def install_orca_if_missing():
         if install.binary is not None:
             logger.info("OrcaSlicer already installed at %s", install.binary)
             return
-        script = script_dir / "install_orca.py"
+        # Pick the arch-appropriate installer. x86_64 → AppImage path
+        # via `install_orca.py`; aarch64 → flatpak path via the bash
+        # script. Either is fire-and-forget and idempotent.
+        import platform as _pf
+        arch = _pf.machine()
+        if arch in ("aarch64", "arm64"):
+            script = script_dir / "install_orca_arm64.sh"
+            argv = ["bash", str(script)]
+        else:
+            script = script_dir / "install_orca.py"
+            argv = ["python3", str(script)]
         if not script.exists():
             logger.warning("OrcaSlicer install script missing at %s", script)
             return
@@ -1679,8 +1689,8 @@ async def install_orca_if_missing():
         # event loop doesn't block on subprocess wait. Failures are
         # logged but never raised (the built-in slicer is the fallback).
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, _run_orca_install, script)
-        logger.info("OrcaSlicer auto-install kicked off (background).")
+        loop.run_in_executor(None, _run_orca_install, argv)
+        logger.info("OrcaSlicer auto-install kicked off (background, arch=%s).", arch)
     except Exception as e:  # noqa: BLE001
         logger.warning("OrcaSlicer auto-install skipped: %s", e)
 
@@ -1707,20 +1717,23 @@ def _run_orca_deps(script: Path) -> None:
         logger.warning("install_orca_deps.sh crashed: %s", e)
 
 
-def _run_orca_install(script: Path) -> None:
-    """Subprocess invocation of the install script. Runs in a worker
-    thread so the FastAPI event loop is never blocked."""
+def _run_orca_install(argv: list[str]) -> None:
+    """Subprocess invocation of the install script (python OR bash —
+    caller passes the full argv). Runs in a worker thread so the
+    FastAPI event loop is never blocked."""
     import subprocess
     try:
         result = subprocess.run(
-            ["python3", str(script)],
+            argv,
             capture_output=True, timeout=600, check=False,
         )
         if result.returncode == 0:
             logger.info("OrcaSlicer auto-install finished successfully.")
         else:
             tail = (result.stdout or b"")[-500:].decode(errors="replace")
-            logger.info("OrcaSlicer auto-install rc=%s tail=%s", result.returncode, tail)
+            err_tail = (result.stderr or b"")[-500:].decode(errors="replace")
+            logger.info("OrcaSlicer auto-install rc=%s out=%s err=%s",
+                        result.returncode, tail, err_tail)
     except Exception as e:  # noqa: BLE001
         logger.warning("OrcaSlicer auto-install crashed: %s", e)
 

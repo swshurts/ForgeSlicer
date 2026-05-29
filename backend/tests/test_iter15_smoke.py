@@ -7,15 +7,19 @@ import pytest
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://orca-cad-slice.preview.emergentagent.com").rstrip("/")
 
 
-# ---- Orca status / progress (intentional aarch64 behaviour) ----
+# ---- Orca status / progress ----
+# As of iter 54 the ARM64 flatpak install path is live, so `installed`
+# is True on this aarch64 preview pod. Older versions of this test
+# asserted installed=False on aarch64; we now assert presence + arch +
+# a non-null version banner.
 class TestOrca:
-    def test_status_returns_installed_false(self):
+    def test_status_returns_installed_true_on_arm64(self):
         r = requests.get(f"{BASE}/api/slice/orca/status", timeout=15)
         assert r.status_code == 200
         body = r.json()
-        assert body["installed"] is False
+        assert body["installed"] is True, body
         assert body["arch"] == "aarch64"
-        assert "detail" in body
+        assert body.get("version"), "expected non-empty version banner"
 
     def test_progress_unknown_job_returns_404(self):
         # SSE endpoint streams indefinitely; use short stream timeout and read first chunk

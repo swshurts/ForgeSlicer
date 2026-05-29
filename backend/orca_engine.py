@@ -368,6 +368,11 @@ def _load_system_preset(
     if kind not in _PROFILE_KINDS:
         raise ValueError(f"Unknown profile kind {kind!r}; expected one of {list(_PROFILE_KINDS)}")
     base_dir = profiles_root / vendor / kind
+    # Profile-base files moved to a `base/` sub-directory in OrcaSlicer
+    # v2.3.x (e.g. `OrcaFilamentLibrary/filament/base/fdm_filament_pla.json`)
+    # while user-facing presets still live directly under the kind folder.
+    # We probe BOTH so this loader works against both old and new layouts.
+    base_alt = base_dir / "base"
     visited: set[str] = set()
     chain: list[dict] = []
     cursor = name
@@ -375,10 +380,14 @@ def _load_system_preset(
         if cursor in visited:
             raise RuntimeError(f"Circular inherits in {vendor}/{kind} starting at {name!r}")
         visited.add(cursor)
-        path = base_dir / f"{cursor}.json"
-        if not path.is_file():
+        path: Optional[Path] = None
+        for candidate in (base_dir / f"{cursor}.json", base_alt / f"{cursor}.json"):
+            if candidate.is_file():
+                path = candidate
+                break
+        if path is None:
             raise FileNotFoundError(
-                f"System preset {vendor}/{kind}/{cursor}.json not found in {base_dir}"
+                f"System preset {vendor}/{kind}/{cursor}.json not found in {base_dir} or {base_alt}"
             )
         with path.open("r", encoding="utf-8") as f:
             doc = json.load(f)
@@ -486,10 +495,17 @@ def _stage_user_profile(
     # 1) Build the metadata header FIRST. These four keys MUST land
     #    in OrcaSlicer's `key_values` map even if a later config-key
     #    parse breaks the loop, so they ride at the top.
+    #    `from: "system"` (not "User") is required for the v2.3.x
+    #    compatibility check — OrcaSlicer uses the file's own `name`
+    #    as the "inherited from" identity ONLY for system presets,
+    #    which is what the process's `compatible_printers` list
+    #    matches against. With `from: User` and no `inherits`, the
+    #    check fails with rc -17 ("process not compatible with
+    #    printer") even when names align.
     out: dict = {
         "type": type_name,
         "name": chosen_name,
-        "from": "User",
+        "from": "system",
         "instantiation": "true",
         # Orca's parser also reads `version` into key_values; not
         # required by `--load-settings` validation, but cheap to
@@ -513,6 +529,27 @@ def _stage_user_profile(
         if k in metadata_keys:
             continue
         out[k] = _orca_stringify(v)
+
+    # 4) OrcaSlicer v2.3.x adds a slicer-side validation: when the
+    #    machine uses relative-E addressing (Marlin / Klipper default
+    #    in 2.3+), the layer-change gcode MUST contain `G92 E0` to
+    #    reset extrusion floating-point accumulation. The bundled
+    #    `Custom/MyKlipper 0.4 nozzle` machine ships an empty layer
+    #    gcode, which fails this check with rc -51 / 239 / "Relative
+    #    extruder addressing requires resetting the extruder position
+    #    at each layer". Inject the directive on machine profiles
+    #    where it's missing so a vanilla preset chain just slices.
+    if kind == "machine":
+        rel = out.get("use_relative_e_distances")
+        # Treat undefined as TRUE — that matches Orca's runtime default
+        # for non-BBL Klipper-style machines per the 2.3.x release notes.
+        relative_e = (rel is None) or (str(rel).lower() in ("1", "true", "yes"))
+        layer_gcode = out.get("layer_change_gcode") or out.get("layer_gcode") or ""
+        if relative_e and "G92 E0" not in layer_gcode:
+            # Preserve any existing layer-change directives the user
+            # / bundled preset already set up — just prepend G92 E0.
+            new_gcode = "G92 E0\n" + layer_gcode if layer_gcode else "G92 E0"
+            out["layer_change_gcode"] = new_gcode
     return out
 
 
@@ -765,20 +802,28 @@ async def orca_reinstall(force: bool = False):
             detail="An OrcaSlicer install is already running. Poll /api/slice/orca/status for progress.",
         )
     arch = platform.machine()
-    if arch not in ("x86_64", "amd64"):
-        # The AppImage is x86_64-only. Returning 400 here so the admin
-        # UI can show "not supported on this server" instead of silently
-        # firing a no-op install.
+    # Route to the arch-appropriate installer. x86_64 → Python script
+    # that fetches the AppImage; aarch64/arm64 → shell script that
+    # installs the upstream flatpak + wires a sandbox-free launcher.
+    if arch in ("x86_64", "amd64"):
+        script = Path(__file__).resolve().parent / "scripts" / "install_orca.py"
+        if not script.exists():
+            raise HTTPException(status_code=500, detail=f"Installer script not found at {script}")
+        argv = [sys.executable, str(script)]
+        if force:
+            argv.append("--force")
+    elif arch in ("aarch64", "arm64"):
+        script = Path(__file__).resolve().parent / "scripts" / "install_orca_arm64.sh"
+        if not script.exists():
+            raise HTTPException(status_code=500, detail=f"Installer script not found at {script}")
+        argv = ["bash", str(script)]
+        if force:
+            argv.append("--force")
+    else:
         raise HTTPException(
             status_code=400,
-            detail=f"OrcaSlicer AppImage is x86_64-only; this server reports {arch!r}. The built-in slicer remains available.",
+            detail=f"OrcaSlicer not supported on {arch!r} — only x86_64 and aarch64 have packaged binaries. Built-in slicer remains available.",
         )
-    script = Path(__file__).resolve().parent / "scripts" / "install_orca.py"
-    if not script.exists():
-        raise HTTPException(status_code=500, detail=f"Installer script not found at {script}")
-    argv = [sys.executable, str(script)]
-    if force:
-        argv.append("--force")
     # Fire-and-forget: spawn the installer as a detached subprocess so
     # the request returns immediately. The installer manages its own
     # `.orca_install_lock` file (which the status endpoint already
@@ -1004,8 +1049,15 @@ async def orca_slice(req: OrcaSliceRequest):
         duration = time.monotonic() - t0
 
         if proc.returncode != 0:
-            tail = (stderr or b"")[-2000:].decode(errors="replace")
-            logger.warning("orca slice rc=%s err=%s", proc.returncode, tail)
+            # OrcaSlicer uses boost::log which writes to stdout, not
+            # stderr — so the actual validation error lives in `stdout`.
+            # Combine BOTH tails for failure diagnostics so the API
+            # response (and logs) include the real reason whichever
+            # pipe Orca picked.
+            stdout_tail = (stdout or b"")[-2000:].decode(errors="replace")
+            stderr_tail = (stderr or b"")[-2000:].decode(errors="replace")
+            tail = (stderr_tail + "\n" + stdout_tail).strip()
+            logger.warning("orca slice rc=%s err=%s", proc.returncode, tail[-2000:])
             # Detect the "missing shared library" pattern (rc=127 +
             # ld.so error). This is the production-container failure
             # mode we hit before `install_orca_deps.sh` was wired
@@ -1086,8 +1138,12 @@ async def orca_slice(req: OrcaSliceRequest):
     finally:
         # Always clean the workdir — profiles + STL + the 3MF can be
         # several megabytes each and we don't want them piling up on the
-        # backend.
-        shutil.rmtree(workdir, ignore_errors=True)
+        # backend. ORCA_KEEP_WORKDIR=1 preserves it for post-mortem
+        # debugging (developer-only).
+        if os.environ.get("ORCA_KEEP_WORKDIR") == "1":
+            logger.warning("ORCA_KEEP_WORKDIR=1 — preserving %s for inspection", workdir)
+        else:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 def _extract_gcode_from_3mf(path: Path) -> str:
