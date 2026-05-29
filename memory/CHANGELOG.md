@@ -1082,3 +1082,15 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ **In-app discoverability** — Texture Library dialog (`TextureLibraryDialog.jsx`) now has a "Tutorial PDF" link with BookOpen icon next to the "Pattern" label (testid `texture-tutorial-pdf-link`). Opens in a new tab so the user doesn't lose the dialog state.
 - ✅ **Idempotent regen** — running `python3 scripts/build_texture_tutorial.py` re-renders thumbs + rebuilds the PDF in-place. README at `frontend/public/docs/README.md` documents the workflow for future agents adding tutorials.
 - Files: `scripts/build_texture_tutorial.py` (NEW), `scripts/render_texture_thumbs.py` (NEW), `frontend/public/docs/ForgeSlicer-Texture-Tutorial.pdf` (NEW), `frontend/public/docs/README.md` (NEW), `frontend/src/components/dialogs/TextureLibraryDialog.jsx` (link + BookOpen import).
+
+## Iteration 57 (2026-05-29) — Tutorial PDF Suite + Help Mega-Menu
+- ✅ **Three new tutorial PDFs**:
+  - `ForgeSlicer-Getting-Started.pdf` (4 pages, 11 KB) — workspace tour, first-part walkthrough, CSG concept, where-to-go-next decision table, slicer-engine comparison, FAQ.
+  - `ForgeSlicer-Hardware-Tutorial.pdf` (4 pages, 15 KB) — full ISO M3–M12 + UNC/UNF #4-40 to 1/2-13 spec tables, fastener-pair anatomy, two-plate-bolt walkthrough, composite cousins (Slot/Countersink/Hex pocket/Gusset), print-and-fit tips, troubleshooting.
+  - `ForgeSlicer-Sweep-Tutorial.pdf` (6 pages, 16 KB) — sweep concept, helix/arc/bezier/sketch3d/ref paths, profile kinds, sketch tool workflow, custom-hook walkthrough, twist+samples deep-dive, print tips, troubleshooting.
+- ✅ **Shared chrome library** `scripts/tutorial_lib.py` — palette, styles, page chrome (orange band + footer), cover_block, keyed_table, callout helpers. Refactored `build_texture_tutorial.py` to use it; existing PDF is byte-near-identical after refactor.
+- ✅ **One-shot regen** `scripts/build_all_tutorials.py` rebuilds every PDF in dependency order.
+- ✅ **Help mega-menu** (`components/toolbar/HelpMegaMenu.jsx`) replaces the bare Help button. Two sections: in-app User Manual (preserves existing HelpDialog flow) + four PDF download links (open in new tab, right-click → Save As to download). Plus a footer "Browse all docs & PDFs" link to `/docs/`. Closes on click-outside, Escape, and item click. ARIA: `role="menu"`, `aria-haspopup`, `aria-expanded`.
+- ✅ Verified by testing agent (`/app/test_reports/iteration_25.json`) — 11/11 frontend checks PASS, zero issues, zero action items. All 4 PDFs HTTP 200 application/pdf; all 6 menu items present + functional.
+- ✅ Updated `frontend/public/docs/README.md` with the new contents + regen instructions.
+- Files: `scripts/tutorial_lib.py` (NEW), `scripts/build_getting_started_tutorial.py` (NEW), `scripts/build_hardware_tutorial.py` (NEW), `scripts/build_sweep_tutorial.py` (NEW), `scripts/build_all_tutorials.py` (NEW), `scripts/build_texture_tutorial.py` (REFACTORED), `frontend/src/components/toolbar/HelpMegaMenu.jsx` (NEW), `frontend/src/components/toolbar/SystemRow.jsx`, `frontend/public/docs/*.pdf` (4 files), `frontend/public/docs/README.md`.

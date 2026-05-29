@@ -17,10 +17,9 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Composite library expansion — Countersinks / Gussets / Hex Pockets~~ [DONE — iter 50]
 
 ## 🟢 P2 — Polish
-- **Refactor `lib/store.js` further** — 1481→1164 lines after iter 53 (composites + selectionActions + cutActions extracted). Roughly 28% reduction. Future candidates: project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines), `addSweepFromSketch` (~80 lines, could move to `composites.js`), Texture / Hardware dialog state (~25 lines).
-- ~~**Eyeball preview & gallery thumbnail callouts**~~ [DONE — iter 52]
-- ~~**Voice button a11y**~~ [DONE — iter 52]
-- **Save Assembly to Gallery/Share silent-failure follow-up** — only triggers if user reports a recurrence on prod with DevTools network payload + response captured.
+- **Refactor `lib/store.js` further** — 1481→1164 lines after iter 53. Further extraction candidates: project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines).
+- **Tutorial coverage** — Voice, Slicer/OrcaSlicer/Compare-engines, Gallery/Share/Remix PDFs still missing. Same `tutorial_lib.py` pattern as Hardware / Sweep / Getting Started — ~30 min per new PDF.
+- **Save Assembly to Gallery silent-failure follow-up** — only acts if user reports it on prod with DevTools payload.
 
 ## 🔵 P3 — Experimental / future
 - ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53]
