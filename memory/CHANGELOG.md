@@ -1196,3 +1196,31 @@ User feedback on iter 60: with 13+ parts in a scene the per-object offset chips 
 ### Status
 Implementation verified via screenshot: after click 1, scene shows `0.00 · Cylinder · XYZ · ×` HUD + hint banner + dashed axes, no offset chips. No regressions in measure mode, centerpoint-pair dimension, smart tutorial links, or PDF tutorials.
 
+
+## Iteration 62 (2026-05-30) — Anchored Ruler v3 (TinkerCAD axis labels + 27 snap points + same-object)
+User feedback on v2: *"Instead of just popping up a chip with a summary of the measurements, I want the dimensional measurements to be more like TinkerCAD. Additionally, I may want to measure from a midpoint or some other to get dimensional information even on the same component."*
+
+### What changed
+- ✅ **TinkerCAD-style L-bracket dim labels** — replaced the single offset chip with three axis-aligned coloured segments (ΔX rose → ΔY emerald → ΔZ amber) forming an orthogonal path anchor → target. A signed-mm label sits at the midpoint of each segment with the matching colour. Labels for axis components that are ~0 are hidden automatically. Labels honour the `axes` filter (XYZ / X / Y / Z).
+- ✅ **27 snap points per object** instead of just 8 corners:
+  - 8 bbox corners
+  - 12 edge midpoints
+  - 6 face centres
+  - 1 object centre
+- ✅ **Snap-kind toggle pills** in the anchor HUD — `COR / EDG / FAC / CEN` — so the user can restrict snapping (e.g., turn off corners to only snap to face centres). Refuses to disable the last enabled kind.
+- ✅ **Same-object measurement enabled** — clicking the anchored object again now snaps to a DIFFERENT snap point on it (e.g., body diagonal of a cube). The only ignore is when the EXACT same snap point is re-clicked.
+- ✅ **Snap-point ghost markers** — small coloured spheres at all 27 candidates on the anchored + target objects so the user can see where they'll snap next. Active snap point renders larger.
+- ✅ **Target HUD** — small `<name> · (snapKind) · ×` card at the target snap point with its own clear button.
+- ✅ **HUD consolidation fix** — the anchor card, snap pills, and pick-target hint are now wrapped in a single `<Html>` flex-column at the anchor world point (was 3 separate `<Html>` siblings layering on top of each other; latter overlays were intercepting clicks meant for earlier ones).
+
+### Bugs found & fixed mid-iteration
+- **Iter 31 → 32 retest**: 3/19 click-handler regressions on the anchor HUD subtree. RCA: drei `<Html>` siblings at identical world points layer in DOM order and the latest-rendered swallows pointer events from earlier ones. Fix: collapsed 3 sibling overlays → 1 wrapper `<Html>` with `pointerEvents:'auto'` and a flex-column layout. All 13 retested checks PASS, zero regressions.
+
+### Files
+NEW: nothing.
+EDITED: `lib/rulerAnchor.js` (added `bboxEdgeMidpoints`, `bboxFaceCenters`, `bboxCenterPoint`, `allSnapPoints`, `nearestSnapPoint`; kept `nearestCorner` as a back-compat alias), `lib/store.js` (replaced `rulerTargetId` with full `rulerTarget` snap-point record + added `rulerSnapKinds` + `toggleRulerSnapKind`), `lib/projectIO.js` (track the new shape), `components/Viewport.jsx` (rewrote `RulerAnchorLayer`, dropped `RulerOffsetChip` to a noop stub).
+
+### Tests
+- `/app/test_reports/iteration_31.json` — initial v3 test: 16/19 PASS.
+- `/app/test_reports/iteration_32.json` — post-fix retest: **13/13 PASS** on the consolidated HUD + sanity checks for previously-passing flows.
+
