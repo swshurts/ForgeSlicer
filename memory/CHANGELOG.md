@@ -1518,3 +1518,45 @@ Each tip has `id`, `title`, `description`, optional `cta` (label + run callback)
 - `components/HelpDialog.jsx` — "Tip of the day" header button (Lightbulb icon)
 
 Lint clean. No backend changes.
+
+---
+
+## Iteration 69 (2026-05-30) — Subdivide oversized models
+
+User request: *"We are very likely going to need to handle subdividing models that are too big for the build plate."* — triggered by an early user importing an AI-generated model too big to print.
+
+User-confirmed scope: connector kinds = None / Dowel / Dovetail · auto algo = axis-aligned planar cuts · trigger UX = toast banner · manual UI = numeric inputs (gizmo deferred) · re-detect on printer change = yes.
+
+### Foundation libs (NEW)
+- **`lib/oversizeCheck.js`** — `getObjectWorldSize`, `checkOversize(obj, buildVolume)`, `reportSceneOversize`, `computeAutoCutGrid`, `planesForGrid`. Returns a structured report including per-axis overshoot in mm and ratios.
+- **`lib/subdivide.js`** — `subdivideObject(obj, cuts, idMint, opts)` executes a list of axis-aligned plane cuts sequentially (X → Y → Z), then optionally inserts connectors at every cut interface. Pieces are emitted as `type: "imported"` with baked world-space vertex buffers. Connectors are positive primitives (cylinder for dowel, cube for dovetail) tagged `subdivideConnector`. Final layout uses an "exploded view" — each piece offsets ±8 mm into its source-bbox octant so seams are visible but the assembly is still readable.
+
+### Store glue
+- New `applySubdivide(objectId, cuts, connectors)` action wraps `subdivideObject` + `pushHistory` and replaces the source object with the new pieces in a single undo step.
+
+### UI
+- **`components/dialogs/SubdivideDialog.jsx`** — full workflow:
+  - Header shows source dims vs build volume in red when oversized
+  - Auto / Manual mode toggle
+  - Auto panel: per-axis cut counters (default = `Math.ceil(size/build)-1`), live "fits / over by N mm" tag
+  - Manual panel: per-axis numeric input with Enter to commit; cut chips listed below, click-to-remove
+  - Connector picker: None / Dowels / Dovetails with descriptive hints + size slider (3–12 mm)
+  - Footer summary: planned cuts per axis, expected pieces, connector kind
+  - Z-index 1200 so sonner toasts can't overlap action buttons
+- **`components/Workspace.jsx`** — new useEffect watches `[objects, buildVolume, printerId]`, debounces 350 ms, runs `reportSceneOversize`. Toasts the first new offender with **Subdivide…** / **Ignore** actions. Auto-frames the camera on the oversized bbox via a `forgeslicer:frame-bbox` CustomEvent. Tracks toasted ids in a ref so the same model isn't pestered every edit; resets on printer change.
+- **`components/Viewport.jsx`** — new `FrameBboxListener` consumes the CustomEvent: pans OrbitControls target + repositions camera so the bbox fits ~60% of the FOV with a 60 mm margin. Preserves the current view direction.
+
+### Cut engine fixes (caught during self-test)
+- Intermediate cut pieces now re-typed as `imported` between axis passes — without this, the second/third cuts re-built the ORIGINAL primitive from `dims` and every piece came out identical.
+- `partToObject` reads vertices from `part.geometry.vertices` (the working-tuple path), not the wrong-named `part.vertices` field.
+- Connector pair-finding iterates over a snapshot `cutPieces.slice()` instead of the growing `out` array, and uses 1.0 mm tolerance for cut-plane membership (vs the original 0.2 mm that was tripping on tiny float wobble).
+
+### Testing
+- Testing agent iteration_35.json: **all NEW oversize flows pass** + backend `/api/projects` 8/8 regression green.
+- Verified: 400×400×400 cube → 1 cut per axis → 8 pieces + 12 dowel connectors with correct positions; exploded octants offset {±8, ±8, ±8}; re-detection on printer change; toast→dialog→apply happy path.
+- Two minor test-environment notes: tip-carousel/save-pref regressions were NOT re-verified this round (no code touching those paths); release-notes modal can overlay the workspace on first session of a tab — cosmetic only.
+
+### Deferred to iter-70 (per original scope agreement)
+- Manual cut-plane gizmo in 3D viewport (currently only numeric input)
+- "Mark a face manually" connector mode
+- Rotated cuts (currently axis-aligned only)

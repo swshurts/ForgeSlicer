@@ -255,7 +255,7 @@ export default function SubdivideDialog({ open, objectId, onClose }) {
 function ModalShell({ children, onClose }) {
   return (
     <div
-      className="fixed inset-0 z-[200] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[1200] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
       data-testid="subdivide-dialog"
       role="dialog"
       aria-modal="true"
