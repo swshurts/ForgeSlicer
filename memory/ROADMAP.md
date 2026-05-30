@@ -19,6 +19,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Hierarchical Project Structure (Rocket → Engine → Fuel Pump)~~ [DONE — iter 63]
 
 ## 🟢 P2 — Polish
+- **OrcaSlicer layer-count parser miss** (iter 71+, 2026-05-30) — `_scan_gcode_stats` in `backend/orca_engine.py` only matches `;LAYER:N`, but OrcaSlicer emits `;LAYER_CHANGE`. Result: Engine Comparison shows `Layer count: —` for the Orca column and standalone Slice & Export shows `Layers: 0`. G-code itself is unaffected — only the displayed metric is wrong. Fix: add `;LAYER_CHANGE` to the parser + parallel regex in `frontend/src/lib/engineCompare.js`. User deferred (will test current print first).
 - **Refactor `lib/store.js` further** — 1481→1300 lines after iter 59 (extracted I/O to projectIO.js). Further extraction candidates: the long boolean / cut / dimension action blocks could move into dedicated files.
 - ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
 - ~~HelpDialog.jsx split~~ [DONE — iter 59, 771→515 lines]
