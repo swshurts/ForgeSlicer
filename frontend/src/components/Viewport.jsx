@@ -7,7 +7,7 @@ import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { computeComponentDimension, fmtSignedMm } from "../lib/componentDimensions";
-import { nearestSnapPoint, allSnapPoints } from "../lib/rulerAnchor";
+import { nearestSnapPoint, allSnapPoints, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
 import ContextMenu from "./ContextMenu";
 
 const POSITIVE_COLOR = "#F97316";
@@ -749,22 +749,29 @@ function RulerAnchorLayer() {
         </Html>
       )}
       {/* === Snap-point indicators on the anchored object & the target
-          object (8/12/6/1 small ghost dots filtered by snapKinds). These
-          give the user a visual preview of where they can snap NEXT. */}
-      {[anchor.objId, target?.objId].filter(Boolean).map((id) => {
-        const o = objects.find((x) => x.id === id);
-        if (!o) return null;
-        const pts = allSnapPoints(o, snapKinds);
-        // Highlight the currently-picked snap point and dim the rest.
-        const activeKey = id === anchor.objId
-          ? anchor.snapKey
-          : target?.snapKey;
+          object (8/12/6/1 small ghost dots filtered by snapKinds). When
+          the anchor/target is an ASSEMBLY (groupId-resolved synthetic
+          object), we re-resolve it on every render so the ghost dots
+          land on the assembly's outer bbox, not the original child. */}
+      {[anchor, target].filter(Boolean).map((rec) => {
+        // rec.objId may be either a real object id OR a groupId.
+        const realObj = objects.find((x) => x.id === rec.objId);
+        let probe = realObj;
+        if (!realObj) {
+          // Likely a groupId — pick any sibling and resolve.
+          const sibling = objects.find((x) => x.groupId === rec.objId);
+          if (sibling) probe = resolveSnapTargetForGroup(sibling, objects);
+        } else if (realObj.groupId) {
+          probe = resolveSnapTargetForGroup(realObj, objects);
+        }
+        if (!probe) return null;
+        const pts = allSnapPoints(probe, snapKinds);
         return pts.map((p) => (
-          <mesh key={`${id}-${p.key}`} position={[p.x, p.y, p.z]} renderOrder={999}>
-            <sphereGeometry args={[p.key === activeKey ? 0.9 : 0.55, 12, 12]} />
+          <mesh key={`${rec.objId}-${p.key}`} position={[p.x, p.y, p.z]} renderOrder={999}>
+            <sphereGeometry args={[p.key === rec.snapKey ? 0.9 : 0.55, 12, 12]} />
             <meshBasicMaterial
               color={p.kind === "corner" ? "#94A3B8" : p.kind === "edge" ? "#7DD3FC" : p.kind === "face" ? "#C4B5FD" : "#A78BFA"}
-              opacity={p.key === activeKey ? 1 : 0.45}
+              opacity={p.key === rec.snapKey ? 1 : 0.45}
               transparent
               depthTest={false}
             />
@@ -1097,28 +1104,26 @@ export default function Viewport() {
             onRulerHit={(point, objId) => {
               const oo = objects.find((x) => x.id === objId);
               if (!oo) return;
+              // Resolve to the assembly when the clicked child belongs to
+              // a group — measures should snap to the outer corners of
+              // the whole Fastener Pair / Slot / etc., not whichever sub-
+              // mesh the cursor happened to land on.
+              const probe = resolveSnapTargetForGroup(oo, objects);
               const cur = useScene.getState();
               const kinds = cur.rulerSnapKinds || ["corner", "edge", "face", "center"];
-              const sp = nearestSnapPoint(oo, point, kinds);
+              const sp = nearestSnapPoint(probe, point, kinds);
               if (!sp) return;
               const snapRecord = {
                 worldPoint: [sp.x, sp.y, sp.z],
-                objId: oo.id,
-                objName: oo.name || "Anchor",
+                objId: probe.id || oo.id,
+                objName: probe.name || oo.name || "Anchor",
                 snapKey: sp.key,
                 snapKind: sp.kind,
               };
-              // Two-step workflow:
-              //   1. No anchor → set anchor.
-              //   2. Anchor already set → set target. Same-object is OK
-              //      so the user can measure intra-object diagonals
-              //      (e.g. corner-to-corner of a single cube).
               if (!cur.rulerAnchor) {
                 setRulerAnchor(snapRecord);
                 return;
               }
-              // If clicking the SAME snap point that's already the anchor,
-              // ignore (the user can dismiss the anchor with × or Esc).
               if (cur.rulerAnchor.objId === snapRecord.objId &&
                   cur.rulerAnchor.snapKey === snapRecord.snapKey) {
                 return;

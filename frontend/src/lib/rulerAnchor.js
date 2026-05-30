@@ -159,6 +159,63 @@ export function nearestSnapPoint(obj, clickPoint, kinds) {
 export const nearestCorner = (obj, clickPoint) => nearestSnapPoint(obj, clickPoint, ["corner"]);
 
 /**
+ * Given the clicked object + the full scene list, return a "logical
+ * snap target": either the original object (when standalone) or a
+ * synthetic stand-in whose bbox encompasses every sibling sharing the
+ * same `groupId` (when the part is a member of an assembly).
+ *
+ * The synthetic stand-in carries:
+ *   • `id`            — the group's `groupId` (used as a stable key)
+ *   • `name`          — the group's `groupName` (e.g. "Fastener Pair")
+ *   • `__group`       — true (marker for callers that want to know)
+ *   • a `geometry`-like shape that `worldBboxOf` can consume by union-
+ *     ing the children's world bboxes. We hand-roll a tiny structure
+ *     that mimics the {min,max} contract.
+ *
+ * The user's mental model: clicking ANY child of a Fastener Pair should
+ * snap to the assembly's outer corners/edges/faces, not the nut's or
+ * bolt's individually. This matches how TinkerCAD treats groups.
+ */
+export function resolveSnapTargetForGroup(clickedObj, allObjects) {
+  if (!clickedObj) return null;
+  const gid = clickedObj.groupId;
+  if (!gid) return clickedObj;
+  const siblings = (allObjects || []).filter(
+    (o) => o.groupId === gid && o.visible !== false
+  );
+  if (siblings.length <= 1) return clickedObj;
+  // Union world bboxes — early-return a synthetic obj with a __worldBbox
+  // override that worldBboxOf() can pick up via the pretty-narrow back
+  // door we add below.
+  let mnX = Infinity, mnY = Infinity, mnZ = Infinity;
+  let mxX = -Infinity, mxY = -Infinity, mxZ = -Infinity;
+  let any = false;
+  for (const o of siblings) {
+    const bb = worldBboxOf(o);
+    if (!bb) continue;
+    any = true;
+    if (bb.min[0] < mnX) mnX = bb.min[0];
+    if (bb.min[1] < mnY) mnY = bb.min[1];
+    if (bb.min[2] < mnZ) mnZ = bb.min[2];
+    if (bb.max[0] > mxX) mxX = bb.max[0];
+    if (bb.max[1] > mxY) mxY = bb.max[1];
+    if (bb.max[2] > mxZ) mxZ = bb.max[2];
+  }
+  if (!any) return clickedObj;
+  return {
+    id: gid,
+    name: clickedObj.groupName || "Assembly",
+    __group: true,
+    __worldBbox: {
+      min: [mnX, mnY, mnZ],
+      max: [mxX, mxY, mxZ],
+      centerWorld: [(mnX + mxX) / 2, (mnY + mxY) / 2, (mnZ + mxZ) / 2],
+      extent: [mxX - mnX, mxY - mnY, mxZ - mnZ],
+    },
+  };
+}
+
+/**
  * Given an anchor world-point [x,y,z] and an object, compute the snap
  * point on `obj` closest to the anchor PLUS the signed deltas to it.
  * Used when the chip needs a "target" reference without explicit user

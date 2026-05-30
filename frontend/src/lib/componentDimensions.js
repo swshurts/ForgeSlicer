@@ -22,6 +22,12 @@ import { computeRotatedBBox } from "./geometry";
  */
 export function worldBboxOf(obj) {
   if (!obj) return null;
+  // Synthetic-group back-door: ruler-anchor / dimension callers may pass
+  // a hand-rolled object that already carries the pre-computed unioned
+  // world bbox (see `resolveSnapTargetForGroup` in `lib/rulerAnchor.js`).
+  // Honour it directly so a Fastener-Pair etc. snaps to the assembly
+  // outer corners, not whichever child the cursor landed on.
+  if (obj.__worldBbox) return obj.__worldBbox;
   let bb;
   try { bb = computeRotatedBBox(obj); } catch (_) { return null; }
   if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)) return null;

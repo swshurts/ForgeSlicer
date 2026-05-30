@@ -168,6 +168,23 @@ const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
 const defaultPrinterId = "custom";
 const defaultFilamentId = "pla";
 
+// Decide whether a ruler-anchor / ruler-target record still points at a
+// resolvable object after a batch of removals. A record's `objId` may be
+// EITHER a real `obj.id` OR a `groupId` (when the anchor was placed on
+// an assembly child). The record stays valid iff there is still an
+// object with that id, OR at least one object whose `groupId` matches.
+// We treat the removeSet as already-applied (callers pass the set BEFORE
+// filtering `s.objects`, but we accept either — we just check the
+// post-remove set).
+function rulerRefStillValid(rec, allObjects, removeSet) {
+  if (!rec) return true; // nothing to invalidate
+  const remaining = allObjects.filter((o) => !removeSet.has(o.id));
+  const id = rec.objId;
+  if (remaining.some((o) => o.id === id)) return true;
+  if (remaining.some((o) => o.groupId === id)) return true;
+  return false;
+}
+
 export const useScene = create((set, get) => ({
   objects: [],
   selectedId: null,       // primary selection (most recently clicked) — used by Inspector / popovers
@@ -662,8 +679,8 @@ export const useScene = create((set, get) => ({
           (d) => !removeSet.has(d.objIdA) && !removeSet.has(d.objIdB)
         ),
         pendingDimensionFromId: removeSet.has(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
-        rulerAnchor: (s.rulerAnchor && removeSet.has(s.rulerAnchor.objId)) ? null : s.rulerAnchor,
-        rulerTarget: (s.rulerTarget && removeSet.has(s.rulerTarget.objId)) ? null : s.rulerTarget,
+        rulerAnchor: rulerRefStillValid(s.rulerAnchor, s.objects, removeSet) ? s.rulerAnchor : null,
+        rulerTarget: rulerRefStillValid(s.rulerTarget, s.objects, removeSet) ? s.rulerTarget : null,
       };
     });
     return incoming.map((o) => o.id);
@@ -671,22 +688,25 @@ export const useScene = create((set, get) => ({
 
   removeObject: (id) => {
     get().pushHistory();
-    set((s) => ({
-      objects: s.objects.filter((o) => o.id !== id),
-      selectedId: s.selectedId === id ? null : s.selectedId,
-      selectedIds: s.selectedIds.filter((x) => x !== id),
-      measurements: s.measurements.filter((m) => m.objIdA !== id && m.objIdB !== id),
-      pendingMeasurePoint:
-        s.pendingMeasureObjId === id ? null : s.pendingMeasurePoint,
-      pendingMeasureObjId:
-        s.pendingMeasureObjId === id ? null : s.pendingMeasureObjId,
-      componentDimensions: s.componentDimensions.filter(
-        (d) => d.objIdA !== id && d.objIdB !== id
-      ),
-      pendingDimensionFromId: s.pendingDimensionFromId === id ? null : s.pendingDimensionFromId,
-      rulerAnchor: (s.rulerAnchor && s.rulerAnchor.objId === id) ? null : s.rulerAnchor,
-      rulerTarget: (s.rulerTarget && s.rulerTarget.objId === id) ? null : s.rulerTarget,
-    }));
+    set((s) => {
+      const removeSet = new Set([id]);
+      return {
+        objects: s.objects.filter((o) => o.id !== id),
+        selectedId: s.selectedId === id ? null : s.selectedId,
+        selectedIds: s.selectedIds.filter((x) => x !== id),
+        measurements: s.measurements.filter((m) => m.objIdA !== id && m.objIdB !== id),
+        pendingMeasurePoint:
+          s.pendingMeasureObjId === id ? null : s.pendingMeasurePoint,
+        pendingMeasureObjId:
+          s.pendingMeasureObjId === id ? null : s.pendingMeasureObjId,
+        componentDimensions: s.componentDimensions.filter(
+          (d) => d.objIdA !== id && d.objIdB !== id
+        ),
+        pendingDimensionFromId: s.pendingDimensionFromId === id ? null : s.pendingDimensionFromId,
+        rulerAnchor: rulerRefStillValid(s.rulerAnchor, s.objects, removeSet) ? s.rulerAnchor : null,
+        rulerTarget: rulerRefStillValid(s.rulerTarget, s.objects, removeSet) ? s.rulerTarget : null,
+      };
+    });
   },
 
   // Bulk-delete every currently-selected object. Used by the Delete key
@@ -698,6 +718,7 @@ export const useScene = create((set, get) => ({
       : (get().selectedId ? [get().selectedId] : []);
     if (ids.length === 0) return;
     get().pushHistory();
+    const removeSet = new Set(ids);
     set((s) => ({
       objects: s.objects.filter((o) => !ids.includes(o.id)),
       selectedId: null,
@@ -707,8 +728,8 @@ export const useScene = create((set, get) => ({
         (d) => !ids.includes(d.objIdA) && !ids.includes(d.objIdB)
       ),
       pendingDimensionFromId: ids.includes(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
-      rulerAnchor: (s.rulerAnchor && ids.includes(s.rulerAnchor.objId)) ? null : s.rulerAnchor,
-      rulerTarget: (s.rulerTarget && ids.includes(s.rulerTarget.objId)) ? null : s.rulerTarget,
+      rulerAnchor: rulerRefStillValid(s.rulerAnchor, s.objects, removeSet) ? s.rulerAnchor : null,
+      rulerTarget: rulerRefStillValid(s.rulerTarget, s.objects, removeSet) ? s.rulerTarget : null,
     }));
   },
 
