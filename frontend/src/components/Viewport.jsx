@@ -678,8 +678,15 @@ function RulerAnchorLayer() {
           Three solid coloured segments laid in series: ΔX along X
           (rose), then ΔY along Y (emerald), then ΔZ along Z (amber).
           Each segment is suppressed when its axis is filtered out by
-          the axis-cycle button. Labels sit at each segment's mid-point
-          with a coloured ring matching the axis. */}
+          the axis-cycle button.
+
+          Labels are offset PERPENDICULAR to the segment they describe
+          (8mm shift) so short measurements don't pile the text on top
+          of the snap-point markers at the endpoints. The shift
+          direction is chosen so each label sits on the "outside" of
+          the L-bracket bend (i.e., away from the next segment in the
+          chain). For zero `dx` we fall back to +X so the offset is
+          still deterministic. */}
       {target && showX && Math.abs(dx) > 0.001 && (
         <Line points={[[ax, ay, az], [tx, ay, az]]} color="#FB7185" lineWidth={2.5} depthTest={false} />
       )}
@@ -690,7 +697,15 @@ function RulerAnchorLayer() {
         <Line points={[[tx, ty, az], [tx, ty, tz]]} color="#FBBF24" lineWidth={2.5} depthTest={false} />
       )}
       {target && showX && Math.abs(dx) > 0.001 && (
-        <Html position={[(ax + tx) / 2, ay, az]} center zIndexRange={[80, 0]} sprite={false}>
+        // X label: perpendicular shift Y- (below the bed-level segment)
+        // and Z+ (back away from camera) — sits beside the rose line,
+        // never ON the anchor or the Y-bend endpoint at [tx, ay, az].
+        <Html
+          position={[(ax + tx) / 2, ay - 8, az + 8]}
+          center
+          zIndexRange={[80, 0]}
+          sprite={false}
+        >
           <div
             data-testid="ruler-dim-x"
             className="px-1.5 py-0.5 bg-slate-950/95 border border-rose-400/80 text-rose-200 font-mono text-[11px] rounded-md shadow whitespace-nowrap select-none"
@@ -699,7 +714,16 @@ function RulerAnchorLayer() {
         </Html>
       )}
       {target && showY && Math.abs(dy) > 0.001 && (
-        <Html position={[tx, (ay + ty) / 2, az]} center zIndexRange={[80, 0]} sprite={false}>
+        // Y label: perpendicular shift in X (away from anchor, in the
+        // direction of dx) so the label is OUTSIDE the L-bracket — never
+        // between the X and Y segments. Z shift puts it forward of the
+        // camera-facing side.
+        <Html
+          position={[tx + (dx >= 0 ? 10 : -10), (ay + ty) / 2, az - 8]}
+          center
+          zIndexRange={[80, 0]}
+          sprite={false}
+        >
           <div
             data-testid="ruler-dim-y"
             className="px-1.5 py-0.5 bg-slate-950/95 border border-emerald-400/80 text-emerald-200 font-mono text-[11px] rounded-md shadow whitespace-nowrap select-none"
@@ -708,7 +732,15 @@ function RulerAnchorLayer() {
         </Html>
       )}
       {target && showZ && Math.abs(dz) > 0.001 && (
-        <Html position={[tx, ty, (az + tz) / 2]} center zIndexRange={[80, 0]} sprite={false}>
+        // Z label: perpendicular shift in X (outboard, follows dx sign)
+        // plus Y+ (up). Distinct from the Y-label offsets so the two
+        // never collide.
+        <Html
+          position={[tx + (dx >= 0 ? 10 : -10), ty + 10, (az + tz) / 2]}
+          center
+          zIndexRange={[80, 0]}
+          sprite={false}
+        >
           <div
             data-testid="ruler-dim-z"
             className="px-1.5 py-0.5 bg-slate-950/95 border border-amber-400/80 text-amber-200 font-mono text-[11px] rounded-md shadow whitespace-nowrap select-none"

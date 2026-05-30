@@ -1224,3 +1224,13 @@ EDITED: `lib/rulerAnchor.js` (added `bboxEdgeMidpoints`, `bboxFaceCenters`, `bbo
 - `/app/test_reports/iteration_31.json` — initial v3 test: 16/19 PASS.
 - `/app/test_reports/iteration_32.json` — post-fix retest: **13/13 PASS** on the consolidated HUD + sanity checks for previously-passing flows.
 
+### Iteration 62-b (label offsets)
+User reported: *"the legends are overlaying the end points. move them to one side or the other of the things being measured."*
+
+Fix: each dim label now sits at the segment midpoint PLUS a perpendicular offset that pushes it off the line in a deterministic direction (chosen per axis so the three labels never overlap each other or the snap-point markers):
+- **X label** — offset (Y−8, Z+8) → sits below the bed-level X segment
+- **Y label** — offset (X ±10 following `sign(dx)`, Z−8) → outboard of the L-bracket bend, never between the X and Y segments
+- **Z label** — offset (X ±10 following `sign(dx)`, Y+10) → above the Z segment
+
+Verified via screenshot: 40×30×20 mm test diagonal shows three clean `+40.00 mm` labels in rose/emerald/amber, each visibly offset to a different side of its respective axis line.
+
