@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 59 retest of the fastener/slot tutorial-suggestion fix. Unit test (tests/tutorial-suggestions.mjs) passes 14/14. Live UI retest: 4/7 pass. Single-child composites (Hex Pocket, Gusset) now correctly surface 'Tutorial: Hardware Library' — confirming the tutorialSuggestions.js groupId/groupName fix is correct. Regression checks (plain cube → no link; sweep → 'Sweep + Sketch') also pass. HOWEVER three multi-child composites (Fastener Pair, Slot, Countersink) STILL do NOT show the tutorial link. Root cause: when the user right-clicks a row that belongs to a group, the workspace auto-selects ALL members of that group (selectedObjs.length > 1). The ContextMenu renders 'Already in a group' / 'Ungroup' branches for the multi-selection, and the tutorial-suggestion render path appears to be gated to single-object selections, so ctx-tutorial-link-btn never mounts. The previously shipped fix to lib/tutorialSuggestions.js is good, but the bug is one layer up in ContextMenu.jsx and was not addressed in this iteration.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "components/.../ContextMenu.jsx (tutorial-suggestion render gate)",
+        "issue": "Right-clicking a child row of a multi-member composite group (Fastener Pair / Slot / Countersink) auto-selects ALL group members, and the ctx-tutorial-link-btn render branch is gated to single-object selection (selectedObjs.length === 1). Result: ctx-tutorial-link-btn does NOT appear for fastener-pair, slot, or countersink children. Single-child composites (Hex Pocket, Gusset) pass because their group has only one member. Recommended fix: when selectedObjs.length>1 but every selected object shares the same groupId, still call suggestTutorialFor(selectedObjs[0]) and render the link — OR drop the single-select gate entirely for this menu item since suggestTutorialFor already returns null when not applicable.",
+        "selector": "[data-testid=\"ctx-tutorial-link-btn\"] (absent for fastener/slot/countersink child rows)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/frontend/tests/tutorial-suggestions.mjs"],
+  "passed_checks": [
+    "Node unit test tutorial-suggestions.mjs: 14/14 cases green (bolt/nut direct types + fastener-/slot-/cs-/hexp-/gus- groupId fallbacks + null-returns)",
+    "UI: Hex Pocket child right-click → ctx-tutorial-link-btn label = 'Tutorial: Hardware Library'",
+    "UI: Gusset child right-click → ctx-tutorial-link-btn label = 'Tutorial: Hardware Library'",
+    "UI regression: plain cube right-click → ctx-tutorial-link-btn NOT in DOM (no false positive)",
+    "UI regression: sweep right-click → ctx-tutorial-link-btn label = 'Tutorial: Sweep + Sketch' (existing behaviour preserved)"
+  ],
+  "failed_checks": [
+    "UI: Fastener Pair child (Bolt row, type='bolt', groupId='fastener-…') right-click — ctx-tutorial-link-btn ABSENT",
+    "UI: Slot Positive child (Slot · core, type='cube', groupId='slot-…') right-click — ctx-tutorial-link-btn ABSENT",
+    "UI: Countersink child (CS Bore, type='cylinder', groupId='cs-…') right-click — ctx-tutorial-link-btn ABSENT"
+  ],
+  "action_items": [
+    "Locate the ctx-tutorial-link-btn render branch in ContextMenu.jsx (~lines 510-518 per iteration_27 RCA) and remove or relax the single-selection gate. The branch should fire when all selectedObjs share a groupId (or just always — suggestTutorialFor returns null when no suggestion applies).",
+    "Re-test all 5 composites afterwards. The Node unit test already covers the data layer."
+  ],
+  "critical_code_review_comments": [
+    "tutorialSuggestions.js fix is correct and well-tested (14 cases, including the exact composite shapes emitted by composites.js). The remaining failure is purely in the consumer (ContextMenu.jsx) which has an implicit single-selection assumption that conflicts with how the workspace handles group-child selection.",
+    "Suggestion: have ContextMenu compute `const objForTutorial = selectedObjs.length===1 ? selectedObjs[0] : (selectedObjs.every(o=>o.groupId===selectedObjs[0].groupId) ? selectedObjs[0] : null);` and render the link whenever suggestTutorialFor(objForTutorial) is non-null.",
+    "Inspector / left-click already treats group-child rows correctly (clicking 'Bolt' row shows 'INSPECTOR — BOLT'), confirming the data is single-object aware. Only the context-menu render guard needs adjustment."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "57% (4/7 live UI scenarios; unit-test layer 14/14)"},
+  "test_credentials": "Reused seeded cookie session_token=st_test_help_1780096781061 on orca-cad-slice.preview.emergentagent.com",
+  "seed_data_creation": "Created ephemeral scene objects (fastener pair, slot, countersink, hex pocket, gusset, cube, sweep) via UI clicks; cleared via per-child tree-del between cases.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Outliner row testids follow the pattern `scene-tree-item-<primitive-type>-<timestamp>-<index>`. The right-click context menu's tutorial branch already works for single-object selections (hex_pocket, gusset, sweep, plain bolt added directly via add-bolt-positive-btn would also work via TUTORIAL_BY_TYPE.bolt). When right-clicking a child of a multi-member group, the workspace selects ALL group members, so the menu enters the 'Already in a group'/'Ungroup' multi-select branch and skips rendering ctx-tutorial-link-btn. Scene state was confirmed by reading React fiber memoizedState: Fastener Pair children carry {type:'bolt'|'nut'|'cylinder', groupId:'fastener-...', groupName:'Fastener Pair'} as expected.",
+  "rca of the issue": "RCA — Two-layer bug. Layer 1 (lib/tutorialSuggestions.js) — fixed and verified. Layer 2 (components/.../ContextMenu.jsx) — UNFIXED. Reproduction: (1) Left panel → COMBO → add-fastener-pair-btn. (2) Right-click 'Bolt' row in outliner. Observation: menu shows ctx-group-btn='Already in a group', ctx-ungroup-btn, ctx-flatten-btn, ctx-duplicate-btn, mirror/delete — but ctx-tutorial-link-btn is absent. Compare with: same right-click on Hex Pocket child (group of 1) → ctx-tutorial-link-btn IS present with label 'Tutorial: Hardware Library'. Difference: group cardinality. Mitigation: in ContextMenu.jsx, allow the tutorial branch when `selectedObjs.length===1 OR all selected objs share groupId` (use selectedObjs[0] as the probe for suggestTutorialFor). Once relaxed, the existing lib fix will surface the Hardware tutorial for fastener / slot / countersink children too."
+}
