@@ -553,6 +553,64 @@ def _stage_user_profile(
     return out
 
 
+def _patch_cross_profile_compatibility(staged: dict) -> dict:
+    """Rewrite `compatible_printers` / `compatible_prints` across the
+    staged process + filament dicts so OrcaSlicer's
+    `Preset::is_compatible_with_printer()` accepts whichever
+    printer + process combo the caller picked.
+
+    BACKGROUND
+    ----------
+    OrcaSlicer ships every process JSON with a `compatible_printers`
+    array enumerating the exact printer profile names it was authored
+    for (e.g. `Bambu Lab A1`). When the CLI loads a process whose
+    list doesn't include the loaded printer's name, it exits with
+    `run 2559: process not compatible with printer (-17)`. The
+    desktop GUI sidesteps this by rewriting the user-side process
+    JSON when you toggle "compatible with this printer" in its
+    Compatibility panel — this helper does the equivalent rewrite on
+    our temp JSONs, so cross-vendor combos (e.g. a Bambu process on
+    a Sovol SV06 Plus Ace) slice cleanly without per-vendor mapping
+    tables.
+
+    Mutates `staged` in place AND returns it so callers can chain or
+    inspect the result. Safe to call when `staged` is missing any of
+    the three keys (no-op for the absent slot).
+
+    Also strips `*_condition` keys — those are boolean expressions
+    evaluated against printer notes / variables; leaving a stale
+    expression in place can flip the verdict back to "not compatible"
+    even after we've fixed the list.
+    """
+    printer_name = (staged.get("printer") or {}).get("name") or ""
+    process_name = (staged.get("process") or {}).get("name") or ""
+
+    if "process" in staged and printer_name:
+        proc = staged["process"]
+        current = proc.get("compatible_printers") or []
+        if not isinstance(current, list) or printer_name not in current:
+            logger.info(
+                "orca: patching process %r compatible_printers to include %r "
+                "(was: %r)", process_name, printer_name, current,
+            )
+            proc["compatible_printers"] = [printer_name]
+        proc.pop("compatible_printers_condition", None)
+
+    if "filament" in staged:
+        fil = staged["filament"]
+        if printer_name:
+            cur = fil.get("compatible_printers") or []
+            if not isinstance(cur, list) or printer_name not in cur:
+                fil["compatible_printers"] = [printer_name]
+            fil.pop("compatible_printers_condition", None)
+        if process_name:
+            cur = fil.get("compatible_prints") or []
+            if not isinstance(cur, list) or process_name not in cur:
+                fil["compatible_prints"] = [process_name]
+            fil.pop("compatible_prints_condition", None)
+
+    return staged
+
 
 class OrcaSliceStats(BaseModel):
     gcode_lines: int
@@ -901,6 +959,15 @@ async def orca_slice(req: OrcaSliceRequest):
             ("filament", "filament", req.filament_preset_name, req.filament_vendor, req.filament_profile),
         ]
         profile_args: list[str] = []
+        # Stage each profile (printer / process / filament) into memory
+        # FIRST, then post-process compatibility fields across the trio
+        # before writing to disk. This is what lets us silently fix
+        # cross-vendor combos that OrcaSlicer's bundled
+        # `compatible_printers` arrays would otherwise reject with the
+        # `process not compatible with printer (-17)` error — the same
+        # rewrite OrcaSlicer's desktop GUI does when you pair a process
+        # to a custom printer via its Compatibility panel.
+        staged: dict[str, dict] = {}
         for file_key, kind, preset_name, vendor, raw_profile in preset_specs:
             base: dict = {}
             resolved_preset_name: Optional[str] = None
@@ -966,7 +1033,7 @@ async def orca_slice(req: OrcaSliceRequest):
                         ),
                     )
 
-            # Skip writing the file entirely only when BOTH the system-preset
+            # Skip staging the file entirely only when BOTH the system-preset
             # base AND the raw override are empty — otherwise we'd produce a
             # bogus zero-key JSON that OrcaSlicer can't validate.
             if not base and not raw_profile:
@@ -982,7 +1049,16 @@ async def orca_slice(req: OrcaSliceRequest):
                 or (raw_profile.get("name") if isinstance(raw_profile, dict) else None)
                 or f"ForgeSlicer {kind}"
             )
-            final = _stage_user_profile(base, raw_profile, kind, leaf_name)
+            staged[file_key] = _stage_user_profile(base, raw_profile, kind, leaf_name)
+
+        # Cross-profile compatibility fix-up — see
+        # `_patch_cross_profile_compatibility` for the why. This is
+        # the equivalent of toggling "compatible with this printer"
+        # in OrcaSlicer's desktop GUI Compatibility panel.
+        _patch_cross_profile_compatibility(staged)
+
+        # Write staged profiles + assemble CLI argv.
+        for file_key, final in staged.items():
             p = workdir / f"{file_key}.json"
             p.write_text(json.dumps(final, indent=2))
             if file_key == "filament":

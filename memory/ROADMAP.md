@@ -7,10 +7,11 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 ---
 
 ## 🔴 P0 — Blocking
-*(none open as of 2026-05-30)*
+*(none open as of 2026-05-30 — iter 70 cleared the OrcaSlicer rc -17 cross-vendor compatibility regression)*
 
 ## 🟡 P1 — Next features
-*(all P1 items complete as of iter 53)*
+- **User-defined printers** — `user_printers` MongoDB collection + `POST/GET/PUT/DELETE /api/me/printers` + frontend "Define Printer" dialog. Lets users register the wave of 2026 printers (8-10 released since Jan, ~4 more this month) without waiting for OrcaSlicer's preset shipment cadence. Slice endpoint accepts `user_printer_id` and resolves it before falling back to bundled presets. Pairs naturally with the iter-70 cross-vendor patch.
+*(all earlier P1 items complete as of iter 53)*
 - ~~Sweep MVP follow-ups~~ [DONE — iter 51]
 - ~~Fastener Pair macro~~ [DONE — iter 48]
 - ~~Texture v2 patterns + apply-to-face + UNC/UNF imperial fasteners~~ [DONE — iter 50]

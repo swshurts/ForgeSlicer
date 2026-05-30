@@ -1560,3 +1560,51 @@ User-confirmed scope: connector kinds = None / Dowel / Dovetail · auto algo = a
 - Manual cut-plane gizmo in 3D viewport (currently only numeric input)
 - "Mark a face manually" connector mode
 - Rotated cuts (currently axis-aligned only)
+
+
+## Iteration 70 (2026-05-30) — P0: OrcaSlicer cross-vendor compatibility fix
+
+### Bug context
+User reported `run 2559: process not compatible with printer. run found error, return -17`
+during both Engine Comparison and GCODE export. Root cause: OrcaSlicer's
+`Preset::is_compatible_with_printer()` rejects a process whose `compatible_printers`
+list (or `compatible_printers_condition` expression) doesn't permit the loaded printer.
+Every bundled vendor process ships with a hard-coded allow-list (e.g. Bambu A1 process
+lists only Bambu A1 machines), so any cross-vendor combo a user picked in the dropdown
+exited the CLI with rc -17.
+
+### Fix
+- Refactored `orca_engine.orca_slice()` to stage all three profiles (printer / process /
+  filament) into memory FIRST, then post-process before writing to disk.
+- New helper `_patch_cross_profile_compatibility(staged)` rewrites the in-memory
+  `process.compatible_printers = [<printer name>]`, `filament.compatible_printers = [<printer name>]`,
+  and `filament.compatible_prints = [<process name>]`. Strips stale `*_condition`
+  expressions so they don't flip the verdict back to "not compatible".
+- This is the exact rewrite OrcaSlicer's desktop GUI does when you toggle
+  "compatible with this printer" in its Compatibility panel — we're just performing it
+  automatically per slice request so cross-vendor combos work without a per-vendor
+  mapping table. As new printers ship (≥8-10 already in 2026, more announced
+  monthly) we don't need to chase Orca's preset updates.
+- Idempotent on matched-vendor combos (no-op when the list already permits the printer).
+
+### Files touched
+- `backend/orca_engine.py` — extracted `_patch_cross_profile_compatibility` helper, called from `orca_slice` after staging.
+- `backend/tests/test_orca_compat_patch.py` (new) — 8 unit tests covering cross-vendor
+  rewrite, matched-vendor idempotence, condition-strip, filament dual-key patch,
+  missing-field default, and three safety paths (missing filament / missing printer
+  name / chaining return).
+
+### Verification
+- All 8 new unit tests + 17 existing Orca-suite tests pass locally
+  (`pytest tests/test_orca_*.py`).
+- Lint clean (ruff: 0 issues).
+- Backend supervisor restart healthy; `/api/slice/orca/status` returns 200.
+- Preview pod doesn't have the flatpak profiles symlinked (returns "raw profile dicts"
+  warning), so full end-to-end slice can only be verified on production
+  (`forgeslicer.com`). User to verify Engine Comparison + GCODE export there.
+
+### Deferred follow-ups (filed in ROADMAP as P1)
+- User-defined printers (MongoDB-backed `user_printers` collection + frontend
+  "Define Printer" dialog) so the SV06 Plus Ace and the wave of new 2026 printers
+  can be defined in ForgeSlicer once and reused, without waiting for OrcaSlicer's
+  preset shipment cadence.
