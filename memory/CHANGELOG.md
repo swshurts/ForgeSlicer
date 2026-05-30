@@ -1177,3 +1177,22 @@ User shared a TinkerCAD screenshot showing the "anchored ruler" feature (drop a 
 - NEW: `lib/rulerAnchor.js` (pure math).
 - EDITED: `lib/store.js` (state + actions + cascade cleanup), `lib/projectIO.js` (reset on load/clear), `components/Viewport.jsx` (RulerAnchorLayer + RulerOffsetChip + click routing), `components/toolbar/EditRow.jsx` (toolbar button + ON→OFF anchor clear), `components/toolbar/useToolbarShortcuts.js` (Escape).
 
+
+## Iteration 61 (2026-05-30) — Anchored Ruler v2 (Two-Step Pick)
+User feedback on iter 60: with 13+ parts in a scene the per-object offset chips became a wall of overlapping labels. They wanted the TinkerCAD workflow: *select first component, then a second component* — not every object on the bed.
+
+### What changed
+- ✅ **Two-step UX**: click 1 sets the anchor (the `0.00` origin), click 2 picks the target whose offsets show. Subsequent clicks REPLACE the target (most-recent-wins). Clicking the already-anchored part is a no-op (user dismisses anchor via × or Esc explicitly).
+- ✅ **Single chip max** — only the explicitly-picked target shows ΔX/ΔY/ΔZ. The previous "chip for every object" implementation is gone.
+- ✅ **Pick-target hint** — between click 1 and click 2 a small subtle banner under the anchor reads *"Click a second part to read its offset…"* so the workflow stays obvious.
+- ✅ **Target-clear `×`** — the target chip carries its own × button so you can clear the target without dismissing the anchor.
+- ✅ Cascade cleanup extended to `rulerTargetId` (deleting the target part just clears the chip; deleting the anchor clears everything). `clearScene` / `loadProject` reset both.
+
+### Files touched
+- `lib/store.js` — added `rulerTargetId` state + `setRulerTarget`/`clearRulerTarget` actions; `setRulerAnchor` now also resets `rulerTargetId`; cascade-on-delete extended.
+- `lib/projectIO.js` — added `rulerTargetId: null` to both `loadProjectState` and `emptyProjectState`.
+- `components/Viewport.jsx` — `onRulerHit` rewritten as a two-step branch; `RulerAnchorLayer` renders the single-target chip OR the pick-target hint, never the global per-object chip set.
+
+### Status
+Implementation verified via screenshot: after click 1, scene shows `0.00 · Cylinder · XYZ · ×` HUD + hint banner + dashed axes, no offset chips. No regressions in measure mode, centerpoint-pair dimension, smart tutorial links, or PDF tutorials.
+

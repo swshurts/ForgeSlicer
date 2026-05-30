@@ -620,10 +620,12 @@ function ComponentDimensionsLayer() {
 function RulerAnchorLayer() {
   const mode = useScene((s) => s.rulerMode);
   const anchor = useScene((s) => s.rulerAnchor);
+  const targetId = useScene((s) => s.rulerTargetId);
   const axes = useScene((s) => s.rulerAxesMode);
   const objects = useScene((s) => s.objects);
   const buildVolume = useScene((s) => s.buildVolume);
   const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
+  const clearRulerTarget = useScene((s) => s.clearRulerTarget);
   const cycleRulerAxes = useScene((s) => s.cycleRulerAxes);
   if (!mode || !anchor) return null;
   const [ax, ay, az] = anchor.worldPoint;
@@ -633,6 +635,7 @@ function RulerAnchorLayer() {
   const showX = axes === "xyz" || axes === "x";
   const showY = axes === "xyz" || axes === "y";
   const showZ = axes === "xyz" || axes === "z";
+  const targetObj = targetId ? objects.find((o) => o.id === targetId && o.visible !== false) : null;
   return (
     <group>
       {/* Origin marker — small blue sphere with a "0.00" label */}
@@ -660,8 +663,8 @@ function RulerAnchorLayer() {
         />
       )}
       {/* Anchor HUD card — sits at the origin, shows the anchored part's
-          name + dismiss / axis-toggle buttons (matches TinkerCAD's
-          small panel with × and the hamburger). */}
+          name + dismiss / axis-toggle + (when a target is locked) a small
+          "swap target" hint. Mirrors TinkerCAD's tiny panel. */}
       <Html position={[ax, ay, az]} center zIndexRange={[100, 0]} sprite={false}>
         <div
           data-testid="ruler-anchor-hud"
@@ -689,10 +692,30 @@ function RulerAnchorLayer() {
           </button>
         </div>
       </Html>
-      {/* One signed-offset chip per OTHER object (skip the anchor's own part). */}
-      {objects.filter((o) => o.visible !== false && o.id !== anchor.objId).map((o) => (
-        <RulerOffsetChip key={o.id} obj={o} anchorPt={anchor.worldPoint} axes={axes} />
-      ))}
+      {/* Hint OR single target chip. Two-step UX: when anchor is set but no
+          target yet, we render a small "Pick a second part…" tooltip near
+          the anchor so the user knows what to do next. Once a target is
+          picked, ONLY that target gets the offset chip — no more global
+          chip-spam across the scene. Most-recent click replaces target. */}
+      {!targetObj && (
+        <Html position={[ax, ay, az]} center zIndexRange={[80, 0]} sprite={false}>
+          <div
+            data-testid="ruler-pick-target-hint"
+            className="px-2 py-1 bg-sky-950/95 border border-sky-500/40 text-sky-200 text-[10px] rounded-md shadow whitespace-nowrap select-none translate-y-7"
+            style={{ pointerEvents: "none" }}
+          >
+            Click a second part to read its offset…
+          </div>
+        </Html>
+      )}
+      {targetObj && (
+        <RulerOffsetChip
+          obj={targetObj}
+          anchorPt={anchor.worldPoint}
+          axes={axes}
+          onClear={clearRulerTarget}
+        />
+      )}
     </group>
   );
 }
@@ -701,7 +724,8 @@ function RulerAnchorLayer() {
 // nearest corner) because the chip needs a stable, predictable position
 // while the user is reading it. The numbers inside the chip ARE the
 // nearest-corner offsets, matching TinkerCAD's "this edge is X mm from 0".
-function RulerOffsetChip({ obj, anchorPt, axes }) {
+// Now also has its own × button to clear ONLY the target (anchor stays).
+function RulerOffsetChip({ obj, anchorPt, axes, onClear }) {
   const off = offsetToObject(anchorPt, obj);
   if (!off) return null;
   const [dx, dy, dz] = off.delta;
@@ -712,10 +736,22 @@ function RulerOffsetChip({ obj, anchorPt, axes }) {
     <Html position={[cx, cy, cz]} center zIndexRange={[80, 0]} sprite={false}>
       <div
         data-testid={`ruler-offset-chip-${obj.id}`}
-        className="flex flex-col gap-0 px-2 py-1 bg-slate-950/95 border border-sky-500/50 rounded-md shadow-xl whitespace-nowrap select-none translate-y-2"
-        style={{ pointerEvents: "none" }}
+        className="flex flex-col gap-0 px-2 py-1 bg-slate-950/95 border border-sky-500/70 rounded-md shadow-xl whitespace-nowrap select-none translate-y-2"
+        style={{ pointerEvents: "auto" }}
       >
-        <span className="text-[9px] uppercase tracking-wider text-sky-300 leading-tight">{obj.name || obj.type}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-sky-300 leading-tight">{obj.name || obj.type}</span>
+          {onClear && (
+            <button
+              data-testid={`ruler-clear-target-btn`}
+              onClick={(e) => { e.stopPropagation(); onClear(); }}
+              className="w-3.5 h-3.5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
+              title="Clear target — click another part to pick a new one"
+            >
+              <span className="text-[10px] leading-none -mt-px">×</span>
+            </button>
+          )}
+        </div>
         <div className="flex gap-2 font-mono text-[10px] leading-tight">
           {(axes === "xyz" || axes === "x") && (
             <span data-testid={`ruler-offset-x-${obj.id}`} className="text-rose-300">X {fmtSignedMm(dx)}</span>
@@ -754,6 +790,7 @@ export default function Viewport() {
   const measurementsCount = useScene((s) => s.measurements.length);
   const rulerMode = useScene((s) => s.rulerMode);
   const setRulerAnchor = useScene((s) => s.setRulerAnchor);
+  const setRulerTarget = useScene((s) => s.setRulerTarget);
   // Canvas background tracks the global UI theme so the 3D scene
   // doesn't sit on a slate-800 island when the user picks Light/Dim.
   // Uses the *resolved* theme (concrete dark/dim/light) so "system"
@@ -951,14 +988,32 @@ export default function Viewport() {
             onRulerHit={(point, objId) => {
               const oo = objects.find((x) => x.id === objId);
               if (!oo) return;
-              const c = nearestCorner(oo, point);
-              if (!c) return;
-              setRulerAnchor({
-                worldPoint: [c.x, c.y, c.z],
-                objId: oo.id,
-                objName: oo.name || "Anchor",
-                cornerKey: c.key,
-              });
+              // Two-step workflow (TinkerCAD-style):
+              //   1. No anchor → set anchor (the "0.00" origin) on the
+              //      nearest bbox corner of the clicked object.
+              //   2. Anchor already set & you click a DIFFERENT object →
+              //      that becomes the single target (shows ΔX/ΔY/ΔZ).
+              //   3. Anchor set & you click the SAME object that's the
+              //      anchor → keep the anchor (no-op; let the user
+              //      explicitly clear via × or Esc).
+              const cur = useScene.getState();
+              if (!cur.rulerAnchor) {
+                const c = nearestCorner(oo, point);
+                if (!c) return;
+                setRulerAnchor({
+                  worldPoint: [c.x, c.y, c.z],
+                  objId: oo.id,
+                  objName: oo.name || "Anchor",
+                  cornerKey: c.key,
+                });
+                return;
+              }
+              if (oo.id === cur.rulerAnchor.objId) {
+                // Clicking the anchor itself again — do nothing (user
+                // can dismiss the anchor with × in the HUD or Esc).
+                return;
+              }
+              setRulerTarget(oo.id);
             }}
             onContextMenu={handleContextMenu}
             scene={{ objects }}

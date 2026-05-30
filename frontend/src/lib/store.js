@@ -212,16 +212,15 @@ export const useScene = create((set, get) => ({
   pendingDimensionFromId: null,
 
   // ---- anchored ruler (TinkerCAD-style) ----
-  // A second, complementary measuring tool. When `rulerMode` is on,
-  // clicking any object sets `rulerAnchor` to that object's world-space
-  // bbox-min corner (the lowest-X, lowest-Y, lowest-Z point). After that,
-  // every visible object in the scene gets a small chip showing its bbox-min
-  // signed offset from the anchor (ΔX/ΔY/ΔZ in mm). `rulerAxesMode` cycles
-  // through 'xyz' (all three) → 'x' → 'y' → 'z' → 'xyz' so the user can
-  // declutter when they only care about one axis (matches TinkerCAD's
-  // hamburger-icon axis-toggle behaviour).
+  // Two-step workflow: first click sets the anchor (the "0.00" origin),
+  // second click picks a SINGLE target whose offsets show. Subsequent
+  // clicks REPLACE the target (most-recent wins) rather than piling up
+  // chips for every part on the bed. `rulerAxesMode` cycles through
+  // 'xyz' (all three) → 'x' → 'y' → 'z' → 'xyz' so the user can declutter
+  // when they only care about one axis.
   rulerMode: false,
-  rulerAnchor: null,            // {worldPoint:[x,y,z], objId, objName} | null
+  rulerAnchor: null,            // {worldPoint:[x,y,z], objId, objName, cornerKey} | null
+  rulerTargetId: null,          // string | null
   rulerAxesMode: "xyz",         // 'xyz' | 'x' | 'y' | 'z'
 
   // ---- cut tool ----
@@ -659,6 +658,7 @@ export const useScene = create((set, get) => ({
         ),
         pendingDimensionFromId: removeSet.has(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
         rulerAnchor: (s.rulerAnchor && removeSet.has(s.rulerAnchor.objId)) ? null : s.rulerAnchor,
+        rulerTargetId: removeSet.has(s.rulerTargetId) ? null : s.rulerTargetId,
       };
     });
     return incoming.map((o) => o.id);
@@ -680,6 +680,7 @@ export const useScene = create((set, get) => ({
       ),
       pendingDimensionFromId: s.pendingDimensionFromId === id ? null : s.pendingDimensionFromId,
       rulerAnchor: (s.rulerAnchor && s.rulerAnchor.objId === id) ? null : s.rulerAnchor,
+      rulerTargetId: s.rulerTargetId === id ? null : s.rulerTargetId,
     }));
   },
 
@@ -702,6 +703,7 @@ export const useScene = create((set, get) => ({
       ),
       pendingDimensionFromId: ids.includes(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
       rulerAnchor: (s.rulerAnchor && ids.includes(s.rulerAnchor.objId)) ? null : s.rulerAnchor,
+      rulerTargetId: ids.includes(s.rulerTargetId) ? null : s.rulerTargetId,
     }));
   },
 
@@ -1172,8 +1174,12 @@ export const useScene = create((set, get) => ({
   setRulerMode: (on) => set({ rulerMode: !!on }),
   // Anchor at an object's bbox-min corner. Caller computes the world point
   // (we don't want to re-import geometry helpers into the store reducer).
-  setRulerAnchor: (anchor) => set({ rulerAnchor: anchor || null }),
-  clearRulerAnchor: () => set({ rulerAnchor: null }),
+  setRulerAnchor: (anchor) => set({ rulerAnchor: anchor || null, rulerTargetId: null }),
+  clearRulerAnchor: () => set({ rulerAnchor: null, rulerTargetId: null }),
+  // Target object — shown as the one-and-only offset chip while the
+  // anchor stays put. Most recent click wins.
+  setRulerTarget: (objId) => set({ rulerTargetId: objId || null }),
+  clearRulerTarget: () => set({ rulerTargetId: null }),
   // Cycle the visible axes: xyz → x → y → z → xyz. Matches the
   // hamburger-icon toggle on the TinkerCAD ruler HUD.
   cycleRulerAxes: () => {
