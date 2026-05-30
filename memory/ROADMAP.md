@@ -17,9 +17,9 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Composite library expansion — Countersinks / Gussets / Hex Pockets~~ [DONE — iter 50]
 
 ## 🟢 P2 — Polish
-- **Refactor `lib/store.js` further** — 1481→1164 lines after iter 53. Further extraction candidates: project I/O (`serialize` + `loadProject` + `clearScene`, ~60 lines).
+- **Refactor `lib/store.js` further** — 1481→1300 lines after iter 59 (extracted I/O to projectIO.js). Further extraction candidates: the long boolean / cut / dimension action blocks could move into dedicated files.
 - ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
-- **HelpDialog.jsx split** — file is ~770 lines after the Tutorials tab (above the 700 guideline). Natural extraction: lift the long-form section components (Voice lexicon, AI, Shortcuts, Account) into `frontend/src/components/help/sections/*.jsx`.
+- ~~HelpDialog.jsx split~~ [DONE — iter 59, 771→515 lines]
 - **Save Assembly to Gallery silent-failure follow-up** — only acts if user reports it on prod with DevTools payload.
 
 ## 🔵 P3 — Experimental / future

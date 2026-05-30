@@ -1110,3 +1110,45 @@ This preview pod is aarch64 — the install pipeline is exercised through downlo
 - ✅ **HelpMegaMenu** updated to include all 7 PDFs with `data-testid` per entry.
 - ✅ Verified by testing agent (`/app/test_reports/iteration_26.json`) — **13/13 frontend assertions PASS**, zero issues, zero action items, zero retest needed. All 3 new PDFs HTTP 200 application/pdf; iframe src toggles correctly when switching tutorials.
 - Files: `scripts/build_voice_tutorial.py` (NEW), `scripts/build_slicer_tutorial.py` (NEW), `scripts/build_gallery_tutorial.py` (NEW), `frontend/public/docs/ForgeSlicer-Voice-Tutorial.pdf` (NEW), `frontend/public/docs/ForgeSlicer-Slicer-Tutorial.pdf` (NEW), `frontend/public/docs/ForgeSlicer-Gallery-Tutorial.pdf` (NEW), `frontend/src/components/HelpDialog.jsx` (Tutorials component + Index card + SECTIONS entry + render switch), `frontend/src/components/toolbar/HelpMegaMenu.jsx` (TUTORIALS exported + 3 new entries), `frontend/public/docs/README.md`.
+
+## Iteration 59 (2026-05-29) — Component Dimensions + Smart Tutorial Links + 2 Refactors
+A four-feature batch that landed in one session.
+
+### 1. Component-pair Dimensions tool (Blender-style "Item" offsets)
+- ✅ New persistent annotation type — right-click an object → **"Measure to…"** → right-click a second object → **"Add dimension: A ↔ here"**. Renders a dashed amber leader line between the two parts' world centres plus a HUD chip showing centre-to-centre distance and signed ΔX / ΔY / ΔZ.
+- ✅ Chip values update **live** as either part moves, rotates, or scales (verified: cube[0,10,0] vs sphere[0,12,0] reads ΔY=+2.00 mm; moving the cube to y=20 flips to ΔY=−8.00 mm).
+- ✅ Cascade-on-delete — removing a referenced object also removes its dimension annotations (no orphaned chips).
+- ✅ `clearScene` (toolbar New Project) wipes annotations.
+- ✅ Math lives in pure `lib/componentDimensions.js` (`worldBboxOf`, `computeComponentDimension`, `fmtSignedMm`) — testable without React.
+- ✅ Store gained `componentDimensions[]`, `pendingDimensionFromId`, `beginComponentDimension`, `commitComponentDimension`, `removeComponentDimension`, `clearComponentDimensions`. De-duped on the unordered {A,B} pair so the user can't end up with two chips drawing the same number.
+- Files: `lib/componentDimensions.js` (NEW), `lib/store.js` (added state + actions + cleanup on delete), `components/Viewport.jsx` (added `ComponentDimensionLine` + `ComponentDimensionsLayer`), `components/ContextMenu.jsx` (3 new menu states: start / cancel / commit).
+
+### 2. Smart tutorial deep-links (potential improvement from previous iteration)
+- ✅ Right-click an object → menu item **"Tutorial: <topic>"** appears when ForgeSlicer can map the object's type to a relevant PDF. Click → opens the PDF in a new tab.
+- ✅ Routing rules (in priority order):
+  1. `obj.texture.pattern` → Texture Library tutorial
+  2. Primitive type direct hit: `sweep`/`sketch` → Sweep; `bolt`/`nut` → Hardware
+  3. Composite-group fallback via `groupId` / `groupName` prefix match: `fastener-` / `slot-` / `cs-` / `hexp-` / `gus-` → Hardware
+- ✅ Multi-select handling: when right-clicking a child of a composite group (workspace auto-selects all group members), the menu still surfaces the suggestion because the gate is `count===1 || (count>1 && allInSameGroup)`. Independent multi-selections correctly suppress the link.
+- ✅ Node unit test `frontend/tests/tutorial-suggestions.mjs` — 14 cases all green (regression guard).
+- Files: `lib/tutorialSuggestions.js` (NEW), `components/ContextMenu.jsx` (probeObj gate), `frontend/tests/tutorial-suggestions.mjs` (NEW).
+
+### 3. Refactor — store.js project I/O extraction
+- ✅ `serialize` / `loadProject` / `clearScene` moved to `lib/projectIO.js` as pure helpers (`serializeProject`, `loadProjectState`, `emptyProjectState`). Store methods delegate. No behavioural change; `componentDimensions` correctly reset on load (workspace annotations, not model data — same as Blender's viewport-overlay convention).
+
+### 4. Refactor — HelpDialog.jsx split (771 → 515 lines)
+- ✅ Extracted shared typography (`H`/`P`/`Code`/`Kbd`/`Step`) to `components/help/typography.jsx`.
+- ✅ Extracted `VOICE_LEXICON` data array to `components/help/voiceLexicon.js`.
+- ✅ Extracted `VoiceCommands` and `Tutorials` section components to `components/help/sections/*.jsx`.
+- ✅ Zero regressions — Voice/Tutorials/QuickStart navigation, voice-lexicon-search, tutorial-iframe + picker rail all verified by testing agent.
+
+### Testing
+- `/app/test_reports/iteration_27.json` — initial test (14/15 pass; flagged the fastener-tutorial gap).
+- `/app/test_reports/iteration_28.json` — retest after data-layer fix (4/7 — exposed the consumer-layer single-select gate).
+- `/app/test_reports/iteration_29.json` — **8/8 PASS, zero regressions**.
+- Unit tests: `tests/tutorial-suggestions.mjs` 14/14 green.
+
+### Files touched / created
+NEW: `lib/componentDimensions.js`, `lib/tutorialSuggestions.js`, `lib/projectIO.js`, `components/help/typography.jsx`, `components/help/voiceLexicon.js`, `components/help/sections/VoiceCommands.jsx`, `components/help/sections/Tutorials.jsx`, `frontend/tests/tutorial-suggestions.mjs`.
+EDITED: `lib/store.js`, `components/Viewport.jsx`, `components/ContextMenu.jsx`, `components/HelpDialog.jsx`.
+
