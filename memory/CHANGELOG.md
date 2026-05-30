@@ -1232,5 +1232,8 @@ Fix: each dim label now sits at the segment midpoint PLUS a perpendicular offset
 - **Y label** — offset (X ±10 following `sign(dx)`, Z−8) → outboard of the L-bracket bend, never between the X and Y segments
 - **Z label** — offset (X ±10 following `sign(dx)`, Y+10) → above the Z segment
 
-Verified via screenshot: 40×30×20 mm test diagonal shows three clean `+40.00 mm` labels in rose/emerald/amber, each visibly offset to a different side of its respective axis line.
+### Iteration 62-c (legibility — Blender/TinkerCAD style)
+User reported: *"The labels are intrusive and sometimes the color scheme is illegible (e.g. bright yellow on white). Can't they be like TinkerCAD and Blender's dimensional display?"*
+
+Fix: replaced the chunky colored panels with bare white text plus a dark text-shadow stroke that reads on **any background** (dark bed, orange parts, light theme). Axis identification is now a small coloured dot (•) prefixing the number, not a full chrome panel. Font weight bumped to semibold for crispness. Screenshot-verified on a 40×30×20 mm diagonal that shows three legible `+40 / +40 / +60 mm` labels against the orange cube + dark bed + light theme overlay simultaneously.
 

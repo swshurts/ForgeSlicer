@@ -688,64 +688,64 @@ function RulerAnchorLayer() {
           chain). For zero `dx` we fall back to +X so the offset is
           still deterministic. */}
       {target && showX && Math.abs(dx) > 0.001 && (
-        <Line points={[[ax, ay, az], [tx, ay, az]]} color="#FB7185" lineWidth={2.5} depthTest={false} />
+        <Line points={[[ax, ay, az], [tx, ay, az]]} color="#FB7185" lineWidth={2} depthTest={false} />
       )}
       {target && showY && Math.abs(dy) > 0.001 && (
-        <Line points={[[tx, ay, az], [tx, ty, az]]} color="#34D399" lineWidth={2.5} depthTest={false} />
+        <Line points={[[tx, ay, az], [tx, ty, az]]} color="#34D399" lineWidth={2} depthTest={false} />
       )}
       {target && showZ && Math.abs(dz) > 0.001 && (
-        <Line points={[[tx, ty, az], [tx, ty, tz]]} color="#FBBF24" lineWidth={2.5} depthTest={false} />
+        <Line points={[[tx, ty, az], [tx, ty, tz]]} color="#FBBF24" lineWidth={2} depthTest={false} />
       )}
       {target && showX && Math.abs(dx) > 0.001 && (
-        // X label: perpendicular shift Y- (below the bed-level segment)
-        // and Z+ (back away from camera) — sits beside the rose line,
-        // never ON the anchor or the Y-bend endpoint at [tx, ay, az].
+        // X label — Blender/TinkerCAD style: bare text, no panel. Uses a
+        // dark text-shadow stroke so the white numbers are legible against
+        // ANY background (orange parts, light bed, dark theme). The X-axis
+        // tint shows only as a small ring before the number.
         <Html
-          position={[(ax + tx) / 2, ay - 8, az + 8]}
+          position={[(ax + tx) / 2, ay - 6, az + 6]}
           center
           zIndexRange={[80, 0]}
           sprite={false}
         >
           <div
             data-testid="ruler-dim-x"
-            className="px-1.5 py-0.5 bg-slate-950/95 border border-rose-400/80 text-rose-200 font-mono text-[11px] rounded-md shadow whitespace-nowrap select-none"
-            style={{ pointerEvents: "none" }}
-          >{fmtSignedMm(dx)}</div>
+            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none ruler-dim-label"
+            style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
+          >
+            <span style={{ color: "#FB7185", marginRight: 3 }}>•</span>{fmtSignedMm(dx)}
+          </div>
         </Html>
       )}
       {target && showY && Math.abs(dy) > 0.001 && (
-        // Y label: perpendicular shift in X (away from anchor, in the
-        // direction of dx) so the label is OUTSIDE the L-bracket — never
-        // between the X and Y segments. Z shift puts it forward of the
-        // camera-facing side.
         <Html
-          position={[tx + (dx >= 0 ? 10 : -10), (ay + ty) / 2, az - 8]}
+          position={[tx + (dx >= 0 ? 8 : -8), (ay + ty) / 2, az - 6]}
           center
           zIndexRange={[80, 0]}
           sprite={false}
         >
           <div
             data-testid="ruler-dim-y"
-            className="px-1.5 py-0.5 bg-slate-950/95 border border-emerald-400/80 text-emerald-200 font-mono text-[11px] rounded-md shadow whitespace-nowrap select-none"
-            style={{ pointerEvents: "none" }}
-          >{fmtSignedMm(dy)}</div>
+            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none ruler-dim-label"
+            style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
+          >
+            <span style={{ color: "#34D399", marginRight: 3 }}>•</span>{fmtSignedMm(dy)}
+          </div>
         </Html>
       )}
       {target && showZ && Math.abs(dz) > 0.001 && (
-        // Z label: perpendicular shift in X (outboard, follows dx sign)
-        // plus Y+ (up). Distinct from the Y-label offsets so the two
-        // never collide.
         <Html
-          position={[tx + (dx >= 0 ? 10 : -10), ty + 10, (az + tz) / 2]}
+          position={[tx + (dx >= 0 ? 8 : -8), ty + 8, (az + tz) / 2]}
           center
           zIndexRange={[80, 0]}
           sprite={false}
         >
           <div
             data-testid="ruler-dim-z"
-            className="px-1.5 py-0.5 bg-slate-950/95 border border-amber-400/80 text-amber-200 font-mono text-[11px] rounded-md shadow whitespace-nowrap select-none"
-            style={{ pointerEvents: "none" }}
-          >{fmtSignedMm(dz)}</div>
+            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none ruler-dim-label"
+            style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
+          >
+            <span style={{ color: "#FBBF24", marginRight: 3 }}>•</span>{fmtSignedMm(dz)}
+          </div>
         </Html>
       )}
       {/* === Snap-point indicators on the anchored object & the target
