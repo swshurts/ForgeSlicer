@@ -198,6 +198,10 @@ export const orcaApi = {
     processPresetName, processVendor,
     filamentPresetName, filamentVendor,
   }) => {
+    // Kick off the slice — returns 202 with `{job_id}` immediately.
+    // The actual work runs as a backend asyncio task; we then poll
+    // `result()` once SSE reports `done`. This avoids Cloudflare's
+    // 100s origin-timeout (HTTP 524) for slices that exceed it.
     const { data } = await axios.post(
       `${API}/slice/orca/slice`,
       {
@@ -206,11 +210,6 @@ export const orcaApi = {
         printer_profile: printerProfile || {},
         process_profile: processProfile || {},
         filament_profile: filamentProfile || {},
-        // Preferred path: name a bundled OrcaSlicer system preset and
-        // let the backend resolve its inheritance chain. The *_profile
-        // dicts above are then applied as overrides on top. When these
-        // are null/omitted the backend stays on the legacy raw-dict
-        // path so older callers keep working.
         printer_preset_name:  printerPresetName  || null,
         printer_vendor:       printerVendor      || null,
         process_preset_name:  processPresetName  || null,
@@ -218,7 +217,18 @@ export const orcaApi = {
         filament_preset_name: filamentPresetName || null,
         filament_vendor:      filamentVendor     || null,
       },
-      { timeout: 360000 }, // 6 min — matches the backend's 5-min Orca cap + transport overhead
+      { timeout: 30000 }, // 30s — the POST itself is fast now
+    );
+    return data;
+  },
+  // Fetch the final GCODE + stats for a slice job kicked off via slice().
+  // Returns the OrcaSliceResponse shape (gcode + stats + engine + job_id)
+  // when the job is complete. Callers should subscribe to the SSE
+  // progress endpoint and only call this once they see done=true.
+  sliceResult: async ({ jobId }) => {
+    const { data } = await axios.get(
+      `${API}/slice/orca/result/${encodeURIComponent(jobId)}`,
+      { timeout: 30000 },
     );
     return data;
   },

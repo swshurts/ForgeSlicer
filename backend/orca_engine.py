@@ -905,38 +905,59 @@ async def orca_reinstall(force: bool = False):
 
 
 
-@router.post("/slice", response_model=OrcaSliceResponse)
-async def orca_slice(req: OrcaSliceRequest):
-    """Shell out to OrcaSlicer CLI to produce production-quality GCODE.
+class OrcaSliceAccepted(BaseModel):
+    """202 response from the new async-job slice endpoint.
 
-    Returns 503 (Service Unavailable) when the engine isn't installed
-    instead of a generic 500, so the UI can fall back to the built-in
-    slicer gracefully.
+    The slice work runs in a background task; clients should subscribe
+    to `/api/slice/orca/progress/{job_id}` for live % updates, then
+    fetch `/api/slice/orca/result/{job_id}` to retrieve the GCODE.
     """
-    install = resolve_install()
-    if not install.binary:
-        detail = "OrcaSlicer engine not installed on this server."
-        if install.build_in_progress:
-            detail += " A build is in progress — try again later."
-        raise HTTPException(status_code=503, detail=detail)
+    job_id: str
+    status: str = "accepted"
+    engine: str = "orca"
 
-    # Decode + size-cap STL upload.
-    try:
-        stl_bytes = base64.b64decode(req.stl_base64, validate=True)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid base64 STL: {e}")
-    if len(stl_bytes) > MAX_STL_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"STL exceeds {MAX_STL_BYTES // (1024*1024)} MB cap",
-        )
 
-    workdir = Path(tempfile.mkdtemp(prefix="orca-"))
-    # Use the client-supplied job id if present so the SSE subscription
-    # they opened pre-slice ties to the same progress slot. Otherwise
-    # generate a fresh one for the response.
-    job_id = (req.job_id or secrets.token_urlsafe(8))[:32]
-    _PROGRESS[job_id] = {"percent": 0, "stage": "starting", "done": False, "error": None}
+# Job result TTL: how long we keep a completed job's result in memory
+# before evicting it. The client should fetch /result/{job_id}
+# immediately after seeing SSE done=true, so 10 minutes is plenty of
+# headroom while still bounding memory if the client never comes back
+# (e.g. browser tab closed).
+_JOB_RESULT_TTL_SEC = 10 * 60
+
+
+def _evict_stale_progress_slots(now: float) -> None:
+    """Drop progress slots whose `done` timestamp is older than the
+    TTL. Runs opportunistically on every /result fetch so we don't
+    need a background sweeper — bounded by O(progress_slots) per
+    call, which is negligible at our scale."""
+    stale: list[str] = []
+    for jid, slot in _PROGRESS.items():
+        if slot.get("done") and slot.get("done_at"):
+            if now - slot["done_at"] > _JOB_RESULT_TTL_SEC:
+                stale.append(jid)
+    for jid in stale:
+        _PROGRESS.pop(jid, None)
+
+
+async def _perform_slice(
+    req: "OrcaSliceRequest",
+    job_id: str,
+    workdir: Path,
+    install: OrcaInstall,
+    stl_bytes: bytes,
+) -> None:
+    """Run the actual OrcaSlicer CLI slice. Designed to be called
+    via `asyncio.create_task` so the POST /slice endpoint can return
+    202 immediately and avoid the Cloudflare 100s origin-timeout
+    (HTTP 524) that surfaces for slices longer than ~100s.
+
+    Everything that used to raise HTTPException now writes the
+    failure to `_PROGRESS[job_id]['error_detail']` + status code, so
+    /result/{job_id} can surface the same response shape the
+    synchronous endpoint used to return. The result dict
+    (`OrcaSliceResponse` payload) is stored in `slot['result']`.
+    """
+    import time as _time
     try:
         stl_path = workdir / "model.stl"
         stl_path.write_bytes(stl_bytes)
@@ -945,11 +966,6 @@ async def orca_slice(req: OrcaSliceRequest):
         # files because that's the CLI's documented format; passing them
         # inline is not supported.
         profile_args: list[str] = []
-        # Resolve the profile triple. If the request named a system
-        # preset (the recommended path), load + flatten the inheritance
-        # chain from Orca's bundled resources, then layer overrides.
-        # If only the legacy *_profile dict is set, use that as-is —
-        # the user is opting out of preset resolution.
         profiles_root = _resources_root(install)
         if profiles_root is None:
             logger.warning("Couldn't locate resources/profiles under %s; using raw profile dicts.", install.binary)
@@ -958,27 +974,18 @@ async def orca_slice(req: OrcaSliceRequest):
             ("process", "process", req.process_preset_name, req.process_vendor, req.process_profile),
             ("filament", "filament", req.filament_preset_name, req.filament_vendor, req.filament_profile),
         ]
-        profile_args: list[str] = []
         # Stage each profile (printer / process / filament) into memory
         # FIRST, then post-process compatibility fields across the trio
-        # before writing to disk. This is what lets us silently fix
-        # cross-vendor combos that OrcaSlicer's bundled
-        # `compatible_printers` arrays would otherwise reject with the
-        # `process not compatible with printer (-17)` error — the same
-        # rewrite OrcaSlicer's desktop GUI does when you pair a process
-        # to a custom printer via its Compatibility panel.
+        # before writing to disk. See `_patch_cross_profile_compatibility`
+        # for why this matters across vendor combos.
         staged: dict[str, dict] = {}
         for file_key, kind, preset_name, vendor, raw_profile in preset_specs:
             base: dict = {}
             resolved_preset_name: Optional[str] = None
             if preset_name:
                 if profiles_root is None:
-                    # The caller asked for a system preset but we have no
-                    # way to resolve it — fail loudly with a 503 instead
-                    # of silently writing an empty JSON that OrcaSlicer's
-                    # validator would later reject with the cryptic
-                    # `unknown config type` error.
-                    raise HTTPException(
+                    _job_error(
+                        job_id,
                         status_code=503,
                         detail=(
                             f"OrcaSlicer engine is installed but its "
@@ -988,61 +995,39 @@ async def orca_slice(req: OrcaSliceRequest):
                             f"Built-in slicer remains available."
                         ),
                     )
+                    return
                 try:
                     base = _load_system_preset(
                         profiles_root, vendor or "BBL", kind, preset_name,
                     )
                     resolved_preset_name = preset_name
                 except FileNotFoundError:
-                    # Named preset wasn't found — drop to the fallback
-                    # below instead of failing the whole slice. This is
-                    # the common case when the frontend picks a printer
-                    # we haven't mapped to a bundled preset.
                     logger.warning(
                         "OrcaSlicer system preset %r not found under vendor "
                         "%r (kind=%s); falling back to bundled %s preset.",
                         preset_name, vendor, kind, kind,
                     )
                 except (RuntimeError, json.JSONDecodeError) as e:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to resolve {file_key} preset {preset_name!r}: {e}",
-                    )
+                    _job_error(job_id, 500, f"Failed to resolve {file_key} preset {preset_name!r}: {e}")
+                    return
 
-            # When no system preset was loaded (no name given OR the
-            # named preset was missing), ride the universal fallback
-            # chain so the file we write is built on top of a real
-            # OrcaSlicer-validated config rather than synthesised
-            # from scratch.
             if not base and profiles_root is not None:
                 try:
                     base, _, resolved_preset_name = _resolve_fallback_preset(
                         profiles_root, kind,
                     )
                 except FileNotFoundError as e:
-                    # Even the fallback's missing — this OrcaSlicer
-                    # install is broken. Surface 503 so the UI can
-                    # fall back to the built-in slicer cleanly.
-                    raise HTTPException(
-                        status_code=503,
-                        detail=(
-                            f"OrcaSlicer is installed but its bundled "
-                            f"fallback {kind} preset is missing "
-                            f"({e}). The install may be corrupted; "
-                            f"try `POST /api/slice/orca/reinstall?force=true`."
-                        ),
+                    _job_error(
+                        job_id, 503,
+                        f"OrcaSlicer is installed but its bundled "
+                        f"fallback {kind} preset is missing ({e}). "
+                        f"The install may be corrupted; try "
+                        f"`POST /api/slice/orca/reinstall?force=true`.",
                     )
+                    return
 
-            # Skip staging the file entirely only when BOTH the system-preset
-            # base AND the raw override are empty — otherwise we'd produce a
-            # bogus zero-key JSON that OrcaSlicer can't validate.
             if not base and not raw_profile:
                 continue
-            # ALWAYS run through `_stage_user_profile` so the required
-            # metadata fields (type / name / from / instantiation) are
-            # stamped onto the final JSON, regardless of which path got us
-            # here. This protects against the new-frontend / no-preset-root
-            # combination that previously produced an empty `{}` file.
             leaf_name = (
                 resolved_preset_name
                 or preset_name
@@ -1051,10 +1036,6 @@ async def orca_slice(req: OrcaSliceRequest):
             )
             staged[file_key] = _stage_user_profile(base, raw_profile, kind, leaf_name)
 
-        # Cross-profile compatibility fix-up — see
-        # `_patch_cross_profile_compatibility` for the why. This is
-        # the equivalent of toggling "compatible with this printer"
-        # in OrcaSlicer's desktop GUI Compatibility panel.
         _patch_cross_profile_compatibility(staged)
 
         # Write staged profiles + assemble CLI argv.
@@ -1066,10 +1047,6 @@ async def orca_slice(req: OrcaSliceRequest):
             else:
                 profile_args.append(str(p))
 
-        # If neither printer nor process was provided we still need
-        # something to satisfy --load-settings; fall back to Orca's bundled
-        # generic FFF default. The resources path varies between source
-        # builds and AppImages, so we just let Orca find them.
         if any(p.exists() for p in (workdir / "printer.json", workdir / "process.json")):
             settings_files = ";".join(
                 str(p) for p in (workdir / "printer.json", workdir / "process.json")
@@ -1088,23 +1065,17 @@ async def orca_slice(req: OrcaSliceRequest):
             "--export-3mf", str(out_3mf),
             str(stl_path),
         ]
-        logger.info("orca slice argv: %s", argv)
+        logger.info("orca slice job=%s argv=%s", job_id, argv)
 
-        import time
-        t0 = time.monotonic()
+        t0 = _time.monotonic()
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(workdir),
-            env={**os.environ, "HOME": str(workdir)},   # avoid touching the real $HOME
+            env={**os.environ, "HOME": str(workdir)},
         )
         try:
-            # Drain stdout via our tail-reader (parses % progress into
-            # _PROGRESS[job_id] for the SSE endpoint), and collect
-            # stderr in parallel. asyncio.gather lets both pumps run
-            # concurrently — without this stderr can fill its pipe
-            # and deadlock the slicer for large outputs.
             stdout, stderr = await asyncio.wait_for(
                 asyncio.gather(_tail_stdout(proc, job_id), proc.stderr.read()),
                 timeout=SLICE_TIMEOUT_SEC,
@@ -1115,111 +1086,213 @@ async def orca_slice(req: OrcaSliceRequest):
                 proc.kill()
             except Exception:
                 pass
-            slot = _PROGRESS.get(job_id)
-            if slot is not None:
-                slot.update(done=True, error="slice timeout", percent=100)
-            raise HTTPException(
-                status_code=504,
-                detail=f"OrcaSlicer slice exceeded {SLICE_TIMEOUT_SEC}s and was killed.",
+            _job_error(
+                job_id, 504,
+                f"OrcaSlicer slice exceeded {SLICE_TIMEOUT_SEC}s and was killed.",
             )
-        duration = time.monotonic() - t0
+            return
+        duration = _time.monotonic() - t0
 
         if proc.returncode != 0:
-            # OrcaSlicer uses boost::log which writes to stdout, not
-            # stderr — so the actual validation error lives in `stdout`.
-            # Combine BOTH tails for failure diagnostics so the API
-            # response (and logs) include the real reason whichever
-            # pipe Orca picked.
             stdout_tail = (stdout or b"")[-2000:].decode(errors="replace")
             stderr_tail = (stderr or b"")[-2000:].decode(errors="replace")
             tail = (stderr_tail + "\n" + stdout_tail).strip()
             logger.warning("orca slice rc=%s err=%s", proc.returncode, tail[-2000:])
-            # Detect the "missing shared library" pattern (rc=127 +
-            # ld.so error). This is the production-container failure
-            # mode we hit before `install_orca_deps.sh` was wired
-            # in — return a friendly 503 with the exact missing lib
-            # so an admin can install it (or just redeploy if they've
-            # already merged the deps script).
             missing_lib = None
             if "error while loading shared libraries" in tail or "cannot open shared object" in tail:
                 m = re.search(r"(lib[\w.+-]+\.so[\.\d]*)", tail)
                 if m:
                     missing_lib = m.group(1)
             if missing_lib:
-                raise HTTPException(
-                    status_code=503,
-                    detail=(
-                        f"OrcaSlicer engine couldn't start — system library "
-                        f"'{missing_lib}' is missing in the server container. "
-                        f"An admin should run `bash backend/scripts/install_orca_deps.sh` "
-                        f"or rebuild with the OrcaSlicer runtime deps in the Dockerfile. "
-                        f"Built-in slicer is unaffected."
-                    ),
+                _job_error(
+                    job_id, 503,
+                    f"OrcaSlicer engine couldn't start — system library "
+                    f"'{missing_lib}' is missing in the server container. "
+                    f"An admin should run `bash backend/scripts/install_orca_deps.sh` "
+                    f"or rebuild with the OrcaSlicer runtime deps in the Dockerfile. "
+                    f"Built-in slicer is unaffected.",
                 )
-            # Detect OrcaSlicer's profile-JSON validator errors. The
-            # CLI prints `operator():file X.json's from <value> is
-            # unsupported` when a profile JSON is missing required
-            # metadata or has bad values. Surface a clean message
-            # rather than the raw C++ trace.
+                return
             if "operator()" in tail and "json" in tail and ("unsupported" in tail or "is invalid" in tail):
                 m = re.search(r"file\s+(\S+\.json)", tail)
                 bad_file = m.group(1).rsplit("/", 1)[-1] if m else "a profile"
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"OrcaSlicer rejected {bad_file} — the profile JSON is missing "
-                        f"required metadata (type / name / from / instantiation) or "
-                        f"contains a value the slicer doesn't recognise. This is a "
-                        f"client-side bug; please report it. Built-in slicer is unaffected."
-                    ),
+                _job_error(
+                    job_id, 400,
+                    f"OrcaSlicer rejected {bad_file} — the profile JSON is missing "
+                    f"required metadata (type / name / from / instantiation) or "
+                    f"contains a value the slicer doesn't recognise. This is a "
+                    f"client-side bug; please report it. Built-in slicer is unaffected.",
                 )
-            raise HTTPException(
-                status_code=500,
-                detail=f"OrcaSlicer exited with code {proc.returncode}: {tail}",
-            )
+                return
+            _job_error(job_id, 500, f"OrcaSlicer exited with code {proc.returncode}: {tail}")
+            return
 
         if not out_3mf.exists():
-            raise HTTPException(
-                status_code=500,
-                detail="OrcaSlicer returned success but produced no output 3MF.",
-            )
+            _job_error(job_id, 500, "OrcaSlicer returned success but produced no output 3MF.")
+            return
 
-        # Extract embedded GCODE from the gcode.3mf bundle. OrcaSlicer
-        # writes Metadata/plate_1.gcode by default; we accept any
-        # `*.gcode` inside the archive as a defensive fallback.
-        gcode_text = _extract_gcode_from_3mf(out_3mf)
+        try:
+            gcode_text = _extract_gcode_from_3mf(out_3mf)
+        except HTTPException as e:
+            _job_error(job_id, e.status_code, str(e.detail))
+            return
         layers, filament_mm = _scan_gcode_stats(gcode_text)
         slot = _PROGRESS.get(job_id)
         if slot is not None:
-            slot.update(percent=100, stage="done", done=True)
-        return OrcaSliceResponse(
-            gcode=gcode_text,
-            stats=OrcaSliceStats(
-                gcode_lines=gcode_text.count("\n") + 1,
-                gcode_bytes=len(gcode_text.encode()),
-                duration_seconds=round(duration, 2),
-                layers=layers,
-                filament_mm=filament_mm,
-            ),
-            engine="orca",
-            job_id=job_id,
-        )
-    except HTTPException as e:
-        # Surface the failure on the SSE stream so the UI can stop the
-        # spinner instead of waiting for the 150s idle timeout.
-        slot = _PROGRESS.get(job_id)
-        if slot is not None:
-            slot.update(done=True, error=str(e.detail)[:200])
-        raise
+            slot["result"] = {
+                "gcode": gcode_text,
+                "stats": {
+                    "gcode_lines": gcode_text.count("\n") + 1,
+                    "gcode_bytes": len(gcode_text.encode()),
+                    "duration_seconds": round(duration, 2),
+                    "layers": layers,
+                    "filament_mm": filament_mm,
+                },
+                "engine": "orca",
+                "job_id": job_id,
+            }
+            slot.update(percent=100, stage="done", done=True, done_at=_time.time())
+    except Exception as e:
+        # Anything we didn't explicitly handle bubbles here. Surface
+        # via the same slot mechanism so /result returns a clean error
+        # instead of the request hanging forever.
+        logger.exception("orca slice job=%s crashed", job_id)
+        _job_error(job_id, 500, f"OrcaSlicer slice crashed: {e}")
     finally:
-        # Always clean the workdir — profiles + STL + the 3MF can be
-        # several megabytes each and we don't want them piling up on the
-        # backend. ORCA_KEEP_WORKDIR=1 preserves it for post-mortem
-        # debugging (developer-only).
         if os.environ.get("ORCA_KEEP_WORKDIR") == "1":
             logger.warning("ORCA_KEEP_WORKDIR=1 — preserving %s for inspection", workdir)
         else:
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _job_error(job_id: str, status_code: int, detail: str) -> None:
+    """Stamp a terminal error onto the progress slot. The /result
+    endpoint reads `error_status` + `error_detail` to mint a clean
+    HTTPException with the same status code the synchronous endpoint
+    used to raise."""
+    import time as _time
+    slot = _PROGRESS.get(job_id)
+    if slot is not None:
+        slot.update(
+            done=True,
+            error=detail[:200],
+            error_status=status_code,
+            error_detail=detail,
+            done_at=_time.time(),
+        )
+
+
+@router.post("/slice", status_code=202, response_model=OrcaSliceAccepted)
+async def orca_slice(req: OrcaSliceRequest):
+    """Kick off an OrcaSlicer slice job and return immediately with
+    the `job_id`. The actual work runs in a background task.
+
+    This async-job pattern replaces the previous synchronous endpoint
+    so slices longer than Cloudflare's 100s origin-timeout (HTTP 524)
+    can complete reliably on production. Clients should:
+
+    1. POST here → receive 202 with `{job_id}` (this call).
+    2. Subscribe to `/api/slice/orca/progress/{job_id}` for live %.
+    3. When SSE reports `done: true`, fetch
+       `/api/slice/orca/result/{job_id}` for the final GCODE.
+
+    Returns 503 (Service Unavailable) when the engine isn't installed
+    so the UI can fall back to the built-in slicer gracefully.
+    """
+    install = resolve_install()
+    if not install.binary:
+        detail = "OrcaSlicer engine not installed on this server."
+        if install.build_in_progress:
+            detail += " A build is in progress — try again later."
+        raise HTTPException(status_code=503, detail=detail)
+
+    # Decode + size-cap STL upload BEFORE spawning the task so the
+    # client gets a synchronous 400 / 413 on malformed input rather
+    # than a deferred error they'd only see via /result.
+    try:
+        stl_bytes = base64.b64decode(req.stl_base64, validate=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 STL: {e}")
+    if len(stl_bytes) > MAX_STL_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"STL exceeds {MAX_STL_BYTES // (1024*1024)} MB cap",
+        )
+
+    workdir = Path(tempfile.mkdtemp(prefix="orca-"))
+    job_id = (req.job_id or secrets.token_urlsafe(8))[:32]
+    _PROGRESS[job_id] = {
+        "percent": 0,
+        "stage": "starting",
+        "done": False,
+        "error": None,
+    }
+
+    # Fire-and-forget — the task drives the rest of the lifecycle
+    # (subprocess, progress, result, workdir cleanup). We DON'T await
+    # it so the POST can return immediately and the response makes it
+    # back through Cloudflare before its 100s origin-timeout kicks in.
+    asyncio.create_task(_perform_slice(req, job_id, workdir, install, stl_bytes))
+
+    return OrcaSliceAccepted(job_id=job_id, status="accepted", engine="orca")
+
+
+@router.get("/result/{job_id}", response_model=OrcaSliceResponse)
+async def orca_result(job_id: str):
+    """Return the final GCODE + stats for a slice job kicked off via
+    POST /api/slice/orca/slice. Status semantics:
+
+      • 200 — job complete, response body is the full OrcaSliceResponse.
+      • 202 — job still running; client should keep listening on the
+              SSE progress stream and retry once it sees done=true.
+      • 404 — unknown job id (never existed OR evicted after TTL).
+      • 4xx / 5xx — job failed; body's `detail` matches what the old
+                    synchronous endpoint used to raise.
+    """
+    import time as _time
+    if not (1 <= len(job_id) <= 32 and all(c.isalnum() or c in "-_" for c in job_id)):
+        raise HTTPException(status_code=400, detail="malformed job id")
+    # Opportunistic eviction so completed jobs whose clients never
+    # came back don't pile up in memory.
+    _evict_stale_progress_slots(_time.time())
+    slot = _PROGRESS.get(job_id)
+    if slot is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown job {job_id!r}. It may have expired or never existed.",
+        )
+    if not slot.get("done"):
+        # Still running. 202 + the current progress snapshot helps
+        # debugging without breaking the contract.
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "running",
+                "job_id": job_id,
+                "percent": slot.get("percent", 0),
+                "stage": slot.get("stage", ""),
+            },
+        )
+    if slot.get("error_detail"):
+        raise HTTPException(
+            status_code=slot.get("error_status") or 500,
+            detail=slot["error_detail"],
+        )
+    result = slot.get("result")
+    if not result:
+        # Done but no result and no error — shouldn't happen, but
+        # surface it cleanly instead of returning a malformed payload.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Job {job_id} finished but produced no result and no error.",
+        )
+    return OrcaSliceResponse(
+        gcode=result["gcode"],
+        stats=OrcaSliceStats(**result["stats"]),
+        engine=result.get("engine", "orca"),
+        job_id=result.get("job_id", job_id),
+    )
 
 
 def _extract_gcode_from_3mf(path: Path) -> str:

@@ -124,6 +124,11 @@ export function useOrcaSlice() {
   // --- Live slice progress (EventSource) ---
   const [progress, setProgress] = useState(null);
   const progressSrcRef = useRef(null);
+  // Promise + resolvers tied to the currently-running job. When SSE
+  // reports `done: true` we resolve this so `runSlice` can move on to
+  // fetching the final result. `error` resolves it with an Error so
+  // the caller can surface a clean message.
+  const progressDoneRef = useRef(null);
 
   const subscribeProgress = (jobId) => {
     // Close previous before opening a new one.
@@ -135,16 +140,40 @@ export function useOrcaSlice() {
     try { es = new EventSource(url); } catch { return; }
     progressSrcRef.current = es;
     setProgress({ percent: 0, stage: "starting", done: false });
+    // Fresh promise per subscription — runSlice awaits this to learn
+    // when the backend task has finished (success or failure).
+    progressDoneRef.current = (() => {
+      let resolveFn, rejectFn;
+      const p = new Promise((resolve, reject) => {
+        resolveFn = resolve; rejectFn = reject;
+      });
+      p.resolve = resolveFn; p.reject = rejectFn;
+      return p;
+    })();
     es.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
         setProgress(data);
-        if (data.done) { try { es.close(); } catch { /* noop */ } progressSrcRef.current = null; }
+        if (data.done) {
+          try { es.close(); } catch { /* noop */ }
+          progressSrcRef.current = null;
+          const p = progressDoneRef.current;
+          if (p) {
+            if (data.error) p.reject(new Error(data.error));
+            else p.resolve(data);
+            progressDoneRef.current = null;
+          }
+        }
       } catch { /* ignore malformed events */ }
     };
     es.onerror = () => {
       try { es.close(); } catch { /* noop */ }
       progressSrcRef.current = null;
+      const p = progressDoneRef.current;
+      if (p) {
+        p.reject(new Error("Lost connection to slicer progress stream."));
+        progressDoneRef.current = null;
+      }
     };
   };
 
@@ -165,23 +194,29 @@ export function useOrcaSlice() {
   });
 
   // --- The actual slice action ---
-  // Caller passes the scene objects + project name. Returns a uniform
-  // `{ gcode, stats }` so SlicerPopover doesn't need to know which
-  // engine produced it.
+  // Two-step async flow (avoids Cloudflare 524 on slow slices):
+  //   1. POST /slice → kicks off backend task, returns immediately with job_id.
+  //   2. SSE progress stream keeps the connection warm + drives the UI.
+  //   3. Once SSE reports done, GET /result/{job_id} fetches the GCODE.
+  // Returns a uniform `{ gcode, stats }` so SlicerPopover doesn't need
+  // to know which engine produced it.
   const runSlice = async (objects) => {
     const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
     const b64 = arrayBufferToBase64(bytes);
     const payload = buildPayload();
     // Pre-generate job id and open the SSE stream BEFORE the POST so
-    // the user sees real-time progress (POST is synchronous and would
-    // otherwise only return AFTER the slice is already done).
+    // the user sees real-time progress from the moment they click Slice.
     const jobId = (typeof crypto !== "undefined" && crypto.randomUUID
       ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     ).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
     subscribeProgress(jobId);
-    let r;
+    // Capture the promise BEFORE await; subscribeProgress could
+    // re-assign it on a new call, but we want to await THIS slice's
+    // completion specifically.
+    const donePromise = progressDoneRef.current;
     try {
-      r = await orcaApi.slice({
+      // POST returns 202 immediately with { job_id, status: "accepted" }.
+      await orcaApi.slice({
         stlBase64: b64,
         jobId,
         printerProfile: payload.printerProfile,
@@ -195,16 +230,35 @@ export function useOrcaSlice() {
         filamentVendor:     payload.filamentVendor,
       });
     } catch (err) {
-      // If the POST blows up (network / server error) we still need to
-      // close the EventSource so the user doesn't end up with a
-      // dangling SSE connection until they navigate away from the page.
+      // POST blew up before the task could even start (4xx/5xx).
+      // Close the SSE and surface the original error.
       if (progressSrcRef.current) {
         try { progressSrcRef.current.close(); } catch { /* noop */ }
         progressSrcRef.current = null;
       }
       setProgress(null);
+      progressDoneRef.current = null;
       throw err;
     }
+    // Wait for the SSE stream to report `done: true` (success or
+    // failure). The donePromise rejects if the backend marked the
+    // job as errored.
+    try {
+      if (donePromise) await donePromise;
+    } catch (sseErr) {
+      // SSE-reported failure — fetch /result anyway to get the
+      // structured HTTPException detail (status code + message) the
+      // backend stamped onto the slot.
+      try {
+        await orcaApi.sliceResult({ jobId });
+        // Shouldn't reach here — sliceResult should throw on error.
+        throw sseErr;
+      } catch (resErr) {
+        throw resErr;
+      }
+    }
+    // Job done — fetch the GCODE + stats.
+    const r = await orcaApi.sliceResult({ jobId });
     return {
       gcode: r.gcode,
       stats: {

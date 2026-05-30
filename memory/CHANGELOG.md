@@ -1608,3 +1608,69 @@ exited the CLI with rc -17.
   "Define Printer" dialog) so the SV06 Plus Ace and the wave of new 2026 printers
   can be defined in ForgeSlicer once and reused, without waiting for OrcaSlicer's
   preset shipment cadence.
+
+
+## Iteration 71 (2026-05-30) — P0: Async-job slice flow (Cloudflare 524 fix)
+
+### Bug context
+After iter-70 cleared the rc -17 compatibility error, the user hit `Request failed
+with status code 524` on production (forgeslicer.com) — Cloudflare's hard origin-
+timeout. Engine Comparison showed `Total wall time 126.25s`: the slice was
+succeeding on the server but the synchronous `POST /api/slice/orca/slice` couldn't
+return through Cloudflare's 100s cutoff for slices that exceed it.
+
+### Fix
+Converted the slice endpoint to an async-job pattern so no HTTP request stays open
+longer than a few seconds.
+
+**Backend** (`/app/backend/orca_engine.py`):
+- Extracted the slice work into `_perform_slice(req, job_id, workdir, install, stl_bytes)`
+  — an async function that runs as a background task. All `HTTPException` paths
+  now stamp `_PROGRESS[job_id]['error_status']` + `['error_detail']` instead of
+  raising; on success they stamp `['result']` with the full OrcaSliceResponse shape.
+- `POST /api/slice/orca/slice` now validates install + STL synchronously, spawns
+  `_perform_slice` via `asyncio.create_task`, and returns `202 {job_id, status,
+  engine}` immediately. Returns in <200ms (was up to ~5min).
+- New `GET /api/slice/orca/result/{job_id}` returns:
+  - `200 OrcaSliceResponse` when done.
+  - `202 {status, percent, stage}` while running.
+  - `404` for unknown / TTL-evicted jobs.
+  - Original `4xx/5xx {detail}` for failures (same shape the synchronous endpoint
+    used to raise, so `apiErrorMessage` works unchanged).
+- TTL eviction: `_evict_stale_progress_slots()` runs opportunistically on every
+  `/result` fetch; jobs older than 10 minutes get dropped to bound memory.
+
+**Frontend** (`/app/frontend/src/lib/api.js`, `/app/frontend/src/lib/useOrcaSlice.js`):
+- `orcaApi.slice()` now has a 30s axios timeout (was 6min) and just returns
+  `{job_id, status, engine}`.
+- New `orcaApi.sliceResult({jobId})` fetches `/result/{job_id}`.
+- `useOrcaSlice.runSlice` rewired as a 3-step flow:
+  1. `subscribeProgress(jobId)` — opens SSE EventSource with a fresh promise.
+  2. `orcaApi.slice(...)` — fast 202 acknowledgement.
+  3. `await progressDoneRef.current` — waits for SSE to report `done`.
+  4. `orcaApi.sliceResult({jobId})` — fetches the final GCODE.
+- SSE `done` / `error` events now resolve / reject the progressDone promise,
+  driving the rest of the flow.
+
+### Files touched
+- `backend/orca_engine.py` — major refactor of `orca_slice` + new `_perform_slice`,
+  `_job_error`, `_evict_stale_progress_slots`, `OrcaSliceAccepted`, `orca_result`.
+- `frontend/src/lib/api.js` — `orcaApi.slice` shortened, new `orcaApi.sliceResult`.
+- `frontend/src/lib/useOrcaSlice.js` — progressDoneRef promise + 3-step runSlice.
+- `backend/tests/test_orca_async_job.py` (new) — 11 integration tests covering
+  POST 202 / 503 / 400 / 413, GET 200 / 202 / 404 / 400 / 500 / error-passthrough,
+  and stale-slot eviction.
+
+### Verification
+- All 11 new async-job tests pass + 29 existing Orca-suite tests still green
+  (40 total in `tests/test_orca_*.py`).
+- Lint clean (ruff: 0 issues, eslint: 0 issues).
+- Live preview-pod curl: `POST /slice/orca/slice` returns `202 {"job_id":"smoke_test_...","status":"accepted","engine":"orca"}` in **169 ms** (was previously a 100+ s blocking call).
+- `/result/{job_id}` returns 400 on malformed id, 404 on unknown — both verified
+  against the deployed preview URL.
+
+### What the user needs to do
+- Redeploy to push iter-71 to production (forgeslicer.com).
+- After deploy, the next slice attempt should no longer hit 524 even for slices
+  that take 2+ minutes. Engine Comparison + GCODE export both auto-benefit from
+  the same hook.
