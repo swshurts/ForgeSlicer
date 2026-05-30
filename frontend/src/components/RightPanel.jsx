@@ -92,6 +92,8 @@ function ProfileSection({ onSavePrinter }) {
   const setPrinter = useScene((s) => s.setPrinter);
   const setFilament = useScene((s) => s.setFilament);
   const removeCommunityPrinter = useScene((s) => s.removeCommunityPrinter);
+  const myPrinterId = useScene((s) => s.myPrinterId);
+  const setMyPrinter = useScene((s) => s.setMyPrinter);
   const setS = useSliceSettings((s) => s.set);
   const autoDropOnRotate = useScene((s) => s.autoDropOnRotate);
   const setAutoDropOnRotate = useScene((s) => s.setAutoDropOnRotate);
@@ -186,13 +188,36 @@ function ProfileSection({ onSavePrinter }) {
       <label className="flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium flex items-center justify-between">
           Printer
-          <button
-            data-testid="save-printer-btn"
-            onClick={onSavePrinter}
-            className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-1 normal-case tracking-normal font-semibold"
-          >
-            <Upload size={11} /> Save mine
-          </button>
+          <span className="flex items-center gap-2">
+            {/* "Set as my default" — persists the currently-selected
+                printer to localStorage so the next workspace load
+                restores it automatically. Shows a filled star + amber
+                tint when this printer IS already the default. */}
+            <button
+              data-testid="set-default-printer-btn"
+              onClick={() => setMyPrinter(myPrinterId === printerId ? null : printerId)}
+              title={
+                myPrinterId === printerId
+                  ? "This is your default printer — click to clear"
+                  : "Make this my default printer (auto-load on next session)"
+              }
+              className={`text-[10px] flex items-center gap-1 normal-case tracking-normal font-semibold ${
+                myPrinterId === printerId
+                  ? "text-yellow-300 hover:text-yellow-200"
+                  : "text-slate-500 hover:text-yellow-300"
+              }`}
+            >
+              <Star size={11} fill={myPrinterId === printerId ? "#FDE047" : "none"} />
+              {myPrinterId === printerId ? "Default" : "Set default"}
+            </button>
+            <button
+              data-testid="save-printer-btn"
+              onClick={onSavePrinter}
+              className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-1 normal-case tracking-normal font-semibold"
+            >
+              <Upload size={11} /> Save mine
+            </button>
+          </span>
         </span>
         <select
           data-testid="printer-select"

@@ -76,6 +76,12 @@ export function loadProjectState(state, defaults = {}) {
     rulerTarget: null,
     // Pinned ruler dims DO survive save/load (designer's documentation).
     pinnedRulerDims: state.pinnedRulerDims || [],
+    // Hierarchical-project linkage. `loadProject` is also used by the
+    // Project Explorer's "Open" action which passes these through; for
+    // legacy `.forge.json` files there's no linkage, so default to
+    // null and let the breadcrumb stay hidden.
+    currentProjectId: state.currentProjectId || null,
+    currentProjectName: state.currentProjectName || null,
   };
 }
 
@@ -98,5 +104,9 @@ export function emptyProjectState() {
     rulerAnchor: null,
     rulerTarget: null,
     pinnedRulerDims: [],
+    // Clearing the scene detaches it from any hierarchical project so
+    // the breadcrumb collapses.
+    currentProjectId: null,
+    currentProjectName: null,
   };
 }

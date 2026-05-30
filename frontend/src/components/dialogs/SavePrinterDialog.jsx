@@ -7,6 +7,7 @@ export function SavePrinterDialog({ open, onClose }) {
   const buildVolume = useScene((s) => s.buildVolume);
   const addCommunityPrinter = useScene((s) => s.addCommunityPrinter);
   const setPrinter = useScene((s) => s.setPrinter);
+  const setMyPrinter = useScene((s) => s.setMyPrinter);
 
   const [form, setForm] = useState({
     brand: "",
@@ -78,6 +79,11 @@ export function SavePrinterDialog({ open, onClose }) {
       });
       addCommunityPrinter(created);
       setPrinter(created.id);
+      // "Save mine" implies "this IS mine" — mark it as the user's
+      // default so a returning workspace mount auto-restores it. They
+      // can change the default later from the Profile panel without
+      // having to re-publish.
+      setMyPrinter(created.id);
       setDone(created);
     } catch (e) {
       setError(e?.response?.data?.detail || e.message || String(e));
@@ -174,7 +180,7 @@ export function SavePrinterDialog({ open, onClose }) {
             <CheckCircle2 size={42} className="text-green-400" />
             <h3 className="text-base font-semibold text-white">Profile published!</h3>
             <p className="text-xs text-slate-400">
-              "{done.brand} {done.name}" is now in the Community group and selected for this project.
+              "{done.brand} {done.name}" is now in the Community group, selected for this project, and saved as <strong className="text-orange-300">your default printer</strong> — it'll auto-load next time you open the workspace.
             </p>
             <button onClick={onClose} className="mt-2 h-9 px-4 bg-slate-800 hover:bg-slate-700 text-white text-sm rounded">Close</button>
           </div>

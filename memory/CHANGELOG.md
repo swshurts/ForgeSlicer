@@ -1370,3 +1370,35 @@ Web-searched the community ecosystem. Conclusion: **no native non-Flatpak ARM64 
 - Engine compare dialog: live screenshot shows both tabs render correctly; Toolpaths tab gating works (disabled when one engine fails).
 
 Files: `frontend/src/components/dialogs/ProjectExplorerDialog.jsx` (DnD), `lib/useOrcaSlice.js` (new), `lib/gcodeParser.js` (new), `components/dialogs/ToolpathOverlayTab.jsx` (new), `components/dialogs/EngineComparisonDialog.jsx` (tab strip), `components/popovers/SlicerPopover.jsx` (refactored), `components/GcodePreviewDialog.jsx` (slimmed). Roadmap, CHANGELOG, PRD updated.
+
+---
+
+## Iteration 65 (2026-05-30) — Default printer + Project breadcrumb
+
+User request: *"By default the workspace should be set to the user's printer as defined by the 'Save Mine' option. They can then go to another make/model, if desired. Yes with breadcrumb selector, too."*
+
+### A) Default printer ("My Printer") that auto-restores on every session
+- ✅ **Store**: `myPrinterId` slot + `setMyPrinter(id)` action with auto-persist to localStorage key `forge.printer.mine`. Set `null` to clear.
+- ✅ **"Save Mine" implies "this is mine"** — `SavePrinterDialog.handleSubmit` now calls `setMyPrinter(created.id)` automatically after a successful publish. Success message updated to confirm: *"saved as your default printer — it'll auto-load next time you open the workspace"*.
+- ✅ **Workspace mount restore**: `Workspace.jsx` reads `myPrinterId` once on mount; if set AND not already active, it lazy-fetches the community printer list (so the id resolves even if the user's printer is a community one) and calls `setPrinter(myPrinterId)`. Intentionally does NOT re-apply on every printer change (would fight the user's manual pick).
+- ✅ **"Set default" star button** in RightPanel → Print tab, sitting next to "Save mine". Toggles the default ON (yellow filled star + "Default" label) / OFF ("Set default" muted slate label). Acts on whichever printer is currently selected.
+- ✅ **Verified end-to-end**: click set → LS holds the id → switch to a different printer → "Set default" text reverts (not the active default) → reload page → printer auto-restored to the LS value. Toggle off → LS cleared.
+
+### B) Hierarchical project breadcrumb
+- ✅ **Store**: `currentProjectId` + `currentProjectName` slots, `setCurrentProject(id, name)` action; cleared by `emptyProjectState()`.
+- ✅ **Wiring**: `ProjectExplorerDialog.handleOpen` calls `setCurrentProject(pid, name)` after loadProject. `handleSaveSceneInto` calls it too so subsequent edits stay linked.
+- ✅ **`ProjectBreadcrumb.jsx`**: walks up the parent chain in the flat meta list, renders `Folder › ancestor › ancestor › leaf · sceneName`. Each ancestor segment is a clickable button that fetches that project's `forge_json` and `loadProject`s it. Leaf is bold/static. Renders nothing when there's no linkage (keeps the toolbar lean for flat workflows).
+- ✅ **Mount**: between `SystemRow` and `EditRow` in `TopToolbar`. Workspace fetches the project meta list on mount + whenever the explorer dialog closes (so freshly-renamed projects re-resolve).
+- ✅ **Verified end-to-end**: opened deeply nested "Rocket → Engine → Fuel Pump", breadcrumb renders `Rocket › Engine › Fuel Pump · Fuel Pump Scene`. Click "Rocket" → toast "Switched to Rocket", scene swaps from 1 obj (Fuel Pump) to 0 objs (Rocket has no saved geometry, user confirmed via dialog).
+
+### Files
+- `lib/store.js` — `myPrinterId` + `currentProjectId` slots, `setMyPrinter` + `setCurrentProject` actions
+- `lib/projectIO.js` — passes `currentProjectId/Name` through load/empty state helpers
+- `components/dialogs/SavePrinterDialog.jsx` — auto-default on submit, message tweak
+- `components/RightPanel.jsx` — "Set default" star button next to "Save mine"
+- `components/Workspace.jsx` — mount-restore default printer + fetch project metas for the breadcrumb
+- `components/ProjectBreadcrumb.jsx` (new) — ancestry resolver + clickable chain
+- `components/TopToolbar.jsx` — mounts `<ProjectBreadcrumb>` between rows
+- `components/dialogs/ProjectExplorerDialog.jsx` — links scene to project on Open / Save-here
+
+Lint clean on all touched files. Self-verified via Playwright; backend `/api/projects` untouched (still iter-63 8/8 pass).

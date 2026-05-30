@@ -39,6 +39,7 @@
 | `lib/api.js` | Axios client for `/api/gallery`, `/api/components`, `/api/projects` |
 | `routes/projects.py` | Backend hierarchical project tree CRUD (per-user, auth-required) |
 | `dialogs/ProjectExplorerDialog.jsx` | Frontend tree UI with HTML5 drag-and-drop re-parent (iter 64) + click-based "Move into…" picker |
+| `ProjectBreadcrumb.jsx` | Topbar breadcrumb of `currentProjectId`'s ancestry; ancestor segments load that project's scene on click (iter 65) |
 | `lib/useOrcaSlice.js` | Hook: OrcaSlicer profile state, install status polling, SSE progress, runSlice/buildPayload (iter 64) |
 | `lib/gcodeParser.js` | Shared G-code parser + layer pairing + diff helpers (used by GcodePreviewDialog AND Compare Engines overlay) |
 | `dialogs/ToolpathOverlayTab.jsx` | New tab in EngineComparisonDialog: layer-by-layer canvas with built-in vs Orca diff highlight (iter 64) |

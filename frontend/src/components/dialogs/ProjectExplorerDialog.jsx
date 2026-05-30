@@ -63,6 +63,7 @@ export default function ProjectExplorerDialog({ open, onClose }) {
   const { user } = useAuth();
   const serialize = useScene((s) => s.serialize);
   const loadProject = useScene((s) => s.loadProject);
+  const setCurrentProject = useScene((s) => s.setCurrentProject);
   const projectName = useScene((s) => s.projectName);
 
   const [loading, setLoading] = useState(false);
@@ -247,6 +248,9 @@ export default function ProjectExplorerDialog({ open, onClose }) {
     try {
       const forge_json = serialize();
       await projectsApi.update(pid, { forge_json });
+      // Link the scene to this project so the breadcrumb (and future
+      // ctrl-S autosaves) target the right node automatically.
+      setCurrentProject(pid, nodeName);
       await refresh();
       toast.success(`Saved scene into “${nodeName}”`);
     } catch (err) {
@@ -269,6 +273,10 @@ export default function ProjectExplorerDialog({ open, onClose }) {
       } else {
         loadProject({ ...fj, projectName: fj.projectName || nodeName });
       }
+      // Set the linkage AFTER loadProject so the breadcrumb knows which
+      // node to anchor on. loadProject doesn't touch currentProjectId
+      // unless the incoming payload explicitly carries one.
+      setCurrentProject(pid, nodeName);
       toast.success(`Opened “${nodeName}”`);
       onClose();
     } catch (err) {

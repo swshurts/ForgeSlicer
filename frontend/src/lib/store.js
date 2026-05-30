@@ -199,9 +199,26 @@ export const useScene = create((set, get) => ({
   projectName: "Untitled Project",
   remixOf: null,  // gallery item id this project is remixing
 
+  // The id of the hierarchical project (from `/api/projects`) the
+  // current scene was loaded from, plus its name as a cheap label for
+  // the breadcrumb. Null when the scene is detached (e.g., fresh
+  // session or imported file). Set by ProjectExplorerDialog on Open
+  // and Save-here; cleared by `newProject()` / `loadProject` when the
+  // incoming payload has no project linkage.
+  currentProjectId: null,
+  currentProjectName: null,
+
   // ---- profiles ----
   printerId: defaultPrinterId,
   filamentId: defaultFilamentId,
+  // The user's preferred / "default" printer id. Persisted to localStorage
+  // so a returning user always lands on their hardware without having to
+  // re-pick it from the dropdown. Set automatically on first "Save mine"
+  // (publish to community) and editable via the "Set as default" toggle
+  // in RightPanel. `null` = no preference saved (uses the system default).
+  myPrinterId: typeof window !== "undefined" && window.localStorage
+    ? (window.localStorage.getItem("forge.printer.mine") || null)
+    : null,
   communityPrinters: [],         // [{ id, brand, name, build_x/y/z, max_*, default_*, submitter, uses }]
   autoDropOnRotate: typeof window !== "undefined" && window.localStorage
     ? window.localStorage.getItem("forge.autoDropOnRotate") === "true"
@@ -314,6 +331,22 @@ export const useScene = create((set, get) => ({
     });
   },
   setFilament: (id) => set({ filamentId: id }),
+
+  // Mark the currently-selected printer as "my default" — written to
+  // localStorage so the next workspace mount restores it automatically.
+  // Pass `null` to clear the preference.
+  setMyPrinter: (id) => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        if (id) window.localStorage.setItem("forge.printer.mine", id);
+        else window.localStorage.removeItem("forge.printer.mine");
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("persist myPrinterId failed:", err);
+      }
+    }
+    set({ myPrinterId: id || null });
+  },
   setAutoDropOnRotate: (v) => {
     if (typeof window !== "undefined" && window.localStorage) {
       try { window.localStorage.setItem("forge.autoDropOnRotate", v ? "true" : "false"); }
@@ -343,6 +376,13 @@ export const useScene = create((set, get) => ({
   // ---- scene mutations ----
   setProjectName: (name) => set({ projectName: name }),
   setRemixOf: (id) => set({ remixOf: id }),
+
+  // Mark the scene as belonging to a hierarchical project — read by
+  // the topbar breadcrumb. Pass `null, null` to detach.
+  setCurrentProject: (id, name) => set({
+    currentProjectId: id || null,
+    currentProjectName: name || null,
+  }),
 
   addPrimitive: (type, modifier = "positive") => {
     get().pushHistory();

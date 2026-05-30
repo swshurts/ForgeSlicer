@@ -18,6 +18,8 @@ import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
 import { computeRotatedBBox } from "../lib/geometry";
 import { takePendingImport } from "../lib/pendingImport";
 import { API } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import { projectsApi } from "../lib/api";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -74,6 +76,66 @@ export default function Workspace() {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const serialize = useScene((s) => s.serialize);
+  // Default printer + hierarchical project breadcrumb glue.
+  const myPrinterId = useScene((s) => s.myPrinterId);
+  const printerId = useScene((s) => s.printerId);
+  const setPrinter = useScene((s) => s.setPrinter);
+  const communityPrinters = useScene((s) => s.communityPrinters);
+  const setCommunityPrinters = useScene((s) => s.setCommunityPrinters);
+  const currentProjectId = useScene((s) => s.currentProjectId);
+  const [projectMetas, setProjectMetas] = useState([]);
+  const { user } = useAuth();
+
+  // Restore the user's saved default printer ON FIRST MOUNT only.
+  // We deliberately don't re-apply on every printer change — that would
+  // fight the user's manual pick. We also pull community printers first
+  // so the lookup table has the user's saved printer available before
+  // setPrinter() runs.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!myPrinterId) return;
+      // If the saved id is already the active one, nothing to do.
+      if (myPrinterId === printerId) return;
+      // Pull community printers if we don't yet have them — the user's
+      // saved printer might live in that list (not the built-ins).
+      try {
+        if (communityPrinters.length === 0) {
+          const { printersApi: api } = await import("../lib/api");
+          const list = await api.list();
+          if (!cancelled) setCommunityPrinters(list || []);
+        }
+      } catch (err) {
+        // Non-fatal — setPrinter falls back to the built-in default if
+        // it can't resolve the id.
+        // eslint-disable-next-line no-console
+        console.warn("could not fetch community printers for default restore:", err);
+      }
+      if (!cancelled) setPrinter(myPrinterId);
+    })();
+    return () => { cancelled = true; };
+    // Run once on mount. We intentionally don't depend on printerId so
+    // a subsequent manual change doesn't snap back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch the user's hierarchical project list when they're signed in
+  // — used by the breadcrumb in the top toolbar to resolve the ancestry
+  // of `currentProjectId`. Cheap (~one round-trip) and updates whenever
+  // the project explorer dialog closes (forced via a refresh tick).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!user) { setProjectMetas([]); return; }
+      try {
+        const list = await projectsApi.list();
+        if (!cancelled) setProjectMetas(Array.isArray(list) ? list : []);
+      } catch (err) {
+        if (!cancelled) setProjectMetas([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, projectExplorerOpen, currentProjectId]);
 
   // Auto-save the editable project JSON to the user's chosen file (if any).
   // Debounced ~3s after the last change so rapid edits don't thrash the
@@ -385,7 +447,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} projectMetas={projectMetas} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
