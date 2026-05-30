@@ -1,0 +1,52 @@
+{
+  "summary": "ForgeSlicer v3 Anchored Ruler — frontend-only Playwright via store API. 19 sub-tests run. 16 PASS, 3 FAIL. All 3 failures are pointer-events / click-handler regressions on the in-canvas anchor HUD (drei <Html> overlay): pill toggle, clear-anchor ×, and cycle-axes button do not respond to UI clicks even though their underlying store actions work when called programmatically. The target HUD's × and the toolbar buttons work fine.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RulerAnchorLayer / ruler-snap-pills", "issue": "Clicking [data-testid=ruler-snap-toggle-{kind}] (e.g., edge) does NOT toggle the kind off. State remains unchanged after click (force=True). Pill visibly renders sky/slate but the click never reaches toggleRulerSnapKind. Likely a drei <Html> pointer-events issue or button.onClick not wired.", "selector": "[data-testid=\"ruler-snap-toggle-edge\"]", "priority": "HIGH"},
+      {"component": "RulerAnchorLayer / ruler-anchor-hud × button", "issue": "Clicking [data-testid=ruler-clear-anchor-btn] does NOT clear the anchor (state stays set). However ruler-clear-target-btn × on target HUD works correctly. Suggests pointer-events on anchor-HUD subtree is broken/blocked.", "selector": "[data-testid=\"ruler-clear-anchor-btn\"]", "priority": "HIGH"},
+      {"component": "RulerAnchorLayer / ruler-cycle-axes-btn", "issue": "Clicking ruler-cycle-axes-btn does NOT change rulerAxesMode — it stays 'xyz' across 4 successive clicks. Programmatic store.cycleRulerAxes() works (confirmed during testing), so the issue is the button's onClick handler not firing.", "selector": "[data-testid=\"ruler-cycle-axes-btn\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "PASS_ruler_anchor_mode_btn_toggle": true,
+    "PASS_anchor_hud_renders_with_snapKind": "Text: '0.00·Cube(corner)XYZ×'",
+    "PASS_snap_pills_render_4_buttons_all_sky_on_by_default": true,
+    "PASS_pick_target_hint_visible": true,
+    "PASS_refuse_disable_last_pill": "Set kinds=['corner'], clicked corner pill, kinds stayed ['corner']",
+    "PASS_target_hud_same_object_measurement": "Anchor + target on same cube → target HUD shows 'Cube · (corner) · ×'",
+    "PASS_dim_labels_show_signed_mm_unicode_minus": "+20.00 mm / −20.00 mm (U+2212)",
+    "PASS_dim_label_axis_colors": "x→rose-400 border + rose-200 text, y→emerald-*, z→amber-*",
+    "PASS_zero_axis_hides_label": "Anchor and target with same X → ruler-dim-x absent from DOM, y/z present",
+    "PASS_clear_target_keeps_anchor": "× on target HUD works",
+    "PASS_escape_clears_anchor_and_target": true,
+    "PASS_cascade_delete_target_obj_keeps_anchor": true,
+    "PASS_cascade_delete_anchor_obj_clears_all": true,
+    "PASS_toolbar_off_clears_anchor_target": true,
+    "PASS_M_key_toggles_measure_mode": true,
+    "PASS_component_dim_regression": "beginComponentDimension + commitComponentDimension still creates pair",
+    "FAIL_snap_pill_click_toggle": "ruler-snap-toggle-edge click did not toggle off (anchor kept correctly though)",
+    "FAIL_clear_anchor_btn_click": "ruler-clear-anchor-btn did not clear anchor on UI click (store action works)",
+    "FAIL_cycle_axes_btn_click": "ruler-cycle-axes-btn did not cycle mode (store action works — programmatic confirmed)"
+  },
+  "test_report_links": [],
+  "action_items": [
+    "RCA the click handler / pointer-events on the anchor-HUD subtree of RulerAnchorLayer in /app/frontend/src/components/Viewport.jsx (lines ~620-810). The target HUD × works but the anchor HUD ×, cycle-axes button, and snap-pills inside the anchor HUD do NOT. Common cause: a parent <Html> overlay with `pointerEvents:'none'` while a sibling HUD has `pointerEvents:'auto'` — OR an absolute-positioned tooltip overlapping these buttons. Inspect onClick / onPointerDown wiring and `style={{ pointerEvents: 'auto' }}` on the wrapper. Note from screenshot: COR pill is also missing visually from the snap-pills row in some renderings — verify all 4 pills render.",
+    "Verify the same fix unblocks toggleRulerSnapKind, clearRulerAnchor, and cycleRulerAxes from UI clicks (store actions themselves are correct — programmatic calls work)."
+  ],
+  "critical_code_review_comments": [
+    "Viewport.jsx is large; ruler logic could be extracted to a dedicated /lib/RulerAnchorLayer.jsx for testability.",
+    "Three of the ruler HUD click handlers fail silently. Add a simple console.warn in dev mode when the click target's onClick fires to ease future debugging.",
+    "Consider adding e.stopPropagation() in HUD buttons to avoid R3F canvas-pointer capture issues."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped", "frontend": "84% (16/19)"},
+  "test_credentials": "session_token=st_test_help_1780096781061 (workspace cookie)",
+  "seed_data_creation": "Created Cube primitives programmatically via window.__forgeStore.getState().addPrimitive('cube'). Cleaned up via removeObject within tests.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use page.goto('/workspace') not '/'. Use window.__forgeStore to manipulate state (R3F canvas mesh clicks are flaky). Test cube spawns at [0,10,0] with bbox min=[-10,0,-10], max=[10,20,10]. The 3 failing UI clicks (snap pill, clear-anchor ×, cycle-axes) reproduce with both .click() and .click(force=True). Programmatic store actions toggleRulerSnapKind / clearRulerAnchor / cycleRulerAxes ALL work — confirmed by setting state directly. So the bug is purely in the JSX click wiring inside the anchor-HUD subtree of RulerAnchorLayer.",
+  "rca_of_the_issue": "Click events on buttons inside the anchor-HUD R3F <Html> overlay are not reaching their onClick handlers. The target-HUD × (a separate <Html>) works correctly, isolating the issue to the anchor-HUD <Html> wrapper. Most likely cause: missing `style={{ pointerEvents: 'auto' }}` on that <Html>'s root div, OR an overlapping transparent element above it intercepting pointer events. Could also be that buttons are using onClick but the parent <Html> sets `transform-origin` / CSS rotation that places them off the hitbox. Recommend: inspect bounding rects in DevTools, ensure pointerEvents:'auto', and ensure the anchor HUD <Html> uses prepend or zIndexRange that lifts it above the canvas."
+}

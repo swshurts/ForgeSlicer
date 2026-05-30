@@ -212,16 +212,21 @@ export const useScene = create((set, get) => ({
   pendingDimensionFromId: null,
 
   // ---- anchored ruler (TinkerCAD-style) ----
-  // Two-step workflow: first click sets the anchor (the "0.00" origin),
-  // second click picks a SINGLE target whose offsets show. Subsequent
-  // clicks REPLACE the target (most-recent wins) rather than piling up
-  // chips for every part on the bed. `rulerAxesMode` cycles through
-  // 'xyz' (all three) → 'x' → 'y' → 'z' → 'xyz' so the user can declutter
-  // when they only care about one axis.
+  // Two-step workflow: click 1 sets the anchor snap-point, click 2 sets
+  // the target snap-point. The same object can be both anchor & target
+  // (different snap points) so the user can measure intra-object
+  // diagonals — e.g., anchor at corner A of a cube, then snap to corner
+  // B of the same cube to read its body diagonal.
+  //
+  // Snap points are enumerated per object: 8 corners + 12 edge midpoints
+  // + 6 face centres + 1 centre = 27 candidates. `rulerSnapKinds` filters
+  // which families are eligible. Defaults to all four; user can restrict
+  // via the HUD pills (Corner / Edge / Face / Centre).
   rulerMode: false,
-  rulerAnchor: null,            // {worldPoint:[x,y,z], objId, objName, cornerKey} | null
-  rulerTargetId: null,          // string | null
+  rulerAnchor: null,            // {worldPoint:[x,y,z], objId, objName, snapKey, snapKind} | null
+  rulerTarget: null,            // {worldPoint:[x,y,z], objId, objName, snapKey, snapKind} | null
   rulerAxesMode: "xyz",         // 'xyz' | 'x' | 'y' | 'z'
+  rulerSnapKinds: ["corner", "edge", "face", "center"],
 
   // ---- cut tool ----
   // When cutMode is true, the viewport renders an adjustable cut plane that
@@ -658,7 +663,7 @@ export const useScene = create((set, get) => ({
         ),
         pendingDimensionFromId: removeSet.has(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
         rulerAnchor: (s.rulerAnchor && removeSet.has(s.rulerAnchor.objId)) ? null : s.rulerAnchor,
-        rulerTargetId: removeSet.has(s.rulerTargetId) ? null : s.rulerTargetId,
+        rulerTarget: (s.rulerTarget && removeSet.has(s.rulerTarget.objId)) ? null : s.rulerTarget,
       };
     });
     return incoming.map((o) => o.id);
@@ -680,7 +685,7 @@ export const useScene = create((set, get) => ({
       ),
       pendingDimensionFromId: s.pendingDimensionFromId === id ? null : s.pendingDimensionFromId,
       rulerAnchor: (s.rulerAnchor && s.rulerAnchor.objId === id) ? null : s.rulerAnchor,
-      rulerTargetId: s.rulerTargetId === id ? null : s.rulerTargetId,
+      rulerTarget: (s.rulerTarget && s.rulerTarget.objId === id) ? null : s.rulerTarget,
     }));
   },
 
@@ -703,7 +708,7 @@ export const useScene = create((set, get) => ({
       ),
       pendingDimensionFromId: ids.includes(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
       rulerAnchor: (s.rulerAnchor && ids.includes(s.rulerAnchor.objId)) ? null : s.rulerAnchor,
-      rulerTargetId: ids.includes(s.rulerTargetId) ? null : s.rulerTargetId,
+      rulerTarget: (s.rulerTarget && ids.includes(s.rulerTarget.objId)) ? null : s.rulerTarget,
     }));
   },
 
@@ -1172,14 +1177,14 @@ export const useScene = create((set, get) => ({
 
   // ---- Anchored ruler (TinkerCAD-style) ----
   setRulerMode: (on) => set({ rulerMode: !!on }),
-  // Anchor at an object's bbox-min corner. Caller computes the world point
-  // (we don't want to re-import geometry helpers into the store reducer).
-  setRulerAnchor: (anchor) => set({ rulerAnchor: anchor || null, rulerTargetId: null }),
-  clearRulerAnchor: () => set({ rulerAnchor: null, rulerTargetId: null }),
-  // Target object — shown as the one-and-only offset chip while the
-  // anchor stays put. Most recent click wins.
-  setRulerTarget: (objId) => set({ rulerTargetId: objId || null }),
-  clearRulerTarget: () => set({ rulerTargetId: null }),
+  // Anchor snap-point — caller computes via nearestSnapPoint() and
+  // hands us the full record. Resets the target on every new anchor so
+  // the user starts the second-click flow fresh.
+  setRulerAnchor: (anchor) => set({ rulerAnchor: anchor || null, rulerTarget: null }),
+  clearRulerAnchor: () => set({ rulerAnchor: null, rulerTarget: null }),
+  // Target snap-point — the second click. Most-recent click wins.
+  setRulerTarget: (target) => set({ rulerTarget: target || null }),
+  clearRulerTarget: () => set({ rulerTarget: null }),
   // Cycle the visible axes: xyz → x → y → z → xyz. Matches the
   // hamburger-icon toggle on the TinkerCAD ruler HUD.
   cycleRulerAxes: () => {
@@ -1187,6 +1192,17 @@ export const useScene = create((set, get) => ({
     const cur = get().rulerAxesMode || "xyz";
     const next = order[(order.indexOf(cur) + 1) % order.length];
     set({ rulerAxesMode: next });
+  },
+  // Toggle one snap-kind on/off. Refuses to disable the last enabled
+  // kind (we'd have nothing to snap to). 'corner' / 'edge' / 'face' / 'center'.
+  toggleRulerSnapKind: (kind) => {
+    const cur = get().rulerSnapKinds || [];
+    if (cur.includes(kind)) {
+      if (cur.length <= 1) return; // keep at least one
+      set({ rulerSnapKinds: cur.filter((k) => k !== kind) });
+    } else {
+      set({ rulerSnapKinds: [...cur, kind] });
+    }
   },
 
   clearScene: () => {
