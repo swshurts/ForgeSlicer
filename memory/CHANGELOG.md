@@ -1469,3 +1469,52 @@ A friendly, dismissible toast that surfaces the new Ctrl/Cmd+S preference the FI
 4. Reload + reopen project → toast does **NOT** fire again.
 
 Lint clean. No backend changes.
+
+---
+
+## Iteration 68 (2026-05-30) — Tip-of-the-Day library
+
+User request: *"Kind of like 'Tip of the Day'? Yes. Could there be a library of tips, that if the user wants to look at more, they hit a 'Next Tip' button?"*
+
+Generalised the iter-67 one-off tip into a proper library + carousel.
+
+### Library — `lib/tipsLibrary.js`
+Ten seed tips covering the workspace's most-discoverable-but-still-missed features:
+1. **Save preferences** (Ctrl+S → local/cloud/both) — has CTA "Open settings" that deep-links to Settings → Saving
+2. **Save Mine + Set default** — auto-load printer next session
+3. **Hierarchical projects** — Rocket → Engine → Fuel Pump structure
+4. **Breadcrumb jumping** — click ancestors to swap scenes
+5. **Compare engines** — built-in vs Orca side-by-side with toolpath overlay
+6. **Ruler pinning** — measurements persist into .forge.json
+7. **Voice commands** — hands-free workflow
+8. **Send to OrcaSlicer / Bambu / Prusa / Cura** — one-click desktop handoff
+9. **Sketch + Sweep** — 2D-to-3D pipes/vases/threaded shapes
+10. **`?` shortcut** for the full manual
+
+Each tip has `id`, `title`, `description`, optional `cta` (label + run callback), and optional `requiresAuth` (skipped for anonymous users).
+
+### Persistence model
+- localStorage key `forge.tips.seen` holds a JSON array of seen tip ids
+- Iter-67 migration: if `forge.tip.savePref.dismissed === "true"`, the `save-pref` tip is pre-seeded into the seen set so existing users aren't pestered again
+- Belt-and-suspenders: tips are also marked seen if the toast auto-fades after 14.5 s
+- `resetSeen()` exported for the "Reset" escape hatch
+
+### UI integration
+- **`Workspace.jsx`**: on signed-in user opening a project, `pickNextUnseen()` selects the first unseen tip and `showTip()` renders a sonner toast with:
+  - Primary action: the tip's CTA if defined (e.g., "Open settings"), otherwise "Next tip"
+  - Secondary: "Next tip" (when CTA exists) or "Got it" (no CTA)
+  - Description includes a live `Tip N of M` progress indicator
+- **`HelpDialog.jsx`**: new "Tip of the day" button in the dialog header dispatches `forgeslicer:show-tip` event → Workspace catches it and either fires the next unseen tip OR shows a "You've seen them all — Reset?" toast with a `Reset` action that calls `resetSeen()` and re-starts the carousel.
+
+### Testing (Playwright self-verified)
+- Cleared `forge.tips.seen` → opened a project → tip 1 of 10 fires with correct title.
+- "Next tip" cycles tip-by-tip; progress label updates each click ("Tip 2 of 10", "Tip 3 of 10", … "Tip 10 of 10" = the final entry).
+- After all 10 marked seen, "Tip of the day" button in Help dialog shows "You've seen every tip already" + Reset action.
+- localStorage state confirmed at each step.
+
+### Files
+- `lib/tipsLibrary.js` (new) — TIPS array, loadSeen, markSeen, resetSeen, pickNextUnseen, tipProgress
+- `components/Workspace.jsx` — refactored single-tip effect into `showTip(tip)` callback + Help-dialog event listener
+- `components/HelpDialog.jsx` — "Tip of the day" header button (Lightbulb icon)
+
+Lint clean. No backend changes.

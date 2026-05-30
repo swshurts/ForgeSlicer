@@ -41,6 +41,7 @@
 | `dialogs/ProjectExplorerDialog.jsx` | Frontend tree UI with HTML5 drag-and-drop re-parent (iter 64) + click-based "Move into…" picker |
 | `ProjectBreadcrumb.jsx` | Topbar breadcrumb of `currentProjectId`'s ancestry; ancestor segments load that project's scene on click (iter 65); cloud-save button + Ctrl+S behavior hint (iter 66) |
 | `lib/savePref.js` | Persisted preference: what does Ctrl/Cmd+S do? `local` (default) / `cloud` / `both` (iter 66) |
+| `lib/tipsLibrary.js` | Tip-of-the-day library (10 seed tips, seen-state in localStorage, carousel via "Next tip") (iter 68) |
 | `lib/useOrcaSlice.js` | Hook: OrcaSlicer profile state, install status polling, SSE progress, runSlice/buildPayload (iter 64) |
 | `lib/gcodeParser.js` | Shared G-code parser + layer pairing + diff helpers (used by GcodePreviewDialog AND Compare Engines overlay) |
 | `dialogs/ToolpathOverlayTab.jsx` | New tab in EngineComparisonDialog: layer-by-layer canvas with built-in vs Orca diff highlight (iter 64) |

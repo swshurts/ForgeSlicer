@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
   FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles, Scissors,
-  UserCircle, FileText,
+  UserCircle, FileText, Lightbulb,
 } from "lucide-react";
 import { H, P, Code, Kbd, Step } from "./help/typography";
 import VoiceCommands from "./help/sections/VoiceCommands";
@@ -443,6 +443,17 @@ export default function HelpDialog({ open, onClose, onTryVoice }) {
             <div className="text-sm font-semibold text-white">ForgeSlicer Help &amp; User Manual</div>
             <div className="text-[10px] text-slate-500">Press <Kbd>Esc</Kbd> to close · <Kbd>?</Kbd> to reopen anywhere in the workspace</div>
           </div>
+          <button
+            data-testid="help-tip-of-the-day-btn"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("forgeslicer:show-tip"));
+              onClose();
+            }}
+            className="h-8 px-2.5 rounded text-[11px] text-slate-300 hover:text-orange-300 hover:bg-slate-800 flex items-center gap-1.5 border border-slate-700 hover:border-orange-500/60"
+            title="Show the next unseen tip from the library"
+          >
+            <Lightbulb size={13} className="text-orange-400" /> Tip of the day
+          </button>
           <button
             data-testid="help-close-btn"
             onClick={onClose}

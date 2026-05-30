@@ -22,6 +22,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { projectsApi } from "../lib/api";
 import { getSaveBehavior } from "../lib/savePref";
 import { saveProjectJSON } from "../lib/exporters";
+import { pickNextUnseen, markSeen, tipProgress } from "../lib/tipsLibrary";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -205,47 +206,101 @@ export default function Workspace() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // One-time tip: when a signed-in user first opens a project after the
-  // new Ctrl/Cmd+S preference shipped (iter 66), surface a friendly toast
-  // explaining the default + how to switch it. The tip never fires again
-  // once the user clicks "Got it" or "Open settings" — we set a hard
-  // dismissed flag in localStorage. Anonymous users never see it (they
-  // can't open cloud projects in the first place).
-  const tipRef = React.useRef(false); // already-fired-this-session guard
-  useEffect(() => {
-    if (tipRef.current) return;
-    if (!user || !currentProjectId) return;
-    let dismissed = false;
-    try { dismissed = window.localStorage.getItem("forge.tip.savePref.dismissed") === "true"; }
-    catch { /* localStorage blocked → treat as dismissed so we don't pester */ dismissed = true; }
-    if (dismissed) return;
-    tipRef.current = true;
-    const ack = () => {
-      try { window.localStorage.setItem("forge.tip.savePref.dismissed", "true"); }
-      catch { /* noop */ }
+  // Tip-of-the-day system (iter 67 + iter 68).
+  // Surfaces a library of dismissible tips one at a time. The toast has
+  // a "Next tip" button that immediately fires the next unseen tip in
+  // the library, so a curious user can power through several in a row;
+  // a "Got it" button just dismisses the current one and goes quiet.
+  // Each tip's id is persisted as "seen" so it never reappears.
+  const tipFiredRef = React.useRef(false);
+
+  // Forward declare openSettings deep-link so the tip's CTA can use it.
+  const openSettingsDeepLink = React.useCallback((tabId) => {
+    if (tabId) setSettingsInitialTab(tabId);
+    setSettingsOpen(true);
+  }, []);
+
+  const showTip = React.useCallback((tip) => {
+    if (!tip) return;
+    const { seen, total } = tipProgress({ isSignedIn: !!userRef.current });
+    const ack = () => markSeen(tip.id);
+    const showNext = () => {
+      ack();
+      const next = pickNextUnseen({ isSignedIn: !!userRef.current });
+      if (next) {
+        // Slight delay so the previous toast finishes its dismiss
+        // animation — feels less abrupt than instant swap.
+        setTimeout(() => showTip(next), 200);
+      } else {
+        toast.success("That's all the tips for now.", { duration: 2500 });
+      }
     };
-    toast.message("Tip: Ctrl+S saves locally by default", {
-      description: "You can change the keyboard shortcut to save to your cloud project instead — or both — under Settings → Saving.",
-      duration: 12000,
-      action: {
-        label: "Open settings",
-        onClick: () => {
-          ack();
-          setSettingsInitialTab("saving");
-          setSettingsOpen(true);
-        },
-      },
-      cancel: {
-        label: "Got it",
-        onClick: ack,
-      },
+    const action = tip.cta
+      ? {
+          label: tip.cta.label,
+          onClick: () => {
+            ack();
+            try { tip.cta.run({ openSettings: openSettingsDeepLink }); }
+            catch (err) { /* eslint-disable-next-line no-console */
+              console.warn("tip CTA failed:", err);
+            }
+          },
+        }
+      : { label: "Next tip", onClick: showNext };
+    const cancel = tip.cta
+      ? { label: "Next tip", onClick: showNext }
+      : { label: "Got it", onClick: ack };
+    toast.message(tip.title, {
+      description: `${tip.description}\n\nTip ${seen + 1} of ${total}`,
+      duration: 14000,
+      action,
+      cancel,
     });
-    // Belt-and-suspenders: even if the user dismisses by waiting out the
-    // toast duration, mark it acknowledged so the tip doesn't fire on the
-    // very next project open.
-    const timer = setTimeout(ack, 12500);
-    return () => clearTimeout(timer);
-  }, [user, currentProjectId]);
+    // Belt-and-suspenders: even if the user lets the toast auto-fade,
+    // mark it seen so the same one doesn't reappear next time.
+    setTimeout(ack, 14500);
+  }, [openSettingsDeepLink]);
+
+  useEffect(() => {
+    if (tipFiredRef.current) return;
+    if (!user || !currentProjectId) return;
+    const next = pickNextUnseen({ isSignedIn: true });
+    if (!next) return;
+    tipFiredRef.current = true;
+    showTip(next);
+  }, [user, currentProjectId, showTip]);
+
+  // Manual trigger from the Help dialog's "Tip of the day" button. Fires
+  // the next-unseen tip, OR — if the user has already seen them all —
+  // a friendly "you're all caught up" toast with a Reset action so they
+  // can re-watch the carousel from the beginning.
+  useEffect(() => {
+    const onShowTip = () => {
+      const next = pickNextUnseen({ isSignedIn: !!userRef.current });
+      if (next) {
+        showTip(next);
+      } else {
+        toast.success("You've seen every tip already.", {
+          description: "Want a refresher? Reset the carousel and walk through them again.",
+          duration: 5000,
+          action: {
+            label: "Reset",
+            onClick: () => {
+              // Lazy-import so HelpDialog → Workspace doesn't pay this
+              // cost on every render.
+              import("../lib/tipsLibrary").then(({ resetSeen }) => {
+                resetSeen();
+                const first = pickNextUnseen({ isSignedIn: !!userRef.current });
+                if (first) setTimeout(() => showTip(first), 200);
+              });
+            },
+          },
+        });
+      }
+    };
+    window.addEventListener("forgeslicer:show-tip", onShowTip);
+    return () => window.removeEventListener("forgeslicer:show-tip", onShowTip);
+  }, [showTip]);
 
   // Auto-save the editable project JSON to the user's chosen file (if any).
   // Debounced ~3s after the last change so rapid edits don't thrash the
