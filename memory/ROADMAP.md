@@ -7,7 +7,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 ---
 
 ## 🔴 P0 — Blocking
-*(none open as of 2026-02-28)*
+*(none open as of 2026-05-30)*
 
 ## 🟡 P1 — Next features
 *(all P1 items complete as of iter 53)*
@@ -15,6 +15,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Fastener Pair macro~~ [DONE — iter 48]
 - ~~Texture v2 patterns + apply-to-face + UNC/UNF imperial fasteners~~ [DONE — iter 50]
 - ~~Composite library expansion — Countersinks / Gussets / Hex Pockets~~ [DONE — iter 50]
+- ~~Hierarchical Project Structure (Rocket → Engine → Fuel Pump)~~ [DONE — iter 63]
 
 ## 🟢 P2 — Polish
 - **Refactor `lib/store.js` further** — 1481→1300 lines after iter 59 (extracted I/O to projectIO.js). Further extraction candidates: the long boolean / cut / dimension action blocks could move into dedicated files.

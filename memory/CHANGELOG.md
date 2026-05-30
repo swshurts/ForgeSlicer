@@ -1288,3 +1288,47 @@ Verified end-to-end with a Fastener Pair (Bolt + Bolt Bore + Head Counterbore + 
 - Dim labels (`+20.00 mm × 3`) reflect the assembly's outer bbox
 - Ghost snap-dots cluster around the assembly perimeter, not on a single child
 
+
+---
+
+## Iteration 63 (2026-05-30) — Hierarchical Project Structure
+
+User request: *"Rethink the project concept to a Hierarchical structure (Project → Subproject → Component)."* — e.g. Rocket → Engine → Fuel Pump → Injector.
+
+Replaces the flat per-user project list with an unlimited-depth tree where each node optionally holds its own saved scene (`forge_json`).
+
+### Backend (`/app/backend/routes/projects.py`, mounted in `server.py`)
+- ✅ **MongoDB collection `projects`** with shape `{project_id, user_id, name, description, parent_id, forge_json, created_at, updated_at}`. Tree built via `parent_id` queries — no two-sided rewrites when re-parenting a subtree.
+- ✅ **CRUD endpoints (auth-required)**:
+  - `GET    /api/projects` — flat list of meta records (no `forge_json` blobs) for fast tree builds
+  - `POST   /api/projects` — create root (parent_id=null) or child node; validates parent ownership
+  - `GET    /api/projects/{pid}` — full ProjectDetail with `forge_json` blob
+  - `PUT    /api/projects/{pid}` — patch name / description / forge_json / parent_id; supports `__ROOT__` sentinel to detach
+  - `DELETE /api/projects/{pid}` — cascades to ALL descendants via BFS + `$in` delete
+- ✅ **Cycle detection** — walks up the candidate parent's ancestry; raises 400 if it hits the node being moved.
+- ✅ **Per-user isolation** — every read/write scoped by `user_id`; user B can't see / mutate user A's projects (returns 404).
+- ✅ **MongoDB Adherence** — every projection excludes `_id` so responses are JSON-safe.
+
+### Frontend
+- ✅ **`lib/api.js → projectsApi`** — thin axios wrapper (`.list / .get / .create / .update / .remove`), uses global `withCredentials=true`.
+- ✅ **`components/dialogs/ProjectExplorerDialog.jsx`** — full tree UI:
+  - Recursive `<ProjectNode>` with collapsible chevrons (FolderTree/Folder/FolderOpen icons)
+  - Inline create-child rows (root + per-node), inline rename, "Move into…" picker that grays out descendants client-side
+  - **Save here** (`projectsApi.update` with current `serialize()`) — confirms before overwriting
+  - **Open** (`projectsApi.get` → `loadProject`) — handles empty projects with a "clear & start fresh" confirm
+  - Custom delete-confirm modal showing cascade count ("delete this AND all N nested items")
+  - Sign-in nudge for anonymous users (route-protected so unreachable from /workspace, but kept for future deep-link)
+- ✅ **`components/toolbar/SystemRow.jsx`** — new FolderTree icon button `data-testid="open-project-explorer-btn"` between Import and Export.
+- ✅ **`Workspace.jsx`** — mounts `<ProjectExplorerDialog>` and wires `forgeslicer:open-dialog` event for `name='projects'`.
+
+### Testing
+Backend pytest at `/app/backend/tests/test_projects.py` — 8/8 pass:
+- Auth gate (401 on every verb when unauthenticated)
+- Create-list-get round-trip
+- Parent-child + grandchild nesting + object_count auto-derives from `forge_json.objects`
+- Cycle prevention (self-parent + descendant-parent)
+- Re-parent via `__ROOT__` sentinel
+- Cascade delete returns `deleted=N` + `ids` array
+- Per-user isolation (user B can't see user A's projects)
+
+Playwright E2E covered: dialog open, create root, create child, rename, move-into, save-here, open-empty (confirm dialog), delete-with-cascade-confirm. All flows pass.

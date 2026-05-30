@@ -36,7 +36,9 @@
 | `lib/geometry.js` | Primitive → BufferGeometry builders |
 | `lib/exporters.js` | STL (bin/ASCII) + 3MF (jszip) + STL/OBJ import + JSON project I/O |
 | `lib/slicer.js` | Synchronous plane-intersection slicer → Marlin-flavoured GCODE |
-| `lib/api.js` | Axios client for `/api/gallery` |
+| `lib/api.js` | Axios client for `/api/gallery`, `/api/components`, `/api/projects` |
+| `routes/projects.py` | Backend hierarchical project tree CRUD (per-user, auth-required) |
+| `dialogs/ProjectExplorerDialog.jsx` | Frontend tree UI: create/rename/move/delete/open/save-here for nested projects |
 
 ## Companion Documents
 - **CHANGELOG.md** — append-only iteration history (everything that has been implemented, with dates and rationale).
