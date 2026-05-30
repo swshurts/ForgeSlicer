@@ -1,0 +1,38 @@
+{
+  "summary": "RETEST of the 3 click-handler failures from iteration_31 (FAIL_snap_pill_click_toggle, FAIL_clear_anchor_btn_click, FAIL_cycle_axes_btn_click). Main agent's consolidation fix (3 sibling drei <Html> overlays merged into a single <Html> with vertical flex column wrapper data-testid='ruler-hud-stack' + pointerEvents:'auto') RESOLVES all 3 click-handler regressions. Frontend-only Playwright run via window.__forgeStore. All retested flows now PASS. Sanity checks (HUD content, pills count, axis-cycle UI label updates, same-object measurement, escape clearance, cascade-on-delete) also PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "PASS_hud_stack_renders": "Single <Html> wrapper with data-testid='ruler-hud-stack' present when anchor set",
+    "PASS_cycle_axes_btn_click_state": "4 clicks → store rulerAxesMode sequence ['xyz','x','y','z','xyz']",
+    "PASS_cycle_axes_label_updates": "Button label sequence ['X','Y','Z','XYZ'] matches clicks",
+    "PASS_snap_pill_click_toggle": "Click ruler-snap-toggle-edge: ['corner','edge','face','center'] → ['corner','face','center'] → ['corner','face','center','edge']",
+    "PASS_snap_pill_visual_transition": "Class transitions slate-800/60 (off) → sky-500/30 (on) confirmed",
+    "PASS_clear_anchor_btn_click": "Click ruler-clear-anchor-btn: rulerAnchor=null, rulerMode=true (preserved), ruler-hud-stack removed from DOM",
+    "PASS_anchor_hud_content": "Text '0.00 · Cube (corner) XYZ ×' present",
+    "PASS_pick_target_hint_visible": "ruler-pick-target-hint rendered when no target",
+    "PASS_snap_pills_count_4": "4 pills (corner/edge/face/center) all present",
+    "PASS_same_object_measurement": "Anchor + target on same Cube → ruler-dim-x/y/z each show '20' (mm) in xyz mode",
+    "PASS_escape_clears_anchor_and_target": "Escape → both anchor & target null",
+    "PASS_cascade_delete_anchor_obj_clears_anchor": "removeObject(anchor.objId) → rulerAnchor=null",
+    "PASS_m_key_toggles_measure_mode": "Press 'm' flips rulerMode"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The consolidation fix is clean: a single <Html position={[ax,ay,az]}> wraps the anchor card, snap-pills row, and pick-target hint in a flex-column with pointerEvents:'auto' on the wrapper and pointerEvents:'none' only on the hint. e.stopPropagation() is correctly used inside each button onClick to avoid R3F canvas pointer capture.",
+    "Viewport.jsx is now 1157 lines — extracting RulerAnchorLayer to its own file (e.g., /lib/RulerAnchorLayer.jsx) would aid testability and readability."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped", "frontend": "100% (13/13 retested + sanity)"},
+  "test_credentials": "session_token=st_test_help_1780096781061 (workspace cookie)",
+  "seed_data_creation": "Cube primitive via window.__forgeStore.getState().addPrimitive('cube'); ruler anchor seeded via setRulerAnchor({objId, objName:'Cube', snapKey:'corner-0', snapKind:'corner', worldPoint:[-10,0,-10]}); cleaned via removeObject between tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Anchor shape MUST include worldPoint:[x,y,z] (NOT x,y,z as scalar props) when calling setRulerAnchor — RulerAnchorLayer destructures anchor.worldPoint at line 633. The store has cycleRulerAxes (no setRulerAxesMode setter), so cycle to specific mode via repeated cycle calls. The 3 previously-failing UI clicks now reach their handlers thanks to the single-<Html> consolidation. Bundle hot-reload was active during tests.",
+  "rca_of_the_issue": "ROOT CAUSE (resolved): In iter_31, ruler-anchor-hud, ruler-snap-pills, and ruler-pick-target-hint were rendered as 3 separate <Html> components all positioned at the same world point (ax,ay,az). drei's <Html> renders each into its own absolutely-positioned DOM root, so the later-rendered overlays sat ON TOP of the earlier ones at identical x/y, swallowing pointer events. Only the target HUD (positioned at a different world point) and toolbar buttons (outside <Html>) worked. FIX: Wrap all three sub-cards in ONE <Html> root with style={{pointerEvents:'auto'}} + flex-col layout (Viewport.jsx lines 749-816). Now the cards occupy disjoint y-bands and each button's onClick fires correctly. Verified by ruler-cycle-axes-btn cycling state, ruler-snap-toggle-edge toggling kinds array, and ruler-clear-anchor-btn nulling rulerAnchor — all on real UI clicks."
+}

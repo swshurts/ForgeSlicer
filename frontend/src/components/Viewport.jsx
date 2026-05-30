@@ -739,74 +739,81 @@ function RulerAnchorLayer() {
           </mesh>
         ));
       })}
-      {/* === Anchor HUD card (top-of-anchor, draggable-style) === */}
+      {/* === Anchor HUD + snap-pills + hint — ONE consolidated <Html>
+          rooted at the anchor world point. Three previously-separate
+          overlays were layering on top of each other (all positioned at
+          the same world point with different CSS translates), causing
+          drei's <Html> click events to land on the wrong layer. Wrapping
+          them in a single positioned column means pointer events route
+          predictably and each button keeps its onClick. */}
       <Html position={[ax, ay, az]} center zIndexRange={[100, 0]} sprite={false}>
         <div
-          data-testid="ruler-anchor-hud"
-          className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-sky-400/70 rounded-md shadow-xl whitespace-nowrap select-none translate-x-3 -translate-y-7"
+          data-testid="ruler-hud-stack"
+          className="flex flex-col items-start gap-1 translate-x-3 -translate-y-7 select-none"
           style={{ pointerEvents: "auto" }}
         >
-          <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">0.00</span>
-          <span className="text-[10px] text-slate-400">·</span>
-          <span className="text-[10px] text-slate-200 max-w-[10ch] truncate">{anchor.objName}</span>
-          <span className="text-[8.5px] text-slate-500 ml-1">({anchor.snapKind})</span>
-          <button
-            data-testid="ruler-cycle-axes-btn"
-            onClick={(e) => { e.stopPropagation(); cycleRulerAxes(); }}
-            className="ml-1 w-5 h-5 rounded-sm bg-slate-800 hover:bg-sky-500/40 text-slate-300 hover:text-white flex items-center justify-center"
-            title={`Axes: ${axes.toUpperCase()} — click to cycle`}
-          >
-            <span className="text-[9px] font-mono font-bold leading-none">{axes.toUpperCase()}</span>
-          </button>
-          <button
-            data-testid="ruler-clear-anchor-btn"
-            onClick={(e) => { e.stopPropagation(); clearRulerAnchor(); }}
-            className="w-5 h-5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
-            title="Dismiss the anchor (turns the scale off)"
-          >
-            <span className="text-[12px] leading-none -mt-px">×</span>
-          </button>
-        </div>
-      </Html>
-      {/* === Snap-kind pill row (sits BELOW the anchor HUD) === */}
-      <Html position={[ax, ay, az]} center zIndexRange={[95, 0]} sprite={false}>
-        <div
-          data-testid="ruler-snap-pills"
-          className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-950/90 border border-sky-500/30 rounded-md shadow whitespace-nowrap select-none translate-x-3 translate-y-3 text-[9px]"
-          style={{ pointerEvents: "auto" }}
-        >
-          <span className="text-slate-500 uppercase tracking-wider text-[8.5px]">Snap:</span>
-          {["corner", "edge", "face", "center"].map((k) => {
-            const on = (snapKinds || []).includes(k);
-            return (
-              <button
-                key={k}
-                data-testid={`ruler-snap-toggle-${k}`}
-                onClick={(e) => { e.stopPropagation(); toggleRulerSnapKind(k); }}
-                className={`px-1.5 py-0.5 rounded font-mono uppercase tracking-wider ${
-                  on ? "bg-sky-500/30 text-sky-100 border border-sky-400/60"
-                     : "bg-slate-800/60 text-slate-500 border border-slate-700/60"
-                }`}
-                title={`Toggle snapping to ${k}s`}
-              >
-                {k.slice(0, 3)}
-              </button>
-            );
-          })}
-        </div>
-      </Html>
-      {/* === Hint when no target yet === */}
-      {!target && (
-        <Html position={[ax, ay, az]} center zIndexRange={[80, 0]} sprite={false}>
+          {/* --- Anchor card --- */}
           <div
-            data-testid="ruler-pick-target-hint"
-            className="px-2 py-1 bg-sky-950/95 border border-sky-500/40 text-sky-200 text-[10px] rounded-md shadow whitespace-nowrap select-none translate-y-10"
-            style={{ pointerEvents: "none" }}
+            data-testid="ruler-anchor-hud"
+            className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-sky-400/70 rounded-md shadow-xl whitespace-nowrap"
           >
-            Click a 2nd point (any part, even this one) to measure
+            <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">0.00</span>
+            <span className="text-[10px] text-slate-400">·</span>
+            <span className="text-[10px] text-slate-200 max-w-[10ch] truncate">{anchor.objName}</span>
+            <span className="text-[8.5px] text-slate-500 ml-1">({anchor.snapKind})</span>
+            <button
+              data-testid="ruler-cycle-axes-btn"
+              onClick={(e) => { e.stopPropagation(); cycleRulerAxes(); }}
+              className="ml-1 w-5 h-5 rounded-sm bg-slate-800 hover:bg-sky-500/40 text-slate-300 hover:text-white flex items-center justify-center"
+              title={`Axes: ${axes.toUpperCase()} — click to cycle`}
+            >
+              <span className="text-[9px] font-mono font-bold leading-none">{axes.toUpperCase()}</span>
+            </button>
+            <button
+              data-testid="ruler-clear-anchor-btn"
+              onClick={(e) => { e.stopPropagation(); clearRulerAnchor(); }}
+              className="w-5 h-5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
+              title="Dismiss the anchor (turns the scale off)"
+            >
+              <span className="text-[12px] leading-none -mt-px">×</span>
+            </button>
           </div>
-        </Html>
-      )}
+          {/* --- Snap-kind pills --- */}
+          <div
+            data-testid="ruler-snap-pills"
+            className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-950/90 border border-sky-500/30 rounded-md shadow whitespace-nowrap text-[9px]"
+          >
+            <span className="text-slate-500 uppercase tracking-wider text-[8.5px]">Snap:</span>
+            {["corner", "edge", "face", "center"].map((k) => {
+              const on = (snapKinds || []).includes(k);
+              return (
+                <button
+                  key={k}
+                  data-testid={`ruler-snap-toggle-${k}`}
+                  onClick={(e) => { e.stopPropagation(); toggleRulerSnapKind(k); }}
+                  className={`px-1.5 py-0.5 rounded font-mono uppercase tracking-wider ${
+                    on ? "bg-sky-500/30 text-sky-100 border border-sky-400/60"
+                       : "bg-slate-800/60 text-slate-500 border border-slate-700/60"
+                  }`}
+                  title={`Toggle snapping to ${k}s`}
+                >
+                  {k.slice(0, 3)}
+                </button>
+              );
+            })}
+          </div>
+          {/* --- Pick-target hint (only while no target) --- */}
+          {!target && (
+            <div
+              data-testid="ruler-pick-target-hint"
+              className="px-2 py-1 bg-sky-950/95 border border-sky-500/40 text-sky-200 text-[10px] rounded-md shadow whitespace-nowrap"
+              style={{ pointerEvents: "none" }}
+            >
+              Click a 2nd point (any part, even this one) to measure
+            </div>
+          )}
+        </div>
+      </Html>
       {/* === Target HUD — small "name (snap kind) · × " card at target === */}
       {target && (
         <Html position={[tx, ty, tz]} center zIndexRange={[100, 0]} sprite={false}>
