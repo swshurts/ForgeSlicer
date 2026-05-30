@@ -1152,3 +1152,28 @@ A four-feature batch that landed in one session.
 NEW: `lib/componentDimensions.js`, `lib/tutorialSuggestions.js`, `lib/projectIO.js`, `components/help/typography.jsx`, `components/help/voiceLexicon.js`, `components/help/sections/VoiceCommands.jsx`, `components/help/sections/Tutorials.jsx`, `frontend/tests/tutorial-suggestions.mjs`.
 EDITED: `lib/store.js`, `components/Viewport.jsx`, `components/ContextMenu.jsx`, `components/HelpDialog.jsx`.
 
+
+## Iteration 60 (2026-05-30) — TinkerCAD-style Anchored Ruler
+User shared a TinkerCAD screenshot showing the "anchored ruler" feature (drop a 0.00 origin at a corner, then read signed offsets to other parts) and asked us to add it alongside the existing centerpoint-pair dimension tool. Both tools now coexist.
+
+### What was built
+- ✅ **New toolbar button** — `ruler-anchor-mode-btn` (lucide `Anchor` icon, sits next to the existing `measure-mode-btn`). Toggles a global `rulerMode` boolean.
+- ✅ **Click-to-anchor** — when mode is on, clicking any object snaps the anchor to that object's nearest bbox corner (8 corners considered; Euclidean distance from the click world-point picks the winner). Pure math lives in `lib/rulerAnchor.js` (`bboxCorners`, `nearestCorner`, `offsetToObject`).
+- ✅ **Blue 3D ruler scale** — once anchored, three blue dashed axis rays extend from the anchor across the build plate (X horizontal, Y vertical, Z depth). Axes can be filtered via the HUD `cycleRulerAxes` button: `XYZ → X → Y → Z → XYZ`.
+- ✅ **Anchor HUD card** — small TinkerCAD-style panel at the anchored corner showing `0.00 · <name> · XYZ · ×`. The × dismisses the anchor (mode stays on); the axis-cycle button cycles which directions show.
+- ✅ **Per-object offset chips** — every visible non-anchored object gets a chip with `X +Δ mm · Y +Δ mm · Z +Δ mm` color-coded per axis (rose/emerald/amber). Values are signed and live — drag any part and its chip updates.
+- ✅ **Escape key** clears the anchor first (then pending dimension pick, then selection) — verified.
+- ✅ **Cascade-on-delete** — deleting the anchored part clears the anchor; deleting any other part just removes that part's chip.
+- ✅ **clearScene / loadProject** both reset `rulerAnchor` to null (annotation, not model state — same convention as Blender's viewport overlay).
+- ✅ **Coexistence** — the existing centerpoint-pair dimension tool (right-click `Measure to…`) is untouched and still works. The two are complementary: pair-dim gives centre-to-centre, ruler gives anchor-to-corner-of-each-part.
+
+### Bug found & fixed mid-iteration
+- Initially the toolbar toggle didn't clear `rulerAnchor` on ON→OFF transition, so re-toggling resurrected the old anchor. Fixed by adding `if (rulerMode) clearRulerAnchor()` in the onClick before `setRulerMode(!rulerMode)`. (Reported by testing agent iter-30 as T8 PARTIAL.)
+
+### Testing
+- `/app/test_reports/iteration_30.json` — **12/13 PASS** initial; the T8 latent bug was the only flag and is now fixed. Validated: button toggling, anchor HUD render, signed-offset chip values (e.g. X −3.00 mm, Y +0.00 mm, Z +4.00 mm), axis cycle XYZ→X→Y→Z→XYZ with correct DOM presence, × dismiss keeps mode on, Esc clears anchor, cascade-on-delete (both directions), live chip updates on drag, AND regressions on measure-mode + component-pair dim all pass.
+
+### Files
+- NEW: `lib/rulerAnchor.js` (pure math).
+- EDITED: `lib/store.js` (state + actions + cascade cleanup), `lib/projectIO.js` (reset on load/clear), `components/Viewport.jsx` (RulerAnchorLayer + RulerOffsetChip + click routing), `components/toolbar/EditRow.jsx` (toolbar button + ON→OFF anchor clear), `components/toolbar/useToolbarShortcuts.js` (Escape).
+

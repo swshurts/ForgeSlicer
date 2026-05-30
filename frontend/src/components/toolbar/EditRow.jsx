@@ -52,6 +52,7 @@ export default function EditRow({
   const setMeasureMode = useScene((s) => s.setMeasureMode);
   const rulerMode = useScene((s) => s.rulerMode);
   const setRulerMode = useScene((s) => s.setRulerMode);
+  const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
 
   // Single source of truth for the seven popover buttons. Adding a new
   // popover means adding one entry here + a render case in TopToolbar.
@@ -123,7 +124,13 @@ export default function EditRow({
       <IconBtn
         active={rulerMode}
         testid="ruler-anchor-mode-btn"
-        onClick={() => setRulerMode(!rulerMode)}
+        onClick={() => {
+          // Mode ON -> OFF: also drop any stale anchor so re-toggling
+          // doesn't resurrect the old one. Verified by iter-30 testing
+          // agent (T8) — without this, rulerAnchor stayed populated.
+          if (rulerMode) clearRulerAnchor();
+          setRulerMode(!rulerMode);
+        }}
         title="Anchor Ruler — click an object to drop a 0-point on the bed, then read offsets to other parts"
       >
         <Anchor size={16} />
