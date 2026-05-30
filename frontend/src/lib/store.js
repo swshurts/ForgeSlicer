@@ -13,6 +13,7 @@ import {
 } from "./composites";
 import { duplicateSelectedDelta, mirrorSelectedInPlaceDelta } from "./selectionActions";
 import { buildCutDelta } from "./cutActions";
+import { subdivideObject } from "./subdivide";
 import {
   applyTranslate,
   applyScaleMul,
@@ -1155,6 +1156,37 @@ export const useScene = create((set, get) => ({
 
   setCutMode: (v) => set({ cutMode: !!v }),
   setCutPlane: (patch) => set((st) => ({ cutPlane: { ...st.cutPlane, ...patch } })),
+
+  // Subdivide an oversized object using a manual or auto-computed list
+  // of axis-aligned planar cuts. The source object is REPLACED in-scene
+  // by every resulting piece (plus connectors if requested). Lands as a
+  // single undo step.
+  //
+  // `objectId`     — id of the scene object to subdivide
+  // `cuts`         — { x: [worldX, ...], y: [worldY, ...], z: [worldZ, ...] }
+  // `connectors`   — { kind: "none" | "dowel" | "dovetail", sizeMm: number }
+  //
+  // Returns { ok, count, error }.
+  applySubdivide: async (objectId, cuts, connectors = { kind: "none" }) => {
+    const src = get().objects.find((o) => o.id === objectId);
+    if (!src) return { ok: false, error: "Object not found" };
+    let newObjects = [];
+    try {
+      newObjects = await subdivideObject(src, cuts, newId, { connectors });
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+    if (newObjects.length === 0) {
+      return { ok: false, error: "Cuts didn't produce any new pieces" };
+    }
+    get().pushHistory();
+    set((st) => ({
+      objects: [...st.objects.filter((o) => o.id !== objectId), ...newObjects],
+      selectedIds: newObjects.map((o) => o.id),
+      selectedId: newObjects[newObjects.length - 1].id,
+    }));
+    return { ok: true, count: newObjects.length };
+  },
 
   // Apply the current cut plane to the currently-selected object(s).
   // `keep` is "both" | "upper" | "lower". Pure cut logic lives in

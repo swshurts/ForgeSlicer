@@ -994,6 +994,46 @@ function CanvasBridge({ bridgeRef }) {
   return null;
 }
 
+// Frame-to-bbox listener — when something (e.g., the oversize-detection
+// toast) dispatches `forgeslicer:frame-bbox` with `detail: { min, max }`,
+// pan the OrbitControls target to the bbox centre and move the camera
+// far enough out that the bbox plus a margin fits in view. Used so an
+// AI-imported giant model is visible immediately, with the build plate
+// looking small underneath it.
+function FrameBboxListener() {
+  const { camera, controls } = useThree();
+  useEffect(() => {
+    const onFrame = (e) => {
+      const d = e?.detail || {};
+      const { min, max } = d;
+      if (!min || !max) return;
+      const c = controls; // OrbitControls instance (makeDefault)
+      if (!c || !camera) return;
+      const cx = (min.x + max.x) / 2;
+      const cy = (min.y + max.y) / 2;
+      const cz = (min.z + max.z) / 2;
+      const sx = max.x - min.x;
+      const sy = max.y - min.y;
+      const sz = max.z - min.z;
+      // Distance: pick the largest axis size and back off so the bbox
+      // occupies ~60% of the FOV. Add a small margin so the build plate
+      // also fits in frame.
+      const maxDim = Math.max(sx, sy, sz, 1);
+      const fov = (camera.fov || 50) * (Math.PI / 180);
+      const dist = (maxDim / Math.tan(fov / 2)) * 0.9 + 60;
+      // Preserve the current view direction (offset from target).
+      const dir = new THREE.Vector3().subVectors(camera.position, c.target).normalize();
+      if (dir.lengthSq() < 1e-6) dir.set(1, 0.6, 1).normalize();
+      c.target.set(cx, cy, cz);
+      camera.position.set(cx + dir.x * dist, cy + dir.y * dist, cz + dir.z * dist);
+      c.update();
+    };
+    window.addEventListener("forgeslicer:frame-bbox", onFrame);
+    return () => window.removeEventListener("forgeslicer:frame-bbox", onFrame);
+  }, [camera, controls]);
+  return null;
+}
+
 
 export default function Viewport() {
   const objects = useScene((s) => s.objects);
@@ -1244,6 +1284,7 @@ export default function Viewport() {
         <PinnedRulerLayer />
         <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />
+        <FrameBboxListener />
 
         <OrbitControls
           makeDefault

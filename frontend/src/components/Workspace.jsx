@@ -23,6 +23,8 @@ import { projectsApi } from "../lib/api";
 import { getSaveBehavior } from "../lib/savePref";
 import { saveProjectJSON } from "../lib/exporters";
 import { pickNextUnseen, markSeen, tipProgress } from "../lib/tipsLibrary";
+import { reportSceneOversize } from "../lib/oversizeCheck";
+import SubdivideDialog from "./dialogs/SubdivideDialog";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -37,6 +39,10 @@ export default function Workspace() {
   // "saving"). Resets to "appearance" when the dialog closes so a normal
   // toolbar click always opens to the default tab.
   const [settingsInitialTab, setSettingsInitialTab] = useState("appearance");
+  // Subdivide dialog — opened by the oversize toast when a model bigger
+  // than the build plate enters the scene (import / paste / printer
+  // change). `subdivideTargetId` carries the object id to operate on.
+  const [subdivideTargetId, setSubdivideTargetId] = useState(null);
   const [projectExplorerOpen, setProjectExplorerOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
@@ -84,6 +90,7 @@ export default function Workspace() {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const serialize = useScene((s) => s.serialize);
+  const buildVolume = useScene((s) => s.buildVolume);
   // Default printer + hierarchical project breadcrumb glue.
   const myPrinterId = useScene((s) => s.myPrinterId);
   const printerId = useScene((s) => s.printerId);
@@ -301,6 +308,75 @@ export default function Workspace() {
     window.addEventListener("forgeslicer:show-tip", onShowTip);
     return () => window.removeEventListener("forgeslicer:show-tip", onShowTip);
   }, [showTip]);
+
+  // -------------------------------------------------------------------
+  // Oversize detection (iter 69).
+  // Subscribes to the scene's object list + active build volume and
+  // surfaces a toast the FIRST time any positive object exceeds the
+  // current printer. The toast offers a "Subdivide…" action that opens
+  // the SubdivideDialog on that object. We track already-toasted ids in
+  // a ref so the same banner doesn't reappear on every minor edit, but
+  // we DO re-fire when:
+  //   • A new oversized object enters the scene (id we haven't seen)
+  //   • The user switches to a smaller printer that pushes a previously-
+  //     fitting object over the edge.
+  // -------------------------------------------------------------------
+  const oversizeToastedRef = React.useRef(new Set());
+  const lastPrinterRef = React.useRef(null);
+  useEffect(() => {
+    // Printer change → clear the toasted-set so re-fits / re-overflows
+    // re-toast appropriately.
+    if (lastPrinterRef.current !== null && lastPrinterRef.current !== printerId) {
+      oversizeToastedRef.current = new Set();
+    }
+    lastPrinterRef.current = printerId;
+  }, [printerId]);
+  useEffect(() => {
+    // Tiny debounce so dragging a primitive past the bed edge doesn't
+    // fire dozens of toasts during the drag.
+    const t = setTimeout(() => {
+      const sceneObjs = useScene.getState().objects;
+      const bv = useScene.getState().buildVolume;
+      const reports = reportSceneOversize(sceneObjs, bv);
+      const seen = oversizeToastedRef.current;
+      // Forget ids that are no longer in the scene OR no longer oversized.
+      const stillIds = new Set(reports.map((r) => r.id));
+      for (const id of Array.from(seen)) if (!stillIds.has(id)) seen.delete(id);
+      // Toast the first new offender. We don't stack multiple toasts —
+      // one banner is sufficient; users can open Subdivide and handle the
+      // rest one at a time.
+      const fresh = reports.find((r) => !seen.has(r.id));
+      if (!fresh) return;
+      seen.add(fresh.id);
+      // Frame the viewport on the oversize bbox so the user can SEE it
+      // even if it spilled off-screen — the build plate will shrink
+      // relative to the model on screen.
+      try {
+        window.dispatchEvent(new CustomEvent("forgeslicer:frame-bbox", {
+          detail: { min: fresh.bbox.min, max: fresh.bbox.max },
+        }));
+      } catch { /* noop */ }
+      toast.warning(`“${fresh.name}” exceeds the build plate`, {
+        description:
+          `${fresh.size.x.toFixed(0)} × ${fresh.size.y.toFixed(0)} × ${fresh.size.z.toFixed(0)} mm — over by ` +
+          [fresh.over.x, fresh.over.y, fresh.over.z]
+            .filter((v) => v > 0.5)
+            .map((v) => `${v.toFixed(0)} mm`)
+            .join(", ") +
+          " on at least one axis.",
+        duration: 14000,
+        action: {
+          label: "Subdivide…",
+          onClick: () => setSubdivideTargetId(fresh.id),
+        },
+        cancel: {
+          label: "Ignore",
+          onClick: () => { /* user dismissed — seen-set already updated */ },
+        },
+      });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [objects, buildVolume, printerId]);
 
   // Auto-save the editable project JSON to the user's chosen file (if any).
   // Debounced ~3s after the last change so rapid edits don't thrash the
@@ -637,6 +713,11 @@ export default function Workspace() {
         }}
       />
       <ProjectExplorerDialog open={projectExplorerOpen} onClose={() => setProjectExplorerOpen(false)} />
+      <SubdivideDialog
+        open={subdivideTargetId !== null}
+        objectId={subdivideTargetId}
+        onClose={() => setSubdivideTargetId(null)}
+      />
       {importBanner && (
         <div
           data-testid="import-banner"
