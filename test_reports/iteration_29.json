@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 59 third-pass retest of ContextMenu.jsx tutorial-link gate fix. All 8 targeted UI scenarios PASS (8/8). The replacement of the strict single-select gate with `probeObj = (count===1 ? selectedObjs[0] : (count>1 && allInSameGroup ? selectedObjs[0] : null))` (ContextMenu.jsx lines 238-243) correctly surfaces 'Tutorial: Hardware Library' for the three previously-broken multi-child composites (Fastener Pair, Slot, Countersink), preserves the existing behaviour for single-child composites (Hex Pocket, Gusset), preserves the Sweep tutorial link, and does NOT introduce a false positive for a plain cube or for an arbitrary multi-selection of ungrouped objects.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/frontend/src/components/ContextMenu.jsx"],
+  "passed_checks": [
+    "Fastener Pair child right-click → ctx-tutorial-link-btn present, label = 'Tutorial: Hardware Library' (4 group members all share groupId)",
+    "Slot positive composite child right-click → ctx-tutorial-link-btn present, label = 'Tutorial: Hardware Library' (3 members, shared groupId)",
+    "Countersink composite child right-click → ctx-tutorial-link-btn present, label = 'Tutorial: Hardware Library' (2 members, shared groupId)",
+    "Hex Pocket child right-click → ctx-tutorial-link-btn present, label = 'Tutorial: Hardware Library' (no regression, single-object branch)",
+    "Gusset child right-click → ctx-tutorial-link-btn present, label = 'Tutorial: Hardware Library' (no regression, single-object branch)",
+    "Plain cube right-click → ctx-tutorial-link-btn ABSENT (no false positive)",
+    "Sweep right-click → ctx-tutorial-link-btn present, label = 'Tutorial: Sweep + Sketch' (existing behaviour preserved)",
+    "Multi-select cube + sphere (no shared groupId) right-click → context menu chrome reads '2 selected' AND ctx-tutorial-link-btn ABSENT (probeObj correctly resolves to null)"
+  ],
+  "failed_checks": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is minimal, well-scoped (single expression), and the inline comment block (lines 230-237) explains the intent clearly. No further refactor needed.",
+    "Note: the hint badge 'pdf' is appended to the rendered text — confirmed harmless, matches existing Item layout for other entries with hints (Drop ↓, Center ⊕, etc.)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "100% (8/8 live UI scenarios)"},
+  "test_credentials": "Reused seeded cookie session_token=st_test_help_1780096781061 on orca-cad-slice.preview.emergentagent.com",
+  "seed_data_creation": "Ephemeral scene objects created per test via UI buttons (add-fastener-pair-btn, add-slot-positive-btn, add-countersink-btn, add-hex-pocket-btn, add-gusset-btn, add-cube-positive-btn, add-sphere-positive-btn, add-sweep-positive-btn). Scene was reset between tests via /workspace navigation.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The two-layer tutorial-suggestion bug (lib/tutorialSuggestions.js groupId/groupName fallback + ContextMenu.jsx multi-select gate) is fully resolved as of this iteration. The Node unit test (frontend/tests/tutorial-suggestions.mjs, 14/14) is the regression guard for the data layer; the 8 live UI scenarios above are the guard for the consumer layer. Outliner row testids follow `scene-tree-item-<primitive-type>-<timestamp>-<index>`. Right-clicking a group-child auto-selects ALL group members (workspace behaviour), making 'count>1 && allInSameGroup' the trigger for the multi-member-composite branch. Independent multi-selections (different groupIds OR no groupIds) correctly fall through to probeObj=null.",
+  "rca of the issue": "Original RCA (iteration_28): the ctx-tutorial-link-btn render branch was gated to single-object selection (selectedObjs.length === 1), which broke when right-clicking children of multi-member composites (Fastener Pair / Slot / Countersink) because the workspace auto-selects ALL members of the group on right-click. Fix in this iteration: the gate was relaxed to `count === 1 || (count > 1 && allInSameGroup)`, with allInSameGroup already computed at line 210-211 from existing group-detection logic. Verified live: all three previously-failing composites now render the link, and two regression cases (plain cube, independent multi-select) correctly KEEP the link hidden."
+}

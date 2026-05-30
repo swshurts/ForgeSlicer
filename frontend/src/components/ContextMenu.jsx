@@ -227,11 +227,20 @@ export default function ContextMenu({ position, onClose }) {
   const pendingDimensionFromObj = pendingDimensionFromId
     ? useScene.getState().objects.find((o) => o.id === pendingDimensionFromId)
     : null;
-  // Tutorial suggestion for the right-clicked object (single-select only —
-  // multi-select is ambiguous about which suggestion to surface).
-  const tutorialSuggestion = (count === 1 && selectedObjs[0])
-    ? suggestTutorialFor(selectedObjs[0])
-    : null;
+  // Tutorial suggestion. Single-object selection is the common case, but
+  // when the user right-clicks a child of a composite group the workspace
+  // auto-selects ALL group members (e.g. Bolt + Nut for a Fastener Pair).
+  // We still want to surface the Hardware tutorial in that case, so the
+  // gate is "single object OR every selected object shares the same groupId".
+  // suggestTutorialFor() itself returns null when nothing applies, so the
+  // render branch ({tutorialSuggestion && …}) below collapses to nothing
+  // when irrelevant — no need for a stricter gate here.
+  const probeObj = (() => {
+    if (count === 1) return selectedObjs[0];
+    if (count > 1 && allInSameGroup) return selectedObjs[0];
+    return null;
+  })();
+  const tutorialSuggestion = probeObj ? suggestTutorialFor(probeObj) : null;
 
   // True when exactly one sketch primitive is selected — drives the
   // visibility of the "Use sketch as Sweep profile / path" items.
