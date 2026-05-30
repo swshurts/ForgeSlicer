@@ -1250,3 +1250,26 @@ Verified end-to-end with a Fastener Pair (Bolt + Bolt Bore + Head Counterbore + 
 - Dim labels (`+20.00 mm × 3`) reflect the assembly's outer bbox
 - Ghost snap-dots cluster around the assembly perimeter, not on a single child
 
+### Iteration 62-e (screen-space HUD + ghost-dot cleanup)
+User reported: *"Labels are still covering points I want to measure. There is a mirror image of the negative component under the 'Cube' label."*
+
+The first issue was the in-3D `<Html>` HUDs (anchor card + target card + snap-kind pills + pick-target hint) were welded to the anchor/target world points — they sat directly on top of the very corners the user wanted to read. The "mirror image" artefact was the 27-point ghost-dot snap preview bleeding through the cube's transparent material, creating a duplicate-looking blob below it.
+
+Fix:
+- ✅ **Moved all HUD chrome out of 3D** — new `RulerScreenHud` component renders ABOVE the Canvas as a fixed-position panel at `bottom-3 left-3`. Anchor card, target card, snap-kind pills, and pick-target hint all live there now. They never occlude geometry.
+- ✅ **Killed the 27-point ghost preview** — the bright preview cloud was overkill once the user already understood the snap-kind system. The 3D scene now shows ONLY the active anchor (sky sphere) and active target (amber sphere), each ~3.6 mm diameter. The "mirror image" artefact is gone.
+- ✅ **L-bracket axis segments + dim labels unchanged** — they're still in 3D space (you need them spatial), just no longer competing with HUD chrome.
+
+Files: `components/Viewport.jsx` — extracted `RulerScreenHud` (rendered outside Canvas), simplified `RulerAnchorLayer` to just two markers + L-bracket + 3 axis labels. ~210 lines of in-3D HTML overlay code removed.
+User reported: *"when I click on assembled components, it doesn't make the measurement to the center, for example, it will measure to the center of whatever subcomponent the cursor was on when clicked."*
+
+Fix: when the clicked object has a `groupId`, the ruler now resolves the snap target to the WHOLE assembly's unioned world bbox (not just the clicked sub-mesh). New helper `resolveSnapTargetForGroup(clickedObj, allObjects)` in `lib/rulerAnchor.js` enumerates every sibling sharing the `groupId`, unions their world bboxes, and returns a synthetic stand-in with the assembly's `groupId` as `id` and `groupName` as `name`. A new `__worldBbox` back-door in `componentDimensions.worldBboxOf` honours the pre-computed bbox so the existing snap-point helpers (`bboxCorners` / `bboxEdgeMidpoints` / `bboxFaceCenters` / `bboxCenterPoint`) work unmodified against the synthetic object.
+
+Cascade-on-delete extended via a new `rulerRefStillValid(rec, allObjects, removeSet)` helper that accepts the anchor/target record's `objId` being either a real obj id OR a groupId — the ruler stays valid as long as AT LEAST ONE remaining object has that id or has it as `groupId`. Removing one nut from a pair keeps the anchor on "Fastener Pair"; removing the last sibling clears it.
+
+Verified end-to-end with a Fastener Pair (Bolt + Bolt Bore + Head Counterbore + Nut):
+- Anchor HUD reads `0.00 · Fastener Pair (corner)` — the assembly, not "Bolt"
+- Target HUD reads `Fastener Pair (corner)` — same
+- Dim labels (`+20.00 mm × 3`) reflect the assembly's outer bbox
+- Ghost snap-dots cluster around the assembly perimeter, not on a single child
+

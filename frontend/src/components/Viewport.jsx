@@ -622,13 +622,7 @@ function RulerAnchorLayer() {
   const anchor = useScene((s) => s.rulerAnchor);
   const target = useScene((s) => s.rulerTarget);
   const axes = useScene((s) => s.rulerAxesMode);
-  const snapKinds = useScene((s) => s.rulerSnapKinds);
-  const objects = useScene((s) => s.objects);
   const buildVolume = useScene((s) => s.buildVolume);
-  const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
-  const clearRulerTarget = useScene((s) => s.clearRulerTarget);
-  const cycleRulerAxes = useScene((s) => s.cycleRulerAxes);
-  const toggleRulerSnapKind = useScene((s) => s.toggleRulerSnapKind);
   if (!mode || !anchor) return null;
   const [ax, ay, az] = anchor.worldPoint;
   const halfX = (buildVolume?.x || 220) / 2;
@@ -637,10 +631,8 @@ function RulerAnchorLayer() {
   const showX = axes === "xyz" || axes === "x";
   const showY = axes === "xyz" || axes === "y";
   const showZ = axes === "xyz" || axes === "z";
-  // When a target is set we ALSO draw the L-bracket axis segments from
-  // anchor → target and place a signed-distance label at each axis-
-  // segment midpoint (TinkerCAD-style). When no target yet, we just
-  // show the global bed scale + the pick-target hint.
+  // Endpoint coordinates: target if present, else fallback to anchor
+  // (so the bed-wide axis lines still draw with no target).
   const tx = target ? target.worldPoint[0] : ax;
   const ty = target ? target.worldPoint[1] : ay;
   const tz = target ? target.worldPoint[2] : az;
@@ -649,44 +641,36 @@ function RulerAnchorLayer() {
   const dz = tz - az;
   return (
     <group>
-      {/* === Bed-wide axis scale (always shown while anchored) === */}
+      {/* === Bed-wide axis scale === */}
       {showX && (
         <Line points={[[-halfX, ay, az], [halfX, ay, az]]}
-          color="#38BDF8" lineWidth={1.2} dashed dashSize={3} gapSize={2} depthTest={false} opacity={0.35} transparent />
+          color="#38BDF8" lineWidth={1.2} dashed dashSize={3} gapSize={2} depthTest={false} opacity={0.3} transparent />
       )}
       {showY && (
         <Line points={[[ax, 0, az], [ax, maxY, az]]}
-          color="#38BDF8" lineWidth={1.2} dashed dashSize={3} gapSize={2} depthTest={false} opacity={0.35} transparent />
+          color="#38BDF8" lineWidth={1.2} dashed dashSize={3} gapSize={2} depthTest={false} opacity={0.3} transparent />
       )}
       {showZ && (
         <Line points={[[ax, ay, -halfZ], [ax, ay, halfZ]]}
-          color="#38BDF8" lineWidth={1.2} dashed dashSize={3} gapSize={2} depthTest={false} opacity={0.35} transparent />
+          color="#38BDF8" lineWidth={1.2} dashed dashSize={3} gapSize={2} depthTest={false} opacity={0.3} transparent />
       )}
-      {/* === Anchor marker === */}
+      {/* === Anchor + target markers (no surrounding ghost dots — the 27-
+          point cloud was visually noisy and bled through transparent
+          parent geometry. We keep only the ACTIVE snap point as a clean
+          bright sphere. The user can still pick a different snap point
+          by clicking a different region of the part — the click handler
+          calls nearestSnapPoint() to resolve it.) === */}
       <mesh position={[ax, ay, az]} renderOrder={1001}>
         <sphereGeometry args={[1.8, 24, 24]} />
         <meshBasicMaterial color="#38BDF8" depthTest={false} />
       </mesh>
-      {/* === Target marker (when set) === */}
       {target && (
         <mesh position={[tx, ty, tz]} renderOrder={1001}>
           <sphereGeometry args={[1.8, 24, 24]} />
           <meshBasicMaterial color="#F59E0B" depthTest={false} />
         </mesh>
       )}
-      {/* === L-bracket axis segments anchor → target ===
-          Three solid coloured segments laid in series: ΔX along X
-          (rose), then ΔY along Y (emerald), then ΔZ along Z (amber).
-          Each segment is suppressed when its axis is filtered out by
-          the axis-cycle button.
-
-          Labels are offset PERPENDICULAR to the segment they describe
-          (8mm shift) so short measurements don't pile the text on top
-          of the snap-point markers at the endpoints. The shift
-          direction is chosen so each label sits on the "outside" of
-          the L-bracket bend (i.e., away from the next segment in the
-          chain). For zero `dx` we fall back to +X so the offset is
-          still deterministic. */}
+      {/* === L-bracket axis segments anchor → target === */}
       {target && showX && Math.abs(dx) > 0.001 && (
         <Line points={[[ax, ay, az], [tx, ay, az]]} color="#FB7185" lineWidth={2} depthTest={false} />
       )}
@@ -697,10 +681,6 @@ function RulerAnchorLayer() {
         <Line points={[[tx, ty, az], [tx, ty, tz]]} color="#FBBF24" lineWidth={2} depthTest={false} />
       )}
       {target && showX && Math.abs(dx) > 0.001 && (
-        // X label — Blender/TinkerCAD style: bare text, no panel. Uses a
-        // dark text-shadow stroke so the white numbers are legible against
-        // ANY background (orange parts, light bed, dark theme). The X-axis
-        // tint shows only as a small ring before the number.
         <Html
           position={[(ax + tx) / 2, ay - 6, az + 6]}
           center
@@ -709,7 +689,7 @@ function RulerAnchorLayer() {
         >
           <div
             data-testid="ruler-dim-x"
-            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none ruler-dim-label"
+            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none"
             style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
           >
             <span style={{ color: "#FB7185", marginRight: 3 }}>•</span>{fmtSignedMm(dx)}
@@ -725,7 +705,7 @@ function RulerAnchorLayer() {
         >
           <div
             data-testid="ruler-dim-y"
-            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none ruler-dim-label"
+            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none"
             style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
           >
             <span style={{ color: "#34D399", marginRight: 3 }}>•</span>{fmtSignedMm(dy)}
@@ -741,136 +721,10 @@ function RulerAnchorLayer() {
         >
           <div
             data-testid="ruler-dim-z"
-            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none ruler-dim-label"
+            className="font-mono text-[11px] font-semibold whitespace-nowrap select-none"
             style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
           >
             <span style={{ color: "#FBBF24", marginRight: 3 }}>•</span>{fmtSignedMm(dz)}
-          </div>
-        </Html>
-      )}
-      {/* === Snap-point indicators on the anchored object & the target
-          object (8/12/6/1 small ghost dots filtered by snapKinds). When
-          the anchor/target is an ASSEMBLY (groupId-resolved synthetic
-          object), we re-resolve it on every render so the ghost dots
-          land on the assembly's outer bbox, not the original child. */}
-      {[anchor, target].filter(Boolean).map((rec) => {
-        // rec.objId may be either a real object id OR a groupId.
-        const realObj = objects.find((x) => x.id === rec.objId);
-        let probe = realObj;
-        if (!realObj) {
-          // Likely a groupId — pick any sibling and resolve.
-          const sibling = objects.find((x) => x.groupId === rec.objId);
-          if (sibling) probe = resolveSnapTargetForGroup(sibling, objects);
-        } else if (realObj.groupId) {
-          probe = resolveSnapTargetForGroup(realObj, objects);
-        }
-        if (!probe) return null;
-        const pts = allSnapPoints(probe, snapKinds);
-        return pts.map((p) => (
-          <mesh key={`${rec.objId}-${p.key}`} position={[p.x, p.y, p.z]} renderOrder={999}>
-            <sphereGeometry args={[p.key === rec.snapKey ? 0.9 : 0.55, 12, 12]} />
-            <meshBasicMaterial
-              color={p.kind === "corner" ? "#94A3B8" : p.kind === "edge" ? "#7DD3FC" : p.kind === "face" ? "#C4B5FD" : "#A78BFA"}
-              opacity={p.key === rec.snapKey ? 1 : 0.45}
-              transparent
-              depthTest={false}
-            />
-          </mesh>
-        ));
-      })}
-      {/* === Anchor HUD + snap-pills + hint — ONE consolidated <Html>
-          rooted at the anchor world point. Three previously-separate
-          overlays were layering on top of each other (all positioned at
-          the same world point with different CSS translates), causing
-          drei's <Html> click events to land on the wrong layer. Wrapping
-          them in a single positioned column means pointer events route
-          predictably and each button keeps its onClick. */}
-      <Html position={[ax, ay, az]} center zIndexRange={[100, 0]} sprite={false}>
-        <div
-          data-testid="ruler-hud-stack"
-          className="flex flex-col items-start gap-1 translate-x-3 -translate-y-7 select-none"
-          style={{ pointerEvents: "auto" }}
-        >
-          {/* --- Anchor card --- */}
-          <div
-            data-testid="ruler-anchor-hud"
-            className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-sky-400/70 rounded-md shadow-xl whitespace-nowrap"
-          >
-            <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">0.00</span>
-            <span className="text-[10px] text-slate-400">·</span>
-            <span className="text-[10px] text-slate-200 max-w-[10ch] truncate">{anchor.objName}</span>
-            <span className="text-[8.5px] text-slate-500 ml-1">({anchor.snapKind})</span>
-            <button
-              data-testid="ruler-cycle-axes-btn"
-              onClick={(e) => { e.stopPropagation(); cycleRulerAxes(); }}
-              className="ml-1 w-5 h-5 rounded-sm bg-slate-800 hover:bg-sky-500/40 text-slate-300 hover:text-white flex items-center justify-center"
-              title={`Axes: ${axes.toUpperCase()} — click to cycle`}
-            >
-              <span className="text-[9px] font-mono font-bold leading-none">{axes.toUpperCase()}</span>
-            </button>
-            <button
-              data-testid="ruler-clear-anchor-btn"
-              onClick={(e) => { e.stopPropagation(); clearRulerAnchor(); }}
-              className="w-5 h-5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
-              title="Dismiss the anchor (turns the scale off)"
-            >
-              <span className="text-[12px] leading-none -mt-px">×</span>
-            </button>
-          </div>
-          {/* --- Snap-kind pills --- */}
-          <div
-            data-testid="ruler-snap-pills"
-            className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-950/90 border border-sky-500/30 rounded-md shadow whitespace-nowrap text-[9px]"
-          >
-            <span className="text-slate-500 uppercase tracking-wider text-[8.5px]">Snap:</span>
-            {["corner", "edge", "face", "center"].map((k) => {
-              const on = (snapKinds || []).includes(k);
-              return (
-                <button
-                  key={k}
-                  data-testid={`ruler-snap-toggle-${k}`}
-                  onClick={(e) => { e.stopPropagation(); toggleRulerSnapKind(k); }}
-                  className={`px-1.5 py-0.5 rounded font-mono uppercase tracking-wider ${
-                    on ? "bg-sky-500/30 text-sky-100 border border-sky-400/60"
-                       : "bg-slate-800/60 text-slate-500 border border-slate-700/60"
-                  }`}
-                  title={`Toggle snapping to ${k}s`}
-                >
-                  {k.slice(0, 3)}
-                </button>
-              );
-            })}
-          </div>
-          {/* --- Pick-target hint (only while no target) --- */}
-          {!target && (
-            <div
-              data-testid="ruler-pick-target-hint"
-              className="px-2 py-1 bg-sky-950/95 border border-sky-500/40 text-sky-200 text-[10px] rounded-md shadow whitespace-nowrap"
-              style={{ pointerEvents: "none" }}
-            >
-              Click a 2nd point (any part, even this one) to measure
-            </div>
-          )}
-        </div>
-      </Html>
-      {/* === Target HUD — small "name (snap kind) · × " card at target === */}
-      {target && (
-        <Html position={[tx, ty, tz]} center zIndexRange={[100, 0]} sprite={false}>
-          <div
-            data-testid="ruler-target-hud"
-            className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-amber-400/70 rounded-md shadow-xl whitespace-nowrap select-none translate-x-3 -translate-y-7"
-            style={{ pointerEvents: "auto" }}
-          >
-            <span className="text-[10px] text-slate-200 max-w-[10ch] truncate">{target.objName}</span>
-            <span className="text-[8.5px] text-slate-500">({target.snapKind})</span>
-            <button
-              data-testid="ruler-clear-target-btn"
-              onClick={(e) => { e.stopPropagation(); clearRulerTarget(); }}
-              className="w-4 h-4 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
-              title="Clear target — pick a new one"
-            >
-              <span className="text-[11px] leading-none -mt-px">×</span>
-            </button>
           </div>
         </Html>
       )}
@@ -878,11 +732,115 @@ function RulerAnchorLayer() {
   );
 }
 
-// RulerOffsetChip is no longer rendered (replaced by the L-bracket axis
-// labels above) but the export remains so any external test / debugger
-// that still imports it doesn't break at runtime. Safe to remove in a
-// future cleanup once we're confident nothing references it.
+// RulerOffsetChip — defunct stub kept to avoid breaking any external
+// import that may still reference it. The in-3D anchor HUD / target HUD
+// / snap-kind pills / pick-target hint were all moved into the screen-
+// space RulerScreenHud overlay (rendered outside the Canvas) in iter
+// 62-e because the world-welded overlays were occluding the very corners
+// the user wanted to measure.
 function RulerOffsetChip() { return null; }
+// can never occlude the snap points the user is trying to measure. Shows
+// anchor name / target name / snap-kind pills / axis-cycle / × controls
+// all in a single panel pinned to the bottom-left of the viewport (just
+// above the status bar). This was iteration 62-e: prior versions used
+// drei <Html> overlays welded to the world point and the user reported
+// labels covering the very corners they wanted to measure.
+function RulerScreenHud() {
+  const mode = useScene((s) => s.rulerMode);
+  const anchor = useScene((s) => s.rulerAnchor);
+  const target = useScene((s) => s.rulerTarget);
+  const axes = useScene((s) => s.rulerAxesMode);
+  const snapKinds = useScene((s) => s.rulerSnapKinds);
+  const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
+  const clearRulerTarget = useScene((s) => s.clearRulerTarget);
+  const cycleRulerAxes = useScene((s) => s.cycleRulerAxes);
+  const toggleRulerSnapKind = useScene((s) => s.toggleRulerSnapKind);
+  if (!mode || !anchor) return null;
+  return (
+    <div
+      data-testid="ruler-hud-stack"
+      className="absolute bottom-3 left-3 z-20 flex flex-col items-start gap-1 select-none"
+      style={{ pointerEvents: "auto" }}
+    >
+      <div
+        data-testid="ruler-anchor-hud"
+        className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-sky-400/70 rounded-md shadow-xl whitespace-nowrap"
+      >
+        <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">0.00</span>
+        <span className="text-[10px] text-slate-400">·</span>
+        <span className="text-[10px] text-slate-200 max-w-[14ch] truncate">{anchor.objName}</span>
+        <span className="text-[8.5px] text-slate-500 ml-1">({anchor.snapKind})</span>
+        <button
+          data-testid="ruler-cycle-axes-btn"
+          onClick={(e) => { e.stopPropagation(); cycleRulerAxes(); }}
+          className="ml-1 w-5 h-5 rounded-sm bg-slate-800 hover:bg-sky-500/40 text-slate-300 hover:text-white flex items-center justify-center"
+          title={`Axes: ${axes.toUpperCase()} — click to cycle`}
+        >
+          <span className="text-[9px] font-mono font-bold leading-none">{axes.toUpperCase()}</span>
+        </button>
+        <button
+          data-testid="ruler-clear-anchor-btn"
+          onClick={(e) => { e.stopPropagation(); clearRulerAnchor(); }}
+          className="w-5 h-5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
+          title="Dismiss the anchor (turns the scale off)"
+        >
+          <span className="text-[12px] leading-none -mt-px">×</span>
+        </button>
+      </div>
+      {target && (
+        <div
+          data-testid="ruler-target-hud"
+          className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-amber-400/70 rounded-md shadow-xl whitespace-nowrap"
+        >
+          <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">to</span>
+          <span className="text-[10px] text-slate-400">·</span>
+          <span className="text-[10px] text-slate-200 max-w-[14ch] truncate">{target.objName}</span>
+          <span className="text-[8.5px] text-slate-500 ml-1">({target.snapKind})</span>
+          <button
+            data-testid="ruler-clear-target-btn"
+            onClick={(e) => { e.stopPropagation(); clearRulerTarget(); }}
+            className="w-4 h-4 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
+            title="Clear target — pick a new one"
+          >
+            <span className="text-[11px] leading-none -mt-px">×</span>
+          </button>
+        </div>
+      )}
+      <div
+        data-testid="ruler-snap-pills"
+        className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-950/90 border border-sky-500/30 rounded-md shadow whitespace-nowrap text-[9px]"
+      >
+        <span className="text-slate-500 uppercase tracking-wider text-[8.5px]">Snap:</span>
+        {["corner", "edge", "face", "center"].map((k) => {
+          const on = (snapKinds || []).includes(k);
+          return (
+            <button
+              key={k}
+              data-testid={`ruler-snap-toggle-${k}`}
+              onClick={(e) => { e.stopPropagation(); toggleRulerSnapKind(k); }}
+              className={`px-1.5 py-0.5 rounded font-mono uppercase tracking-wider ${
+                on ? "bg-sky-500/30 text-sky-100 border border-sky-400/60"
+                   : "bg-slate-800/60 text-slate-500 border border-slate-700/60"
+              }`}
+              title={`Toggle snapping to ${k}s`}
+            >
+              {k.slice(0, 3)}
+            </button>
+          );
+        })}
+      </div>
+      {!target && (
+        <div
+          data-testid="ruler-pick-target-hint"
+          className="px-2 py-1 bg-sky-950/95 border border-sky-500/40 text-sky-200 text-[10px] rounded-md shadow whitespace-nowrap"
+          style={{ pointerEvents: "none" }}
+        >
+          Click a 2nd point (any part, even this one) to measure
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Tiny bridge component placed INSIDE the Canvas so we can grab camera / gl
 // / scene refs and use them from the outer DOM (marquee picker).
@@ -893,6 +851,7 @@ function CanvasBridge({ bridgeRef }) {
   }, [bridgeRef, camera, gl, scene]);
   return null;
 }
+
 
 export default function Viewport() {
   const objects = useScene((s) => s.objects);
@@ -1065,6 +1024,7 @@ export default function Viewport() {
           BOX SELECT — drag a rectangle (Ctrl to add)
         </div>
       )}
+      <RulerScreenHud />
       <Canvas
         shadows
         camera={{ position: [0, 160, 280], fov: 45, near: 0.1, far: 5000 }}
