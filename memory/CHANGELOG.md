@@ -1332,3 +1332,41 @@ Backend pytest at `/app/backend/tests/test_projects.py` — 8/8 pass:
 - Per-user isolation (user B can't see user A's projects)
 
 Playwright E2E covered: dialog open, create root, create child, rename, move-into, save-here, open-empty (confirm dialog), delete-with-cascade-confirm. All flows pass.
+
+---
+
+## Iteration 64 (2026-05-30) — DnD project tree + Orca refactor + Toolpath overlay
+
+User request: *"Yes, [DnD reorder] is an excellent idea. Proceed with that and then work on the P2's."*
+
+### A) Drag-and-drop in Project Explorer
+Native HTML5 DnD on every project row + a top-level drop zone. Drag a project onto another row to re-parent it, or drop onto the "New top-level project" row to detach to root.
+- ✅ **Pre-flight gating**: client-side `descendantMap` + `isLegalDrop()` short-circuit invalid drops (self-drop, drop on a descendant, no-op drop on current parent) BEFORE any API call. Backend cycle-detector remains the safety net.
+- ✅ **Visual feedback**: dragged row dims to opacity-40; legal drop targets show orange ring; top-level zone gets an orange dashed ring with a "drop here to move to top level" hint when applicable.
+- ✅ **Click-based "Move into…" picker preserved** — additive only. Either flow now works.
+
+### B) `useOrcaSlice` hook — SlicerPopover refactor
+Extracted ~140 lines of OrcaSlicer-specific machinery into `lib/useOrcaSlice.js`:
+- Persisted profile state (printer / process / filament + 5 inline tunables, all auto-syncing to localStorage)
+- Polled install-status fetcher with auto-stop once `installed=true`
+- EventSource-based live progress telemetry + automatic close on unmount AND on slice POST failure (closing a previously-leaked SSE — code-review fix)
+- `runSlice(objects)` action + `buildPayload()` helper
+
+Net result: SlicerPopover.jsx 522 → 382 lines (under the 500-line code-review threshold).
+
+### C) Compare Engines v2 — Toolpath overlay tab
+New tab inside `EngineComparisonDialog` that paints both engines' G-code on a single 2D canvas with a layer slider and a per-engine diff highlight.
+- ✅ **Shared parser** moved to `lib/gcodeParser.js` (used by both GcodePreviewDialog AND the new overlay). Includes `parseGcode`, `pairLayersByZ` (zip layers by Z-ordering, not index), `diffLayerPair` (O(n+m) hash-based set-intersect with direction-insensitive endpoints + tool-aware hash so multi-material distinctions don't get masked), `combinedBbox`.
+- ✅ **`ToolpathOverlayTab.jsx`** — canvas (480×480 fit-to-bbox), layer scrubber, three legend chips (Built-in / Orca / Shared) each with eye toggle. Colors: orange (built-in unique) / purple (orca unique) / slate-600 (shared).
+- ✅ **Tab strip** in EngineComparisonDialog: Metrics (existing table) + Toolpaths (new). Toolpaths tab auto-disables with a tooltip when only one engine succeeded — verified live on preview (Orca failed → tab dim-styled and unclickable).
+- ✅ Download buttons + "Run again" remain visible on BOTH tabs so the user never loses access.
+
+### D) Research outcome — ARM64 community OrcaSlicer
+Web-searched the community ecosystem. Conclusion: **no native non-Flatpak ARM64 headless binary exists** in 2026. Matszwe02's community build wraps OrcaSlicer in KasmVNC + Docker (~1 GB, full GUI) — heavier than our current Flatpak path. Recommendation: keep the Flathub aarch64 Flatpak. The ~280 MB GNOME runtime cost is the price of being on the only maintained ARM64 path.
+
+### Testing
+- Backend `/api/projects` test_projects.py — 8/8 regression pass.
+- Frontend DnD verified end-to-end via Playwright drag_and_drop: row-onto-row re-parent + row-onto-root-zone detach + click-based picker regression all green.
+- Engine compare dialog: live screenshot shows both tabs render correctly; Toolpaths tab gating works (disabled when one engine fails).
+
+Files: `frontend/src/components/dialogs/ProjectExplorerDialog.jsx` (DnD), `lib/useOrcaSlice.js` (new), `lib/gcodeParser.js` (new), `components/dialogs/ToolpathOverlayTab.jsx` (new), `components/dialogs/EngineComparisonDialog.jsx` (tab strip), `components/popovers/SlicerPopover.jsx` (refactored), `components/GcodePreviewDialog.jsx` (slimmed). Roadmap, CHANGELOG, PRD updated.

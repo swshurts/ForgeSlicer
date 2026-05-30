@@ -179,19 +179,32 @@ export function useOrcaSlice() {
       ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     ).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
     subscribeProgress(jobId);
-    const r = await orcaApi.slice({
-      stlBase64: b64,
-      jobId,
-      printerProfile: payload.printerProfile,
-      processProfile: payload.processProfile,
-      filamentProfile: payload.filamentProfile,
-      printerPresetName:  payload.printerPresetName,
-      printerVendor:      payload.printerVendor,
-      processPresetName:  payload.processPresetName,
-      processVendor:      payload.processVendor,
-      filamentPresetName: payload.filamentPresetName,
-      filamentVendor:     payload.filamentVendor,
-    });
+    let r;
+    try {
+      r = await orcaApi.slice({
+        stlBase64: b64,
+        jobId,
+        printerProfile: payload.printerProfile,
+        processProfile: payload.processProfile,
+        filamentProfile: payload.filamentProfile,
+        printerPresetName:  payload.printerPresetName,
+        printerVendor:      payload.printerVendor,
+        processPresetName:  payload.processPresetName,
+        processVendor:      payload.processVendor,
+        filamentPresetName: payload.filamentPresetName,
+        filamentVendor:     payload.filamentVendor,
+      });
+    } catch (err) {
+      // If the POST blows up (network / server error) we still need to
+      // close the EventSource so the user doesn't end up with a
+      // dangling SSE connection until they navigate away from the page.
+      if (progressSrcRef.current) {
+        try { progressSrcRef.current.close(); } catch { /* noop */ }
+        progressSrcRef.current = null;
+      }
+      setProgress(null);
+      throw err;
+    }
     return {
       gcode: r.gcode,
       stats: {

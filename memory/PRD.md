@@ -38,7 +38,10 @@
 | `lib/slicer.js` | Synchronous plane-intersection slicer → Marlin-flavoured GCODE |
 | `lib/api.js` | Axios client for `/api/gallery`, `/api/components`, `/api/projects` |
 | `routes/projects.py` | Backend hierarchical project tree CRUD (per-user, auth-required) |
-| `dialogs/ProjectExplorerDialog.jsx` | Frontend tree UI: create/rename/move/delete/open/save-here for nested projects |
+| `dialogs/ProjectExplorerDialog.jsx` | Frontend tree UI with HTML5 drag-and-drop re-parent (iter 64) + click-based "Move into…" picker |
+| `lib/useOrcaSlice.js` | Hook: OrcaSlicer profile state, install status polling, SSE progress, runSlice/buildPayload (iter 64) |
+| `lib/gcodeParser.js` | Shared G-code parser + layer pairing + diff helpers (used by GcodePreviewDialog AND Compare Engines overlay) |
+| `dialogs/ToolpathOverlayTab.jsx` | New tab in EngineComparisonDialog: layer-by-layer canvas with built-in vs Orca diff highlight (iter 64) |
 
 ## Companion Documents
 - **CHANGELOG.md** — append-only iteration history (everything that has been implemented, with dates and rationale).

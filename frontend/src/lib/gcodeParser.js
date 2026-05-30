@@ -183,7 +183,10 @@ export function pairLayersByZ(parsedA, parsedB) {
 
 // Quick endpoint hash so we can do an O(n+m) set-intersection per layer
 // instead of an O(n*m) double loop. `tolMm` quantises each coordinate
-// so near-matches collide on the same hash bucket.
+// so near-matches collide on the same hash bucket. The active tool index
+// is folded into the hash so two engines depositing the same path with
+// different filaments are NOT counted as "shared" — that would undersell
+// the multi-material work Orca does that the built-in slicer skips.
 function moveHash(m, tolMm) {
   // Make hash direction-insensitive by sorting endpoints lexicographically
   // before hashing.
@@ -191,7 +194,8 @@ function moveHash(m, tolMm) {
   const b = [m.x1, m.y1];
   const [p0, p1] = (a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])) ? [a, b] : [b, a];
   const q = (v) => Math.round(v / tolMm);
-  return `${q(p0[0])}_${q(p0[1])}|${q(p1[0])}_${q(p1[1])}`;
+  const tool = m.tool ?? 0;
+  return `${q(p0[0])}_${q(p0[1])}|${q(p1[0])}_${q(p1[1])}|t${tool}`;
 }
 
 // For a layer pair, partition each side's EXTRUDE moves into

@@ -27,10 +27,11 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53]
 - ~~**ARM64 OrcaSlicer**~~ [DONE — iter 54]
 - ~~**Compare Engines** (v1, metrics-only)~~ [DONE — iter 55]
-- **Compare Engines v2 — toolpath overlay** (deferred, user-confirmed): per-layer 3D toolpath rendering of BOTH slicers in different colors with a layer slider + diff highlight for segments only present in one engine.
+- ~~**Compare Engines v2 — toolpath overlay**~~ [DONE — iter 64, new Toolpaths tab in EngineComparisonDialog with layer slider + per-engine diff highlight]
 - ~~**Search for community OrcaSlicer ARM64 binaries**~~ [DONE — iter 63 research]
   - **Finding**: no native non-Flatpak ARM64 headless binary exists in 2026. The Matszwe02 community build wraps OrcaSlicer in KasmVNC + Docker (full GUI in a container, ~1 GB) — heavier than our Flatpak, not headless. Official path is Flathub aarch64 Flatpak (what we already use). **Recommendation**: keep the current Flatpak install. ~280 MB GNOME runtime is the cost of being on the only maintained ARM64 path.
-- **SlicerPopover refactor** — file at 545 lines after Compare Engines wiring (code-review threshold = 500). Natural extraction: `useOrcaSlice()` hook for the Orca branch of handleSlice + the inline subscribeProgress helper.
+- ~~**SlicerPopover refactor**~~ [DONE — iter 64, 522 → 382 lines via `useOrcaSlice` hook]
+- ~~**Project tree drag-and-drop**~~ [DONE — iter 64]
 - Live multi-user editing (CRDT / Yjs).
 - Photo → reference plane (drop a photo, snap dims to known features).
 
