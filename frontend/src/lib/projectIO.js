@@ -27,12 +27,17 @@ const DEFAULT_PROJECT_NAME = "Untitled Project";
  */
 export function serializeProject(state) {
   return {
-    version: 2,
+    version: 3,
     projectName: state.projectName,
     buildVolume: state.buildVolume,
     printerId: state.printerId,
     filamentId: state.filamentId,
     measurements: state.measurements,
+    // Pinned ruler measurements survive save/load — they're part of the
+    // designer's documentation, not just transient workspace state.
+    // Live anchor/target are intentionally NOT persisted (those are
+    // mid-action workflow state).
+    pinnedRulerDims: state.pinnedRulerDims || [],
     objects: state.objects.map((o) => ({
       ...o,
       geometry: o.geometry
@@ -69,7 +74,8 @@ export function loadProjectState(state, defaults = {}) {
     pendingMeasureObjId: null,
     rulerAnchor: null,
     rulerTarget: null,
-    pinnedRulerDims: [],
+    // Pinned ruler dims DO survive save/load (designer's documentation).
+    pinnedRulerDims: state.pinnedRulerDims || [],
   };
 }
 
