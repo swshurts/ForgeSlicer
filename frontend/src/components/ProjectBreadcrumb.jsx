@@ -14,11 +14,13 @@
 // Hidden entirely when there's no currentProjectId (anonymous user,
 // fresh scene, or imported file) — keeps the toolbar uncluttered for
 // the simple-flat-flow use case.
-import React, { useState } from "react";
-import { ChevronRight, FolderOpen, Loader2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ChevronRight, FolderOpen, Loader2, CloudUpload } from "lucide-react";
 import { toast } from "sonner";
 import { useScene } from "../lib/store";
 import { projectsApi, apiErrorMessage } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import { getSaveBehavior, subscribeSaveBehavior } from "../lib/savePref";
 
 // Walk up the parent chain from `pid` using the flat meta list, returning
 // the path from root to leaf (inclusive). Stops if a parent reference
@@ -43,7 +45,15 @@ export default function ProjectBreadcrumb({ projectMetas }) {
   const projectName = useScene((s) => s.projectName);
   const loadProject = useScene((s) => s.loadProject);
   const setCurrentProject = useScene((s) => s.setCurrentProject);
+  const serialize = useScene((s) => s.serialize);
+  const { user } = useAuth();
   const [loadingId, setLoadingId] = useState(null);
+  const [savingCloud, setSavingCloud] = useState(false);
+  // Mirror the Ctrl+S preference into local state so we can show a
+  // small hint in the breadcrumb ("Ctrl+S → cloud", etc.) without the
+  // component bypassing React's render path.
+  const [saveBehavior, setSaveBehaviorLocal] = useState(() => getSaveBehavior());
+  useEffect(() => subscribeSaveBehavior(setSaveBehaviorLocal), []);
 
   // Bail out silently when no linkage exists — keep the toolbar lean.
   if (!currentProjectId) return null;
@@ -70,6 +80,29 @@ export default function ProjectBreadcrumb({ projectMetas }) {
       toast.error(apiErrorMessage(err));
     } finally {
       setLoadingId(null);
+    }
+  };
+
+  // One-click save the current scene back into the linked project.
+  // This is the visible counterpart to the Ctrl+S preference — even
+  // users on "local" mode can still save to the cloud whenever they
+  // want via this button (so the keyboard shortcut never feels like
+  // the only path).
+  const handleCloudSave = async () => {
+    if (!user) {
+      toast.error("Sign in to save to the cloud");
+      return;
+    }
+    setSavingCloud(true);
+    try {
+      const payload = serialize();
+      const lastSegment = ancestry[ancestry.length - 1];
+      await projectsApi.update(currentProjectId, { forge_json: payload });
+      toast.success(`Saved into “${lastSegment?.name || "project"}”`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setSavingCloud(false);
     }
   };
 
@@ -115,6 +148,29 @@ export default function ProjectBreadcrumb({ projectMetas }) {
         data-testid="breadcrumb-scene-name"
       >
         {projectName || "Untitled"}
+      </span>
+
+      {/* Right-aligned actions: small cloud-save button + Ctrl+S hint.
+          The save button is ALWAYS available when a project is linked,
+          regardless of the user's Ctrl+S preference — so a "local
+          mode" user can still cloud-save with a single click. */}
+      <div className="flex-1" />
+      <button
+        data-testid="breadcrumb-cloud-save-btn"
+        onClick={handleCloudSave}
+        disabled={savingCloud}
+        title="Save the current scene into this project (Cmd/Ctrl+S can be configured to do this — see Settings → Saving)"
+        className="h-6 px-2 rounded text-[10px] font-semibold flex items-center gap-1 bg-slate-800 hover:bg-orange-500/20 hover:text-orange-300 text-slate-300 border border-slate-700 disabled:opacity-50 disabled:cursor-wait flex-shrink-0"
+      >
+        {savingCloud ? <Loader2 size={10} className="animate-spin" /> : <CloudUpload size={10} />}
+        Save to project
+      </button>
+      <span
+        className="text-[9px] font-mono text-slate-600 flex-shrink-0"
+        title="Configure in Settings → Saving"
+        data-testid="breadcrumb-save-hint"
+      >
+        ⌘S → {saveBehavior}
       </span>
     </div>
   );

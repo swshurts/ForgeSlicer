@@ -1402,3 +1402,39 @@ User request: *"By default the workspace should be set to the user's printer as 
 - `components/dialogs/ProjectExplorerDialog.jsx` — links scene to project on Open / Save-here
 
 Lint clean on all touched files. Self-verified via Playwright; backend `/api/projects` untouched (still iter-63 8/8 pass).
+
+---
+
+## Iteration 66 (2026-05-30) — Configurable Ctrl/Cmd+S behavior (Option B)
+
+User request: *"100% Option B."* — user-set preference, never force cloud writes, local stays default.
+
+### What shipped
+- ✅ **New `lib/savePref.js`** — three-valued preference (`"local"` default / `"cloud"` / `"both"`) persisted to `localStorage["forge.save.behavior"]`. Custom `forgeslicer:save-behavior-changed` event for UI components that mirror the value.
+- ✅ **Settings → Saving tab (new 3rd tab in `SettingsDialog`)** — radio group of three richly-described options with HardDrive / Cloud / Save icons. Default is highlighted as "Local file (default)". Footer reassures users that BOTH paths remain reachable manually (toolbar Save button stays local; Project Explorer Save Here stays cloud) — the preference only controls the keyboard shortcut.
+- ✅ **Ctrl/Cmd+S handler in `Workspace.jsx`** — reads the preference per keypress, dispatches:
+  - `local` → `saveProjectJSON()` + toast "Saved locally"
+  - `cloud` → `projectsApi.update(currentProjectId, { forge_json })` + success toast. **Gracefully falls back to local** when no project is linked or user is anonymous (toast nudges them, then writes the file).
+  - `both` → local download THEN cloud update.
+  - Intercepts inputs/textareas so typing isn't hijacked. Leaves Ctrl+Shift+S to the browser.
+- ✅ **`ProjectBreadcrumb` enhancements**: new "Save to project" cloud button (always-on, never blocked by the preference — so a "local-mode" user can still cloud-save in one click). A tiny `⌘S → local/cloud/both` hint label at the far right keeps the current keyboard behavior visible at all times. Both are hidden when no project is linked (zero clutter for the simple-flat-flow user).
+
+### Privacy-respecting design notes
+- Default is unchanged: nothing leaves the browser unless the user explicitly opts in via Settings.
+- Three independent escape hatches in the UI mean no user is ever forced into a save path: keyboard shortcut (configurable), toolbar Save button (always local), Project Explorer Save Here (always cloud), breadcrumb cloud-save button (always cloud when project is linked).
+- Cloud-save failure transparently falls back to local — Ctrl+S NEVER ends with "your work wasn't saved anywhere".
+
+### Files
+- `lib/savePref.js` (new)
+- `components/dialogs/SettingsDialog.jsx` — new "Saving" tab + `<SavingPanel>` component
+- `components/Workspace.jsx` — Ctrl/Cmd+S keydown handler (after user destructure so no TDZ)
+- `components/ProjectBreadcrumb.jsx` — cloud-save button + behavior hint + `useAuth` integration
+
+### Testing (Playwright self-verified)
+1. **`local` (default)**: Ctrl+S downloads `<name>.forge.json`, cloud project untouched.
+2. **`cloud`**: Ctrl+S writes to `/api/projects/{pid}`, toast "Saved into …" appears, cloud project's `forge_json` reflects the live scene.
+3. **`both`**: Single Ctrl+S triggers a download AND updates the cloud — both fire from the same keystroke.
+4. localStorage persistence verified across reloads.
+5. Breadcrumb `⌘S →` hint live-updates when the preference changes (subscribes via the CustomEvent).
+
+Lint clean on all touched files. No backend changes.

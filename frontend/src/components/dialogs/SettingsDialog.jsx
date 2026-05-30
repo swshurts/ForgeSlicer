@@ -11,10 +11,11 @@
 // event with `{ name: "settings" }`). Read-only access for non-admins
 // would be a backend-side concern; this is open to all users today.
 import React, { useEffect, useState } from "react";
-import { X, Palette, Sliders, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Settings as SettingsIcon } from "lucide-react";
+import { X, Palette, Sliders, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Settings as SettingsIcon, Save, Cloud as CloudIcon, HardDrive } from "lucide-react";
 import { Moon, Cloud, Sun, MonitorCog, Pin, PinOff } from "lucide-react";
 import { useTheme } from "../../lib/theme";
 import { orcaApi, apiErrorMessage } from "../../lib/api";
+import { getSaveBehavior, setSaveBehavior, subscribeSaveBehavior } from "../../lib/savePref";
 
 const THEMES = [
   { id: "system", label: "Auto",  icon: MonitorCog, hint: "Follow OS appearance" },
@@ -25,6 +26,7 @@ const THEMES = [
 
 const TABS = [
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "saving",     label: "Saving",     icon: Save },
   { id: "engine",     label: "Engine",     icon: Sliders },
 ];
 
@@ -86,6 +88,7 @@ export default function SettingsDialog({ open, onClose }) {
           {/* Panel */}
           <div className="flex-1 min-w-0 overflow-auto p-5">
             {tab === "appearance" && <AppearancePanel />}
+            {tab === "saving" && <SavingPanel />}
             {tab === "engine" && <EnginePanel />}
           </div>
         </div>
@@ -274,6 +277,97 @@ function EnginePanel() {
         )}
         <p className="mt-3 text-[10px] text-slate-500 leading-snug max-w-lg">
           Reinstalling downloads the latest OrcaSlicer Linux AppImage (x86_64 only) and refreshes the bundled presets. The install runs in the background — your sessions keep working. The built-in JS slicer remains available either way.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+// "Saving" panel — controls what Ctrl/Cmd+S does in the workspace.
+//
+// Three radio options:
+//   • Local file (default) — keeps the historical behavior. Nothing
+//     ever leaves the browser unless the user explicitly opts in.
+//   • Cloud project — writes the scene into the currently-linked
+//     hierarchical project via PUT /api/projects/{id}. Falls back to
+//     local if no project is linked OR if the user is anonymous, so
+//     the shortcut is never a silent no-op.
+//   • Both — local download + cloud write. Best for users who want a
+//     belt-and-suspenders workflow but don't want to remember two
+//     shortcuts.
+//
+// The preference lives in localStorage and is read fresh at every
+// Ctrl+S press (no hot-reload needed).
+function SavingPanel() {
+  const [behavior, setBehavior] = useState(() => getSaveBehavior());
+  useEffect(() => subscribeSaveBehavior(setBehavior), []);
+
+  const options = [
+    {
+      id: "local",
+      label: "Local file (default)",
+      hint: "Downloads a .forge.json to your computer. Nothing is sent to our servers. Your privacy-respecting choice.",
+      icon: HardDrive,
+    },
+    {
+      id: "cloud",
+      label: "Cloud project",
+      hint: "Writes the scene into the currently-open hierarchical project. Falls back to a local file if you haven't opened a project yet (or aren't signed in).",
+      icon: CloudIcon,
+    },
+    {
+      id: "both",
+      label: "Both — local + cloud",
+      hint: "Downloads the file AND saves to your linked project. Useful if you keep a personal archive but also want cross-device access.",
+      icon: Save,
+    },
+  ];
+
+  return (
+    <div className="space-y-6 text-slate-200">
+      <section>
+        <h3 className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
+          Ctrl/Cmd+S behavior
+        </h3>
+        <p className="text-[11px] text-slate-400 mb-3 leading-snug max-w-lg">
+          Choose what happens when you press <kbd className="px-1 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-mono">Ctrl</kbd>+<kbd className="px-1 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-mono">S</kbd> in the workspace. We default to <strong className="text-slate-200">local file</strong> — your projects stay on your machine until you choose otherwise.
+        </p>
+        <div className="space-y-1.5" data-testid="settings-save-behavior-group" role="radiogroup">
+          {options.map((opt) => {
+            const Icon = opt.icon;
+            const active = behavior === opt.id;
+            return (
+              <label
+                key={opt.id}
+                data-testid={`settings-save-behavior-${opt.id}`}
+                className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                  active
+                    ? "bg-orange-500/10 border-orange-500/60"
+                    : "bg-slate-950 border-slate-800 hover:border-slate-600"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="save-behavior"
+                  value={opt.id}
+                  checked={active}
+                  onChange={() => setSaveBehavior(opt.id)}
+                  className="mt-0.5 accent-orange-500"
+                  data-testid={`settings-save-behavior-radio-${opt.id}`}
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-100">
+                    <Icon size={12} className={active ? "text-orange-300" : "text-slate-500"} />
+                    {opt.label}
+                  </div>
+                  <p className="text-[10.5px] text-slate-400 leading-snug mt-0.5">{opt.hint}</p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-[10px] text-slate-500 leading-snug max-w-lg">
+          You can always reach the OTHER option manually — the toolbar Save button still writes a local file regardless of this preference, and the Project Explorer's "Save here" still writes to the cloud regardless. This setting only controls the keyboard shortcut.
         </p>
       </section>
     </div>

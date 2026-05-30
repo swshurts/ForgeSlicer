@@ -20,6 +20,8 @@ import { takePendingImport } from "../lib/pendingImport";
 import { API } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { projectsApi } from "../lib/api";
+import { getSaveBehavior } from "../lib/savePref";
+import { saveProjectJSON } from "../lib/exporters";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -136,6 +138,67 @@ export default function Workspace() {
     })();
     return () => { cancelled = true; };
   }, [user, projectExplorerOpen, currentProjectId]);
+
+  // Ctrl/Cmd+S — runs the save flow per the user's persisted preference
+  // ("local" / "cloud" / "both"). We intercept the keystroke globally so
+  // the browser's native "Save Page" dialog never appears in the
+  // workspace. Inputs / textareas are exempt so the shortcut doesn't
+  // hijack typed text. State is read fresh via useScene.getState() and
+  // a ref to `user` so the listener never goes stale.
+  const userRef = React.useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => {
+    const onKey = async (e) => {
+      if (!((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")) return;
+      if (e.shiftKey) return; // leave Ctrl+Shift+S to the browser
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.target?.isContentEditable) return;
+      e.preventDefault();
+      const behavior = getSaveBehavior();
+      const sceneState = useScene.getState();
+      const payload = sceneState.serialize();
+      const safe = (sceneState.projectName || "project").replace(/[^a-z0-9-_]/gi, "_");
+      const localSave = () => {
+        saveProjectJSON(payload, `${safe}.forge.json`);
+      };
+      const cloudSave = async () => {
+        const pid = sceneState.currentProjectId;
+        if (!pid) {
+          toast.message("No project linked to this scene", {
+            description: "Open or create a project in the Projects dialog first, then Ctrl+S will save into it.",
+          });
+          return false;
+        }
+        if (!userRef.current) {
+          toast.message("Sign in to save to the cloud", { description: "Falling back to a local file." });
+          return false;
+        }
+        try {
+          await projectsApi.update(pid, { forge_json: payload });
+          toast.success(`Saved into “${sceneState.currentProjectName || "project"}”`);
+          return true;
+        } catch (err) {
+          toast.error("Cloud save failed — saving locally as fallback");
+          // eslint-disable-next-line no-console
+          console.warn("cloud save failed:", err);
+          return false;
+        }
+      };
+      if (behavior === "local") {
+        localSave();
+        toast.success("Saved locally", { duration: 1500 });
+      } else if (behavior === "cloud") {
+        const ok = await cloudSave();
+        if (!ok) localSave();
+      } else if (behavior === "both") {
+        localSave();
+        await cloudSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Auto-save the editable project JSON to the user's chosen file (if any).
   // Debounced ~3s after the last change so rapid edits don't thrash the
