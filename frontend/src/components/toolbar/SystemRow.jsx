@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 import {
   FilePlus2, FileUp, FileDown, Save, Upload, Layers, Eye,
   Hexagon, Globe, Library, Printer, ChevronDown, Sparkles, Settings as SettingsIcon,
+  FolderTree,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { getSlicersForPrinter } from "../../lib/presets";
@@ -27,7 +28,7 @@ export default function SystemRow({
   busyMsg,
   actions,
   onShare, onSaveComponent, onSendToOrca, onOpenHelp,
-  onPreviewExport,
+  onPreviewExport, onOpenProjectExplorer,
 }) {
   const projectName = useScene((s) => s.projectName);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -71,6 +72,13 @@ export default function SystemRow({
       </IconBtn>
       <IconBtn testid="file-import-btn" onClick={actions.handleImport} title="Import STL / OBJ / 3MF / SVG">
         <Upload size={16} />
+      </IconBtn>
+      <IconBtn
+        testid="open-project-explorer-btn"
+        onClick={onOpenProjectExplorer}
+        title="Projects — nest designs hierarchically (Rocket → Engine → Fuel Pump)"
+      >
+        <FolderTree size={16} />
       </IconBtn>
 
       <Divider />

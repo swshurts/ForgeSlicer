@@ -21,6 +21,7 @@ import auth_local
 import billing
 import admin as admin_module
 import orca_engine
+from routes.projects import build_projects_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -476,6 +477,11 @@ api_router.include_router(admin_module.build_admin_router(
 # OrcaSlicer engine routes — production-quality slice + install status.
 # Lives under /api/slice/orca/* per the router's own prefix declaration.
 api_router.include_router(orca_engine.router)
+
+# Hierarchical user projects — /api/projects/* (auth-required).
+# The router accepts the auth dependency as a callable so we don't have to
+# import server.py in routes/projects.py (circular import).
+api_router.include_router(build_projects_router(db, get_current_user))
 
 # Mount the Stripe billing routers. `/api/billing/*` for checkout +
 # status polling (uses the auth helper to attribute checkouts to users)

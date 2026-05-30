@@ -11,6 +11,7 @@ import SketchOverlay from "./SketchOverlay";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import HelpDialog from "./HelpDialog";
 import SettingsDialog from "./dialogs/SettingsDialog";
+import ProjectExplorerDialog from "./dialogs/ProjectExplorerDialog";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
@@ -26,6 +27,7 @@ export default function Workspace() {
   const [saveComponentOpen, setSaveComponentOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectExplorerOpen, setProjectExplorerOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -39,6 +41,7 @@ export default function Workspace() {
       else if (name === "slicer") setOrcaOpen(true);
       else if (name === "help") setHelpOpen(true);
       else if (name === "settings") setSettingsOpen(true);
+      else if (name === "projects") setProjectExplorerOpen(true);
     };
     window.addEventListener("forgeslicer:open-dialog", handler);
     return () => window.removeEventListener("forgeslicer:open-dialog", handler);
@@ -382,7 +385,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
@@ -399,6 +402,7 @@ export default function Workspace() {
       <SaveComponentDialog open={saveComponentOpen} onClose={() => setSaveComponentOpen(false)} />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} onTryVoice={handleTryVoice} />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ProjectExplorerDialog open={projectExplorerOpen} onClose={() => setProjectExplorerOpen(false)} />
       {importBanner && (
         <div
           data-testid="import-banner"

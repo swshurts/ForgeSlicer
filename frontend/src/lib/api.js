@@ -139,6 +139,35 @@ export const componentsApi = {
   },
 };
 
+// Hierarchical user projects — /api/projects/* (auth-required).
+// Backend stores a flat list of nodes with parent_id; the UI builds the
+// tree client-side from the meta list, then fetches a node's `forge_json`
+// detail blob on demand when the user picks "Open".
+export const projectsApi = {
+  list: async () => {
+    const { data } = await axios.get(`${API}/projects`);
+    return data;
+  },
+  get: async (pid) => {
+    const { data } = await axios.get(`${API}/projects/${pid}`);
+    return data;
+  },
+  create: async ({ name, description = "", parent_id = null, forge_json = null }) => {
+    const { data } = await axios.post(`${API}/projects`, {
+      name, description, parent_id, forge_json,
+    });
+    return data;
+  },
+  update: async (pid, patch) => {
+    const { data } = await axios.put(`${API}/projects/${pid}`, patch);
+    return data;
+  },
+  remove: async (pid) => {
+    const { data } = await axios.delete(`${API}/projects/${pid}`);
+    return data;
+  },
+};
+
 // OrcaSlicer engine — opt-in production-quality slicer. The built-in
 // JS slicer remains the default; this is invoked only when the user
 // flips the Engine selector in the Slicer popover.

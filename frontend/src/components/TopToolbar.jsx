@@ -29,7 +29,7 @@ import EditRow from "./toolbar/EditRow";
 import { makeProjectActions } from "./toolbar/projectActions";
 import { useToolbarShortcuts } from "./toolbar/useToolbarShortcuts";
 
-export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onOpenHelp }) {
+export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onOpenHelp, onOpenProjectExplorer }) {
   // Cross-row UI state — only the things both rows need lived at this
   // level pre-refactor. Now those same items live here while everything
   // self-contained moved into the child rows.
@@ -76,6 +76,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
         onSendToOrca={onSendToOrca}
         onOpenHelp={onOpenHelp}
         onPreviewExport={() => setStlPreviewOpen(true)}
+        onOpenProjectExplorer={onOpenProjectExplorer}
       />
       <EditRow
         doBool={actions.doBool}
