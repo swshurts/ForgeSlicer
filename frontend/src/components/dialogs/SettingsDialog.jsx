@@ -30,8 +30,16 @@ const TABS = [
   { id: "engine",     label: "Engine",     icon: Sliders },
 ];
 
-export default function SettingsDialog({ open, onClose }) {
-  const [tab, setTab] = useState("appearance");
+export default function SettingsDialog({ open, onClose, initialTab = "appearance" }) {
+  const [tab, setTab] = useState(initialTab);
+
+  // When the dialog is reopened with a different `initialTab`, honor it.
+  // We only sync on the open→true transition; otherwise the user's manual
+  // tab clicks while the dialog is open would get reverted on every parent
+  // re-render.
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
 
   useEffect(() => {
     if (!open) return;

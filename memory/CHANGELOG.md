@@ -1438,3 +1438,34 @@ User request: *"100% Option B."* — user-set preference, never force cloud writ
 5. Breadcrumb `⌘S →` hint live-updates when the preference changes (subscribes via the CustomEvent).
 
 Lint clean on all touched files. No backend changes.
+
+---
+
+## Iteration 67 (2026-05-30) — One-time "Did you know?" tip toast
+
+User request: *"Proceed with the toast."* — accept the iter-66 closing suggestion.
+
+A friendly, dismissible toast that surfaces the new Ctrl/Cmd+S preference the FIRST time a signed-in user opens a project after iter 66. Never reappears once dismissed.
+
+### Implementation
+- **`Workspace.jsx`**: useEffect watches `[user, currentProjectId]`. When BOTH are truthy AND localStorage flag `forge.tip.savePref.dismissed` is unset, fires a sonner toast:
+  - **Title**: "Tip: Ctrl+S saves locally by default"
+  - **Description**: "You can change the keyboard shortcut to save to your cloud project instead — or both — under Settings → Saving."
+  - **Primary action**: "Open settings" → marks flag dismissed AND opens the Settings dialog directly on the **Saving** tab.
+  - **Cancel action**: "Got it" → just marks flag dismissed.
+  - **Belt-and-suspenders**: a 12.5 s timer also writes the dismissed flag, so a user who lets the toast auto-fade still won't see it again.
+- **`SettingsDialog.jsx`** — accepts a new `initialTab` prop with deferred re-sync on open transitions. Default `"appearance"` keeps existing behavior unchanged; the iter-67 tip passes `"saving"` so the user lands on the right tab.
+- **Session-guard ref** prevents the tip from re-firing within the same session if React StrictMode double-invokes the effect.
+- **Anonymous users never see it** (they can't open cloud projects anyway).
+
+### Files
+- `components/Workspace.jsx` — tip effect + new `settingsInitialTab` state, threaded to `<SettingsDialog>`
+- `components/dialogs/SettingsDialog.jsx` — `initialTab` prop with open-transition sync
+
+### Testing (Playwright self-verified)
+1. Signed-in user + fresh `localStorage` → toast appears on project open with both action buttons.
+2. "Open settings" → Settings dialog opens on **Saving** tab (verified by orange-highlight class).
+3. `localStorage.forge.tip.savePref.dismissed === "true"` after click.
+4. Reload + reopen project → toast does **NOT** fire again.
+
+Lint clean. No backend changes.

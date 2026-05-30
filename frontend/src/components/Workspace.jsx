@@ -31,6 +31,11 @@ export default function Workspace() {
   const [saveComponentOpen, setSaveComponentOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Optional deep-link tab — set by callers that want to land on a
+  // specific Settings page (e.g., the iter-66 save-pref tip jumps to
+  // "saving"). Resets to "appearance" when the dialog closes so a normal
+  // toolbar click always opens to the default tab.
+  const [settingsInitialTab, setSettingsInitialTab] = useState("appearance");
   const [projectExplorerOpen, setProjectExplorerOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   const [searchParams, setSearchParams] = useSearchParams();
@@ -199,6 +204,48 @@ export default function Workspace() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // One-time tip: when a signed-in user first opens a project after the
+  // new Ctrl/Cmd+S preference shipped (iter 66), surface a friendly toast
+  // explaining the default + how to switch it. The tip never fires again
+  // once the user clicks "Got it" or "Open settings" — we set a hard
+  // dismissed flag in localStorage. Anonymous users never see it (they
+  // can't open cloud projects in the first place).
+  const tipRef = React.useRef(false); // already-fired-this-session guard
+  useEffect(() => {
+    if (tipRef.current) return;
+    if (!user || !currentProjectId) return;
+    let dismissed = false;
+    try { dismissed = window.localStorage.getItem("forge.tip.savePref.dismissed") === "true"; }
+    catch { /* localStorage blocked → treat as dismissed so we don't pester */ dismissed = true; }
+    if (dismissed) return;
+    tipRef.current = true;
+    const ack = () => {
+      try { window.localStorage.setItem("forge.tip.savePref.dismissed", "true"); }
+      catch { /* noop */ }
+    };
+    toast.message("Tip: Ctrl+S saves locally by default", {
+      description: "You can change the keyboard shortcut to save to your cloud project instead — or both — under Settings → Saving.",
+      duration: 12000,
+      action: {
+        label: "Open settings",
+        onClick: () => {
+          ack();
+          setSettingsInitialTab("saving");
+          setSettingsOpen(true);
+        },
+      },
+      cancel: {
+        label: "Got it",
+        onClick: ack,
+      },
+    });
+    // Belt-and-suspenders: even if the user dismisses by waiting out the
+    // toast duration, mark it acknowledged so the tip doesn't fire on the
+    // very next project open.
+    const timer = setTimeout(ack, 12500);
+    return () => clearTimeout(timer);
+  }, [user, currentProjectId]);
 
   // Auto-save the editable project JSON to the user's chosen file (if any).
   // Debounced ~3s after the last change so rapid edits don't thrash the
@@ -526,7 +573,14 @@ export default function Workspace() {
       <SavePrinterDialog open={savePrinterOpen} onClose={() => setSavePrinterOpen(false)} />
       <SaveComponentDialog open={saveComponentOpen} onClose={() => setSaveComponentOpen(false)} />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} onTryVoice={handleTryVoice} />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        initialTab={settingsInitialTab}
+        onClose={() => {
+          setSettingsOpen(false);
+          setSettingsInitialTab("appearance");
+        }}
+      />
       <ProjectExplorerDialog open={projectExplorerOpen} onClose={() => setProjectExplorerOpen(false)} />
       {importBanner && (
         <div
