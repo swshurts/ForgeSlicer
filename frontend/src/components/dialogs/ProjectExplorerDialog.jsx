@@ -76,8 +76,56 @@ export default function ProjectExplorerDialog({ open, onClose }) {
   const [busyId, setBusyId] = useState(null);             // shows spinner inline
   const [movingId, setMovingId] = useState(null);         // shows the "Move into…" picker
   const [confirmDelete, setConfirmDelete] = useState(null); // node pending confirm
+  // ---- DnD state ----
+  // `draggingId` is the pid currently being dragged. Cleared on dragend
+  // regardless of drop outcome. `dragOverId` is the pid currently under
+  // the cursor — used to render the orange ring on the drop target.
+  // `dragOverRoot` is the boolean version of dragOverId for the explicit
+  // top-level drop zone. Hovering a node that is the dragged node ITSELF
+  // or one of its descendants is rejected client-side (we still rely on
+  // the backend's cycle-detector for safety).
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const [dragOverRoot, setDragOverRoot] = useState(false);
 
   const tree = useMemo(() => buildTree(metas), [metas]);
+
+  // For each project, the set of its descendant project_ids (INCLUSIVE
+  // of itself). Used by DnD to instantly tell whether a hovered row is
+  // a valid drop target for the dragged node (you can't drop a node
+  // onto itself or any of its descendants — that would create a cycle).
+  const descendantMap = useMemo(() => {
+    const map = new Map();
+    const fill = (n) => {
+      const set = new Set();
+      set.add(n.meta.project_id);
+      for (const c of n.children) {
+        fill(c);
+        for (const id of map.get(c.meta.project_id)) set.add(id);
+      }
+      map.set(n.meta.project_id, set);
+    };
+    for (const r of tree) fill(r);
+    return map;
+  }, [tree]);
+
+  // Returns true when `targetId` is a legal drop target for the currently
+  // dragged node. Null target = "top level" zone (always legal if the
+  // dragged node isn't already a root).
+  const isLegalDrop = useCallback((targetId) => {
+    if (!draggingId) return false;
+    if (targetId === null) {
+      const dragged = metas.find((m) => m.project_id === draggingId);
+      return !!dragged && dragged.parent_id !== null; // already root → no-op
+    }
+    if (targetId === draggingId) return false;
+    const draggedDescendants = descendantMap.get(draggingId);
+    if (draggedDescendants && draggedDescendants.has(targetId)) return false;
+    // Skip drops that wouldn't change anything (target is already the parent).
+    const dragged = metas.find((m) => m.project_id === draggingId);
+    if (dragged && dragged.parent_id === targetId) return false;
+    return true;
+  }, [draggingId, descendantMap, metas]);
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -178,6 +226,21 @@ export default function ProjectExplorerDialog({ open, onClose }) {
     }
   };
 
+  // DnD drop handler — shared by both the per-row drop and the top-level
+  // drop zone. `targetParentId` is the new parent (null = root). Kept as
+  // a plain const because the JSX-only usages don't need referential
+  // stability, and hoisting it above the early-return guard would
+  // require duplicating handleMove or restructuring everything.
+  const handleDrop = async (targetParentId) => {
+    const draggedId = draggingId;
+    setDraggingId(null);
+    setDragOverId(null);
+    setDragOverRoot(false);
+    if (!draggedId) return;
+    if (!isLegalDrop(targetParentId)) return;
+    await handleMove(draggedId, targetParentId);
+  };
+
   const handleSaveSceneInto = async (pid, nodeName) => {
     if (!window.confirm(`Save the current scene into “${nodeName}”? This replaces any geometry already on that project.`)) return;
     setBusyId(pid);
@@ -266,8 +329,27 @@ export default function ProjectExplorerDialog({ open, onClose }) {
             </div>
           ) : (
             <>
-              {/* Root-level "+ New project" row */}
-              <div className="flex items-center gap-2 mb-2">
+              {/* Root-level "+ New project" row — also acts as the
+                  drop zone for "move to top level". When a node is being
+                  dragged AND it's not already root, the box gets an
+                  orange dashed ring to invite the drop. */}
+              <div
+                className={`flex items-center gap-2 mb-2 rounded transition-colors ${
+                  draggingId && isLegalDrop(null)
+                    ? (dragOverRoot ? "ring-2 ring-orange-500 bg-orange-500/10 p-1" : "ring-1 ring-dashed ring-slate-600 p-1")
+                    : ""
+                }`}
+                data-testid="project-drop-root"
+                onDragOver={(e) => {
+                  if (draggingId && isLegalDrop(null)) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverRoot(true);
+                  }
+                }}
+                onDragLeave={() => setDragOverRoot(false)}
+                onDrop={(e) => { e.preventDefault(); handleDrop(null); }}
+              >
                 {creatingUnder === "__ROOT__" ? (
                   <CreateRow
                     value={createValue}
@@ -285,6 +367,9 @@ export default function ProjectExplorerDialog({ open, onClose }) {
                   >
                     <FolderPlus size={12} className="text-orange-400" /> New top-level project
                   </button>
+                )}
+                {draggingId && isLegalDrop(null) && (
+                  <span className="text-[10px] text-orange-300 font-mono">drop here to move to top level</span>
                 )}
               </div>
 
@@ -322,6 +407,12 @@ export default function ProjectExplorerDialog({ open, onClose }) {
                     onMove={handleMove}
                     onSaveSceneInto={handleSaveSceneInto}
                     onOpen={handleOpen}
+                    draggingId={draggingId}
+                    setDraggingId={setDraggingId}
+                    dragOverId={dragOverId}
+                    setDragOverId={setDragOverId}
+                    isLegalDrop={isLegalDrop}
+                    handleDrop={handleDrop}
                   />
                 ))}
               </ul>
@@ -331,9 +422,9 @@ export default function ProjectExplorerDialog({ open, onClose }) {
 
         {/* Footer hint */}
         <div className="px-4 py-2 border-t border-slate-800 text-[10px] text-slate-500 leading-snug">
-          Click <strong className="text-slate-300">Open</strong> to load a project into the workspace, or{" "}
-          <strong className="text-slate-300">Save here</strong> to store the current scene under that node.
-          Current scene name: <span className="text-orange-300 font-mono">{projectName}</span>
+          Click <strong className="text-slate-300">Open</strong> to load a project · <strong className="text-slate-300">Save here</strong> to store the current scene ·{" "}
+          <strong className="text-slate-300">drag</strong> a row onto another project to re-parent (or onto the top-level row).
+          Current scene: <span className="text-orange-300 font-mono">{projectName}</span>
         </div>
       </div>
 
@@ -429,6 +520,8 @@ function ProjectNode({
   creatingUnder, setCreatingUnder, createValue, setCreateValue,
   busyId, movingId, setMovingId, metas,
   onCreate, onRename, onDelete, onMove, onSaveSceneInto, onOpen,
+  draggingId, setDraggingId, dragOverId, setDragOverId,
+  isLegalDrop, handleDrop,
 }) {
   const pid = node.meta.project_id;
   const isExpanded = expanded.has(pid);
@@ -437,6 +530,9 @@ function ProjectNode({
   const isMoving = movingId === pid;
   const hasChildren = node.children.length > 0;
   const isBusy = busyId === pid;
+  const isBeingDragged = draggingId === pid;
+  // Is this row currently a legal drop target hovered by a drag?
+  const isDropTarget = dragOverId === pid && isLegalDrop && isLegalDrop(pid);
 
   // Build the list of valid move-target candidates: every project EXCEPT
   // this node and its descendants (cycle check) and except its current parent.
@@ -453,10 +549,40 @@ function ProjectNode({
     <li>
       <div
         data-testid={`project-row-${pid}`}
+        draggable={!isRenaming}
+        onDragStart={(e) => {
+          if (isRenaming) return;
+          setDraggingId(pid);
+          e.dataTransfer.effectAllowed = "move";
+          // Setting any data makes the browser actually fire dragstart
+          // events in Firefox/Safari. The value isn't used (we use the
+          // dialog-scoped state) but it MUST be non-empty.
+          try { e.dataTransfer.setData("text/plain", pid); } catch { /* ignore */ }
+        }}
+        onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+        onDragOver={(e) => {
+          if (draggingId && isLegalDrop(pid)) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            if (dragOverId !== pid) setDragOverId(pid);
+          }
+        }}
+        onDragLeave={() => { if (dragOverId === pid) setDragOverId(null); }}
+        onDrop={(e) => {
+          if (!draggingId || !isLegalDrop(pid)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          handleDrop(pid);
+        }}
         onClick={() => setSelectedId(pid)}
-        className={`group flex items-center gap-1 px-1.5 py-1 rounded text-xs cursor-pointer transition-colors ${
-          isSelected ? "bg-orange-500/15 border border-orange-500/40" : "hover:bg-slate-800 border border-transparent"
-        }`}
+        className={`group flex items-center gap-1 px-1.5 py-1 rounded text-xs cursor-grab active:cursor-grabbing transition-colors ${
+          isDropTarget
+            ? "bg-orange-500/20 ring-2 ring-orange-500 border border-transparent"
+            : isSelected
+              ? "bg-orange-500/15 border border-orange-500/40"
+              : "hover:bg-slate-800 border border-transparent"
+        } ${isBeingDragged ? "opacity-40" : ""}`}
         style={{ paddingLeft: `${6 + depth * 14}px` }}
       >
         {hasChildren ? (
@@ -642,6 +768,12 @@ function ProjectNode({
               onMove={onMove}
               onSaveSceneInto={onSaveSceneInto}
               onOpen={onOpen}
+              draggingId={draggingId}
+              setDraggingId={setDraggingId}
+              dragOverId={dragOverId}
+              setDragOverId={setDragOverId}
+              isLegalDrop={isLegalDrop}
+              handleDrop={handleDrop}
             />
           ))}
         </ul>

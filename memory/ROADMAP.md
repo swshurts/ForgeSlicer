@@ -28,7 +28,8 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~**ARM64 OrcaSlicer**~~ [DONE — iter 54]
 - ~~**Compare Engines** (v1, metrics-only)~~ [DONE — iter 55]
 - **Compare Engines v2 — toolpath overlay** (deferred, user-confirmed): per-layer 3D toolpath rendering of BOTH slicers in different colors with a layer slider + diff highlight for segments only present in one engine.
-- **Search for community OrcaSlicer ARM64 binaries** — user-requested follow-up: check whether any community fork ships a true headless / non-flatpak ARM64 build that would let us drop the GNOME runtime dependency (~280 MB on disk).
+- ~~**Search for community OrcaSlicer ARM64 binaries**~~ [DONE — iter 63 research]
+  - **Finding**: no native non-Flatpak ARM64 headless binary exists in 2026. The Matszwe02 community build wraps OrcaSlicer in KasmVNC + Docker (full GUI in a container, ~1 GB) — heavier than our Flatpak, not headless. Official path is Flathub aarch64 Flatpak (what we already use). **Recommendation**: keep the current Flatpak install. ~280 MB GNOME runtime is the cost of being on the only maintained ARM64 path.
 - **SlicerPopover refactor** — file at 545 lines after Compare Engines wiring (code-review threshold = 500). Natural extraction: `useOrcaSlice()` hook for the Orca branch of handleSlice + the inline subscribeProgress helper.
 - Live multi-user editing (CRDT / Yjs).
 - Photo → reference plane (drop a photo, snap dims to known features).

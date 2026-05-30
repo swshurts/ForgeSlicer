@@ -4,6 +4,11 @@
 // printer over LAN. The OrcaSlicer engine is only selectable when the
 // server reports it's installed; otherwise the built-in slicer remains
 // the only option.
+//
+// All OrcaSlicer-specific machinery (profile state + status polling +
+// SSE progress + slice action + payload builder) lives in
+// `lib/useOrcaSlice.js` so this file can stay focused on the view +
+// engine-agnostic settings.
 import React, { useEffect, useState } from "react";
 import {
   Sliders, AlertTriangle, CheckCircle2, Download, Eye,
@@ -11,30 +16,15 @@ import {
 } from "lucide-react";
 import { useScene, useSliceSettings } from "../../lib/store";
 import { sliceToGCODEAsync } from "../../lib/workerClient";
-import { downloadText, exportSceneToSTLBytes } from "../../lib/exporters";
-import { orcaApi, apiErrorMessage, API as API_BASE } from "../../lib/api";
-import { buildOrcaPayload } from "../../lib/orcaProfiles";
+import { downloadText } from "../../lib/exporters";
+import { apiErrorMessage } from "../../lib/api";
+import { useOrcaSlice } from "../../lib/useOrcaSlice";
 import { compareEngines } from "../../lib/engineCompare";
 import GcodePreviewDialog from "../GcodePreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
 import EngineComparisonDialog from "../dialogs/EngineComparisonDialog";
 import { PopoverShell, NumberField } from "./PopoverShell";
 import OrcaProfileEditor from "./OrcaProfileEditor";
-
-// Convert an ArrayBuffer / Uint8Array to base64 without going through
-// btoa(String.fromCharCode) which blows the call stack on large STLs
-// (Chrome's spread-into-fromCharCode tops out around 100 KB). We
-// process in 32 KB chunks — STL exports of typical hobbyist parts run
-// 200 KB–5 MB, large hardware-store-imports ~30 MB.
-function arrayBufferToBase64(bytes) {
-  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const CHUNK = 0x8000;
-  let binary = "";
-  for (let i = 0; i < u8.length; i += CHUNK) {
-    binary += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
-}
 
 // Engine choices. The built-in JS slicer remains the default — it's
 // fast, deterministic, fully offline, but emits perimeter-only walls
@@ -73,100 +63,14 @@ export function SlicerPopover({ anchor, onClose }) {
     try { return window.localStorage.getItem("forge.slice.engine") || "builtin"; }
     catch { return "builtin"; }
   });
-  // Orca profile selections (printer / process / filament) + the four
-  // inline tunables that override the process preset. All persisted to
-  // localStorage so a returning user lands back on their last setup.
-  const lsGet = (key, def) => {
-    try { return window.localStorage.getItem(key) ?? def; } catch { return def; }
-  };
-  const lsSet = (key, val) => {
-    try { window.localStorage.setItem(key, val); } catch { /* noop */ }
-  };
-  const [orcaPrinter, setOrcaPrinter] = useState(() => lsGet("forge.orca.printer", "bambu_a1"));
-  const [orcaProcess, setOrcaProcess] = useState(() => lsGet("forge.orca.process", "standard"));
-  const [orcaFilament, setOrcaFilament] = useState(() => lsGet("forge.orca.filament", "pla"));
-  const [orcaWalls, setOrcaWalls] = useState(() => parseInt(lsGet("forge.orca.walls", "2"), 10));
-  const [orcaInfillPct, setOrcaInfillPct] = useState(() => parseInt(lsGet("forge.orca.infillpct", "15"), 10));
-  const [orcaPattern, setOrcaPattern] = useState(() => lsGet("forge.orca.pattern", "gyroid"));
-  const [orcaSupports, setOrcaSupports] = useState(() => lsGet("forge.orca.supports", "false") === "true");
-  const [orcaIroning, setOrcaIroning] = useState(() => lsGet("forge.orca.ironing", "false") === "true");
-  // Orca install status — polled when the popover opens so the UI can
-  // tell the user up front whether the OrcaSlicer engine is available.
-  // null = not yet probed; { installed: bool, ...detail fields }.
-  const [orcaStatus, setOrcaStatus] = useState(null);
-  // Live slice progress (Orca engine only). When the backend kicks off
-  // a slice, it returns a job_id and we open an EventSource on
-  // /api/slice/orca/progress/<id> to stream % + stage. null when no
-  // slice is in flight or when running the built-in engine.
-  const [progress, setProgress] = useState(null);
-  const progressJobRef = React.useRef(null);
-  const progressSrcRef = React.useRef(null);
-  const subscribeProgress = (jobId) => {
-    // Close any previous subscription before opening a new one.
-    if (progressSrcRef.current) { try { progressSrcRef.current.close(); } catch { /* noop */ } }
-    progressJobRef.current = jobId;
-    const url = `${API_BASE}/slice/orca/progress/${encodeURIComponent(jobId)}`;
-    let es;
-    try { es = new EventSource(url); } catch { return; }
-    progressSrcRef.current = es;
-    setProgress({ percent: 0, stage: "starting", done: false });
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        setProgress(data);
-        if (data.done) { try { es.close(); } catch { /* noop */ } progressSrcRef.current = null; }
-      } catch { /* ignore malformed events */ }
-    };
-    es.onerror = () => {
-      try { es.close(); } catch { /* noop */ }
-      progressSrcRef.current = null;
-    };
-  };
-  // Close any open SSE on unmount so a returning popover doesn't leak streams.
-  useEffect(() => () => {
-    if (progressSrcRef.current) { try { progressSrcRef.current.close(); } catch { /* noop */ } }
-  }, []);
+  // All OrcaSlicer engine state + actions — install status, progress,
+  // persisted profile selections, slice runner, payload composer.
+  const orca = useOrcaSlice();
+
   const pickEngine = (id) => {
     setEngine(id);
     try { window.localStorage.setItem("forge.slice.engine", id); } catch { /* noop */ }
   };
-  useEffect(() => {
-    let cancelled = false;
-    let timerId = null;
-
-    const fetchStatus = async () => {
-      try {
-        const s = await orcaApi.status();
-        if (!cancelled) setOrcaStatus(s);
-        // Keep polling while the install is in progress (or we
-        // don't have a definitive answer yet). The previous code
-        // fetched once on mount and never refreshed, so a user who
-        // opened the popover during the ~1 min install would see
-        // "installing…" forever even after the engine became ready.
-        // We poll every 5 s — server endpoint is a 50 ms file-stat,
-        // negligible load. Stops polling automatically once installed
-        // is true OR the server says we're on the wrong arch.
-        const keepPolling = s && !s.installed && (s.build_in_progress || s.source === "missing")
-          && (s.arch === "x86_64" || s.arch === "amd64");
-        if (!cancelled && keepPolling) {
-          timerId = setTimeout(fetchStatus, 5000);
-        }
-      } catch (e) {
-        if (!cancelled) setOrcaStatus({ installed: false, source: "error", detail: apiErrorMessage(e) });
-        // Even on error, keep retrying — could be a transient network
-        // blip and the user shouldn't have to close+reopen the popover.
-        if (!cancelled) {
-          timerId = setTimeout(fetchStatus, 10000);
-        }
-      }
-    };
-
-    fetchStatus();
-    return () => {
-      cancelled = true;
-      if (timerId) clearTimeout(timerId);
-    };
-  }, []);
 
   const handleSlice = async () => {
     setError(""); setBusy(true); setStats(null); setLastDownload(null);
@@ -176,50 +80,9 @@ export function SlicerPopover({ anchor, onClose }) {
       let gcode = "";
       let st = null;
       if (engine === "orca") {
-        // Export merged scene → STL → base64. Reuses the existing CSG
-        // pipeline so positives/negatives are pre-merged before Orca
-        // sees the geometry (Orca treats input as one solid).
-        const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
-        const b64 = arrayBufferToBase64(bytes);
-        // Compose the three JSON profiles from the user's picker
-        // selections + inline tunables.
-        const payload = buildOrcaPayload({
-          printerId: orcaPrinter, processId: orcaProcess, filamentId: orcaFilament,
-          wallLoops: orcaWalls, sparseInfillDensity: orcaInfillPct,
-          sparseInfillPattern: orcaPattern,
-          enableSupport: orcaSupports, ironing: orcaIroning,
-        });
-        // Pre-generate a job id and open the SSE stream BEFORE the
-        // slice POST so the user sees a progress bar tick from 0 →
-        // 100 % in real time (the POST is synchronous and would
-        // otherwise only return after the slice is already done).
-        const jobId = (typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        ).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
-        subscribeProgress(jobId);
-        const r = await orcaApi.slice({
-          stlBase64: b64,
-          jobId,
-          printerProfile: payload.printerProfile,
-          processProfile: payload.processProfile,
-          filamentProfile: payload.filamentProfile,
-          printerPresetName:  payload.printerPresetName,
-          printerVendor:      payload.printerVendor,
-          processPresetName:  payload.processPresetName,
-          processVendor:      payload.processVendor,
-          filamentPresetName: payload.filamentPresetName,
-          filamentVendor:     payload.filamentVendor,
-        });
+        const r = await orca.runSlice(objects);
         gcode = r.gcode;
-        st = {
-          layers: r.stats.layers || 0,
-          segments: r.stats.gcode_lines,
-          filamentMM: r.stats.filament_mm || 0,
-          tris: triangleCount,
-          engine: "orca",
-          durationSec: r.stats.duration_seconds,
-          summary: payload.summary,
-        };
+        st = r.stats;
       } else {
         const r = await sliceToGCODEAsync(objects, {
           ...settings,
@@ -254,12 +117,7 @@ export function SlicerPopover({ anchor, onClose }) {
     setCompareResult(null);
     setCompareOpen(true);
     try {
-      const orcaPayload = buildOrcaPayload({
-        printerId: orcaPrinter, processId: orcaProcess, filamentId: orcaFilament,
-        wallLoops: orcaWalls, sparseInfillDensity: orcaInfillPct,
-        sparseInfillPattern: orcaPattern,
-        enableSupport: orcaSupports, ironing: orcaIroning,
-      });
+      const orcaPayload = orca.buildPayload();
       const r = await compareEngines({
         objects,
         settings,
@@ -280,8 +138,10 @@ export function SlicerPopover({ anchor, onClose }) {
 
   // Whether the Orca tab is selectable — disabled when the server tells
   // us it's not installed yet. The "Built-in" tab is always selectable.
-  const orcaReady = orcaStatus?.installed === true;
-  const orcaBuilding = orcaStatus?.build_in_progress === true;
+  const orcaReady = orca.ready;
+  const orcaBuilding = orca.building;
+  const orcaStatus = orca.status;
+  const progress = orca.progress;
 
   return (
     <PopoverShell title="Slicer Settings" icon={Sliders} onClose={onClose} anchor={anchor} testid="slicer-popover" width={340}>
@@ -363,14 +223,14 @@ export function SlicerPopover({ anchor, onClose }) {
           Everything else inherits from the chosen process preset. */}
       {engine === "orca" && (
         <OrcaProfileEditor
-          printerId={orcaPrinter} onPrinterChange={(v) => { setOrcaPrinter(v); lsSet("forge.orca.printer", v); }}
-          processId={orcaProcess} onProcessChange={(v) => { setOrcaProcess(v); lsSet("forge.orca.process", v); }}
-          filamentId={orcaFilament} onFilamentChange={(v) => { setOrcaFilament(v); lsSet("forge.orca.filament", v); }}
-          walls={orcaWalls} onWallsChange={(v) => { setOrcaWalls(v); lsSet("forge.orca.walls", String(v)); }}
-          infillPct={orcaInfillPct} onInfillPctChange={(v) => { setOrcaInfillPct(v); lsSet("forge.orca.infillpct", String(v)); }}
-          pattern={orcaPattern} onPatternChange={(v) => { setOrcaPattern(v); lsSet("forge.orca.pattern", v); }}
-          supports={orcaSupports} onSupportsChange={(v) => { setOrcaSupports(v); lsSet("forge.orca.supports", String(v)); }}
-          ironing={orcaIroning} onIroningChange={(v) => { setOrcaIroning(v); lsSet("forge.orca.ironing", String(v)); }}
+          printerId={orca.profile.printer} onPrinterChange={orca.setPrinter}
+          processId={orca.profile.process} onProcessChange={orca.setProcess}
+          filamentId={orca.profile.filament} onFilamentChange={orca.setFilament}
+          walls={orca.profile.walls} onWallsChange={orca.setWalls}
+          infillPct={orca.profile.infillPct} onInfillPctChange={orca.setInfillPct}
+          pattern={orca.profile.pattern} onPatternChange={orca.setPattern}
+          supports={orca.profile.supports} onSupportsChange={orca.setSupports}
+          ironing={orca.profile.ironing} onIroningChange={orca.setIroning}
         />
       )}
       {/* Sparse infill (Tier-b) — middle layers between the solid bands.

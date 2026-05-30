@@ -8,8 +8,9 @@
 // stays open until the user dismisses it so they can read the table
 // without losing the side outputs.
 import React from "react";
-import { X, Download, AlertTriangle, CheckCircle2, GitCompare, Trophy, Loader2 } from "lucide-react";
+import { X, Download, AlertTriangle, CheckCircle2, GitCompare, Trophy, Loader2, Eye, BarChart3 } from "lucide-react";
 import { downloadText } from "../../lib/exporters";
+import ToolpathOverlayTab from "./ToolpathOverlayTab";
 
 function fmt(value, decimals = 0, unit = "") {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
@@ -50,6 +51,17 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+  // Active tab — "metrics" (default, original side-by-side table) or
+  // "toolpaths" (the new layer-by-layer overlay introduced in iter 63).
+  // The Toolpaths tab is only meaningful when BOTH engines emitted
+  // G-code, so we auto-disable it otherwise.
+  const [tab, setTab] = React.useState("metrics");
+  // Reset tab whenever a fresh comparison starts (re-run). Without this
+  // the user could be looking at Toolpaths with stale data while the
+  // new slice is mid-flight.
+  React.useEffect(() => {
+    if (busy) setTab("metrics");
+  }, [busy]);
   if (!open) return null;
 
   const builtin = result?.builtin;
@@ -66,6 +78,10 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
     },
     { builtin: 0, orca: 0 },
   );
+
+  // Toolpath overlay needs BOTH engines to have produced G-code —
+  // otherwise the diff has nothing to diff against.
+  const overlayAvailable = !!(builtin?.ok && builtin.gcode && orca?.ok && orca.gcode);
 
   const downloadGcode = (side) => {
     const src = side === "builtin" ? builtin : orca;
@@ -120,6 +136,33 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
 
           {!busy && result && (
             <>
+              {/* Tab strip — Metrics (table) vs Toolpaths (overlay). The
+                  toolpaths tab is disabled until both engines succeed. */}
+              <div className="flex items-center gap-1 border-b border-slate-800 -mt-1" data-testid="engine-compare-tabs">
+                <TabButton
+                  testid="engine-compare-tab-metrics"
+                  active={tab === "metrics"}
+                  onClick={() => setTab("metrics")}
+                  icon={BarChart3}
+                  label="Metrics"
+                />
+                <TabButton
+                  testid="engine-compare-tab-toolpaths"
+                  active={tab === "toolpaths"}
+                  onClick={() => overlayAvailable && setTab("toolpaths")}
+                  icon={Eye}
+                  label="Toolpaths"
+                  disabled={!overlayAvailable}
+                  hint={!overlayAvailable ? "Needs both engines to succeed" : "Layer-by-layer overlay"}
+                />
+              </div>
+
+              {tab === "toolpaths" && overlayAvailable && (
+                <ToolpathOverlayTab builtinGcode={builtin.gcode} orcaGcode={orca.gcode} />
+              )}
+
+              {tab === "metrics" && (
+                <>
               {/* Per-engine status row */}
               <div className="grid grid-cols-2 gap-3">
                 <div data-testid="engine-compare-builtin-status" className="bg-slate-950 border border-slate-700 rounded p-3">
@@ -196,8 +239,11 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
                 G-code precisely because it generates real supports, ironing, multi-perimeter
                 walls, etc. that the built-in slicer skips. Read the trade-off, not the score.
               </div>
+                </>
+              )}
 
-              {/* Download row */}
+              {/* Download row — visible on BOTH tabs because the user might
+                  want to download G-code after eyeballing the overlay. */}
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
                 <button
                   data-testid="engine-compare-download-builtin-btn"
@@ -229,5 +275,29 @@ export default function EngineComparisonDialog({ open, busy, result, onClose, on
         </div>
       </div>
     </div>
+  );
+}
+
+// Small tab button used by the Metrics / Toolpaths switcher. Disabled
+// variant is dimmed and shows the `hint` as a tooltip explaining WHY
+// (e.g. "Needs both engines to succeed").
+function TabButton({ active, onClick, icon: Icon, label, testid, disabled, hint }) {
+  return (
+    <button
+      data-testid={testid}
+      onClick={onClick}
+      disabled={disabled}
+      title={hint || label}
+      className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-colors ${
+        active
+          ? "border-orange-500 text-orange-300"
+          : disabled
+            ? "border-transparent text-slate-600 cursor-not-allowed"
+            : "border-transparent text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      <Icon size={13} />
+      {label}
+    </button>
   );
 }
