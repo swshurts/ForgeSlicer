@@ -26,6 +26,11 @@ import {
   undoState,
   redoState,
 } from "./historyStack";
+import {
+  serializeProject,
+  loadProjectState,
+  emptyProjectState,
+} from "./projectIO";
 
 const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -196,6 +201,15 @@ export const useScene = create((set, get) => ({
   measureMode: false,
   measurements: [], // [{id, a:[x,y,z], b:[x,y,z], objIdA, objIdB}]
   pendingMeasurePoint: null,
+
+  // ---- component-pair dimensions (Blender-style) ----
+  // Persistent annotations tying two scene objects together — the world
+  // points are recomputed live from the objects' bboxes, so the chip
+  // value tracks any move/rotate/scale automatically. Cleared on project
+  // open (not currently persisted in .forge.json — annotations are a
+  // workspace concept, not a model concept).
+  componentDimensions: [],   // [{id, objIdA, objIdB}]
+  pendingDimensionFromId: null,
 
   // ---- cut tool ----
   // When cutMode is true, the viewport renders an adjustable cut plane that
@@ -627,6 +641,10 @@ export const useScene = create((set, get) => ({
         measurements: s.measurements.filter((m) => !removeSet.has(m.objIdA) && !removeSet.has(m.objIdB)),
         pendingMeasurePoint: removeSet.has(s.pendingMeasureObjId) ? null : s.pendingMeasurePoint,
         pendingMeasureObjId: removeSet.has(s.pendingMeasureObjId) ? null : s.pendingMeasureObjId,
+        componentDimensions: s.componentDimensions.filter(
+          (d) => !removeSet.has(d.objIdA) && !removeSet.has(d.objIdB)
+        ),
+        pendingDimensionFromId: removeSet.has(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
       };
     });
     return incoming.map((o) => o.id);
@@ -643,6 +661,10 @@ export const useScene = create((set, get) => ({
         s.pendingMeasureObjId === id ? null : s.pendingMeasurePoint,
       pendingMeasureObjId:
         s.pendingMeasureObjId === id ? null : s.pendingMeasureObjId,
+      componentDimensions: s.componentDimensions.filter(
+        (d) => d.objIdA !== id && d.objIdB !== id
+      ),
+      pendingDimensionFromId: s.pendingDimensionFromId === id ? null : s.pendingDimensionFromId,
     }));
   },
 
@@ -660,6 +682,10 @@ export const useScene = create((set, get) => ({
       selectedId: null,
       selectedIds: [],
       measurements: s.measurements.filter((m) => !ids.includes(m.objIdA) && !ids.includes(m.objIdB)),
+      componentDimensions: s.componentDimensions.filter(
+        (d) => !ids.includes(d.objIdA) && !ids.includes(d.objIdB)
+      ),
+      pendingDimensionFromId: ids.includes(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
     }));
   },
 
@@ -1080,15 +1106,55 @@ export const useScene = create((set, get) => ({
   clearMeasurements: () =>
     set({ measurements: [], pendingMeasurePoint: null }),
 
+  // ---- Component-pair dimensions (Blender-style annotations) ----
+  // Idempotent: clicking "Measure to … X" twice with X already paired is
+  // a no-op (we de-dupe on unordered {A,B}). The first click stores the
+  // "from" id; the second click commits the pair. The user can cancel a
+  // pending pick with Esc (handled by ContextMenu's onClose) or by
+  // calling `clearPendingComponentDimension`.
+  beginComponentDimension: (fromId) => {
+    if (!fromId) return;
+    set({ pendingDimensionFromId: fromId });
+  },
+  clearPendingComponentDimension: () => set({ pendingDimensionFromId: null }),
+  // Add a pair given an explicit "to" id. Reads the pending "from" id
+  // from state. Refuses to pair an object with itself.
+  commitComponentDimension: (toId) => {
+    const s = get();
+    const fromId = s.pendingDimensionFromId;
+    if (!fromId || !toId || fromId === toId) {
+      set({ pendingDimensionFromId: null });
+      return null;
+    }
+    // De-dupe on the unordered {A,B} pair so the user doesn't end up
+    // with two chips drawing the same number.
+    const exists = s.componentDimensions.find(
+      (d) =>
+        (d.objIdA === fromId && d.objIdB === toId) ||
+        (d.objIdA === toId && d.objIdB === fromId)
+    );
+    if (exists) {
+      set({ pendingDimensionFromId: null });
+      return exists.id;
+    }
+    const id = `cd-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    set({
+      componentDimensions: [
+        ...s.componentDimensions,
+        { id, objIdA: fromId, objIdB: toId },
+      ],
+      pendingDimensionFromId: null,
+    });
+    return id;
+  },
+  removeComponentDimension: (id) =>
+    set((s) => ({ componentDimensions: s.componentDimensions.filter((d) => d.id !== id) })),
+  clearComponentDimensions: () =>
+    set({ componentDimensions: [], pendingDimensionFromId: null }),
+
   clearScene: () => {
     get().pushHistory();
-    set({
-      objects: [],
-      selectedId: null,
-      projectName: "Untitled Project",
-      measurements: [],
-      pendingMeasurePoint: null,
-    });
+    set(emptyProjectState());
   },
 
   // Auto-fit the entire scene to the current printer's build volume.
@@ -1187,37 +1253,13 @@ export const useScene = create((set, get) => ({
 
   loadProject: (state) => {
     get().pushHistory();
-    set({
-      objects: state.objects || [],
-      selectedId: null,
-      projectName: state.projectName || "Untitled Project",
-      buildVolume: state.buildVolume || { x: 220, y: 220, z: 250 },
-      printerId: state.printerId || defaultPrinterId,
-      filamentId: state.filamentId || defaultFilamentId,
-      measurements: state.measurements || [],
-    });
+    set(loadProjectState(state, {
+      printerId: defaultPrinterId,
+      filamentId: defaultFilamentId,
+    }));
   },
 
-  serialize: () => {
-    const s = get();
-    return {
-      version: 2,
-      projectName: s.projectName,
-      buildVolume: s.buildVolume,
-      printerId: s.printerId,
-      filamentId: s.filamentId,
-      measurements: s.measurements,
-      objects: s.objects.map((o) => ({
-        ...o,
-        geometry: o.geometry
-          ? {
-              vertices: Array.from(o.geometry.vertices),
-              indices: o.geometry.indices ? Array.from(o.geometry.indices) : null,
-            }
-          : undefined,
-      })),
-    };
-  },
+  serialize: () => serializeProject(get()),
 }));
 
 export const useSliceSettings = create((set) => ({

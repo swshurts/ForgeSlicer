@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 59 frontend testing — Component-pair Dimensions, smart tutorial deep-link, HelpDialog split, projectIO extraction. 14 of 15 executable checks passed; 1 real bug found: fastener / slot composites never surface 'Tutorial: Hardware Library' because the suggestion map keys ('fastener', 'fastenerPair', 'slot' …) do not match the actual child primitive types ('bolt', 'nut', 'cylinder', 'cube') that buildFastenerPair / buildSlot emit.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "lib/tutorialSuggestions.js · suggestTutorialFor",
+        "issue": "Fastener composite (add-fastener-pair-btn) and slot composite (add-slot-positive-btn) never show the 'Tutorial: Hardware Library' context-menu item. Reason: buildFastenerPair returns children with type 'bolt' / 'nut' / 'cylinder' and buildSlot returns 'cube' / 'cylinder'. TUTORIAL_BY_TYPE only has keys 'fastener', 'fastenerPair', 'countersink', 'hexPocket', 'slot', 'gusset', so suggestTutorialFor() returns null for every child. Fix options: (a) add 'bolt', 'nut' to TUTORIAL_BY_TYPE and have suggestTutorialFor also inspect obj.groupId / obj.groupName (e.g. groupId starts with 'fastener-' or 'slot-'), or (b) keep a composite-only flag on the parts.",
+        "selector": "[data-testid=\"ctx-tutorial-link-btn\"] (absent for fastener/slot child rows)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "passed_checks": [
+    "T1 ctx-measure-to-btn visible & enabled with single selection",
+    "T2 right-click same source → ctx-measure-cancel-btn visible (pending preserved)",
+    "T3 right-click 2nd object → ctx-measure-commit-btn visible; clicking adds dimension",
+    "T4 component-dim-label-* rendered with dx/dy/dz spans; ΔY = '+2.00 mm' for default cube[0,10,0] vs sphere[0,12,0]",
+    "T5 Live update via Position popover popover-pos-y: cube moved to y=20 → ΔY changed from '+2.00 mm' to '−8.00 mm'",
+    "T6 component-dim-close-* removes chip; chip count → 0",
+    "T7 Deleting referenced object cascades — chip count → 0 (no orphans)",
+    "T8 Multi-select right-click → ctx-measure-to-btn rendered with disabled=true (count!==1)",
+    "T9 Sweep object right-click → ctx-tutorial-link-btn shows label containing 'Sweep + Sketch'",
+    "T11 Plain cube right-click → ctx-tutorial-link-btn NOT in DOM (suggestTutorialFor returns null)",
+    "T12 Help dialog opens; help-nav-tutorials → tutorial-iframe present",
+    "T13 help-nav-voice → help-section-voice + voice-lexicon-search both present",
+    "T14 help-nav-quickstart still renders shared typography (heading found)",
+    "T16 file-new-btn triggers clearScene → all component-dim-label-* removed (clearComponentDimensions wired)"
+  ],
+  "failed_checks": [
+    "T10 Fastener-pair right-click does NOT show 'Tutorial: Hardware Library' (root cause above). Same outcome expected for slot composite."
+  ],
+  "not_run": [
+    "T15 Project save/open file round-trip — only verified app loads & compiles cleanly with new projectIO.js (no console errors during the full suite); end-to-end download → refresh → load was skipped because it requires browser file-download interception."
+  ],
+  "action_items": [
+    "Fix tutorialSuggestions.js so composite children produced by buildFastenerPair / buildSlot surface the Hardware tutorial. Recommended: in suggestTutorialFor(), if obj.groupId starts with 'fastener-' or 'slot-' (or obj.groupName matches /^(Slot|Fastener)/), return the Hardware Library entry. Also add 'bolt' and 'nut' to TUTORIAL_BY_TYPE for symmetry.",
+    "Optional: add explicit data-testid to Inspector position fields (inspector-pos-y) so future tests don't have to open the Position popover."
+  ],
+  "critical_code_review_comments": [
+    "tutorialSuggestions.js mapping is decoupled from the actual primitive type names emitted by composites.js — the keys 'fastener', 'fastenerPair', 'slot' are never produced. This was missed because the smoke test in the agent context-note only tested a Sweep object (whose type IS 'sweep'). Recommend a unit test that asserts at least one part of each composite resolves to the expected tutorial.",
+    "ComponentDimensions math + live update is solid (verified ΔY flipped from +2.00 to −8.00 after a 10mm Y translation). Cascade-on-delete also works.",
+    "HelpDialog split is clean — no regression in Tutorials / Voice / Quickstart / Index navigation. tutorial-iframe + voice-lexicon-search still found by their original testids."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not requested)", "frontend": "93% (14/15)"},
+  "test_credentials": "Reused seeded cookie session_token=st_test_help_1780096781061 on orca-cad-slice.preview.emergentagent.com",
+  "seed_data_creation": "Created only ephemeral runtime objects (cubes, sphere, sweep, fastener pair) inside the workspace scene. clearScene at the end of the suite leaves the scene tidy.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All component-dimension testids (component-dim-label-*, component-dim-dx/dy/dz-*, component-dim-close-*, ctx-measure-to-btn, ctx-measure-cancel-btn, ctx-measure-commit-btn) work as documented. For Inspector-driven position edits use the toolbar Position popover: click menu-position-btn then popover-pos-x/y/z. Fastener-pair tutorial fix should produce ctx-tutorial-link-btn with text containing 'Hardware Library' after right-clicking ANY child of a fastener group (Bolt / Nut / Bolt Bore / Head Counterbore) — please retest both fastener AND slot composites once fixed.",
+  "rca of the issue": "RCA — bug: 'Tutorial: Hardware Library' missing for fastener / slot. Reproduction: (1) left panel → Combo tab → add-fastener-pair-btn (or 3D tab → add-slot-positive-btn). (2) Right-click any of the resulting outliner rows (Bolt / Nut / Slot · core / Slot · cap A …). Observation: ctx-tutorial-link-btn is absent from the menu. Trace: ContextMenu.jsx line 232 calls suggestTutorialFor(selectedObjs[0]); selectedObjs[0].type ∈ {'bolt','nut','cylinder','cube'}; TUTORIAL_BY_TYPE keys ∈ {'sweep','sketch','fastener','fastenerPair','countersink','hexPocket','slot','gusset'} → returns null → render branch in ContextMenu.jsx lines 510-518 ({tutorialSuggestion && (...) }) collapses to nothing. Mitigation: extend suggestTutorialFor to recognise composite group membership (obj.groupId.startsWith('fastener-') || obj.groupId.startsWith('slot-')) before falling through, and/or add 'bolt' and 'nut' as primary type keys mapping to the Hardware Library."
+}

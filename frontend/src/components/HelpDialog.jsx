@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
   FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles, Scissors,
-  UserCircle, FileText, ExternalLink, Download,
+  UserCircle, FileText,
 } from "lucide-react";
-import { TUTORIALS } from "./toolbar/HelpMegaMenu";
+import { H, P, Code, Kbd, Step } from "./help/typography";
+import VoiceCommands from "./help/sections/VoiceCommands";
+import Tutorials from "./help/sections/Tutorials";
 
 // ---------- Section content ----------
 // Each section is a function returning JSX so we can keep the file readable
@@ -53,19 +55,6 @@ function Index({ onJump }) {
         ))}
       </div>
     </div>
-  );
-}
-
-function H({ children }) { return <h3 className="text-lg font-bold text-white mt-5 mb-2">{children}</h3>; }
-function P({ children }) { return <p className="text-sm text-slate-300 leading-relaxed mb-3">{children}</p>; }
-function Code({ children }) { return <code className="px-1.5 py-0.5 rounded bg-slate-800 text-orange-300 font-mono text-[12px]">{children}</code>; }
-function Kbd({ children }) { return <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[11px]">{children}</kbd>; }
-function Step({ n, children }) {
-  return (
-    <li className="flex gap-3 mb-2">
-      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-orange-500/20 border border-orange-500/60 text-orange-300 text-xs font-bold flex items-center justify-center">{n}</span>
-      <div className="text-sm text-slate-300 leading-relaxed pt-0.5">{children}</div>
-    </li>
   );
 }
 
@@ -326,157 +315,6 @@ function Account() {
   );
 }
 
-// ---------- Voice command lexicon ----------
-const VOICE_LEXICON = [
-  {
-    category: "Add objects",
-    items: [
-      { phrase: "Add a cube",                                   action: "add",       desc: "Adds a default positive cube to the scene." },
-      { phrase: "Add a negative cylinder 5 millimeters wide",   action: "add",       desc: "Adds a negative cylinder with diameter ≈ 5 mm." },
-      { phrase: "Add a sphere with radius 8",                   action: "add",       desc: "Adds a sphere with explicit radius." },
-      { phrase: "Add a 10 by 20 by 5 cube",                     action: "add",       desc: "Adds a cube with explicit X/Y/Z dimensions." },
-      { phrase: "Drop a hex prism",                             action: "add",       desc: "Adds a cylinder with 6 sides (a hexagonal prism)." },
-    ],
-  },
-  {
-    category: "Move / Rotate / Scale",
-    items: [
-      { phrase: "Move it up 10",                                action: "translate", desc: "Translates the selection +10 mm on Y." },
-      { phrase: "Move 5 millimeters to the right",              action: "translate", desc: "+5 mm on X." },
-      { phrase: "Slide forward 3",                              action: "translate", desc: "+3 mm on Z (toward the camera)." },
-      { phrase: "Rotate 90 degrees on Z",                       action: "rotate",    desc: "Rotates the selection 90° about the Z axis." },
-      { phrase: "Tilt 15 degrees on X",                         action: "rotate",    desc: "Rotates 15° about the X axis." },
-      { phrase: "Scale by 2",                                   action: "scale",     desc: "Uniformly scales the selection ×2." },
-      { phrase: "Make it twice as tall",                        action: "scale",     desc: "Scales Y by 2." },
-      { phrase: "Resize to 30 by 30 by 5",                      action: "resize",    desc: "Sets exact dimensions instead of a factor." },
-      { phrase: "Position at 0 10 0",                           action: "position",  desc: "Moves the part to absolute coordinates." },
-    ],
-  },
-  {
-    category: "Scene management",
-    items: [
-      { phrase: "Drop to bed",                                  action: "drop",      desc: "Snaps the bottom of the selection to Y=0." },
-      { phrase: "Delete it",                                    action: "delete",    desc: "Removes the current selection." },
-      { phrase: "Duplicate this",                               action: "duplicate", desc: "Copies the selection in place." },
-      { phrase: "Duplicate and mirror on X",                    action: "duplicate", desc: "Copies + mirrors so the new part sits flush." },
-      { phrase: "Group these",                                  action: "group",     desc: "Wraps the multi-selection in an Assembly group." },
-      { phrase: "Ungroup",                                      action: "ungroup",   desc: "Breaks the selection out of its group." },
-      { phrase: "Select all",                                   action: "select_all", desc: "Selects every object." },
-      { phrase: "Clear selection",                              action: "clear_selection", desc: "Deselects everything." },
-      { phrase: "Undo",                                         action: "undo",      desc: "Steps backward one atomic action." },
-      { phrase: "Redo",                                         action: "redo",      desc: "Steps forward." },
-    ],
-  },
-  {
-    category: "Booleans & modifiers",
-    items: [
-      { phrase: "Subtract these two",                           action: "boolean",   desc: "Runs a CSG subtract on the two most recent / selected parts." },
-      { phrase: "Union them",                                   action: "boolean",   desc: "CSG union." },
-      { phrase: "Intersect",                                    action: "boolean",   desc: "CSG intersect." },
-      { phrase: "Make this negative",                           action: "modifier",  desc: "Flips the selection's modifier tag." },
-    ],
-  },
-  {
-    category: "AI generation",
-    items: [
-      { phrase: "Open the AI generator",                        action: "open",        desc: "Opens the AI Generate dialog (no prompt)." },
-      { phrase: "Generate a small dragon for FDM printing",     action: "ai_generate", desc: "Pre-fills the AI generator with the noun phrase AND auto-submits — uses a credit." },
-      { phrase: "Make me a coffee mug with AI",                 action: "ai_generate", desc: "Pre-fills + auto-submits." },
-      { phrase: "AI a low-poly fox",                            action: "ai_generate", desc: "Pre-fills + auto-submits." },
-      { phrase: "I want to make a chess piece with AI",         action: "ai_generate", desc: "Pre-fills the prompt but waits for you to click Generate — no credit until you do." },
-    ],
-  },
-  {
-    category: "Modes & I/O",
-    items: [
-      { phrase: "Switch to rotate mode",                        action: "mode",      desc: "Sets the gizmo to rotation." },
-      { phrase: "Translate mode",                               action: "mode",      desc: "Sets the gizmo to translate." },
-      { phrase: "Export as STL",                                action: "export",    desc: "Downloads the scene as a binary STL." },
-      { phrase: "Export 3MF",                                   action: "export",    desc: "Downloads as 3MF (preserves modifiers + colors)." },
-      { phrase: "Save the project",                             action: "export",    desc: "Writes the editable .forge.json file." },
-      { phrase: "Open share dialog",                            action: "open",      desc: "Opens the Share-to-Gallery dialog." },
-      { phrase: "Save as component",                            action: "open",      desc: "Opens the Component Library save dialog." },
-      { phrase: "Open slicer",                                  action: "open",      desc: "Opens the Send-to-Slicer dialog." },
-    ],
-  },
-];
-
-function VoiceCommands({ onTry }) {
-  const [filter, setFilter] = useState("");
-  const [busy, setBusy] = useState(null);
-  const handleTry = async (phrase) => {
-    if (!onTry) return;
-    setBusy(phrase);
-    try { await onTry(phrase); } finally { setBusy(null); }
-  };
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return VOICE_LEXICON;
-    return VOICE_LEXICON
-      .map((g) => ({ ...g, items: g.items.filter((i) => i.phrase.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q) || i.action.toLowerCase().includes(q)) }))
-      .filter((g) => g.items.length > 0);
-  }, [filter]);
-  return (
-    <div data-testid="help-section-voice">
-      <H>Voice Commands — How it works</H>
-      <P>Click the <Code>Voice</Code> button in the top toolbar (or press <Kbd>V</Kbd>). ForgeSlicer captures audio with your browser microphone, transcribes it through OpenAI Whisper, then parses your intent with GPT — so you can phrase commands naturally instead of memorizing rigid syntax.</P>
-      <H>Hands-free flow</H>
-      <ol className="mb-4">
-        <Step n="1">Tap Voice once to start listening. Speak your command.</Step>
-        <Step n="2">Pause for ~2 seconds. Your transcript appears on screen.</Step>
-        <Step n="3">Say <strong className="text-orange-300">"Run"</strong> to execute, or just speak again to replace the transcript.</Step>
-      </ol>
-      <H>Lexicon</H>
-      <P>Every example below is a real command that will execute — the LLM understands synonyms and natural phrasing, so feel free to deviate from these exact words.</P>
-      <div className="relative mb-3">
-        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input
-          data-testid="voice-lexicon-search"
-          type="text"
-          placeholder="Filter commands…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="w-full h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white pl-8 pr-3 focus:border-orange-500 outline-none"
-        />
-      </div>
-      {filtered.map((group) => (
-        <div key={group.category} className="mb-4" data-testid={`voice-group-${group.category.replace(/\W+/g, "-").toLowerCase()}`}>
-          <div className="text-[11px] uppercase tracking-wider text-orange-300 font-semibold mb-1.5">{group.category}</div>
-          <table className="w-full text-sm border border-slate-800 rounded overflow-hidden">
-            <thead className="text-left text-[10px] text-slate-500 uppercase tracking-wider bg-slate-900/60">
-              <tr><th className="px-2 py-1.5 w-1/3">Say…</th><th className="px-2 py-1.5">What happens</th>{onTry && <th className="px-2 py-1.5 w-16 text-right">Try</th>}</tr>
-            </thead>
-            <tbody>
-              {group.items.map((it) => (
-                <tr key={it.phrase} className="border-t border-slate-800">
-                  <td className="px-2 py-1.5 font-mono text-orange-300 italic">"{it.phrase}"</td>
-                  <td className="px-2 py-1.5 text-slate-300">{it.desc}</td>
-                  {onTry && (
-                    <td className="px-2 py-1.5 text-right">
-                      <button
-                        data-testid={`voice-try-${it.phrase.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
-                        onClick={() => handleTry(it.phrase)}
-                        disabled={busy === it.phrase}
-                        className="px-2 h-6 text-[10px] rounded border border-orange-500/40 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 disabled:opacity-50"
-                        title={`Run "${it.phrase}" on your scene`}
-                      >
-                        {busy === it.phrase ? "…" : "Try ▶"}
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-      {filtered.length === 0 && (
-        <div className="text-sm text-slate-500 italic">No commands match "{filter}".</div>
-      )}
-    </div>
-  );
-}
-
 function AIGenerate() {
   return (
     <div data-testid="help-section-ai">
@@ -537,100 +375,6 @@ function Shortcuts() {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// ---------- Tutorials tab — inline PDF viewer over the shared catalog ----------
-// The TUTORIALS list is imported from HelpMegaMenu so both UIs stay in sync.
-// Layout: a thin tutorial-picker rail on the left, an iframe filling the rest.
-// We pin the picker rail INSIDE the content area (the outer left rail still
-// shows the global section nav) so users can flip between PDFs without losing
-// their place in the manual.
-function Tutorials() {
-  const [activeFile, setActiveFile] = useState(TUTORIALS[0]?.file);
-  const active = TUTORIALS.find((t) => t.file === activeFile) || TUTORIALS[0];
-  if (!active) {
-    return <P>No tutorial PDFs are available — try regenerating them with <Code>python3 scripts/build_all_tutorials.py</Code>.</P>;
-  }
-  return (
-    <div data-testid="help-section-tutorials" className="h-full flex flex-col">
-      {/* Header */}
-      <div className="px-6 pt-5 pb-3 border-b border-slate-800">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          <FileText size={18} className="text-orange-400" />
-          Tutorial PDFs
-        </h2>
-        <p className="text-[12px] text-slate-400 mt-1 leading-snug">
-          Long-form illustrated guides, generated server-side from ForgeSlicer source.
-          Pick one from the list — it renders inline below. Use the buttons in the
-          top-right of the viewer to open in a new tab or download a copy.
-        </p>
-      </div>
-      <div className="flex-1 flex overflow-hidden">
-        {/* Tutorial picker rail */}
-        <div className="w-56 border-r border-slate-800 overflow-y-auto bg-slate-950/40" data-testid="tutorial-list">
-          {TUTORIALS.map((t) => {
-            const isActive = t.file === activeFile;
-            return (
-              <button
-                key={t.file}
-                data-testid={`tutorial-pick-${t.file.replace(/\.pdf$/, "").toLowerCase()}`}
-                onClick={() => setActiveFile(t.file)}
-                className={`w-full text-left px-3 py-2 border-b border-slate-800/60 transition-colors ${
-                  isActive
-                    ? "bg-orange-500/10 border-l-2 border-l-orange-500"
-                    : "hover:bg-slate-800/40 border-l-2 border-l-transparent"
-                }`}
-              >
-                <div className={`text-[12px] font-semibold ${isActive ? "text-orange-200" : "text-slate-200"}`}>
-                  {t.title}
-                </div>
-                <div className="text-[10px] text-slate-500 leading-tight mt-0.5 line-clamp-2">
-                  {t.desc}
-                </div>
-                <div className="text-[9.5px] text-slate-600 mt-0.5 font-mono">{t.minutes} min</div>
-              </button>
-            );
-          })}
-        </div>
-        {/* Viewer */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
-          <div className="h-9 border-b border-slate-800 flex items-center px-3 gap-2 bg-slate-900/60">
-            <FileText size={13} className="text-orange-400" />
-            <div className="text-[11.5px] font-semibold text-slate-200 truncate flex-1">{active.title}</div>
-            <a
-              data-testid="tutorial-open-new-tab"
-              href={`/docs/${active.file}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in a new tab"
-              className="h-7 px-2 rounded text-[10px] text-slate-300 hover:bg-slate-800 hover:text-orange-300 flex items-center gap-1"
-            >
-              <ExternalLink size={11} /> Open
-            </a>
-            <a
-              data-testid="tutorial-download"
-              href={`/docs/${active.file}`}
-              download={active.file}
-              title="Download PDF"
-              className="h-7 px-2 rounded text-[10px] text-slate-300 hover:bg-slate-800 hover:text-orange-300 flex items-center gap-1"
-            >
-              <Download size={11} /> Download
-            </a>
-          </div>
-          {/* iframe — #toolbar=0 hides the default PDF chrome on Chromium so
-              the embedded view feels native. Browsers without a PDF viewer
-              still get the fallback link below. */}
-          <iframe
-            key={active.file}
-            data-testid="tutorial-iframe"
-            title={active.title}
-            src={`/docs/${active.file}#toolbar=0&navpanes=0`}
-            className="flex-1 w-full bg-slate-100"
-          />
-        </div>
-      </div>
     </div>
   );
 }

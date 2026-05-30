@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair, Grid3X3, Waves, Spline } from "lucide-react";
+import { Layers, Square as SquareIcon, GitMerge, Copy, Trash2, FlipHorizontal, FlipVertical, FlipHorizontal2, ArrowDownToLine, Library, Crosshair, Grid3X3, Waves, Spline, Ruler, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { useScene } from "../lib/store";
 import { flattenObjectsAsync } from "../lib/workerClient";
 import { computeRotatedBBox } from "../lib/geometry";
+import { suggestTutorialFor } from "../lib/tutorialSuggestions";
 
 // A small right-click context menu shown for the viewport AND outliner.
 // Positioned at the page coordinates passed via `position`, auto-closes on
@@ -213,6 +214,24 @@ export default function ContextMenu({ position, onClose }) {
   // the dialog is rendered once at Workspace level).
   const openTextureLibrary = useScene((s) => s.openTextureLibrary);
   const addSweepFromSketch = useScene((s) => s.addSweepFromSketch);
+
+  // ---- Component-pair dimension wiring ----
+  // Pending source id lives on the store so the workflow is "click target
+  // first → right-click → 'Measure to...' → right-click DIFFERENT object →
+  // 'Add dimension here'". Reading it here lets us swap the menu label
+  // dynamically depending on whether we're starting or finishing a pair.
+  const pendingDimensionFromId = useScene((s) => s.pendingDimensionFromId);
+  const beginComponentDimension = useScene((s) => s.beginComponentDimension);
+  const commitComponentDimension = useScene((s) => s.commitComponentDimension);
+  const clearPendingComponentDimension = useScene((s) => s.clearPendingComponentDimension);
+  const pendingDimensionFromObj = pendingDimensionFromId
+    ? useScene.getState().objects.find((o) => o.id === pendingDimensionFromId)
+    : null;
+  // Tutorial suggestion for the right-clicked object (single-select only —
+  // multi-select is ambiguous about which suggestion to surface).
+  const tutorialSuggestion = (count === 1 && selectedObjs[0])
+    ? suggestTutorialFor(selectedObjs[0])
+    : null;
 
   // True when exactly one sketch primitive is selected — drives the
   // visibility of the "Use sketch as Sweep profile / path" items.
@@ -425,6 +444,81 @@ export default function ContextMenu({ position, onClose }) {
           onClose();
         }}
       />
+      <div className="h-px bg-slate-800 my-1" />
+      {/* ---- Component-pair dimension (Blender-style "Item" offsets) ---- */}
+      {(() => {
+        const targetId = snapshot.primary || snapshot.ids[0];
+        if (count !== 1 || !targetId) {
+          return (
+            <Item
+              icon={Ruler}
+              label="Measure to…"
+              testid="ctx-measure-to-btn"
+              disabled
+              onClick={() => {}}
+            />
+          );
+        }
+        const pending = pendingDimensionFromId;
+        if (!pending) {
+          // Phase 1: start a pair from THIS object.
+          return (
+            <Item
+              icon={Ruler}
+              label="Measure to…"
+              hint="pick 2nd"
+              testid="ctx-measure-to-btn"
+              onClick={() => {
+                restoreSelection();
+                beginComponentDimension(targetId);
+                toast.message(`Now right-click the second part to dimension to "${selectedObjs[0]?.name || "it"}"`);
+                onClose();
+              }}
+            />
+          );
+        }
+        if (pending === targetId) {
+          // Phase 1.5: same object right-clicked again → cancel.
+          return (
+            <Item
+              icon={Ruler}
+              label="Cancel pending measure"
+              hint="esc"
+              testid="ctx-measure-cancel-btn"
+              onClick={() => { clearPendingComponentDimension(); onClose(); }}
+            />
+          );
+        }
+        // Phase 2: commit the pair.
+        const fromName = pendingDimensionFromObj?.name || "part";
+        return (
+          <Item
+            icon={Ruler}
+            label={`Add dimension: ${fromName} ↔ here`}
+            testid="ctx-measure-commit-btn"
+            onClick={() => {
+              restoreSelection();
+              const id = commitComponentDimension(targetId);
+              if (id) toast.success("Dimension added — drag either part to see it update");
+              else toast.error("Could not add dimension (same object?)");
+              onClose();
+            }}
+          />
+        );
+      })()}
+      {/* ---- Smart tutorial deep-link ---- */}
+      {tutorialSuggestion && (
+        <Item
+          icon={BookOpen}
+          label={`Tutorial: ${tutorialSuggestion.title}`}
+          hint="pdf"
+          testid="ctx-tutorial-link-btn"
+          onClick={() => {
+            window.open(`/docs/${tutorialSuggestion.file}`, "_blank", "noopener,noreferrer");
+            onClose();
+          }}
+        />
+      )}
       <div className="h-px bg-slate-800 my-1" />
       <Item
         icon={Layers}
