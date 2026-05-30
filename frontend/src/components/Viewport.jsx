@@ -7,6 +7,7 @@ import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { computeComponentDimension, fmtSignedMm } from "../lib/componentDimensions";
+import { nearestCorner, offsetToObject } from "../lib/rulerAnchor";
 import ContextMenu from "./ContextMenu";
 
 const POSITIVE_COLOR = "#F97316";
@@ -24,7 +25,7 @@ function colorForObject(obj) {
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 
-function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onContextMenu, scene }) {
+function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, onContextMenu, scene }) {
   const meshRef = useRef();
   // For sweep objects with `kind:"ref"` paths we have to invalidate the
   // memo whenever the SOURCE object's relevant fields change — depend
@@ -64,6 +65,8 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, onC
         e.stopPropagation();
         if (measureMode) {
           onMeasureHit([e.point.x, e.point.y, e.point.z], obj.id);
+        } else if (rulerMode) {
+          onRulerHit([e.point.x, e.point.y, e.point.z], obj.id);
         } else {
           const ne = e.nativeEvent || {};
           const mode = ne.ctrlKey || ne.metaKey ? "toggle" : ne.shiftKey ? "add" : null;
@@ -606,6 +609,129 @@ function ComponentDimensionsLayer() {
   );
 }
 
+// ---- Anchored Ruler overlay (TinkerCAD-style) ----
+// Renders three blue dashed axis-rays from the anchor world-point out to
+// the build-plate edges (filtered by rulerAxesMode), a glowing dot at the
+// origin with a "0.00" label, and one signed-offset chip per other visible
+// scene object. The chips track the nearest-corner of each object so the
+// reading matches the TinkerCAD UX: "this part is +12 mm to the right of
+// my anchor." Everything is recomputed every render from the live store,
+// so dragging a part updates its chip in real time.
+function RulerAnchorLayer() {
+  const mode = useScene((s) => s.rulerMode);
+  const anchor = useScene((s) => s.rulerAnchor);
+  const axes = useScene((s) => s.rulerAxesMode);
+  const objects = useScene((s) => s.objects);
+  const buildVolume = useScene((s) => s.buildVolume);
+  const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
+  const cycleRulerAxes = useScene((s) => s.cycleRulerAxes);
+  if (!mode || !anchor) return null;
+  const [ax, ay, az] = anchor.worldPoint;
+  const halfX = (buildVolume?.x || 220) / 2;
+  const halfZ = (buildVolume?.z || 220) / 2;
+  const maxY = buildVolume?.y || 250;
+  const showX = axes === "xyz" || axes === "x";
+  const showY = axes === "xyz" || axes === "y";
+  const showZ = axes === "xyz" || axes === "z";
+  return (
+    <group>
+      {/* Origin marker — small blue sphere with a "0.00" label */}
+      <mesh position={[ax, ay, az]} renderOrder={1001}>
+        <sphereGeometry args={[1.6, 24, 24]} />
+        <meshBasicMaterial color="#38BDF8" depthTest={false} />
+      </mesh>
+      {/* Axis rays — extend each visible axis to the build-volume edges */}
+      {showX && (
+        <Line
+          points={[[-halfX, ay, az], [halfX, ay, az]]}
+          color="#38BDF8" lineWidth={1.5} dashed dashSize={3} gapSize={2} depthTest={false}
+        />
+      )}
+      {showY && (
+        <Line
+          points={[[ax, 0, az], [ax, maxY, az]]}
+          color="#38BDF8" lineWidth={1.5} dashed dashSize={3} gapSize={2} depthTest={false}
+        />
+      )}
+      {showZ && (
+        <Line
+          points={[[ax, ay, -halfZ], [ax, ay, halfZ]]}
+          color="#38BDF8" lineWidth={1.5} dashed dashSize={3} gapSize={2} depthTest={false}
+        />
+      )}
+      {/* Anchor HUD card — sits at the origin, shows the anchored part's
+          name + dismiss / axis-toggle buttons (matches TinkerCAD's
+          small panel with × and the hamburger). */}
+      <Html position={[ax, ay, az]} center zIndexRange={[100, 0]} sprite={false}>
+        <div
+          data-testid="ruler-anchor-hud"
+          className="flex items-center gap-1 px-2 py-1 bg-slate-950/95 border border-sky-400/70 rounded-md shadow-xl whitespace-nowrap select-none translate-x-3 -translate-y-7"
+          style={{ pointerEvents: "auto" }}
+        >
+          <span className="text-[10px] font-bold text-sky-300 uppercase tracking-wider">0.00</span>
+          <span className="text-[10px] text-slate-400">·</span>
+          <span className="text-[10px] text-slate-200 max-w-[10ch] truncate">{anchor.objName}</span>
+          <button
+            data-testid="ruler-cycle-axes-btn"
+            onClick={(e) => { e.stopPropagation(); cycleRulerAxes(); }}
+            className="ml-1 w-5 h-5 rounded-sm bg-slate-800 hover:bg-sky-500/40 text-slate-300 hover:text-white flex items-center justify-center"
+            title={`Axes: ${axes.toUpperCase()} — click to cycle`}
+          >
+            <span className="text-[9px] font-mono font-bold leading-none">{axes.toUpperCase()}</span>
+          </button>
+          <button
+            data-testid="ruler-clear-anchor-btn"
+            onClick={(e) => { e.stopPropagation(); clearRulerAnchor(); }}
+            className="w-5 h-5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
+            title="Dismiss the anchor (turns the scale off)"
+          >
+            <span className="text-[12px] leading-none -mt-px">×</span>
+          </button>
+        </div>
+      </Html>
+      {/* One signed-offset chip per OTHER object (skip the anchor's own part). */}
+      {objects.filter((o) => o.visible !== false && o.id !== anchor.objId).map((o) => (
+        <RulerOffsetChip key={o.id} obj={o} anchorPt={anchor.worldPoint} axes={axes} />
+      ))}
+    </group>
+  );
+}
+
+// Per-object offset chip — anchors to the world centre of `obj` (NOT the
+// nearest corner) because the chip needs a stable, predictable position
+// while the user is reading it. The numbers inside the chip ARE the
+// nearest-corner offsets, matching TinkerCAD's "this edge is X mm from 0".
+function RulerOffsetChip({ obj, anchorPt, axes }) {
+  const off = offsetToObject(anchorPt, obj);
+  if (!off) return null;
+  const [dx, dy, dz] = off.delta;
+  const cx = obj.position?.[0] || 0;
+  const cy = obj.position?.[1] || 0;
+  const cz = obj.position?.[2] || 0;
+  return (
+    <Html position={[cx, cy, cz]} center zIndexRange={[80, 0]} sprite={false}>
+      <div
+        data-testid={`ruler-offset-chip-${obj.id}`}
+        className="flex flex-col gap-0 px-2 py-1 bg-slate-950/95 border border-sky-500/50 rounded-md shadow-xl whitespace-nowrap select-none translate-y-2"
+        style={{ pointerEvents: "none" }}
+      >
+        <span className="text-[9px] uppercase tracking-wider text-sky-300 leading-tight">{obj.name || obj.type}</span>
+        <div className="flex gap-2 font-mono text-[10px] leading-tight">
+          {(axes === "xyz" || axes === "x") && (
+            <span data-testid={`ruler-offset-x-${obj.id}`} className="text-rose-300">X {fmtSignedMm(dx)}</span>
+          )}
+          {(axes === "xyz" || axes === "y") && (
+            <span data-testid={`ruler-offset-y-${obj.id}`} className="text-emerald-300">Y {fmtSignedMm(dy)}</span>
+          )}
+          {(axes === "xyz" || axes === "z") && (
+            <span data-testid={`ruler-offset-z-${obj.id}`} className="text-amber-300">Z {fmtSignedMm(dz)}</span>
+          )}
+        </div>
+      </div>
+    </Html>
+  );
+}
+
 // Tiny bridge component placed INSIDE the Canvas so we can grab camera / gl
 // / scene refs and use them from the outer DOM (marquee picker).
 function CanvasBridge({ bridgeRef }) {
@@ -626,6 +752,8 @@ export default function Viewport() {
   const measureMode = useScene((s) => s.measureMode);
   const handleMeasureClick = useScene((s) => s.handleMeasureClick);
   const measurementsCount = useScene((s) => s.measurements.length);
+  const rulerMode = useScene((s) => s.rulerMode);
+  const setRulerAnchor = useScene((s) => s.setRulerAnchor);
   // Canvas background tracks the global UI theme so the 3D scene
   // doesn't sit on a slate-800 island when the user picks Light/Dim.
   // Uses the *resolved* theme (concrete dark/dim/light) so "system"
@@ -819,14 +947,28 @@ export default function Viewport() {
             onSelect={selectObject}
             measureMode={measureMode}
             onMeasureHit={handleMeasureClick}
+            rulerMode={rulerMode}
+            onRulerHit={(point, objId) => {
+              const oo = objects.find((x) => x.id === objId);
+              if (!oo) return;
+              const c = nearestCorner(oo, point);
+              if (!c) return;
+              setRulerAnchor({
+                worldPoint: [c.x, c.y, c.z],
+                objId: oo.id,
+                objName: oo.name || "Anchor",
+                cornerKey: c.key,
+              });
+            }}
             onContextMenu={handleContextMenu}
             scene={{ objects }}
           />
         ))}
 
-        {!measureMode && <SelectedTransform />}
+        {!measureMode && !rulerMode && <SelectedTransform />}
         <MeasurementsLayer />
         <ComponentDimensionsLayer />
+        <RulerAnchorLayer />
         <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />
 

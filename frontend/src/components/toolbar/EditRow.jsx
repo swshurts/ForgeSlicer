@@ -11,7 +11,7 @@
 import React from "react";
 import {
   PlusSquare, MinusSquare, Combine, Move3D, RotateCw, Scale3D,
-  Magnet, Grid3x3, Undo2, Redo2, Ruler,
+  Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor,
   MapPin, Maximize, Copy, FlipHorizontal2, Scissors, Sliders,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
@@ -50,6 +50,8 @@ export default function EditRow({
   const redoLen = useScene((s) => s.redoStack.length);
   const measureMode = useScene((s) => s.measureMode);
   const setMeasureMode = useScene((s) => s.setMeasureMode);
+  const rulerMode = useScene((s) => s.rulerMode);
+  const setRulerMode = useScene((s) => s.setRulerMode);
 
   // Single source of truth for the seven popover buttons. Adding a new
   // popover means adding one entry here + a render case in TopToolbar.
@@ -117,6 +119,14 @@ export default function EditRow({
       </IconBtn>
       <IconBtn active={measureMode} testid="measure-mode-btn" onClick={() => setMeasureMode(!measureMode)} title="Measure (M) — click two points to measure distance">
         <Ruler size={16} />
+      </IconBtn>
+      <IconBtn
+        active={rulerMode}
+        testid="ruler-anchor-mode-btn"
+        onClick={() => setRulerMode(!rulerMode)}
+        title="Anchor Ruler — click an object to drop a 0-point on the bed, then read offsets to other parts"
+      >
+        <Anchor size={16} />
       </IconBtn>
 
       <Divider />

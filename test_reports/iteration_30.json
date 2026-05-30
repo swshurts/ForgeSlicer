@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only testing of TinkerCAD-style anchored ruler tool (iter 60). 13 acceptance tests executed using a hybrid of real toolbar clicks + programmatic store.setRulerAnchor() (as R3F mesh-clicks are flaky in headless Chromium per agent context note). 12/13 fully pass; T8 has a latent state-cleanup bug.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "EditRow.jsx ruler-anchor-mode-btn",
+        "issue": "Toggling the toolbar button OFF does not clear rulerAnchor from the store — only rulerMode is flipped. Visually correct (HUD/chips are gated on rulerMode so they disappear), but if the user toggles the button back ON the stale anchor from the previous session reappears unexpectedly. Spec explicitly states: 'Toggling the toolbar button OFF clears the anchor AND turns mode off'. Fix: change onClick to () => { setRulerMode(!rulerMode); if (rulerMode) clearRulerAnchor(); } (clear when transitioning ON->OFF). Verified via window.__forgeStore.getState().rulerAnchor after the toggle — it was still { worldPoint:[0,0,0], objId:'cube-…' } instead of null.",
+        "selector": "[data-testid=\"ruler-anchor-mode-btn\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: in EditRow.jsx, on the ruler-anchor-mode-btn onClick, also call clearRulerAnchor() when transitioning from ON->OFF so the stale anchor doesn't resurrect when re-toggled. (One-line fix.)"
+  ],
+  "critical_code_review_comments": [
+    "rulerAnchor.js / Viewport.jsx: nearestCorner uses Euclidean distance over the 8 corner candidates — this is the right choice and matches the spec 'snap to the visually-nearest corner'.",
+    "store.js: cascade cleanup in removeObject / removeSelected / replaceObjects correctly clears rulerAnchor when its objId is removed. Verified live in T9.",
+    "store.js: cycleRulerAxes uses a fixed 4-element rotation array — clean. Verified T5 sequence matches xyz->x->y->z->xyz exactly.",
+    "useToolbarShortcuts.js Escape handler clears rulerAnchor first (one layer per Esc) — verified T7.",
+    "Inconsistency between setRulerMode (mode-only setter) and the toolbar button intent (mode off => mode off + clear anchor). Suggest either (a) make setRulerMode(false) also null rulerAnchor, or (b) handle it at the button. Currently neither is done."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "12/13 = 92%"},
+  "test_credentials": "session_token=st_test_help_1780096781061 cookie (provided in review_request)",
+  "seed_data_creation": "Programmatically seeded scenes via window.__forgeStore: (cube,sphere) with mixed +/- offsets; (cube,sphere,cylinder) for cascade tests. clearScene() between tests. No persisted backend data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All ruler-anchor data-testids (ruler-anchor-mode-btn, ruler-anchor-hud, ruler-cycle-axes-btn, ruler-clear-anchor-btn, ruler-offset-chip-<id>, ruler-offset-x/y/z-<id>) are wired correctly and present in DOM. Programmatic anchor placement via window.__forgeStore.getState().setRulerAnchor(...) is the most reliable test technique — R3F mesh-clicks are flaky in headless. Workspace URL is /workspace (not root). To toggle ruler mode programmatically use setRulerMode(true/false). To verify cascade-on-delete use removeObject(id). Signed format uses Unicode minus '−' (U+2212), not ASCII '-' — check for both when validating values.",
+  "test_results_detail": {
+    "T1_btn_present_next_to_measure": "PASS",
+    "T2_toggle_active_class_orange": "PASS (class bg-orange-500/20 border-orange-500/60 applied)",
+    "T3_hud_appears_on_anchor": "PASS",
+    "T4_offset_chip_for_others_signed": "PASS (e.g. Sphere chip: X −3.00 mm, Y +0.00 mm, Z +4.00 mm — mixed signs confirmed; anchored cube has NO chip)",
+    "T5_axis_cycle_xyz_x_y_z_xyz": "PASS (sequence + DOM presence/absence of x/y/z spans verified exactly)",
+    "T6_clear_anchor_btn_keeps_mode_on": "PASS",
+    "T7_escape_clears_anchor_keeps_mode_on": "PASS",
+    "T8_toolbar_toggle_off_clears_anchor": "PARTIAL — mode_off=true, hud_gone=true, BUT anchor_cleared=false. Visually correct, latent bug.",
+    "T9_cascade_delete_anchored_part": "PASS (HUD vanishes + rulerAnchor=null)",
+    "T10_cascade_delete_other_part": "PASS (anchor preserved, only deleted object's chip removed)",
+    "T11_live_update_on_position_change": "PASS (X +15.00 mm -> X +70.00 mm after position update)",
+    "T12_measure_mode_regression": "PASS (measure-mode-btn still toggles measureMode)",
+    "T13_component_pair_dim_regression": "PASS (component-dim-label-<id> rendered after begin/commitComponentDimension)"
+  }
+}

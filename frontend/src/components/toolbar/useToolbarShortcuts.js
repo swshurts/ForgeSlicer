@@ -49,6 +49,12 @@ export function useToolbarShortcuts() {
         }
       } else if (e.key.toLowerCase() === "m") {
         s.setMeasureMode(!s.measureMode);
+      } else if (e.key === "Escape") {
+        // Cleanup keyboard escape: dismiss anchor first, then pending
+        // dimension pick, then drop selection. We bail out of only ONE
+        // layer per Esc press so the user can step back through.
+        if (s.rulerAnchor) { s.clearRulerAnchor(); }
+        else if (s.pendingDimensionFromId) { s.clearPendingComponentDimension(); }
       } else if (e.key.toLowerCase() === "g") {
         s.setTransformMode("translate");
       } else if (e.key.toLowerCase() === "r") {
