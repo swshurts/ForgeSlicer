@@ -1250,6 +1250,21 @@ Verified end-to-end with a Fastener Pair (Bolt + Bolt Bore + Head Counterbore + 
 - Dim labels (`+20.00 mm × 3`) reflect the assembly's outer bbox
 - Ghost snap-dots cluster around the assembly perimeter, not on a single child
 
+### Iteration 62-f (HUD relocation + Save measurement pin)
+User feedback: *"the legends are almost hidden... move the legends more mid-level and slightly to the right of the left menu panel. I'm not sure of the 'Save measurement' pin. Implement it and tell me how to use it."*
+
+Changes:
+- ✅ **HUD repositioned** — `RulerScreenHud` now sits at `top-1/2 -translate-y-1/2 left-[252px]` (vertically centred, just right of the 252-px LeftPanel) so it's discoverable without overlapping the model.
+- ✅ **Pin feature** — new emerald Pin button (lucide `Pin`) inside the target HUD card. Clicking saves the current anchor + target snap-pair as a persistent annotation and clears ONLY the target, leaving the anchor in place so the user can chain measurements from the same starting point.
+- ✅ **Pinned-count badge** appears in the HUD stack showing `N pinned · ×` (× clears all).
+- ✅ **PinnedRulerLayer** renders all saved measurements live in the 3D scene with the same L-bracket + dim-label style, but slightly muted (smaller endpoint spheres, darker line colours) so live vs. pinned reads at a glance. Each pinned dim carries its own × beside the target marker for individual removal.
+- ✅ **Live tracking** via `resolveSnapWorld(snapRec, allObjects)` — pinned measurements recompute their world coords every render from the live object positions, so moving a part updates its pinned chip too.
+- ✅ **Cascade cleanup** — pinned dims referencing a deleted object are pruned automatically (removeObject / removeSelected / importReplace).
+
+Files: `lib/store.js` (state + `pinRulerMeasurement` / `removePinnedRulerDim` / `clearPinnedRulerDims` + cleanup), `lib/projectIO.js` (reset on load/clear), `components/Viewport.jsx` (Pin button in HUD, count badge, `PinnedRulerLayer`, `resolveSnapWorld` helper).
+
+Verified end-to-end: 2 measurements pinned across two parts, all 4 axis labels rendered live in the scene, badge reads "2 pinned".
+
 ### Iteration 62-e (screen-space HUD + ghost-dot cleanup)
 User reported: *"Labels are still covering points I want to measure. There is a mirror image of the negative component under the 'Cube' label."*
 

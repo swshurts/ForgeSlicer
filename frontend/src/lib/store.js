@@ -244,6 +244,12 @@ export const useScene = create((set, get) => ({
   rulerTarget: null,            // {worldPoint:[x,y,z], objId, objName, snapKey, snapKind} | null
   rulerAxesMode: "xyz",         // 'xyz' | 'x' | 'y' | 'z'
   rulerSnapKinds: ["corner", "edge", "face", "center"],
+  // Persistent pinned measurements — each entry stores a frozen
+  // {anchor, target} snap-pair. Render layer recomputes their world
+  // positions every frame from the live object positions so they track
+  // moves. New entries are appended on the user clicking the pin button
+  // in RulerScreenHud (only enabled while both anchor & target exist).
+  pinnedRulerDims: [],          // [{id, anchor:snapRec, target:snapRec}]
 
   // ---- cut tool ----
   // When cutMode is true, the viewport renders an adjustable cut plane that
@@ -681,6 +687,10 @@ export const useScene = create((set, get) => ({
         pendingDimensionFromId: removeSet.has(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
         rulerAnchor: rulerRefStillValid(s.rulerAnchor, s.objects, removeSet) ? s.rulerAnchor : null,
         rulerTarget: rulerRefStillValid(s.rulerTarget, s.objects, removeSet) ? s.rulerTarget : null,
+        pinnedRulerDims: (s.pinnedRulerDims || []).filter((d) =>
+          rulerRefStillValid(d.anchor, s.objects, removeSet) &&
+          rulerRefStillValid(d.target, s.objects, removeSet)
+        ),
       };
     });
     return incoming.map((o) => o.id);
@@ -705,6 +715,10 @@ export const useScene = create((set, get) => ({
         pendingDimensionFromId: s.pendingDimensionFromId === id ? null : s.pendingDimensionFromId,
         rulerAnchor: rulerRefStillValid(s.rulerAnchor, s.objects, removeSet) ? s.rulerAnchor : null,
         rulerTarget: rulerRefStillValid(s.rulerTarget, s.objects, removeSet) ? s.rulerTarget : null,
+        pinnedRulerDims: (s.pinnedRulerDims || []).filter((d) =>
+          rulerRefStillValid(d.anchor, s.objects, removeSet) &&
+          rulerRefStillValid(d.target, s.objects, removeSet)
+        ),
       };
     });
   },
@@ -730,6 +744,10 @@ export const useScene = create((set, get) => ({
       pendingDimensionFromId: ids.includes(s.pendingDimensionFromId) ? null : s.pendingDimensionFromId,
       rulerAnchor: rulerRefStillValid(s.rulerAnchor, s.objects, removeSet) ? s.rulerAnchor : null,
       rulerTarget: rulerRefStillValid(s.rulerTarget, s.objects, removeSet) ? s.rulerTarget : null,
+      pinnedRulerDims: (s.pinnedRulerDims || []).filter((d) =>
+        rulerRefStillValid(d.anchor, s.objects, removeSet) &&
+        rulerRefStillValid(d.target, s.objects, removeSet)
+      ),
     }));
   },
 
@@ -1225,6 +1243,28 @@ export const useScene = create((set, get) => ({
       set({ rulerSnapKinds: [...cur, kind] });
     }
   },
+  // Save the current anchor + target as a persistent pinned measurement.
+  // Clears ONLY the target (anchor stays) so the user can chain several
+  // measurements from the same starting point — e.g. read distances
+  // from the front-left corner of a plate to each of its mounting holes.
+  pinRulerMeasurement: () => {
+    const s = get();
+    if (!s.rulerAnchor || !s.rulerTarget) return null;
+    const id = `pin-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    set({
+      pinnedRulerDims: [...(s.pinnedRulerDims || []), {
+        id,
+        anchor: s.rulerAnchor,
+        target: s.rulerTarget,
+      }],
+      rulerTarget: null,
+    });
+    return id;
+  },
+  removePinnedRulerDim: (id) => set((s) => ({
+    pinnedRulerDims: (s.pinnedRulerDims || []).filter((d) => d.id !== id),
+  })),
+  clearPinnedRulerDims: () => set({ pinnedRulerDims: [] }),
 
   clearScene: () => {
     get().pushHistory();

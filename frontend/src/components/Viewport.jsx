@@ -2,6 +2,7 @@ import React, { useRef, useMemo, useEffect } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edges, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
+import { X, Pin } from "lucide-react";
 import { useScene } from "../lib/store";
 import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
@@ -739,6 +740,118 @@ function RulerAnchorLayer() {
 // 62-e because the world-welded overlays were occluding the very corners
 // the user wanted to measure.
 function RulerOffsetChip() { return null; }
+
+// Re-resolve a snap-point record's CURRENT world position from the live
+// scene state. Used by PinnedRulerLayer so saved measurements track
+// moving parts. Returns null when the source object has been removed —
+// the cascade cleanup in the store will already have pruned the entry,
+// but we still defensive-check here for the one-frame race between
+// store update and render.
+function resolveSnapWorld(snapRec, allObjects) {
+  if (!snapRec) return null;
+  let probe = allObjects.find((o) => o.id === snapRec.objId);
+  if (!probe) {
+    const sibling = allObjects.find((o) => o.groupId === snapRec.objId);
+    if (sibling) probe = resolveSnapTargetForGroup(sibling, allObjects);
+  } else if (probe.groupId) {
+    probe = resolveSnapTargetForGroup(probe, allObjects);
+  }
+  if (!probe) return null;
+  const pts = allSnapPoints(probe);
+  return pts.find((p) => p.key === snapRec.snapKey) || null;
+}
+
+// Pinned-measurement render layer — one L-bracket per saved entry,
+// drawn with slightly muted colours so the user can tell live vs pinned
+// at a glance. Each pin gets its own × button beside the longest axis
+// label so it can be removed individually.
+function PinnedRulerLayer() {
+  const pinned = useScene((s) => s.pinnedRulerDims);
+  const objects = useScene((s) => s.objects);
+  const removePinned = useScene((s) => s.removePinnedRulerDim);
+  if (!pinned || pinned.length === 0) return null;
+  return (
+    <group>
+      {pinned.map((dim) => {
+        const aPt = resolveSnapWorld(dim.anchor, objects);
+        const tPt = resolveSnapWorld(dim.target, objects);
+        if (!aPt || !tPt) return null;
+        const dx = tPt.x - aPt.x;
+        const dy = tPt.y - aPt.y;
+        const dz = tPt.z - aPt.z;
+        return (
+          <group key={dim.id}>
+            {/* Endpoint markers — smaller / darker than the live ones */}
+            <mesh position={[aPt.x, aPt.y, aPt.z]} renderOrder={998}>
+              <sphereGeometry args={[1.2, 16, 16]} />
+              <meshBasicMaterial color="#0EA5E9" depthTest={false} />
+            </mesh>
+            <mesh position={[tPt.x, tPt.y, tPt.z]} renderOrder={998}>
+              <sphereGeometry args={[1.2, 16, 16]} />
+              <meshBasicMaterial color="#D97706" depthTest={false} />
+            </mesh>
+            {/* L-bracket axis segments (muted axis colours) */}
+            {Math.abs(dx) > 0.001 && (
+              <Line points={[[aPt.x, aPt.y, aPt.z], [tPt.x, aPt.y, aPt.z]]} color="#BE123C" lineWidth={1.5} depthTest={false} />
+            )}
+            {Math.abs(dy) > 0.001 && (
+              <Line points={[[tPt.x, aPt.y, aPt.z], [tPt.x, tPt.y, aPt.z]]} color="#047857" lineWidth={1.5} depthTest={false} />
+            )}
+            {Math.abs(dz) > 0.001 && (
+              <Line points={[[tPt.x, tPt.y, aPt.z], [tPt.x, tPt.y, tPt.z]]} color="#B45309" lineWidth={1.5} depthTest={false} />
+            )}
+            {/* Axis labels — same offset rules as the live measurement */}
+            {Math.abs(dx) > 0.001 && (
+              <Html position={[(aPt.x + tPt.x) / 2, aPt.y - 6, aPt.z + 6]} center zIndexRange={[80, 0]} sprite={false}>
+                <div
+                  data-testid={`pinned-dim-x-${dim.id}`}
+                  className="font-mono text-[10.5px] font-semibold whitespace-nowrap select-none"
+                  style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
+                >
+                  <span style={{ color: "#FB7185", marginRight: 3 }}>•</span>{fmtSignedMm(dx)}
+                </div>
+              </Html>
+            )}
+            {Math.abs(dy) > 0.001 && (
+              <Html position={[tPt.x + (dx >= 0 ? 8 : -8), (aPt.y + tPt.y) / 2, aPt.z - 6]} center zIndexRange={[80, 0]} sprite={false}>
+                <div
+                  data-testid={`pinned-dim-y-${dim.id}`}
+                  className="font-mono text-[10.5px] font-semibold whitespace-nowrap select-none"
+                  style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
+                >
+                  <span style={{ color: "#34D399", marginRight: 3 }}>•</span>{fmtSignedMm(dy)}
+                </div>
+              </Html>
+            )}
+            {Math.abs(dz) > 0.001 && (
+              <Html position={[tPt.x + (dx >= 0 ? 8 : -8), tPt.y + 8, (aPt.z + tPt.z) / 2]} center zIndexRange={[80, 0]} sprite={false}>
+                <div
+                  data-testid={`pinned-dim-z-${dim.id}`}
+                  className="font-mono text-[10.5px] font-semibold whitespace-nowrap select-none"
+                  style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
+                >
+                  <span style={{ color: "#FBBF24", marginRight: 3 }}>•</span>{fmtSignedMm(dz)}
+                </div>
+              </Html>
+            )}
+            {/* × beside the target marker */}
+            <Html position={[tPt.x, tPt.y, tPt.z]} center zIndexRange={[85, 0]} sprite={false}>
+              <button
+                data-testid={`pinned-dim-close-${dim.id}`}
+                onClick={(e) => { e.stopPropagation(); removePinned(dim.id); }}
+                className="translate-x-3 -translate-y-3 w-4 h-4 rounded-sm bg-slate-800/95 hover:bg-red-500/60 text-slate-300 hover:text-white flex items-center justify-center border border-slate-700"
+                style={{ pointerEvents: "auto" }}
+                title="Remove this pinned measurement"
+              >
+                <X size={9} />
+              </button>
+            </Html>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
 // can never occlude the snap points the user is trying to measure. Shows
 // anchor name / target name / snap-kind pills / axis-cycle / × controls
 // all in a single panel pinned to the bottom-left of the viewport (just
@@ -751,15 +864,19 @@ function RulerScreenHud() {
   const target = useScene((s) => s.rulerTarget);
   const axes = useScene((s) => s.rulerAxesMode);
   const snapKinds = useScene((s) => s.rulerSnapKinds);
+  const pinned = useScene((s) => s.pinnedRulerDims);
   const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
   const clearRulerTarget = useScene((s) => s.clearRulerTarget);
   const cycleRulerAxes = useScene((s) => s.cycleRulerAxes);
   const toggleRulerSnapKind = useScene((s) => s.toggleRulerSnapKind);
+  const pinRulerMeasurement = useScene((s) => s.pinRulerMeasurement);
+  const clearPinnedRulerDims = useScene((s) => s.clearPinnedRulerDims);
   if (!mode || !anchor) return null;
+  const pinnedCount = (pinned || []).length;
   return (
     <div
       data-testid="ruler-hud-stack"
-      className="absolute bottom-3 left-3 z-20 flex flex-col items-start gap-1 select-none"
+      className="absolute top-1/2 -translate-y-1/2 left-[252px] z-20 flex flex-col items-start gap-1 select-none"
       style={{ pointerEvents: "auto" }}
     >
       <div
@@ -784,7 +901,7 @@ function RulerScreenHud() {
           className="w-5 h-5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
           title="Dismiss the anchor (turns the scale off)"
         >
-          <span className="text-[12px] leading-none -mt-px">×</span>
+          <X size={11} />
         </button>
       </div>
       {target && (
@@ -797,12 +914,20 @@ function RulerScreenHud() {
           <span className="text-[10px] text-slate-200 max-w-[14ch] truncate">{target.objName}</span>
           <span className="text-[8.5px] text-slate-500 ml-1">({target.snapKind})</span>
           <button
+            data-testid="ruler-pin-btn"
+            onClick={(e) => { e.stopPropagation(); pinRulerMeasurement(); }}
+            className="w-4 h-4 rounded-sm bg-slate-800 hover:bg-emerald-500/40 text-emerald-300 hover:text-white flex items-center justify-center"
+            title="Pin this measurement — saves it as a persistent annotation and resets the target so you can pick another"
+          >
+            <Pin size={9} />
+          </button>
+          <button
             data-testid="ruler-clear-target-btn"
             onClick={(e) => { e.stopPropagation(); clearRulerTarget(); }}
             className="w-4 h-4 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
             title="Clear target — pick a new one"
           >
-            <span className="text-[11px] leading-none -mt-px">×</span>
+            <X size={10} />
           </button>
         </div>
       )}
@@ -829,6 +954,23 @@ function RulerScreenHud() {
           );
         })}
       </div>
+      {pinnedCount > 0 && (
+        <div
+          data-testid="ruler-pinned-count"
+          className="flex items-center gap-1 px-2 py-0.5 bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 text-[9.5px] rounded-md shadow"
+        >
+          <Pin size={9} />
+          <span className="font-mono">{pinnedCount} pinned</span>
+          <button
+            data-testid="ruler-clear-pinned-btn"
+            onClick={(e) => { e.stopPropagation(); clearPinnedRulerDims(); }}
+            className="ml-1 w-3.5 h-3.5 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center"
+            title="Clear all pinned measurements"
+          >
+            <X size={9} />
+          </button>
+        </div>
+      )}
       {!target && (
         <div
           data-testid="ruler-pick-target-hint"
@@ -1099,6 +1241,7 @@ export default function Viewport() {
         <MeasurementsLayer />
         <ComponentDimensionsLayer />
         <RulerAnchorLayer />
+        <PinnedRulerLayer />
         <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />
 

@@ -69,6 +69,7 @@ export function loadProjectState(state, defaults = {}) {
     pendingMeasureObjId: null,
     rulerAnchor: null,
     rulerTarget: null,
+    pinnedRulerDims: [],
   };
 }
 
@@ -90,5 +91,6 @@ export function emptyProjectState() {
     pendingDimensionFromId: null,
     rulerAnchor: null,
     rulerTarget: null,
+    pinnedRulerDims: [],
   };
 }
