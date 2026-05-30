@@ -232,6 +232,39 @@ export const orcaApi = {
     );
     return data;
   },
+  // Poll `/result/{jobId}` until the job either finishes (returns the
+  // OrcaSliceResponse) or fails (axios throws with the 4xx/5xx detail).
+  // While the backend still returns 202 we sleep and retry. Used by
+  // Engine Comparison, which doesn't need the live progress bar that
+  // `useOrcaSlice` drives via SSE.
+  //
+  // `maxWaitMs` is a safety net (default 6 min — matches the backend's
+  // 5-min slice timeout + headroom). `pollIntervalMs` controls the
+  // cadence; 1500 ms keeps server load minimal for slices that take
+  // ~2 min while still feeling snappy for the <30 s common case.
+  waitForSliceResult: async ({ jobId, maxWaitMs = 360000, pollIntervalMs = 1500 }) => {
+    const t0 = Date.now();
+    // axios treats 202 as a success by default, so the loop runs as
+    // long as the body says `status: "running"`.
+    while (true) {
+      const { data, status } = await axios.get(
+        `${API}/slice/orca/result/${encodeURIComponent(jobId)}`,
+        {
+          timeout: 30000,
+          // Don't throw on 2xx — we explicitly want to see the 202s.
+          validateStatus: (s) => s >= 200 && s < 300,
+        },
+      );
+      if (status === 200) return data; // OrcaSliceResponse
+      // status === 202 — job still running.
+      if (Date.now() - t0 > maxWaitMs) {
+        throw new Error(
+          `OrcaSlicer job ${jobId} did not finish within ${Math.round(maxWaitMs / 1000)}s.`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  },
 };
 
 // Human-friendly error formatter for the catch-block. axios's "Network Error"

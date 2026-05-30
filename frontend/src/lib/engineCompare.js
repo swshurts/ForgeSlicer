@@ -96,7 +96,9 @@ export async function compareEngines({ objects, settings, buildVolume, orcaPaylo
     try {
       const { bytes } = await exportSceneToSTLBytes(objects);
       const b64 = arrayBufferToBase64(bytes);
-      const r = await orcaApi.slice({
+      // Step 1: POST returns 202 + job_id immediately (avoids the
+      // Cloudflare 100s origin-timeout that bit production iter-71).
+      const accepted = await orcaApi.slice({
         stlBase64: b64,
         printerProfile:    orcaPayload.printerProfile,
         processProfile:    orcaPayload.processProfile,
@@ -108,6 +110,11 @@ export async function compareEngines({ objects, settings, buildVolume, orcaPaylo
         filamentPresetName: orcaPayload.filamentPresetName,
         filamentVendor:    orcaPayload.filamentVendor,
       });
+      // Step 2: poll /result/{job_id} until 200 (or it throws on error).
+      // We poll here rather than SSE-subscribe because the comparison
+      // dialog only shows one consolidated "Slicing in both engines…"
+      // loader — there's no per-engine progress bar to drive.
+      const r = await orcaApi.waitForSliceResult({ jobId: accepted.job_id });
       // Some Orca responses don't carry layer count in stats — derive
       // it from the gcode itself so the comparison table has a value.
       const layers = (r.stats?.layers
