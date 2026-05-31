@@ -231,6 +231,8 @@ export function SlicerPopover({ anchor, onClose }) {
           pattern={orca.profile.pattern} onPatternChange={orca.setPattern}
           supports={orca.profile.supports} onSupportsChange={orca.setSupports}
           ironing={orca.profile.ironing} onIroningChange={orca.setIroning}
+          userPrinters={orca.userPrinters}
+          onReloadUserPrinters={orca.reloadUserPrinters}
         />
       )}
       {/* Sparse infill (Tier-b) — middle layers between the solid bands.

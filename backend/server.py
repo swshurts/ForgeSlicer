@@ -22,6 +22,7 @@ import billing
 import admin as admin_module
 import orca_engine
 from routes.projects import build_projects_router
+from routes.user_printers import build_user_printers_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -482,6 +483,40 @@ api_router.include_router(orca_engine.router)
 # The router accepts the auth dependency as a callable so we don't have to
 # import server.py in routes/projects.py (circular import).
 api_router.include_router(build_projects_router(db, get_current_user))
+
+# Per-user custom printer definitions — /api/me/printers/* (auth-required).
+# Lets users register printers not in OrcaSlicer's bundled preset library
+# (the 2026 wave: SV06 Plus Ace, Voron 2.4 variants, brand-new models the
+# upstream Orca preset shipment hasn't caught up to). The slice endpoint
+# accepts a `user_printer_id` and resolves through these records.
+api_router.include_router(build_user_printers_router(db, get_current_user))
+
+
+# Wire the user-printers DB lookup + auth extractor into orca_engine so
+# the slice handler can resolve `user_printer_id` without importing the
+# motor handle directly (which would create a circular import).
+from routes.user_printers import build_profile_from_user_printer  # noqa: E402
+
+async def _resolve_user_printer(user_id: str, user_printer_id: str):
+    if not user_id or not user_printer_id:
+        return None
+    doc = await db.user_printers.find_one(
+        {"printer_id": user_printer_id, "user_id": user_id},
+        {"_id": 0},
+    )
+    if not doc:
+        return None
+    return build_profile_from_user_printer(doc)
+
+async def _extract_user_id_for_slice(request):
+    """Return the caller's user_id (or None) for slice ownership checks.
+    Uses `get_optional_user` so anonymous slice requests still work for
+    bundled-preset combos that don't reference a custom printer."""
+    user = await get_optional_user(request)
+    return user.get("user_id") if user else None
+
+orca_engine.register_user_printer_resolver(_resolve_user_printer)
+orca_engine.register_user_id_extractor(_extract_user_id_for_slice)
 
 # Mount the Stripe billing routers. `/api/billing/*` for checkout +
 # status polling (uses the auth helper to attribute checkouts to users)

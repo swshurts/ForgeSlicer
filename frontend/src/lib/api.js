@@ -197,6 +197,7 @@ export const orcaApi = {
     printerPresetName, printerVendor,
     processPresetName, processVendor,
     filamentPresetName, filamentVendor,
+    userPrinterId,
   }) => {
     // Kick off the slice — returns 202 with `{job_id}` immediately.
     // The actual work runs as a backend asyncio task; we then poll
@@ -216,6 +217,10 @@ export const orcaApi = {
         process_vendor:       processVendor      || null,
         filament_preset_name: filamentPresetName || null,
         filament_vendor:      filamentVendor     || null,
+        // Per-user custom printer id (iter-72). When set, the backend
+        // ignores the bundled-preset hints above and uses the stored
+        // user_printers doc to build the printer profile.
+        user_printer_id:      userPrinterId      || null,
       },
       { timeout: 30000 }, // 30s — the POST itself is fast now
     );
@@ -264,6 +269,36 @@ export const orcaApi = {
       }
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
+  },
+};
+
+// Per-user custom printer definitions (iter-72). Backed by the
+// `/api/me/printers/*` CRUD endpoints — let users register printers
+// not in OrcaSlicer's bundled preset library (the 2026 wave of new
+// hardware) and have them appear in the slicer dropdown.
+export const userPrintersApi = {
+  list: async () => {
+    const { data } = await axios.get(`${API}/me/printers`, { timeout: 10000 });
+    return data;
+  },
+  create: async (payload) => {
+    const { data } = await axios.post(`${API}/me/printers`, payload, { timeout: 10000 });
+    return data;
+  },
+  update: async (printerId, payload) => {
+    const { data } = await axios.put(
+      `${API}/me/printers/${encodeURIComponent(printerId)}`,
+      payload,
+      { timeout: 10000 },
+    );
+    return data;
+  },
+  remove: async (printerId) => {
+    const { data } = await axios.delete(
+      `${API}/me/printers/${encodeURIComponent(printerId)}`,
+      { timeout: 10000 },
+    );
+    return data;
   },
 };
 

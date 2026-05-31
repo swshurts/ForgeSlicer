@@ -425,12 +425,30 @@ export function resolveSystemPresets(printerId, processId, filamentId) {
   };
 }
 
+// "user:<printer_id>" — selection prefix for user-defined printers
+// (iter-72). The slicer dropdown stores the prefixed string so we can
+// distinguish a custom printer from the built-in ID space. When the
+// backend receives the slice request we strip the prefix and send
+// just the raw printer_id as `user_printer_id`.
+export const USER_PRINTER_PREFIX = "user:";
+export const isUserPrinterId = (id) => typeof id === "string" && id.startsWith(USER_PRINTER_PREFIX);
+export const userPrinterIdOf = (id) => isUserPrinterId(id) ? id.slice(USER_PRINTER_PREFIX.length) : null;
+
 export function buildOrcaPayload({
   printerId, processId, filamentId,
   wallLoops, sparseInfillDensity, sparseInfillPattern,
   enableSupport, ironing,
+  // Optional: when set, this is a user-defined printer record fetched
+  // from /api/me/printers — we use its display name for the summary +
+  // pass the prefixed id through so the slice request carries the
+  // `userPrinterId` field. The backend then ignores the bundled-preset
+  // hints and resolves the printer profile from MongoDB instead.
+  userPrinter,
 }) {
-  const printer = PRINTER_PROFILES[printerId] || PRINTER_PROFILES.custom;
+  const userPrinterId = userPrinterIdOf(printerId);
+  const printer = userPrinter
+    ? { id: printerId, label: userPrinter.name, profile: {} }
+    : (PRINTER_PROFILES[printerId] || PRINTER_PROFILES.custom);
   const process = PROCESS_PROFILES[processId] || PROCESS_PROFILES.standard;
   const filament = FILAMENT_PROFILES[filamentId] || FILAMENT_PROFILES.pla;
 
@@ -477,7 +495,9 @@ export function buildOrcaPayload({
   //   4. Re-stamp the correct metadata
   // So sending the full dict is safe and zero-cost when the preset path
   // succeeds, and life-saving when it doesn't.
-  const ps = resolveSystemPresets(printerId, processId, filamentId);
+  const ps = userPrinter
+    ? { printer: null, process: null, filament: null }   // skip bundled lookup for user printers
+    : resolveSystemPresets(printerId, processId, filamentId);
   const processOverrides = {
     ...processProfile,
   };
@@ -496,6 +516,10 @@ export function buildOrcaPayload({
     processVendor:      ps.process?.vendor || null,
     filamentPresetName: ps.filament?.name  || null,
     filamentVendor:     ps.filament?.vendor || null,
+    // Per-user custom printer id (iter-72). When set, the backend
+    // overrides every printer field above with the stored doc — the
+    // dropdown is the sole authority for which printer to use.
+    userPrinterId,
     // Echo back the resolved labels so the slicer status panel can
     // show what was actually sent (rather than the IDs).
     summary: {

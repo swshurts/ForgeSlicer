@@ -10,8 +10,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 *(none open as of 2026-05-30 — iter 70 cleared rc -17, iter 71 cleared Cloudflare 524 via async-job pattern)*
 
 ## 🟡 P1 — Next features
-- **User-defined printers** — `user_printers` MongoDB collection + `POST/GET/PUT/DELETE /api/me/printers` + frontend "Define Printer" dialog. Lets users register the wave of 2026 printers (8-10 released since Jan, ~4 more this month) without waiting for OrcaSlicer's preset shipment cadence. Slice endpoint accepts `user_printer_id` and resolves it before falling back to bundled presets. Pairs naturally with the iter-70 cross-vendor patch.
-*(all earlier P1 items complete as of iter 53)*
+*(P1 cleared 2026-05-31 — iter 72 shipped user-defined printers.)*
 - ~~Sweep MVP follow-ups~~ [DONE — iter 51]
 - ~~Fastener Pair macro~~ [DONE — iter 48]
 - ~~Texture v2 patterns + apply-to-face + UNC/UNF imperial fasteners~~ [DONE — iter 50]
@@ -19,7 +18,6 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Hierarchical Project Structure (Rocket → Engine → Fuel Pump)~~ [DONE — iter 63]
 
 ## 🟢 P2 — Polish
-- **OrcaSlicer layer-count parser miss** (iter 71+, 2026-05-30) — `_scan_gcode_stats` in `backend/orca_engine.py` only matches `;LAYER:N`, but OrcaSlicer emits `;LAYER_CHANGE`. Result: Engine Comparison shows `Layer count: —` for the Orca column and standalone Slice & Export shows `Layers: 0`. G-code itself is unaffected — only the displayed metric is wrong. Fix: add `;LAYER_CHANGE` to the parser + parallel regex in `frontend/src/lib/engineCompare.js`. User deferred (will test current print first).
 - **Refactor `lib/store.js` further** — 1481→1300 lines after iter 59 (extracted I/O to projectIO.js). Further extraction candidates: the long boolean / cut / dimension action blocks could move into dedicated files.
 - ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
 - ~~HelpDialog.jsx split~~ [DONE — iter 59, 771→515 lines]

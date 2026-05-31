@@ -6,9 +6,10 @@
 // from the chosen process preset so the slice button stays one click
 // away.
 import React, { useState } from "react";
-import { Cpu, CheckCircle2, ExternalLink } from "lucide-react";
-import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, getPrinterGroups, resolveSystemPresets } from "../../lib/orcaProfiles";
+import { Cpu, CheckCircle2, ExternalLink, Settings } from "lucide-react";
+import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, getPrinterGroups, resolveSystemPresets, USER_PRINTER_PREFIX } from "../../lib/orcaProfiles";
 import OrcaPresetViewer from "../dialogs/OrcaPresetViewer";
+import UserPrintersDialog from "../dialogs/UserPrintersDialog";
 
 export default function OrcaProfileEditor({
   printerId, onPrinterChange,
@@ -19,6 +20,10 @@ export default function OrcaProfileEditor({
   pattern, onPatternChange,
   supports, onSupportsChange,
   ironing, onIroningChange,
+  // User-defined printers (iter-72). Optional — when omitted the
+  // editor falls back to the bundled-only dropdown.
+  userPrinters = [],
+  onReloadUserPrinters,
 }) {
   const printerGroups = getPrinterGroups();
   // When the selected printer has bundled-system-preset metadata,
@@ -28,6 +33,8 @@ export default function OrcaProfileEditor({
   // preset picker — proves the link between the two apps.
   const resolved = resolveSystemPresets(printerId, processId, filamentId);
   const [viewer, setViewer] = useState(null);  // { vendor, kind, name } | null
+  const [managingPrinters, setManagingPrinters] = useState(false);
+  const isUserPrinter = typeof printerId === "string" && printerId.startsWith(USER_PRINTER_PREFIX);
   return (
     <div
       data-testid="orca-profile-editor"
@@ -38,13 +45,36 @@ export default function OrcaProfileEditor({
       </div>
       <div className="grid grid-cols-1 gap-1.5">
         <label className="flex flex-col gap-0.5">
-          <span className="text-[9px] uppercase tracking-wider text-slate-400">Printer</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400">Printer</span>
+            <button
+              type="button"
+              data-testid="orca-manage-my-printers-btn"
+              onClick={() => setManagingPrinters(true)}
+              className="text-[9px] text-purple-300 hover:text-purple-200 flex items-center gap-1"
+              title="Manage your custom printers"
+            >
+              <Settings size={9} /> My Printers
+            </button>
+          </div>
           <select
             data-testid="orca-profile-printer"
             value={printerId}
             onChange={(e) => onPrinterChange(e.target.value)}
             className="h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-purple-500 outline-none"
           >
+            {userPrinters.length > 0 && (
+              <optgroup label="My Printers">
+                {userPrinters.map((p) => (
+                  <option
+                    key={p.printer_id}
+                    value={`${USER_PRINTER_PREFIX}${p.printer_id}`}
+                  >
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
             {Object.entries(printerGroups).map(([cat, items]) => (
               <optgroup key={cat} label={cat}>
                 {items.map((p) => (
@@ -53,10 +83,21 @@ export default function OrcaProfileEditor({
               </optgroup>
             ))}
           </select>
+          {/* User-printer indicator — shown in place of the bundled-preset
+              hint when the selected entry is one of the user's own. */}
+          {isUserPrinter && (
+            <div
+              data-testid="orca-resolved-user-printer"
+              className="text-[9px] text-amber-300/80 font-mono leading-tight pl-0.5 flex items-center gap-1"
+            >
+              <CheckCircle2 size={9} className="flex-shrink-0 text-amber-400" />
+              <span className="truncate">Using your custom printer profile</span>
+            </div>
+          )}
           {/* OrcaSlicer-bundled preset hint. Only renders for printers
               we've mapped to a bundled JSON; non-Bambu printers stay
               on the legacy raw-dict path and don't show a hint. */}
-          {resolved.printer && (
+          {!isUserPrinter && resolved.printer && (
             <button
               type="button"
               data-testid="orca-resolved-printer"
@@ -201,6 +242,11 @@ export default function OrcaProfileEditor({
         kind={viewer?.kind}
         name={viewer?.name}
         onClose={() => setViewer(null)}
+      />
+      <UserPrintersDialog
+        open={managingPrinters}
+        onClose={() => setManagingPrinters(false)}
+        onChanged={() => { if (onReloadUserPrinters) onReloadUserPrinters(); }}
       />
     </div>
   );

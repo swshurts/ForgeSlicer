@@ -278,6 +278,12 @@ class OrcaSliceRequest(BaseModel):
     process_vendor: Optional[str] = None  # default "BBL"
     filament_preset_name: Optional[str] = None
     filament_vendor: Optional[str] = None  # default "BBL"
+    # Per-user custom printer (P1, iter-72). When set, the server
+    # loads `/api/me/printers/{user_printer_id}`, derives the printer
+    # profile dict from its fields, and overrides any
+    # printer_preset_name / printer_profile in this same request.
+    # Stays None for users on a bundled OrcaSlicer system preset.
+    user_printer_id: Optional[str] = None
     # Optional client-supplied job id. When provided, the client can
     # subscribe to /api/slice/orca/progress/<id> BEFORE the slice POST
     # returns and see live % progress as the slicer runs. When omitted
@@ -925,6 +931,47 @@ class OrcaSliceAccepted(BaseModel):
 _JOB_RESULT_TTL_SEC = 10 * 60
 
 
+# Pluggable resolver for `user_printer_id` → printer_profile dict.
+# `server.py` calls `register_user_printer_resolver(fn)` at startup to
+# wire in the MongoDB lookup. Kept here so `orca_engine` remains free
+# of motor / DB imports while still supporting the per-user printers
+# feature (iter-72). The callable signature is:
+#   async def resolver(user_id: str | None, user_printer_id: str) -> dict | None
+# Return None to indicate "not found / not owned by this user"; the
+# slice will then surface a 400 to the client. Return a dict shaped
+# like `PRINTER_PROFILES` entries on the frontend
+# (printer_model / nozzle_diameter / printable_area / etc.).
+_user_printer_resolver = None
+# Companion hook: `server.py` registers an `async fn(request) -> user_id|None`
+# so the slice handler can identify the caller without importing the
+# auth machinery (which would create a circular import).
+_user_id_extractor = None
+
+
+def register_user_printer_resolver(fn):
+    """Wire the `user_printer_id` → printer_profile dict resolver.
+    `server.py` registers this once at startup so the slice flow can
+    pull custom printers from the `user_printers` collection without
+    `orca_engine.py` having to import motor / the DB handle."""
+    global _user_printer_resolver
+    _user_printer_resolver = fn
+
+
+def register_user_id_extractor(fn):
+    """Wire the `Request → user_id | None` extractor. Called when the
+    slice request includes `user_printer_id` so we can verify the
+    caller actually owns it."""
+    global _user_id_extractor
+    _user_id_extractor = fn
+
+
+async def _extract_user_id(request) -> Optional[str]:
+    """Internal — call the registered extractor or return None."""
+    if _user_id_extractor is None:
+        return None
+    return await _user_id_extractor(request)
+
+
 def _evict_stale_progress_slots(now: float) -> None:
     """Drop progress slots whose `done` timestamp is older than the
     TTL. Runs opportunistically on every /result fetch so we don't
@@ -1183,7 +1230,7 @@ def _job_error(job_id: str, status_code: int, detail: str) -> None:
 
 
 @router.post("/slice", status_code=202, response_model=OrcaSliceAccepted)
-async def orca_slice(req: OrcaSliceRequest):
+async def orca_slice(req: OrcaSliceRequest, request: Request):
     """Kick off an OrcaSlicer slice job and return immediately with
     the `job_id`. The actual work runs in a background task.
 
@@ -1218,6 +1265,36 @@ async def orca_slice(req: OrcaSliceRequest):
             status_code=413,
             detail=f"STL exceeds {MAX_STL_BYTES // (1024*1024)} MB cap",
         )
+
+    # Resolve `user_printer_id` synchronously so an unknown / not-owned
+    # custom printer surfaces as a 400 the client can immediately
+    # surface, rather than as a deferred /result error. The resolver
+    # is registered by server.py at startup; if it's missing
+    # (e.g. tests that monkey-patch the slice handler) we skip the
+    # lookup and fall through to the legacy preset path.
+    if req.user_printer_id and _user_printer_resolver is not None:
+        # Extract caller's user_id from the auth session (cookie or
+        # bearer token). Anonymous users can't have custom printers,
+        # so missing auth → 401.
+        user_id = await _extract_user_id(request)
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Custom printers require sign-in.",
+            )
+        resolved = await _user_printer_resolver(user_id, req.user_printer_id)
+        if not resolved:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Custom printer {req.user_printer_id!r} not found.",
+            )
+        # Override printer_profile + clear preset hints so the slice
+        # path uses the resolved dict instead of trying to walk a
+        # bundled `inherits` chain that doesn't exist for custom
+        # printers.
+        req.printer_profile = resolved
+        req.printer_preset_name = None
+        req.printer_vendor = None
 
     workdir = Path(tempfile.mkdtemp(prefix="orca-"))
     job_id = (req.job_id or secrets.token_urlsafe(8))[:32]
@@ -1313,11 +1390,21 @@ def _extract_gcode_from_3mf(path: Path) -> str:
 def _scan_gcode_stats(gcode: str) -> tuple[Optional[int], Optional[float]]:
     """Best-effort layer-count + filament estimate extraction from the
     GCODE so the UI's stats card can show useful numbers. Both fields
-    are optional — None means we couldn't parse them, not an error."""
+    are optional — None means we couldn't parse them, not an error.
+
+    Layer markers vary by slicer:
+      • Marlin-flavour built-in / Cura / PrusaSlicer: `;LAYER:N`
+      • OrcaSlicer / PrusaSlicer / Bambu Studio: `;LAYER_CHANGE`
+    We count both so OrcaSlicer's gcode reports a non-zero layer count
+    (was showing `0` / `—` in the Engine Comparison card before this).
+    """
     layers = 0
     filament_mm: Optional[float] = None
     for line in gcode.splitlines():
-        if line.startswith(";LAYER:") or line.startswith("; LAYER:"):
+        stripped = line.lstrip()
+        if stripped.startswith(";LAYER:") or stripped.startswith("; LAYER:"):
+            layers += 1
+        elif stripped.startswith(";LAYER_CHANGE") or stripped.startswith("; LAYER_CHANGE"):
             layers += 1
         elif "filament used [mm]" in line.lower():
             try:

@@ -1674,3 +1674,99 @@ longer than a few seconds.
 - After deploy, the next slice attempt should no longer hit 524 even for slices
   that take 2+ minutes. Engine Comparison + GCODE export both auto-benefit from
   the same hook.
+
+## Iteration 72 (2026-05-31) — P1: User-defined printers + P2: layer-count parser
+
+### Context
+With iter-70 + iter-71 stabilising the slice flow, the next gap is OrcaSlicer's
+slow preset shipment cadence: 8-10 new printers shipped in 2026 alone and several
+more announced this week. Waiting for upstream presets isn't viable for users who
+already own the hardware. iter-72 adds a per-user printer catalogue so signed-in
+users can register a printer once and have it appear in the slicer dropdown
+forever.
+
+### Backend (`/app/backend/`)
+- **New collection `user_printers`** with schema documented in
+  `routes/user_printers.py`:
+  `{ printer_id, user_id, name, printer_model, nozzle_diameter, build_x/y/z_mm,
+  gcode_flavor, max_speed_x/y/z/e, retraction_length/speed, start_gcode, end_gcode,
+  notes, created_at, updated_at }`.
+- **New CRUD router** `/api/me/printers/*` mounted in `server.py`:
+  - `GET    /api/me/printers`             — list this user's printers.
+  - `POST   /api/me/printers`             — create (Pydantic-validated; tight
+    numeric bounds on all build/speed fields so typos can't poison a slice).
+  - `GET    /api/me/printers/{pid}`       — fetch one.
+  - `PUT    /api/me/printers/{pid}`       — update.
+  - `DELETE /api/me/printers/{pid}`       — delete.
+  - All require `get_current_user` (401 for anonymous).
+- **Helper `build_profile_from_user_printer(doc)`** translates a stored doc into
+  the same minimal `printer_profile` dict frontend `PRINTER_PROFILES` entries
+  produce (`printer_model`, `printable_area`, `printable_height`, `gcode_flavor`,
+  `machine_max_speed_*`, `retraction_*`, `machine_start/end_gcode`). The existing
+  slice path's `_stage_user_profile` metadata stamping + iter-70 cross-vendor
+  compatibility patch then take over without special-cases.
+- **Slice endpoint integration** — `OrcaSliceRequest` now accepts
+  `user_printer_id`. When set, `POST /api/slice/orca/slice`:
+  1. Calls the registered async resolver (registered by `server.py` at startup
+     via `orca_engine.register_user_printer_resolver` — keeps `orca_engine` free
+     of motor / DB imports → no circular import).
+  2. Verifies the caller (via `register_user_id_extractor` → `get_optional_user`).
+  3. Returns 401 anonymous, 404 not-owned, then on success overrides
+     `printer_profile` and clears `printer_preset_name` / `printer_vendor`.
+- **`_scan_gcode_stats` (P2 fix)** now recognises BOTH `;LAYER:N` (Marlin/Cura)
+  AND `;LAYER_CHANGE` (OrcaSlicer/PrusaSlicer/Bambu). Closes the iter-71 polish
+  bug where Engine Comparison showed `Layer count: —` for Orca's column despite
+  a successful slice.
+
+### Frontend (`/app/frontend/`)
+- **`lib/api.js`** — new `userPrintersApi` (list/create/update/remove); `orcaApi.slice`
+  now forwards `userPrinterId`.
+- **`lib/orcaProfiles.js`** — new constants `USER_PRINTER_PREFIX = "user:"`,
+  `isUserPrinterId`, `userPrinterIdOf`; `buildOrcaPayload` accepts a `userPrinter`
+  prop and emits `userPrinterId` (preset names suppressed for user printers).
+- **`lib/useOrcaSlice.js`** — loads user printers on mount, exposes
+  `{ userPrinters, reloadUserPrinters }`; threads `userPrinterId` through the
+  slice POST.
+- **`lib/engineCompare.js`** — `; ?LAYER_CHANGE` regex added so the Orca column's
+  layer count populates correctly (P2 fix companion).
+- **`components/dialogs/UserPrintersDialog.jsx`** (new) — list view + form view
+  for create/edit. Form has Name, Printer model, Build X/Y/Z, Nozzle, G-code
+  flavour, Advanced (Max speeds & retraction), Advanced (Start/End G-code),
+  Notes. All test-ids prefixed `user-printer-*`.
+- **`components/popovers/OrcaProfileEditor.jsx`** — printer dropdown gains a
+  "My Printers" optgroup at the top when the user has saved printers; new
+  "My Printers" button above the dropdown opens the management dialog; an
+  amber "Using your custom printer profile" hint replaces the bundled-preset
+  badge when a `user:<id>` value is selected.
+- **`components/popovers/SlicerPopover.jsx`** — passes `userPrinters` +
+  `onReloadUserPrinters` through to the editor.
+
+### Verification
+- **57 backend tests pass** — 11 new (`tests/test_user_printers.py`), 6 new
+  layer-count parser tests (`tests/test_orca_gcode_stats.py`), 40 existing Orca
+  suite.
+- Live smoke: `GET /api/me/printers` returns 401 anonymous; `POST /api/me/printers`
+  with valid session returns 200 + the printer record; slice POST with unknown
+  `user_printer_id` returns 404.
+- Lint clean (ruff: 0, eslint: 0).
+- Frontend loads cleanly with new dialog code (sanity screenshot).
+
+### Files touched
+- `backend/orca_engine.py` — `_scan_gcode_stats` markers, `OrcaSliceRequest.user_printer_id`,
+  resolver / extractor hooks, slice handler resolution path.
+- `backend/routes/user_printers.py` (new) — schema, CRUD router, profile helper.
+- `backend/server.py` — mount user-printers router, register resolver/extractor.
+- `backend/tests/test_user_printers.py` (new) — 11 integration tests.
+- `backend/tests/test_orca_gcode_stats.py` (new) — 6 parser tests.
+- `frontend/src/lib/api.js`, `lib/orcaProfiles.js`, `lib/useOrcaSlice.js`,
+  `lib/engineCompare.js`.
+- `frontend/src/components/dialogs/UserPrintersDialog.jsx` (new).
+- `frontend/src/components/popovers/OrcaProfileEditor.jsx`, `SlicerPopover.jsx`.
+
+### What the user needs to do
+- Recalibrate the printer (in-progress).
+- After redeploy: click the slicer dropdown's "My Printers" link to register
+  the SV06 Plus Ace once. From then on it appears at the top of the printer
+  dropdown across sessions, and slicing uses its custom build volume / nozzle /
+  G-code flavour / start-end G-code instead of the closest bundled preset.
+

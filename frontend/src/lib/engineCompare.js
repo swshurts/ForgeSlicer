@@ -117,9 +117,11 @@ export async function compareEngines({ objects, settings, buildVolume, orcaPaylo
       const r = await orcaApi.waitForSliceResult({ jobId: accepted.job_id });
       // Some Orca responses don't carry layer count in stats — derive
       // it from the gcode itself so the comparison table has a value.
+      // OrcaSlicer emits `;LAYER_CHANGE` (PrusaSlicer lineage); older
+      // built-in / Cura slicers use `;LAYER:N`. Match both flavours.
       const layers = (r.stats?.layers
-        || (r.gcode?.match(/^; LAYER:\d+/gm) || []).length
-        || (r.gcode?.match(/^;LAYER:\d+/gm) || []).length
+        || (r.gcode?.match(/^; ?LAYER_CHANGE/gm) || []).length
+        || (r.gcode?.match(/^; ?LAYER:\d+/gm) || []).length
         || null);
       const gcodeBytes = r.stats?.gcode_bytes
         || (r.gcode ? new TextEncoder().encode(r.gcode).byteLength : 0);

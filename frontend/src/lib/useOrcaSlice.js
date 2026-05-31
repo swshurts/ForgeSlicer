@@ -22,8 +22,8 @@
 //     to BOTH engines.
 //   - All view-layer rendering.
 import { useEffect, useRef, useState } from "react";
-import { orcaApi, apiErrorMessage, API as API_BASE } from "./api";
-import { buildOrcaPayload } from "./orcaProfiles";
+import { orcaApi, userPrintersApi, apiErrorMessage, API as API_BASE } from "./api";
+import { buildOrcaPayload, isUserPrinterId, userPrinterIdOf } from "./orcaProfiles";
 import { exportSceneToSTLBytes } from "./exporters";
 
 // Convert an ArrayBuffer / Uint8Array to base64 in 32 KB chunks so we
@@ -94,6 +94,34 @@ export function useOrcaSlice() {
   // mid-install (build_in_progress / source === "missing") so the
   // popover can update without the user closing+reopening.
   const [status, setStatus] = useState(null);
+
+  // --- User-defined printers (iter-72) ---
+  // Loaded once on mount + refreshed via `reloadUserPrinters` when the
+  // UserPrintersDialog mutates the catalogue. Anonymous users get an
+  // empty list (the API 401s and we silently fall back).
+  const [userPrinters, setUserPrinters] = useState([]);
+  const reloadUserPrinters = async () => {
+    try {
+      const items = await userPrintersApi.list();
+      setUserPrinters(items || []);
+      return items || [];
+    } catch {
+      setUserPrinters([]);
+      return [];
+    }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await userPrintersApi.list();
+        if (!cancelled) setUserPrinters(items || []);
+      } catch {
+        if (!cancelled) setUserPrinters([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,12 +214,21 @@ export function useOrcaSlice() {
 
   // --- Profile composition helper ---
   // Public so the engine-compare flow can reuse the exact same payload.
-  const buildPayload = () => buildOrcaPayload({
-    printerId: printer, processId: process, filamentId: filament,
-    wallLoops: walls, sparseInfillDensity: infillPct,
-    sparseInfillPattern: pattern,
-    enableSupport: supports, ironing,
-  });
+  const buildPayload = () => {
+    // When the selected printer id is a `user:<uuid>`, look up the
+    // matching record from our `userPrinters` cache so we can pass its
+    // display name (for the slice summary) + flag the backend to use
+    // the user_printer_id resolution path.
+    const upId = userPrinterIdOf(printer);
+    const userPrinter = upId ? userPrinters.find((p) => p.printer_id === upId) : null;
+    return buildOrcaPayload({
+      printerId: printer, processId: process, filamentId: filament,
+      wallLoops: walls, sparseInfillDensity: infillPct,
+      sparseInfillPattern: pattern,
+      enableSupport: supports, ironing,
+      userPrinter,
+    });
+  };
 
   // --- The actual slice action ---
   // Two-step async flow (avoids Cloudflare 524 on slow slices):
@@ -228,6 +265,7 @@ export function useOrcaSlice() {
         processVendor:      payload.processVendor,
         filamentPresetName: payload.filamentPresetName,
         filamentVendor:     payload.filamentVendor,
+        userPrinterId:      payload.userPrinterId,
       });
     } catch (err) {
       // POST blew up before the task could even start (4xx/5xx).
@@ -287,5 +325,10 @@ export function useOrcaSlice() {
     // Actions
     runSlice,
     buildPayload,
+    // User-defined printers (iter-72) — list + a refresh hook so the
+    // UserPrintersDialog can tell us to re-fetch after CRUD ops.
+    userPrinters,
+    reloadUserPrinters,
+    isUserPrinterId,
   };
 }
