@@ -1159,10 +1159,58 @@ async def _perform_slice(
             if slot_now.get("cancelled"):
                 _job_error(job_id, 499, "Slice cancelled by user.")
                 return
-            stdout_tail = (stdout or b"")[-2000:].decode(errors="replace")
-            stderr_tail = (stderr or b"")[-2000:].decode(errors="replace")
+            # Bump tail from 2 KB → 8 KB so the real `[error]` line — which
+            # OrcaSlicer prints *before* the generic
+            # "run found error, return -100" wrapper — actually fits in
+            # the response when Orca is verbose (multiple plates,
+            # progress dots, etc.). Iter-78.
+            stdout_full = (stdout or b"").decode(errors="replace")
+            stderr_full = (stderr or b"").decode(errors="replace")
+            stdout_tail = stdout_full[-8000:]
+            stderr_tail = stderr_full[-8000:]
+            # Persist full logs to a path that survives workdir cleanup
+            # so an admin / the user can fetch the unabridged output via
+            # GET /api/slice/orca/fail-log/{job_id}.
+            try:
+                fail_log = Path(tempfile.gettempdir()) / f"orca-fail-{job_id}.log"
+                fail_log.write_text(
+                    f"=== argv ===\n{argv}\n\n"
+                    f"=== rc ===\n{proc.returncode}\n\n"
+                    f"=== stderr ===\n{stderr_full}\n\n"
+                    f"=== stdout ===\n{stdout_full}\n"
+                )
+            except Exception as _flog_err:
+                logger.warning("orca fail-log write failed: %s", _flog_err)
+            # Distill the real cause: OrcaSlicer's CLI prints the actual
+            # validation failure ABOVE the generic
+            # "run found error, return -100, exit code: -100" footer.
+            # Scan the *whole* stderr (not just the tail) for lines that
+            # look like the real reason and prepend them so the user
+            # sees the actionable bit first.
+            cause_lines: list[str] = []
+            cause_re = re.compile(
+                r"(?i)(\[error\]|\berror:|\bcannot\b|\binvalid\b|"
+                r"\bmismatched?\b|\bout of range\b|\bnot found\b|"
+                r"\bunknown\b|\bunsupported\b|\bfailed to\b|"
+                r"\bexceeds?\b|\btoo (small|large|big|short|tall)\b|"
+                r"\bvalidate\b)"
+            )
+            for line in (stderr_full + "\n" + stdout_full).splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                # Skip the generic wrapper footers — they hide the cause.
+                if "run found error" in s or s.startswith("exit code"):
+                    continue
+                if cause_re.search(s):
+                    cause_lines.append(s)
+                if len(cause_lines) >= 6:
+                    break
+            cause_summary = " | ".join(cause_lines)
             tail = (stderr_tail + "\n" + stdout_tail).strip()
-            logger.warning("orca slice rc=%s err=%s", proc.returncode, tail[-2000:])
+            if cause_summary:
+                tail = cause_summary + "\n---\n" + tail
+            logger.warning("orca slice rc=%s cause=%s", proc.returncode, cause_summary or "(none parsed)")
             missing_lib = None
             if "error while loading shared libraries" in tail or "cannot open shared object" in tail:
                 m = re.search(r"(lib[\w.+-]+\.so[\.\d]*)", tail)
@@ -1189,7 +1237,7 @@ async def _perform_slice(
                     f"client-side bug; please report it. Built-in slicer is unaffected.",
                 )
                 return
-            _job_error(job_id, 500, f"OrcaSlicer exited with code {proc.returncode}: {tail}")
+            _job_error(job_id, 500, f"OrcaSlicer exited with code {proc.returncode}: {tail}\n\nFull log: GET /api/slice/orca/fail-log/{job_id}")
             return
 
         if not out_3mf.exists():
@@ -1429,6 +1477,39 @@ async def orca_cancel_job(job_id: str):
         except Exception as e:
             logger.warning("orca cancel job=%s kill failed: %s", job_id, e)
     return {"status": "cancelling", "job_id": job_id}
+
+
+@router.get("/fail-log/{job_id}")
+async def orca_fail_log(job_id: str):
+    """Return the full stderr + stdout captured for a failed slice
+    job. Lets a user (or admin) read the unabridged OrcaSlicer output
+    when the truncated /result error message isn't enough to diagnose
+    a CLI_VALIDATE_ERROR (rc=156 / -100) or similar.
+
+    The log file is written to the OS tmpdir by `_perform_slice` when
+    Orca exits non-zero, and survives the workdir cleanup. Files are
+    not auto-pruned but get cleaned with the system tmpdir on reboot.
+
+    Status semantics:
+      • 200 — log file exists; body is the raw text (text/plain).
+      • 400 — malformed job id.
+      • 404 — no log file for that job id (the slice succeeded, never
+              ran, or the file was wiped).
+    """
+    from fastapi.responses import PlainTextResponse
+    if not (1 <= len(job_id) <= 32 and all(c.isalnum() or c in "-_" for c in job_id)):
+        raise HTTPException(status_code=400, detail="malformed job id")
+    fail_log = Path(tempfile.gettempdir()) / f"orca-fail-{job_id}.log"
+    if not fail_log.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No fail-log for job {job_id!r}. The slice may have "
+                   f"succeeded, the job never ran, or the log was cleaned.",
+        )
+    return PlainTextResponse(
+        fail_log.read_text(errors="replace"),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 
