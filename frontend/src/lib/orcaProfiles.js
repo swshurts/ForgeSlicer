@@ -606,6 +606,45 @@ export function parseOrcaPrinterJson(input) {
   return { ok: true, fields, warnings };
 }
 
+/**
+ * Inverse of `parseOrcaPrinterJson` — translate a stored `user_printers`
+ * doc back into an OrcaSlicer printer-profile JSON string. The output
+ * is shape-compatible with OrcaSlicer's bundled profiles and with our
+ * own importer, so users can round-trip a printer between ForgeSlicer
+ * and desktop OrcaSlicer (or share it with a teammate).
+ *
+ * Always returns a 2-space-indented string ready to download as a
+ * `.json` file. `printer_settings_id` is set to the printer's name
+ * (OrcaSlicer convention).
+ */
+export function exportUserPrinterAsOrcaJson(doc) {
+  const bx = doc.build_x_mm;
+  const by = doc.build_y_mm;
+  const out = {
+    type: "machine",
+    name: doc.name,
+    from: "User",
+    inherits: "",
+    instantiation: "true",
+    printer_settings_id: doc.name,
+    printer_model: doc.printer_model || doc.name,
+    printer_variant: String(doc.nozzle_diameter ?? 0.4),
+    nozzle_diameter: [String(doc.nozzle_diameter ?? 0.4)],
+    printable_area: ["0x0", `${bx}x0`, `${bx}x${by}`, `0x${by}`],
+    printable_height: String(doc.build_z_mm),
+    gcode_flavor: doc.gcode_flavor || "marlin2",
+    machine_max_speed_x: [String(doc.max_speed_x ?? 250)],
+    machine_max_speed_y: [String(doc.max_speed_y ?? 250)],
+    machine_max_speed_z: [String(doc.max_speed_z ?? 12)],
+    machine_max_speed_e: [String(doc.max_speed_e ?? 40)],
+    retraction_length: [String(doc.retraction_length ?? 0.8)],
+    retraction_speed: [String(doc.retraction_speed ?? 40)],
+    machine_start_gcode: doc.start_gcode || "",
+    machine_end_gcode: doc.end_gcode || "",
+  };
+  return JSON.stringify(out, null, 2);
+}
+
 export function buildOrcaPayload({
   printerId, processId, filamentId,
   wallLoops, sparseInfillDensity, sparseInfillPattern,

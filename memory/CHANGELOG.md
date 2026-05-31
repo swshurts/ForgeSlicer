@@ -1816,3 +1816,49 @@ adds a one-paste import shortcut so registering a printer takes ~10 seconds.
   desktop OrcaSlicer's export or the green preset hint in our own
   slicer dropdown → click Parse & fill form. Save.
 
+
+## Iteration 74 (2026-05-31) — Export OrcaSlicer JSON + store.js refactor
+
+### Export OrcaSlicer JSON
+- New `exportUserPrinterAsOrcaJson(doc)` helper in `lib/orcaProfiles.js` — pure
+  inverse of `parseOrcaPrinterJson`. Emits a 2-space-indented JSON shaped
+  exactly like OrcaSlicer's bundled printer profiles (string-wrapped
+  numeric arrays, `printer_settings_id` set to the printer name, etc.).
+- New green Download icon on each row in UserPrintersDialog → downloads
+  `<slugified-name>.orca.json`. Pure client-side (no API call needed —
+  the row dict already has every field).
+- **15/15 round-trip checks pass** (export → import preserves every field
+  exactly; verified via Node smoke test).
+
+### P2 refactor — `lib/store.js`
+Was 1486 lines after iter 73 — extracted two cohesive blocks:
+- **New `lib/primitiveDefaults.js`** (166 lines) — contains
+  `PRIMITIVE_DEFAULTS` (the source-of-truth dims table for every
+  primitive type), the `newId` counter, and the `buildPrimitive`
+  factory (with all its auto-drop centroid math). Pure data +
+  functions, no Zustand state — testable in isolation.
+- **New `lib/rulerActions.js`** (98 lines) — exports
+  `createRulerActions(set, get)` (Zustand-slice factory pattern
+  returning the ~10 anchored-ruler actions) and `rulerRefStillValid`
+  (the post-removal reference-validity helper). Spread into the
+  main store via `...createRulerActions(set, get)` — no behaviour
+  change, just structure.
+- **`store.js`: 1486 → 1295 lines (-191, -13%)**.
+- All existing call-sites unaffected (the extracted symbols were
+  module-private; nothing else imports from `store.js`).
+
+### Verification
+- Lint clean across all modified files.
+- Workspace smoke (`/app` route) loads with zero console errors —
+  Zustand store wires up identically through the slice pattern.
+- 57 backend tests still green (no backend changes in this iteration).
+
+### Files touched
+- `frontend/src/lib/orcaProfiles.js` — `exportUserPrinterAsOrcaJson`.
+- `frontend/src/components/dialogs/UserPrintersDialog.jsx` — Download
+  icon button + `downloadRow` handler.
+- `frontend/src/lib/primitiveDefaults.js` (new) — extracted block.
+- `frontend/src/lib/rulerActions.js` (new) — extracted block.
+- `frontend/src/lib/store.js` — replaced extracted blocks with imports
+  and one slice spread.
+

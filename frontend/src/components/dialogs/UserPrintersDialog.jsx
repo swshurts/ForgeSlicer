@@ -18,9 +18,9 @@
 // flows (Save Design, Save Component, etc.).
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, X, AlertCircle, CheckCircle2, FileJson } from "lucide-react";
+import { Plus, Trash2, Pencil, X, AlertCircle, CheckCircle2, FileJson, Download } from "lucide-react";
 import { userPrintersApi, apiErrorMessage } from "../../lib/api";
-import { parseOrcaPrinterJson } from "../../lib/orcaProfiles";
+import { parseOrcaPrinterJson, exportUserPrinterAsOrcaJson } from "../../lib/orcaProfiles";
 
 const GCODE_FLAVORS = [
   { id: "marlin2",  label: "Marlin 2.x" },
@@ -110,6 +110,25 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
     }
   };
 
+  // Download a row as an OrcaSlicer-shaped printer JSON. Useful for
+  // sharing the definition with a collaborator or round-tripping into
+  // desktop OrcaSlicer's "Import config" feature. Pure client-side —
+  // we already have everything we need in the row dict.
+  const downloadRow = (row) => {
+    const json = exportUserPrinterAsOrcaJson(row);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    // Slugify the printer name for a sensible default filename.
+    const safe = row.name.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 80);
+    a.download = `${safe || "printer"}.orca.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (!open) return null;
 
   return (
@@ -189,6 +208,15 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
                       {row.build_x_mm}×{row.build_y_mm}×{row.build_z_mm} mm · {row.nozzle_diameter} mm nozzle · {row.gcode_flavor}
                     </div>
                   </div>
+                  <button
+                    data-testid={`user-printer-download-${row.printer_id}`}
+                    onClick={() => downloadRow(row)}
+                    className="p-1.5 text-slate-400 hover:text-emerald-400 transition-colors"
+                    aria-label="Download as OrcaSlicer JSON"
+                    title="Download as OrcaSlicer JSON"
+                  >
+                    <Download size={14} />
+                  </button>
                   <button
                     data-testid={`user-printer-edit-${row.printer_id}`}
                     onClick={() => startEdit(row)}

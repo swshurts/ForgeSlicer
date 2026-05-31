@@ -18,7 +18,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Hierarchical Project Structure (Rocket → Engine → Fuel Pump)~~ [DONE — iter 63]
 
 ## 🟢 P2 — Polish
-- **Refactor `lib/store.js` further** — 1481→1300 lines after iter 59 (extracted I/O to projectIO.js). Further extraction candidates: the long boolean / cut / dimension action blocks could move into dedicated files.
+- **Refactor `lib/store.js` further** — was 1486 lines after iter 73; iter 74 extracted PRIMITIVE_DEFAULTS / buildPrimitive (→ `primitiveDefaults.js`) and the anchored-ruler action slice (→ `rulerActions.js`), bringing store.js to **1295 lines (-191, -13%)**. Further candidates: composite-primitives block (lines 676-997, ~320 lines) could move into a `compositeActions.js` slice next.
 - ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
 - ~~HelpDialog.jsx split~~ [DONE — iter 59, 771→515 lines]
 - **Save Assembly to Gallery silent-failure follow-up** — only acts if user reports it on prod with DevTools payload.
