@@ -270,6 +270,20 @@ export const orcaApi = {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
   },
+  // Cancel an in-flight slice job (iter-77). Returns
+  // `{status: 'cancelling' | 'already_done'}` on success; 404 for
+  // unknown jobs is treated as a no-op so fire-and-forget cancels
+  // on tab-close don't surface noise.
+  cancel: async ({ jobId }) => {
+    const { data } = await axios.delete(
+      `${API}/slice/orca/job/${encodeURIComponent(jobId)}`,
+      {
+        timeout: 10000,
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+      },
+    );
+    return data;
+  },
 };
 
 // Per-user custom printer definitions (iter-72). Backed by the

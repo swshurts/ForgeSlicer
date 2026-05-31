@@ -1122,6 +1122,14 @@ async def _perform_slice(
             cwd=str(workdir),
             env={**os.environ, "HOME": str(workdir)},
         )
+        # Stash the subprocess on the progress slot so DELETE /job/{id}
+        # can kill it (iter-77 cancel-slice). The cancel handler reads
+        # this AND sets `cancelled=True` so the rc-handling below treats
+        # the kill-from-cancel path as a user-initiated cancel rather
+        # than a generic "rc != 0" failure.
+        slot = _PROGRESS.get(job_id)
+        if slot is not None:
+            slot["proc"] = proc
         try:
             stdout, stderr = await asyncio.wait_for(
                 asyncio.gather(_tail_stdout(proc, job_id), proc.stderr.read()),
@@ -1141,6 +1149,16 @@ async def _perform_slice(
         duration = _time.monotonic() - t0
 
         if proc.returncode != 0:
+            # If the user clicked Cancel, the DELETE handler killed the
+            # subprocess and stamped `cancelled=True` on the slot. Skip
+            # the generic rc-error reporting and surface a clean 499 (a
+            # non-standard but widely-used "client closed request"
+            # status code) so the UI can show "Slice cancelled" rather
+            # than "OrcaSlicer exited with code -9".
+            slot_now = _PROGRESS.get(job_id) or {}
+            if slot_now.get("cancelled"):
+                _job_error(job_id, 499, "Slice cancelled by user.")
+                return
             stdout_tail = (stdout or b"")[-2000:].decode(errors="replace")
             stderr_tail = (stderr or b"")[-2000:].decode(errors="replace")
             tail = (stderr_tail + "\n" + stdout_tail).strip()
@@ -1370,6 +1388,48 @@ async def orca_result(job_id: str):
         engine=result.get("engine", "orca"),
         job_id=result.get("job_id", job_id),
     )
+
+
+@router.delete("/job/{job_id}")
+async def orca_cancel_job(job_id: str):
+    """Cancel an in-flight slice job (iter-77).
+
+    Looks up the running subprocess via the progress slot's `proc`
+    handle (stashed by `_perform_slice` when the subprocess was
+    spawned) and SIGKILLs it. The slot is also flagged with
+    `cancelled=True` so `_perform_slice`'s rc-handling path can
+    surface a clean "slice cancelled by user" message instead of the
+    generic "rc=-9" error.
+
+    Status semantics:
+      • 200 — kill signal sent (or job was already done; idempotent).
+      • 400 — malformed job id.
+      • 404 — unknown job id.
+    """
+    if not (1 <= len(job_id) <= 32 and all(c.isalnum() or c in "-_" for c in job_id)):
+        raise HTTPException(status_code=400, detail="malformed job id")
+    slot = _PROGRESS.get(job_id)
+    if slot is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown job {job_id!r}. It may have expired or never existed.",
+        )
+    if slot.get("done"):
+        # Already terminal — nothing to kill. Return 200 so the client
+        # treats this as a successful cancel (the result is whatever
+        # the job already produced, which they can ignore).
+        return {"status": "already_done", "job_id": job_id}
+    slot["cancelled"] = True
+    proc = slot.get("proc")
+    if proc is not None:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass     # already exited between our check and kill
+        except Exception as e:
+            logger.warning("orca cancel job=%s kill failed: %s", job_id, e)
+    return {"status": "cancelling", "job_id": job_id}
+
 
 
 def _extract_gcode_from_3mf(path: Path) -> str:

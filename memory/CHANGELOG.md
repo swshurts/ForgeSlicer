@@ -2011,3 +2011,79 @@ produce wrong G-code. Acceptable given how new the feature is.
   the user described). Slice as normal → G-code matches what desktop
   OrcaSlicer would produce.
 
+
+## Iteration 77 (2026-05-31) — Cancel-slice + per-printer temps + bed-axis gizmo
+
+### Three small features in one ship
+
+**A. Cancel-slice button** (P1)
+Leveraging the iter-71 async job_id. Users who realise mid-slice they
+picked the wrong process can abort instead of waiting 2+ min.
+
+- Backend: New `DELETE /api/slice/orca/job/{job_id}`. Stashes
+  `proc` handle on the progress slot when the subprocess spawns;
+  DELETE handler reads it + SIGKILLs. Sets `cancelled=True` on the
+  slot so the rc-handling path surfaces a clean 499 ("Slice cancelled
+  by user") rather than the generic "rc=-9" error. Idempotent for
+  already-done jobs (200 `already_done`); silent swallow of
+  `ProcessLookupError` for the kill-after-already-exited race.
+- Frontend: New `orcaApi.cancel({jobId})` + `cancelActiveSlice()`
+  exposed from `useOrcaSlice`. "Cancel slice" link rendered under
+  the progress bar — fire-and-forget click, immediate spinner clear.
+- 6/6 new backend tests pass.
+
+**B. Per-printer remembered temps** (P1)
+Previously bedTemp / nozzleTemp / bedSurface / filament were global
+state in `useSliceSettings`. Users switching between printers
+(custom SV06 Plus Ace at 55°C vs Bambu A1 at 65°C) had to re-type
+their preferred values every time.
+
+- New `lib/tempsByPrinter.js` — pure localStorage helper. Three
+  exports: `getTempsForPrinter`, `setTempsForPrinter`,
+  `clearTempsForPrinter`. Storage key `forge:tempsByPrinter`.
+  Short-circuits on no-op writes; silent fallback on quota/private-
+  mode errors.
+- Wired into `useOrcaSlice` via two effects:
+  1. `useEffect([printer])` restores remembered temps on printer
+     change. Uses `useSliceSettings.getState().set` so no extra
+     re-render fires.
+  2. `useEffect([printer, filament])` subscribes to
+     `useSliceSettings` and writes back on any change. The helper
+     bails when nothing actually changed, so this is cheap.
+- Works for both bundled printers and user-defined printers (any
+  string id, including the `user:<uuid>` prefix).
+
+**C. Bed-axis gizmo (the "improvement")**
+Static DOM overlay in the lower-left of the viewport. Pure SVG —
+zero runtime cost, always visible regardless of camera orbit.
+Shows the slicer-frame XYZ triad with `Z = up (height)` label so
+users can sanity-check orientation after import. Pairs naturally
+with iter-76's coordinate-frame fix.
+
+### Verification
+- 63 backend tests pass (was 57 — 6 new cancel-slice tests added).
+- Lint clean across all modified frontend files.
+- Live workspace smoke test: seeded a test session via `test_credentials.md`'s
+  mongosh recipe; loaded `/workspace`; **BedAxisGizmo visible in
+  bottom-left, no console errors**.
+
+### Files touched
+- `backend/orca_engine.py` — `proc` stashing, cancelled-detection in
+  rc-handler, new `DELETE /job/{job_id}` endpoint.
+- `backend/tests/test_orca_cancel.py` (new) — 6 tests.
+- `frontend/src/lib/api.js` — `orcaApi.cancel`.
+- `frontend/src/lib/useOrcaSlice.js` — `cancelActiveSlice` + the two
+  per-printer temp effects + `activeJobIdRef`.
+- `frontend/src/lib/tempsByPrinter.js` (new) — localStorage helper.
+- `frontend/src/components/popovers/SlicerPopover.jsx` — Cancel
+  slice link under progress bar.
+- `frontend/src/components/Viewport.jsx` — `BedAxisGizmo` component.
+
+### What the user needs to do
+- Redeploy iter-77 to production.
+- After redeploy: notice the new XYZ gizmo in the bottom-left of the
+  viewport. Slice a model; while the progress bar is running, the
+  "Cancel slice" link sits underneath — clicking it kills the
+  OrcaSlicer subprocess and clears the spinner. Switch between
+  printers and the bed/hotend/surface values stay per-printer.
+

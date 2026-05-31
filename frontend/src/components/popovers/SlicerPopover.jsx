@@ -318,6 +318,20 @@ export function SlicerPopover({ anchor, onClose }) {
               style={{ width: `${progress.percent || 0}%` }}
             />
           </div>
+          {/* Cancel button (iter-77). Sits inside the progress card so
+              it only appears while a slice is actively running. Hitting
+              this fires DELETE /api/slice/orca/job/{jobId} which kills
+              the OrcaSlicer subprocess; the SSE stream then resolves
+              with a 499 error and the busy spinner clears. Doesn't
+              wait for the network round-trip — the click is fire-and-
+              forget so the user gets immediate feedback. */}
+          <button
+            data-testid="popover-slice-cancel"
+            onClick={() => orca.cancelActiveSlice()}
+            className="w-full mt-1 text-[10px] text-rose-300 hover:text-rose-100 underline underline-offset-2"
+          >
+            Cancel slice
+          </button>
         </div>
       )}
       {stats && (

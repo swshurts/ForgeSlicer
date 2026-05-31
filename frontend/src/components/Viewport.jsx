@@ -856,6 +856,60 @@ function PinnedRulerLayer() {
 // anchor name / target name / snap-kind pills / axis-cycle / × controls
 // all in a single panel pinned to the bottom-left of the viewport (just
 // above the status bar). This was iteration 62-e: prior versions used
+// BedAxisGizmo (iter-77) — small static axis indicator anchored to the
+// bottom-left of the viewport. Shows the slicer-convention XYZ frame
+// (Z = up = print direction) so users can sanity-check orientation
+// after import and before slicing.
+//
+// Why a DOM overlay instead of a 3D triad inside the Canvas:
+//   1. Always visible regardless of camera orbit / zoom level.
+//   2. No risk of being occluded by scene geometry.
+//   3. Zero runtime cost — pure CSS.
+//   4. Doesn't need to track camera rotation; the bed axes don't
+//      rotate with the camera (they're a property of the print frame,
+//      not the view).
+function BedAxisGizmo() {
+  return (
+    <div
+      data-testid="bed-axis-gizmo"
+      className="absolute bottom-3 left-3 z-10 pointer-events-none select-none"
+      title="Print orientation — Z is up (height). Imported STL/OBJ/3MF files are auto-rotated to this frame."
+    >
+      <div className="flex items-end gap-1.5 px-2.5 py-1.5 bg-black/75 backdrop-blur-sm border border-slate-700/60 rounded">
+        <svg width="42" height="42" viewBox="0 0 42 42" className="flex-shrink-0">
+          {/* Origin point */}
+          <circle cx="14" cy="30" r="1.5" fill="#94a3b8" />
+          {/* X axis — right, rose */}
+          <line x1="14" y1="30" x2="36" y2="30" stroke="#f87171" strokeWidth="1.6" markerEnd="url(#arr-x)" />
+          <text x="38" y="33" fill="#f87171" fontSize="9" fontWeight="700" fontFamily="ui-monospace, monospace">X</text>
+          {/* Y axis — back-right, emerald (a 30° diagonal for an isometric feel) */}
+          <line x1="14" y1="30" x2="26" y2="20" stroke="#34d399" strokeWidth="1.6" markerEnd="url(#arr-y)" />
+          <text x="27" y="18" fill="#34d399" fontSize="9" fontWeight="700" fontFamily="ui-monospace, monospace">Y</text>
+          {/* Z axis — straight up, sky-blue */}
+          <line x1="14" y1="30" x2="14" y2="8" stroke="#60a5fa" strokeWidth="1.6" markerEnd="url(#arr-z)" />
+          <text x="9" y="9" fill="#60a5fa" fontSize="9" fontWeight="700" fontFamily="ui-monospace, monospace">Z</text>
+          <defs>
+            <marker id="arr-x" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M 0 0 L 6 3 L 0 6 z" fill="#f87171" />
+            </marker>
+            <marker id="arr-y" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M 0 0 L 6 3 L 0 6 z" fill="#34d399" />
+            </marker>
+            <marker id="arr-z" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M 0 0 L 6 3 L 0 6 z" fill="#60a5fa" />
+            </marker>
+          </defs>
+        </svg>
+        <div className="flex flex-col leading-tight">
+          <span className="text-[9px] uppercase tracking-wider text-slate-300 font-semibold">Print frame</span>
+          <span className="text-[8px] font-mono text-sky-300">Z = up (height)</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // drei <Html> overlays welded to the world point and the user reported
 // labels covering the very corners they wanted to measure.
 function RulerScreenHud() {
@@ -1207,6 +1261,7 @@ export default function Viewport() {
         </div>
       )}
       <RulerScreenHud />
+      <BedAxisGizmo />
       <Canvas
         shadows
         camera={{ position: [0, 160, 280], fov: 45, near: 0.1, far: 5000 }}

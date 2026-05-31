@@ -25,6 +25,7 @@ import { useEffect, useRef, useState } from "react";
 import { orcaApi, userPrintersApi, apiErrorMessage, API as API_BASE } from "./api";
 import { buildOrcaPayload, isUserPrinterId, userPrinterIdOf } from "./orcaProfiles";
 import { useSliceSettings } from "./store";
+import { getTempsForPrinter, setTempsForPrinter } from "./tempsByPrinter";
 import { exportSceneToSTLBytes } from "./exporters";
 
 // Convert an ArrayBuffer / Uint8Array to base64 in 32 KB chunks so we
@@ -89,6 +90,53 @@ export function useOrcaSlice() {
   const setPattern   = persistingSetter(_setPattern,   LS.pattern);
   const setSupports  = persistingSetter(_setSupports,  LS.supports);
   const setIroning   = persistingSetter(_setIroning,   LS.ironing);
+
+  // --- Per-printer remembered temps (iter-77) ---
+  // When the user switches printers, restore any temps we remembered
+  // for that printer the last time they sliced with it. Then track
+  // bedTemp / nozzleTemp / bedSurface / filament changes and save
+  // them back under the CURRENT printer. The save runs lazily — on
+  // every render where the relevant fields change — but `setTempsForPrinter`
+  // bails when nothing actually changed, so this is cheap.
+  useEffect(() => {
+    if (!printer) return;
+    const remembered = getTempsForPrinter(printer);
+    if (remembered) {
+      // Apply with `useSliceSettings.getState().set` so we don't
+      // re-render the hook tree on a no-op. Only patch keys we
+      // actually remembered to avoid stomping on user-typed values
+      // for fields that weren't in the saved snapshot.
+      const patch = {};
+      if (remembered.bedTemp     !== undefined) patch.bedTemp     = remembered.bedTemp;
+      if (remembered.nozzleTemp  !== undefined) patch.nozzleTemp  = remembered.nozzleTemp;
+      if (remembered.bedSurface  !== undefined) patch.bedSurface  = remembered.bedSurface;
+      if (Object.keys(patch).length) useSliceSettings.getState().set(patch);
+      if (remembered.filament    !== undefined && remembered.filament !== filament) {
+        setFilament(remembered.filament);
+      }
+    }
+    // Intentionally ONLY watch `printer` — we don't want to restore
+    // temps on every filament change, otherwise the user couldn't
+    // tweak temps for the current printer without them snapping back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printer]);
+
+  // Subscribe to useSliceSettings changes + persist to localStorage
+  // whenever bedTemp / nozzleTemp / bedSurface change while a printer
+  // is selected. Also fires on filament change. Debounce isn't needed
+  // because `setTempsForPrinter` short-circuits when nothing changed.
+  useEffect(() => {
+    if (!printer) return undefined;
+    const unsub = useSliceSettings.subscribe((state) => {
+      setTempsForPrinter(printer, {
+        bedTemp: state.bedTemp,
+        nozzleTemp: state.nozzleTemp,
+        bedSurface: state.bedSurface,
+        filament,
+      });
+    });
+    return () => { try { unsub(); } catch { /* noop */ } };
+  }, [printer, filament]);
 
   // --- Install status (polled while building) ---
   // `null` = not yet probed. Polled every 5 s while the engine is
@@ -158,6 +206,25 @@ export function useOrcaSlice() {
   // fetching the final result. `error` resolves it with an Error so
   // the caller can surface a clean message.
   const progressDoneRef = useRef(null);
+  // Tracks the job id of the in-flight slice so the cancel button has
+  // something to route its DELETE call against. Cleared when the slice
+  // resolves OR rejects (success or failure) so a second click can't
+  // re-cancel a long-finished job.
+  const activeJobIdRef = useRef(null);
+
+  const cancelActiveSlice = async () => {
+    const jobId = activeJobIdRef.current;
+    if (!jobId) return null;
+    activeJobIdRef.current = null;
+    try {
+      return await orcaApi.cancel({ jobId });
+    } catch {
+      // Cancel is fire-and-forget — if the network blip, the SSE
+      // stream will still terminate when the subprocess dies or
+      // finishes on its own.
+      return null;
+    }
+  };
 
   const subscribeProgress = (jobId) => {
     // Close previous before opening a new one.
@@ -257,6 +324,9 @@ export function useOrcaSlice() {
       ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     ).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
     subscribeProgress(jobId);
+    // Track the currently-running job so a Cancel click can route to
+    // the right /api/slice/orca/job/{jobId} DELETE call (iter-77).
+    activeJobIdRef.current = jobId;
     // Capture the promise BEFORE await; subscribeProgress could
     // re-assign it on a new call, but we want to await THIS slice's
     // completion specifically.
@@ -286,6 +356,7 @@ export function useOrcaSlice() {
       }
       setProgress(null);
       progressDoneRef.current = null;
+      activeJobIdRef.current = null;
       throw err;
     }
     // Wait for the SSE stream to report `done: true` (success or
@@ -297,6 +368,7 @@ export function useOrcaSlice() {
       // SSE-reported failure — fetch /result anyway to get the
       // structured HTTPException detail (status code + message) the
       // backend stamped onto the slot.
+      activeJobIdRef.current = null;
       try {
         await orcaApi.sliceResult({ jobId });
         // Shouldn't reach here — sliceResult should throw on error.
@@ -306,6 +378,7 @@ export function useOrcaSlice() {
       }
     }
     // Job done — fetch the GCODE + stats.
+    activeJobIdRef.current = null;
     const r = await orcaApi.sliceResult({ jobId });
     return {
       gcode: r.gcode,
@@ -334,6 +407,7 @@ export function useOrcaSlice() {
     progress,
     // Actions
     runSlice,
+    cancelActiveSlice,
     buildPayload,
     // User-defined printers (iter-72) — list + a refresh hook so the
     // UserPrintersDialog can tell us to re-fetch after CRUD ops.

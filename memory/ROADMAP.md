@@ -10,7 +10,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 *(none open as of 2026-05-30 — iter 70 cleared rc -17, iter 71 cleared Cloudflare 524 via async-job pattern)*
 
 ## 🟡 P1 — Next features
-*(P1 cleared 2026-05-31 — iter 72 shipped user-defined printers.)*
+*(P1 cleared 2026-05-31 — iter 77 shipped cancel-slice, per-printer temps, and the bed-axis gizmo.)*
 - ~~Sweep MVP follow-ups~~ [DONE — iter 51]
 - ~~Fastener Pair macro~~ [DONE — iter 48]
 - ~~Texture v2 patterns + apply-to-face + UNC/UNF imperial fasteners~~ [DONE — iter 50]
