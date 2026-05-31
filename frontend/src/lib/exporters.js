@@ -23,6 +23,51 @@ export function downloadText(text, filename, mime = "text/plain") {
   downloadBlob(new Blob([text], { type: mime }), filename);
 }
 
+// Internal: normalise a scene-evaluated Three.js geometry into the
+// coordinate frame every FDM slicer expects.
+//
+// Three.js scenes use **Y-up** (vertical = +Y). Every FDM slicer in
+// existence — OrcaSlicer, Cura, PrusaSlicer, FlashPrint, etc. —
+// expects **Z-up** STLs (vertical = +Z). Emitting raw scene
+// coordinates ships the slicer a model that's tipped 90° on its
+// side, and likely floating in mid-air because the bed plane in
+// Three.js is `Y=0` (which becomes `Y=0` in the STL when the slicer
+// re-interprets axes — leaving the model entirely above the bed
+// plane it expected at `Z=0`). Both bugs together produce the
+// classic "phantom supports filling empty air" failure mode that
+// surfaced in iter-75's spaghetti print and the Cura import
+// screenshot in iter-76.
+//
+// Fix: rotate the geometry by **-90° around X** so old Y → new Z,
+// then translate so `bbox.min.z = 0` (i.e. the lowest point of the
+// model sits exactly on the build plate). The user's relative
+// vertical positioning within the scene is preserved — we only
+// adjust the world origin.
+//
+// Mutates the geometry in place AND returns it for chaining.
+function _normaliseForSlicer(geometry) {
+  // Y-up → Z-up rotation. Three.js's `makeRotationX(+π/2)` produces
+  // the matrix where new_z = +old_y (so old height becomes new
+  // height in the slicer's Z-up frame) and new_y = -old_z. Applied
+  // first because the drop-to-bed computation needs the bbox in
+  // the FINAL coordinate frame.
+  const yUpToZUp = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+  geometry.applyMatrix4(yUpToZUp);
+  // Drop to bed: translate so the lowest point sits at Z=0. This
+  // also handles the (rare) case where the user moved an object
+  // intentionally below the grid — we still drop the whole scene
+  // so the lowest extent meets the bed, rather than letting the
+  // slicer clip whatever's below Z=0.
+  geometry.computeBoundingBox();
+  const bb = geometry.boundingBox;
+  if (bb && (Math.abs(bb.min.z) > 1e-4)) {
+    const drop = new THREE.Matrix4().makeTranslation(0, 0, -bb.min.z);
+    geometry.applyMatrix4(drop);
+  }
+  return geometry;
+}
+
+
 // ---------- STL Export ----------
 export function geometryToSTLBinary(geometry) {
   const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
@@ -39,6 +84,7 @@ export function geometryToSTLASCII(geometry) {
 export function exportSceneToSTL(objects, filename = "model.stl") {
   const { geometry, empty } = evaluateScene(objects);
   if (empty) throw new Error("Scene is empty. Add at least one positive component.");
+  _normaliseForSlicer(geometry);
   const dv = geometryToSTLBinary(geometry);
   const blob = new Blob([dv], { type: "model/stl" });
   downloadBlob(blob, filename);
@@ -48,8 +94,11 @@ export function exportSceneToSTL(objects, filename = "model.stl") {
 export async function exportSceneToSTLBytes(objects) {
   const { geometry, triangleCount, empty } = evaluateScene(objects);
   if (empty) throw new Error("Scene is empty. Add at least one positive component.");
+  _normaliseForSlicer(geometry);
   const dv = geometryToSTLBinary(geometry);
   // Bbox is read by Gallery + STL Preview to render an "extent" chip.
+  // Computed in the FINAL slicer frame (post-rotation, post-drop) so
+  // the displayed dimensions match what the slicer sees.
   let bbox = null;
   try {
     if (geometry) {
@@ -71,6 +120,7 @@ export async function exportSceneToSTLBytes(objects) {
 export async function exportSceneTo3MF(objects, filename = "model.3mf") {
   const { geometry, empty } = evaluateScene(objects);
   if (empty) throw new Error("Scene is empty. Add at least one positive component.");
+  _normaliseForSlicer(geometry);
   const bytes = await build3MFBytes(geometry);
   downloadBlob(new Blob([bytes], { type: "model/3mf" }), filename);
 }
@@ -186,7 +236,20 @@ export async function import3MFFile(file) {
   }
 
   const verts = new Float32Array(positions);
-  // bbox + recenter so XZ center is at origin and bottom sits on Y=0
+  // 3MF files are Z-up (per spec). Apply the same convention conversion
+  // as importSTLFile so the 3MF round-trips through the slice pipeline
+  // correctly. Rotation runs over the Float32Array directly so we don't
+  // allocate a fresh BufferGeometry just for this.
+  // makeRotationX(-π/2): new_y = +old_z, new_z = -old_y.
+  for (let i = 0; i < verts.length; i += 3) {
+    const oldY = verts[i + 1];
+    const oldZ = verts[i + 2];
+    verts[i + 1] = oldZ;
+    verts[i + 2] = -oldY;
+  }
+  // bbox + recenter so XZ center is at origin and bottom sits on Y=0.
+  // Operating in Y-up space now (after the rotation), so min.y is the
+  // height axis to clear.
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < verts.length; i += 3) {
@@ -271,13 +334,50 @@ export async function importGLBFile(file) {
   };
 }
 
+// Convention conversion for imported meshes.
+//
+// Three.js scenes use **Y-up** (height = +Y). The 3D-printing world's
+// file formats — STL, 3MF, most OBJ files — use **Z-up** (height = +Z).
+// Without conversion, an imported Z-up STL ends up *lying on its side*
+// in our Three.js scene, and is then re-exported with the same wrong
+// frame, producing the "floating model + phantom supports" failure
+// mode that surfaced in iter-76 (user's MiniRack tray print failing,
+// because the cutout side ended up underneath the model in the slicer).
+//
+// Fix: apply +90° around X on import (so old Z becomes new Y, old Y
+// becomes new -Z). The export side's `_normaliseForSlicer` applies
+// the inverse rotation, so STL→ForgeSlicer→STL round-trips preserve
+// orientation. Mutates `geometry` in place AND returns it.
+//
+// Trade-off / known limitation:
+// Pre-iter-76 projects whose STL imports were stored in the "lying
+// sideways" frame will appear rotated 90° after this fix. Users have
+// to re-import those files. We accept that — the alternative (leaving
+// the bug in place) makes the slice flow produce wrong G-code.
+function _zUpToYUp(geometry) {
+  // Three.js's `makeRotationX(-π/2)` produces the matrix where
+  // new_y = +old_z (so the STL's height axis becomes Three.js's
+  // height axis) and new_z = -old_y. This is the inverse of
+  // `_normaliseForSlicer`'s rotation, so import→export round-trips
+  // preserve orientation exactly.
+  const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  geometry.applyMatrix4(m);
+  return geometry;
+}
+
 export async function importSTLFile(file) {
   const buf = await readFileAsArrayBuffer(file);
   const loader = new STLLoader();
   const geom = loader.parse(buf);
+  // STL files are always Z-up — rotate into Three.js's Y-up frame
+  // so the scene viewport shows the model in its print orientation.
+  _zUpToYUp(geom);
   geom.computeVertexNormals();
   geom.computeBoundingBox();
   const bb = geom.boundingBox;
+  // Center on X/Z (footprint) and drop the lowest point to Y=0 so
+  // the model rests on the build-plate grid. Now operating in Y-up
+  // space, so `min.y` is the right axis to clear to zero.
   geom.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
   geom.computeBoundingBox();
   const bb2 = geom.boundingBox;
@@ -318,19 +418,24 @@ export async function importOBJFile(file) {
     }
   });
   const verts = new Float32Array(positions);
-  // re-center
+  // OBJ files in 3D-printing contexts are typically Z-up (same as STL).
+  // Apply the same rotation as importSTLFile for consistency.
   const tmp = new THREE.BufferGeometry();
   tmp.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+  _zUpToYUp(tmp);
+  // After rotation, re-read the vertex array so the in-place rotation
+  // applies to the array we'll return.
+  const rotated = tmp.attributes.position.array;
   tmp.computeBoundingBox();
   const bb = tmp.boundingBox;
-  for (let i = 0; i < verts.length; i += 3) {
-    verts[i] -= (bb.min.x + bb.max.x) / 2;
-    verts[i + 1] -= bb.min.y;
-    verts[i + 2] -= (bb.min.z + bb.max.z) / 2;
+  for (let i = 0; i < rotated.length; i += 3) {
+    rotated[i] -= (bb.min.x + bb.max.x) / 2;
+    rotated[i + 1] -= bb.min.y;
+    rotated[i + 2] -= (bb.min.z + bb.max.z) / 2;
   }
   return {
     name: file.name.replace(/\.[^.]+$/, ""),
-    vertices: verts,
+    vertices: rotated instanceof Float32Array ? rotated : new Float32Array(rotated),
     indices: null,
     originalBbox: {
       x: bb.max.x - bb.min.x,

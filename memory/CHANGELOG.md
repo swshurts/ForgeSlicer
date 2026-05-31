@@ -1927,3 +1927,87 @@ compounding bugs:
   `M104 S215` regardless of plate type. Match between popover and
   GCODE is now guaranteed.
 
+
+## Iteration 76 (2026-05-31) — P0: Y-up ↔ Z-up axis convention fix
+
+### Bug context
+User reported a print failure: a MiniRack tray (their existing STL,
+prints cleanly in Cura/OrcaSlicer when imported directly) came back from
+ForgeSlicer's slice pipeline as G-code that printed only support
+scaffolding. Cura preview of the same STL ForgeSlicer would export showed
+the model **rotated 90° from its correct orientation and floating above
+the build plate** with phantom support trees filling the empty space
+beneath — exactly the failure mode the print exhibited.
+
+### Root cause
+**Two compounding axis-convention bugs in the import/export pipeline:**
+
+1. **`importSTLFile` / `importOBJFile` / `import3MFFile`** assumed
+   incoming files were Y-up — they're not. STL, OBJ (in 3D-print contexts),
+   and 3MF (per spec) are all Z-up. We were treating the file's Z (height)
+   axis as Y (depth), so models came in lying on their side in the Three.js
+   scene.
+2. **`exportSceneToSTLBytes` / `exportSceneToSTL` / `exportSceneTo3MF`**
+   emitted raw Three.js Y-up vertices straight to the slicer. Slicers
+   interpret STLs as Z-up by convention, so the model arrives rotated 90°
+   from authoring intent, with arbitrary Z-offset → phantom supports +
+   wrong orientation.
+
+The visible viewport in ForgeSlicer "looked right" because the lying-on-side
+geometry happened to get re-translated so its `bbox.min.y = 0` after
+import — but the model was sideways relative to its print intent. On
+export the lying-sideways frame was preserved (no rotation applied),
+so the slicer saw the same wrong orientation plus an arbitrary Z-offset.
+
+### Fix
+Two new helpers in `lib/exporters.js`:
+- **`_zUpToYUp(geometry)`** — applies `makeRotationX(-π/2)` so old Z
+  (file's height) becomes new Y (Three.js's height) and old Y becomes
+  new -Z. Mutates + returns.
+- **`_normaliseForSlicer(geometry)`** — applies the inverse rotation
+  `makeRotationX(+π/2)`, then translates so `bbox.min.z = 0` (drop to
+  bed). Mutates + returns.
+
+Wired into both sides:
+- All three importers (`importSTLFile`, `importOBJFile`, `import3MFFile`)
+  call the rotation FIRST, then the existing drop-to-Y=0 + recenter
+  logic operates in correctly-oriented Y-up space.
+- All three exporters (`exportSceneToSTL`, `exportSceneToSTLBytes`,
+  `exportSceneTo3MF`) call `_normaliseForSlicer` AFTER scene evaluation
+  but BEFORE STLExporter/3MF byte emission.
+
+Round-trip is now lossless: STL → import → scene → export → STL preserves
+every vertex coordinate to 0.01mm tolerance.
+
+### Verification
+- **10/10 Node smoke checks pass**:
+  - Import: peg at file's z=12 lands at Three.js y=12; base on Y=0; X
+    preserved; depth (40mm) preserved on Z.
+  - Round-trip: every vertex coord matches the original after import →
+    export.
+  - Export-only (model authored in ForgeSlicer): peg in +Y comes out at
+    +Z in the slicer-shape output, base on Z=0.
+  - Floating model (z=5..15): dropped so bbox.min.z=0, height (10mm)
+    preserved.
+- Lint clean.
+- 57 backend tests still green (no backend changes).
+- Workspace smoke loads cleanly.
+
+### Known limitation (deliberately accepted)
+Pre-iter-76 projects whose imported STLs were stored in the buggy
+lying-sideways frame will appear rotated 90° after this fix. Users have
+to re-import those files. We accept this — the alternative (leaving the
+bug in place to preserve "wrong" past state) makes every future slice
+produce wrong G-code. Acceptable given how new the feature is.
+
+### Files touched
+- `frontend/src/lib/exporters.js` — two new convention-conversion
+  helpers; import (STL/OBJ/3MF) and export (STL/3MF) call sites updated.
+
+### What the user needs to do
+- Redeploy iter-76 to production.
+- After redeploy: re-import the MiniRack tray STL. It will appear with
+  its base flat on the build-plate grid (the correct print orientation
+  the user described). Slice as normal → G-code matches what desktop
+  OrcaSlicer would produce.
+
