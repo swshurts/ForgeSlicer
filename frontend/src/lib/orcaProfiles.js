@@ -425,14 +425,186 @@ export function resolveSystemPresets(printerId, processId, filamentId) {
   };
 }
 
-// "user:<printer_id>" — selection prefix for user-defined printers
-// (iter-72). The slicer dropdown stores the prefixed string so we can
-// distinguish a custom printer from the built-in ID space. When the
-// backend receives the slice request we strip the prefix and send
-// just the raw printer_id as `user_printer_id`.
 export const USER_PRINTER_PREFIX = "user:";
 export const isUserPrinterId = (id) => typeof id === "string" && id.startsWith(USER_PRINTER_PREFIX);
 export const userPrinterIdOf = (id) => isUserPrinterId(id) ? id.slice(USER_PRINTER_PREFIX.length) : null;
+
+// G-code flavour values our `user_printers` schema accepts. The
+// `parseOrcaPrinterJson` helper validates pasted values against this
+// set so an unsupported flavour falls back to "marlin2" + a warning
+// rather than silently breaking the slice.
+const USER_PRINTER_GCODE_FLAVORS = new Set(["marlin", "marlin2", "klipper", "reprap", "smoothie"]);
+
+// Pull a single-element array OR a scalar value as a number. OrcaSlicer
+// uniformly wraps "single-extruder" values in 1-element arrays (e.g.
+// `"nozzle_diameter": ["0.4"]`); we accept both for resilience against
+// future schema cleanups.
+function _coerceFirstNumber(v) {
+  if (Array.isArray(v) && v.length > 0) v = v[0];
+  if (v == null) return null;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Pull a single-element array OR a scalar string. Used for fields like
+// `gcode_flavor` that should be a single value but ship as 1-element
+// arrays in some bundled JSONs.
+function _coerceFirstString(v) {
+  if (Array.isArray(v) && v.length > 0) v = v[0];
+  if (v == null) return null;
+  return String(v);
+}
+
+/**
+ * Parse an OrcaSlicer printer-profile JSON string into our
+ * `UserPrintersDialog` draft shape. Designed to extract whatever the
+ * pasted JSON contains and leave the rest to the existing draft
+ * defaults — callers should `{ ...draft, ...parsed.fields }`.
+ *
+ * Handles all the array-vs-scalar wrapping quirks of OrcaSlicer's
+ * actual on-disk JSONs (single-extruder values wrapped in
+ * `["0.4"]`, build vol stored as `"printable_area": ["0x0","255x0",
+ * "255x255","0x255"]`, etc.).
+ *
+ * Returns `{ ok: true, fields, warnings }` or `{ ok: false, error }`.
+ * Never throws — pasted input is user-driven and we want to surface
+ * helpful errors not stack traces.
+ *
+ * Limitations (documented so callers can flag them in the UI):
+ *   - `inherits` chains aren't resolved. The user should paste a
+ *     flattened JSON (e.g. exported from OrcaSlicer's "Export current
+ *     printer settings" menu). We DO surface a warning if `inherits`
+ *     is present so the user knows what's missing.
+ *   - Non-rectangular `printable_area` polygons (delta, etc.) get a
+ *     warning + we approximate the bounding box.
+ */
+export function parseOrcaPrinterJson(input) {
+  if (typeof input !== "string" || !input.trim()) {
+    return { ok: false, error: "Paste an OrcaSlicer printer JSON to import." };
+  }
+  let doc;
+  try {
+    doc = JSON.parse(input);
+  } catch (e) {
+    return { ok: false, error: `Invalid JSON: ${e.message}` };
+  }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+    return { ok: false, error: "JSON must be an object (curly braces)." };
+  }
+
+  // Quick gate: if this clearly isn't a printer/machine JSON, refuse
+  // rather than spitting out a doc full of zeroes.
+  if (doc.type && !["machine", "printer"].includes(String(doc.type).toLowerCase())) {
+    return {
+      ok: false,
+      error: `This JSON's "type" is "${doc.type}" — expected "machine". Paste a printer profile (not a process or filament).`,
+    };
+  }
+
+  const fields = {};
+  const warnings = [];
+
+  // Inherits chain — we don't resolve it; warn the user so they know
+  // missing fields will fall back to draft defaults.
+  if (doc.inherits) {
+    warnings.push(
+      `Inherits from "${doc.inherits}" — only the explicit overrides in this JSON were imported. ` +
+      `Fields missing from this JSON keep your current values.`,
+    );
+  }
+
+  // Name + model
+  if (typeof doc.name === "string" && doc.name.trim()) fields.name = doc.name.trim();
+  if (typeof doc.printer_model === "string" && doc.printer_model.trim()) {
+    fields.printer_model = doc.printer_model.trim();
+  }
+
+  // Nozzle diameter — array-wrapped in OrcaSlicer's schema.
+  const nozzle = _coerceFirstNumber(doc.nozzle_diameter);
+  if (nozzle != null && nozzle >= 0.1 && nozzle <= 2.0) {
+    fields.nozzle_diameter = nozzle;
+  } else if (doc.nozzle_diameter !== undefined) {
+    warnings.push(`Ignored nozzle_diameter "${doc.nozzle_diameter}" — out of range (0.1-2.0 mm).`);
+  }
+
+  // Build volume. OrcaSlicer's `printable_area` is a 4-corner polygon
+  // (rectangular beds) shaped as ["XxY", "XxY", "XxY", "XxY"]. We
+  // extract the X/Y extremes — works for non-origin-anchored beds too.
+  if (Array.isArray(doc.printable_area) && doc.printable_area.length >= 3) {
+    let xs = [], ys = [];
+    for (const pt of doc.printable_area) {
+      const m = String(pt).match(/^\s*(-?\d+(?:\.\d+)?)\s*[x,]\s*(-?\d+(?:\.\d+)?)/i);
+      if (m) {
+        xs.push(parseFloat(m[1]));
+        ys.push(parseFloat(m[2]));
+      }
+    }
+    if (xs.length >= 2 && ys.length >= 2) {
+      const bx = Math.round(Math.max(...xs) - Math.min(...xs));
+      const by = Math.round(Math.max(...ys) - Math.min(...ys));
+      if (bx >= 10 && bx <= 1000) fields.build_x_mm = bx;
+      if (by >= 10 && by <= 1000) fields.build_y_mm = by;
+      if (doc.printable_area.length !== 4) {
+        warnings.push(
+          `printable_area has ${doc.printable_area.length} corners (non-rectangular bed?) — ` +
+          `approximated to the X/Y bounding box.`,
+        );
+      }
+    }
+  }
+  const buildZ = _coerceFirstNumber(doc.printable_height);
+  if (buildZ != null && buildZ >= 10 && buildZ <= 1000) fields.build_z_mm = buildZ;
+
+  // G-code flavor — must match our whitelist.
+  const flavorRaw = _coerceFirstString(doc.gcode_flavor);
+  if (flavorRaw) {
+    const flavor = flavorRaw.toLowerCase().trim();
+    if (USER_PRINTER_GCODE_FLAVORS.has(flavor)) {
+      fields.gcode_flavor = flavor;
+    } else {
+      warnings.push(`gcode_flavor "${flavorRaw}" isn't supported here — kept your current selection.`);
+    }
+  }
+
+  // Max speeds — array-wrapped in OrcaSlicer schema.
+  const speedMap = [
+    ["machine_max_speed_x", "max_speed_x", 1, 2000],
+    ["machine_max_speed_y", "max_speed_y", 1, 2000],
+    ["machine_max_speed_z", "max_speed_z", 1, 500],
+    ["machine_max_speed_e", "max_speed_e", 1, 500],
+  ];
+  for (const [jsonKey, ourKey, lo, hi] of speedMap) {
+    const v = _coerceFirstNumber(doc[jsonKey]);
+    if (v != null && v >= lo && v <= hi) fields[ourKey] = v;
+  }
+
+  // Retraction — same array-wrap pattern.
+  const retL = _coerceFirstNumber(doc.retraction_length);
+  if (retL != null && retL >= 0 && retL <= 20) fields.retraction_length = retL;
+  const retS = _coerceFirstNumber(doc.retraction_speed);
+  if (retS != null && retS >= 1 && retS <= 200) fields.retraction_speed = retS;
+
+  // Start / end G-code — multi-line strings.
+  if (typeof doc.machine_start_gcode === "string") {
+    fields.start_gcode = doc.machine_start_gcode;
+  }
+  if (typeof doc.machine_end_gcode === "string") {
+    fields.end_gcode = doc.machine_end_gcode;
+  }
+
+  // Detect when nothing useful was parsed (e.g. user pasted a stub
+  // with only `inherits`). Surface as an error so they don't think
+  // the import succeeded.
+  if (Object.keys(fields).length === 0) {
+    return {
+      ok: false,
+      error: warnings.length
+        ? `No usable fields in this JSON. ${warnings[0]}`
+        : "No usable printer fields found in this JSON.",
+    };
+  }
+  return { ok: true, fields, warnings };
+}
 
 export function buildOrcaPayload({
   printerId, processId, filamentId,

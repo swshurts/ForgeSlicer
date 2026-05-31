@@ -18,8 +18,9 @@
 // flows (Save Design, Save Component, etc.).
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, X, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Pencil, X, AlertCircle, CheckCircle2, FileJson } from "lucide-react";
 import { userPrintersApi, apiErrorMessage } from "../../lib/api";
+import { parseOrcaPrinterJson } from "../../lib/orcaProfiles";
 
 const GCODE_FLAVORS = [
   { id: "marlin2",  label: "Marlin 2.x" },
@@ -263,6 +264,7 @@ function PrinterForm({ draft, onChange }) {
   const set = (k, v) => onChange({ ...draft, [k]: v });
   return (
     <div className="space-y-3">
+      <ImportFromJsonPanel draft={draft} onApply={onChange} />
       <label className="flex flex-col gap-0.5">
         <span className="text-[9px] uppercase tracking-wider text-slate-400">Name *</span>
         <input
@@ -363,3 +365,123 @@ function PrinterForm({ draft, onChange }) {
     </div>
   );
 }
+
+// ImportFromJsonPanel — pasted-JSON shortcut that fills the form from an
+// OrcaSlicer printer-profile JSON (the same JSONs `OrcaPresetViewer`
+// shows for bundled presets, OR what the user can export from desktop
+// OrcaSlicer's "Export current settings" menu). Lets a user register
+// the SV06 Plus Ace etc. in ~10 seconds instead of typing every field.
+//
+// Collapsed by default to keep the form un-cluttered for users who
+// don't have a JSON handy — they can still type the few fields they
+// know and ignore this. Parsing logic lives in `orcaProfiles.js` so
+// it's pure (no DOM deps) and unit-testable.
+function ImportFromJsonPanel({ draft, onApply }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [error, setError] = useState(null);
+  const [warnings, setWarnings] = useState([]);
+  const [importedCount, setImportedCount] = useState(null);
+
+  const tryImport = () => {
+    setError(null);
+    setWarnings([]);
+    setImportedCount(null);
+    const result = parseOrcaPrinterJson(text);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    onApply({ ...draft, ...result.fields });
+    setImportedCount(Object.keys(result.fields).length);
+    setWarnings(result.warnings || []);
+  };
+
+  const clear = () => {
+    setText("");
+    setError(null);
+    setWarnings([]);
+    setImportedCount(null);
+  };
+
+  return (
+    <details
+      data-testid="user-printer-import-panel"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="border border-purple-500/30 bg-purple-500/5 rounded"
+    >
+      <summary className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-purple-200 cursor-pointer hover:text-purple-100 flex items-center gap-1.5">
+        <FileJson size={11} />
+        Import from OrcaSlicer JSON (optional)
+      </summary>
+      <div className="p-2 pt-3 space-y-2">
+        <p className="text-[10px] text-slate-400 leading-snug">
+          Paste a printer-profile JSON from OrcaSlicer (e.g. the
+          &ldquo;Export current settings&rdquo; output, or one of the
+          bundled printer JSONs viewable via the green preset hint in
+          the slicer dropdown). Recognised fields fill in below; unset
+          fields keep your current values.
+        </p>
+        <textarea
+          data-testid="user-printer-import-textarea"
+          rows={6}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={'{\n  "type": "machine",\n  "name": "My Printer 0.4 nozzle",\n  "printer_model": "My Printer",\n  "nozzle_diameter": ["0.4"],\n  "printable_area": ["0x0", "300x0", "300x300", "0x300"],\n  "printable_height": 340,\n  "gcode_flavor": "klipper"\n}'}
+          className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-[11px] text-white font-mono outline-none focus:border-amber-500"
+        />
+        {error && (
+          <div
+            data-testid="user-printer-import-error"
+            className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/50 rounded p-1.5 text-[10px] text-rose-200"
+          >
+            <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+        {importedCount != null && !error && (
+          <div
+            data-testid="user-printer-import-success"
+            className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/50 rounded p-1.5 text-[10px] text-emerald-200"
+          >
+            <CheckCircle2 size={11} className="flex-shrink-0 mt-0.5" />
+            <span>Imported {importedCount} {importedCount === 1 ? "field" : "fields"} — review below and click Save.</span>
+          </div>
+        )}
+        {warnings.map((w, i) => (
+          <div
+            key={i}
+            data-testid={`user-printer-import-warning-${i}`}
+            className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/50 rounded p-1.5 text-[10px] text-amber-200"
+          >
+            <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
+            <span>{w}</span>
+          </div>
+        ))}
+        <div className="flex items-center justify-end gap-2 pt-1">
+          {text && (
+            <button
+              type="button"
+              data-testid="user-printer-import-clear"
+              onClick={clear}
+              className="px-2 py-1 text-[10px] text-slate-400 hover:text-slate-200"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="user-printer-import-apply"
+            onClick={tryImport}
+            disabled={!text.trim()}
+            className="px-3 py-1 text-[10px] font-semibold bg-purple-500 text-white rounded hover:bg-purple-400 disabled:opacity-50 transition-colors"
+          >
+            Parse & fill form
+          </button>
+        </div>
+      </div>
+    </details>
+  );
+}
+

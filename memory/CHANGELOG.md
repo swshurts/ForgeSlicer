@@ -1770,3 +1770,49 @@ forever.
   dropdown across sessions, and slicing uses its custom build volume / nozzle /
   G-code flavour / start-end G-code instead of the closest bundled preset.
 
+
+## Iteration 73 (2026-05-31) — Import OrcaSlicer printer JSON
+
+### Why
+Iter-72 added manual entry for user-defined printers. The friction was high
+for users who already have a printer working in desktop OrcaSlicer or who want
+to fork one of the bundled JSONs visible via `OrcaPresetViewer`. This iteration
+adds a one-paste import shortcut so registering a printer takes ~10 seconds.
+
+### Implementation
+- **New `parseOrcaPrinterJson(jsonString)`** in `lib/orcaProfiles.js`. Pure
+  helper, no DOM deps. Returns `{ ok: true, fields, warnings }` or
+  `{ ok: false, error }`. Handles:
+  - Array-vs-scalar wrapping (`nozzle_diameter: ["0.4"]` vs `0.4`).
+  - `printable_area` as a polygon (rectangular OR non-rectangular — bbox
+    approximation + warning for the latter).
+  - `printable_height` / `gcode_flavor` / `machine_max_speed_*` /
+    `retraction_*` / `machine_start_gcode` / `machine_end_gcode`.
+  - Type-gate so a process or filament JSON is refused with a clear error.
+  - `inherits` chain — surfaced as a warning (we don't resolve it; user
+    should paste a flattened JSON).
+  - Out-of-range numeric values dropped silently with a warning so the
+    Pydantic backend bounds can't fail.
+- **`ImportFromJsonPanel`** in `UserPrintersDialog.jsx` — collapsible
+  `<details>` panel at the top of the create/edit form. Textarea +
+  Parse & fill form button. Surfaces success count, warnings (amber),
+  and errors (rose) inline.
+
+### Verification
+- 7-case Node-based parser smoke test all green:
+  happy path, invalid JSON, wrong type, inherits warning, non-rectangular
+  bed bbox, out-of-range nozzle, unknown gcode_flavor.
+- Lint clean (eslint: 0 issues across modified files).
+- Existing 57 backend tests still green — no backend changes in this
+  iteration; the import only affects the FE form state.
+
+### Files touched
+- `frontend/src/lib/orcaProfiles.js` — `parseOrcaPrinterJson` + helpers.
+- `frontend/src/components/dialogs/UserPrintersDialog.jsx` — import panel.
+
+### What the user needs to do
+- After redeploying iter-73, open My Printers → New printer → expand
+  "Import from OrcaSlicer JSON (optional)" → paste a JSON from
+  desktop OrcaSlicer's export or the green preset hint in our own
+  slicer dropdown → click Parse & fill form. Save.
+
