@@ -1862,3 +1862,68 @@ Was 1486 lines after iter 73 — extracted two cohesive blocks:
 - `frontend/src/lib/store.js` — replaced extracted blocks with imports
   and one slice spread.
 
+
+## Iteration 75 (2026-05-31) — P0: Bed temp / Hotend temp / Bed surface for OrcaSlicer
+
+### Bug context
+User reported the OrcaSlicer GCODE emitted `M140 S35` despite the Slicer
+Popover's "Bed" field being set to 55°C. Investigation revealed two
+compounding bugs:
+
+1. **The "Bed" and "Hotend" fields in the popover never reached
+   OrcaSlicer at all.** They write to `useSliceSettings`, which only the
+   built-in JS slicer reads. `useOrcaSlice.buildPayload` / `buildOrcaPayload`
+   didn't import or thread these values, so whatever the user typed had
+   zero effect on the OrcaSlicer GCODE.
+2. **OrcaSlicer's PLA filament profile carries four `*_plate_temp`
+   fields** (cool / textured / hot / engineering plate). Our bundled
+   PLA profile set `cool_plate_temp: [35]` (cool-plate spec). With no
+   `curr_bed_type` override on the printer profile, Orca defaulted to
+   "Cool Plate" → emitted M140 S35.
+
+### Fix
+**Frontend** (`/app/frontend/`):
+- Added `bedSurface: "Textured PEI Plate"` to `useSliceSettings` defaults
+  (most common modern surface).
+- `buildOrcaPayload` (in `lib/orcaProfiles.js`) gains `bedTemp`,
+  `nozzleTemp`, `bedSurface` params. When set:
+  - Overrides ALL four `*_plate_temp` + four `*_plate_temp_initial_layer`
+    on the filament profile to the user's `bedTemp` (safety net — temp
+    matches regardless of which plate Orca picks).
+  - Overrides `nozzle_temperature` + `nozzle_temperature_initial_layer`
+    to the user's `nozzleTemp`.
+  - Stamps `curr_bed_type` on the printer profile to the user's
+    `bedSurface` selection.
+- `useOrcaSlice.buildPayload` pulls these three values from
+  `useSliceSettings.getState()` and forwards them.
+- New "Bed surface" dropdown in `OrcaProfileEditor` (Cool / Textured PEI /
+  High Temp / Engineering plates) — drives `curr_bed_type` so Orca
+  applies the correct plate-specific first-layer Z / cooling profile.
+
+### Verification
+- 14-case Node smoke test all green: every plate-temp override fires,
+  initial-layer companions fire, nozzle override fires, curr_bed_type
+  stamps, defaults preserved when overrides absent, original 35°C bug
+  reproduces in the absence of the fix.
+- Lint clean (eslint: 0 issues across modified files).
+- 57 backend tests still pass — no backend changes in this iteration.
+
+### Files touched
+- `frontend/src/lib/store.js` — `bedSurface` default in
+  `useSliceSettings`.
+- `frontend/src/lib/orcaProfiles.js` — `buildOrcaPayload` accepts +
+  applies the three new overrides.
+- `frontend/src/lib/useOrcaSlice.js` — imports `useSliceSettings`, reads
+  bedTemp / nozzleTemp / bedSurface, forwards via buildPayload.
+- `frontend/src/components/popovers/OrcaProfileEditor.jsx` — new "Bed
+  surface" dropdown.
+- `frontend/src/components/popovers/SlicerPopover.jsx` — wires
+  bedSurface state through to the editor.
+
+### What the user needs to do
+- Redeploy iter-75 to production.
+- After redeploy: set Bed = 55, Hotend = 215, Bed surface = whatever
+  plate is installed → next OrcaSlicer GCODE emits `M140 S55` /
+  `M104 S215` regardless of plate type. Match between popover and
+  GCODE is now guaranteed.
+

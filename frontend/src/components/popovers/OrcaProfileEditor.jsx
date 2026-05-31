@@ -24,6 +24,12 @@ export default function OrcaProfileEditor({
   // editor falls back to the bundled-only dropdown.
   userPrinters = [],
   onReloadUserPrinters,
+  // Bed surface (iter-75). Drives OrcaSlicer's `curr_bed_type` so the
+  // chosen plate's flow / Z-offset / temp profile gets applied. The
+  // bed-temp override sets all four plates to the same value as a
+  // safety net, but this dropdown still controls which plate-specific
+  // first-layer behaviour OrcaSlicer uses.
+  bedSurface, onBedSurfaceChange,
 }) {
   const printerGroups = getPrinterGroups();
   // When the selected printer has bundled-system-preset metadata,
@@ -211,6 +217,28 @@ export default function OrcaProfileEditor({
           ))}
         </select>
       </label>
+      {/* Bed surface — drives OrcaSlicer's `curr_bed_type` so the chosen
+          plate's first-layer Z / flow / cooling profile is applied. The
+          popover's "Bed" temperature field overrides every plate's
+          `*_plate_temp` to the same value as a safety net, so the GCODE
+          temp matches the popover regardless of which plate is selected
+          here — this dropdown still controls plate-specific behaviour. */}
+      {bedSurface != null && onBedSurfaceChange && (
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">Bed surface</span>
+          <select
+            data-testid="orca-bed-surface"
+            value={bedSurface}
+            onChange={(e) => onBedSurfaceChange(e.target.value)}
+            className="h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 focus:border-purple-500 outline-none"
+          >
+            <option value="Cool Plate">Cool Plate (smooth PEI / PC)</option>
+            <option value="Textured PEI Plate">Textured PEI Plate</option>
+            <option value="High Temp Plate">High Temp Plate</option>
+            <option value="Engineering Plate">Engineering Plate</option>
+          </select>
+        </label>
+      )}
       <div className="grid grid-cols-2 gap-2 pt-0.5">
         <label className="flex items-center gap-2 h-8 bg-slate-950 border border-slate-700 rounded px-2 cursor-pointer text-xs text-slate-200 select-none">
           <input

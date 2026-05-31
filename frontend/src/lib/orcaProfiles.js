@@ -655,6 +655,13 @@ export function buildOrcaPayload({
   // `userPrinterId` field. The backend then ignores the bundled-preset
   // hints and resolves the printer profile from MongoDB instead.
   userPrinter,
+  // Engine-agnostic temperatures + plate surface, sourced from
+  // `useSliceSettings`. The Slicer Popover's "Bed" and "Hotend"
+  // fields write here. When omitted, the bundled filament profile's
+  // defaults stand. iter-75: previously these were silently dropped
+  // for the Orca path, so the popover's Bed field had no effect on
+  // GCODE produced by OrcaSlicer.
+  bedTemp, nozzleTemp, bedSurface,
 }) {
   const userPrinterId = userPrinterIdOf(printerId);
   const printer = userPrinter
@@ -713,10 +720,44 @@ export function buildOrcaPayload({
     ...processProfile,
   };
 
+  // iter-75: bridge the popover's Bed / Hotend / Bed surface fields into
+  // the Orca payload. Previously these were silently ignored — the
+  // popover wrote to `useSliceSettings` which only the built-in JS
+  // slicer reads. Now we:
+  //   1. Override the FILAMENT profile's `*_plate_temp` (all four plate
+  //      types) and `nozzle_temperature` to the user's value so the
+  //      emitted GCODE matches what the popover says, regardless of
+  //      which `curr_bed_type` the printer profile defaults to.
+  //   2. Stamp `curr_bed_type` on the PRINTER profile so Orca picks the
+  //      right plate-specific behaviour (first-layer Z, flow comp, etc.)
+  //      for the surface the user has installed.
+  // Both are optional — when undefined, the bundled defaults stand.
+  const filamentOverrides = { ...filament.profile };
+  if (bedTemp != null) {
+    const v = Number(bedTemp);
+    filamentOverrides.cool_plate_temp = [v];
+    filamentOverrides.cool_plate_temp_initial_layer = [v];
+    filamentOverrides.eng_plate_temp = [v];
+    filamentOverrides.eng_plate_temp_initial_layer = [v];
+    filamentOverrides.hot_plate_temp = [v];
+    filamentOverrides.hot_plate_temp_initial_layer = [v];
+    filamentOverrides.textured_plate_temp = [v];
+    filamentOverrides.textured_plate_temp_initial_layer = [v];
+  }
+  if (nozzleTemp != null) {
+    const v = Number(nozzleTemp);
+    filamentOverrides.nozzle_temperature = [v];
+    filamentOverrides.nozzle_temperature_initial_layer = [v];
+  }
+  const printerOverrides = { ...printer.profile };
+  if (bedSurface) {
+    printerOverrides.curr_bed_type = bedSurface;
+  }
+
   return {
-    printerProfile:  withMeta(printer.profile, "machine", printer.label),
+    printerProfile:  withMeta(printerOverrides, "machine", printer.label),
     processProfile:  withMeta(processOverrides, "process", process.label),
-    filamentProfile: withMeta(filament.profile, "filament", filament.label),
+    filamentProfile: withMeta(filamentOverrides, "filament", filament.label),
     // Bundled-system preset names — when set, the backend loads the
     // matching system JSON, walks its `inherits` chain, and applies
     // the *_profile overrides on top. When null, the backend uses

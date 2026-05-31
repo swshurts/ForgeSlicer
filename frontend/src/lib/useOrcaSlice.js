@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from "react";
 import { orcaApi, userPrintersApi, apiErrorMessage, API as API_BASE } from "./api";
 import { buildOrcaPayload, isUserPrinterId, userPrinterIdOf } from "./orcaProfiles";
+import { useSliceSettings } from "./store";
 import { exportSceneToSTLBytes } from "./exporters";
 
 // Convert an ArrayBuffer / Uint8Array to base64 in 32 KB chunks so we
@@ -221,12 +222,21 @@ export function useOrcaSlice() {
     // the user_printer_id resolution path.
     const upId = userPrinterIdOf(printer);
     const userPrinter = upId ? userPrinters.find((p) => p.printer_id === upId) : null;
+    // Pull engine-agnostic temps + plate surface from `useSliceSettings`.
+    // iter-75: these used to be silently dropped on the Orca path —
+    // the popover's Bed / Hotend / Bed surface fields had no effect on
+    // GCODE the OrcaSlicer engine produced. Now we forward them so the
+    // Orca filament profile is overridden to match what the popover says.
+    const slice = useSliceSettings.getState();
     return buildOrcaPayload({
       printerId: printer, processId: process, filamentId: filament,
       wallLoops: walls, sparseInfillDensity: infillPct,
       sparseInfillPattern: pattern,
       enableSupport: supports, ironing,
       userPrinter,
+      bedTemp: slice.bedTemp,
+      nozzleTemp: slice.nozzleTemp,
+      bedSurface: slice.bedSurface,
     });
   };
 

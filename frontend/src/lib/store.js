@@ -1279,6 +1279,14 @@ export const useSliceSettings = create((set) => ({
   bottomLayers: 4,
   nozzleTemp: 210,
   bedTemp: 60,
+  // Build-plate surface (iter-75). Drives OrcaSlicer's `curr_bed_type`
+  // field — Orca picks bed temp from the matching `*_plate_temp`
+  // field in the filament profile based on this value. The bed-temp
+  // override below sets ALL four plates to the user's value so it
+  // doesn't matter if some printer profile overrides `curr_bed_type`
+  // downstream, but `curr_bed_type` still influences other surface-
+  // specific behaviours (PEI vs cool-plate first-layer Z, etc.).
+  bedSurface: "Textured PEI Plate",
   retraction: 1.0,
   set: (patch) => set(patch),
 }));
