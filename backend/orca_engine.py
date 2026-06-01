@@ -1263,7 +1263,15 @@ async def _perform_slice(
                 r"\bmismatched?\b|\bout of range\b|\bnot found\b|"
                 r"\bunknown\b|\bunsupported\b|\bfailed to\b|"
                 r"\bexceeds?\b|\btoo (small|large|big|short|tall)\b|"
-                r"\bvalidate\b)"
+                r"\bvalidate\b|"
+                # OrcaSlicer's CLI prints these as `[warning]` but
+                # still bails with rc=156, so we treat them as the
+                # real cause. Empty-layer / floating-region warnings
+                # are the most common reason a model fails to slice
+                # without supports. Iter-78.
+                r"\bempty layer\b|\bfloating regions?\b|"
+                r"\bcan't be printed\b|\bfaulty mesh\b|"
+                r"\bslicing warnings?\b)"
             )
             for line in (stderr_full + "\n" + stdout_full + "\n" + slicer_log_text).splitlines():
                 s = line.strip()
