@@ -17,39 +17,37 @@
 - **Routes**: `/` Landing (public), `/gallery` Public Library (public), `/workspace` CAD editor (auth-gated), `/profile` User profile (auth-gated).
 
 ## Core Pages / Components
-| Component | Responsibility |
-|-----------|---------------|
-| `Landing.jsx` | Hero, feature grid, CTAs |
-| `Workspace.jsx` | Shell composing TopToolbar / Left / Viewport / Right / Status |
-| `Viewport.jsx` | R3F Canvas, build plate, grid, gizmo, transform-controls |
-| `LeftPanel.jsx` | Positive & negative primitive palettes + outliner tree |
-| `RightPanel.jsx` | Inspector (transforms/dimensions) + slicer settings + Slice button |
-| `TopToolbar.jsx` | File ops, import, export STL/3MF, boolean ops, transform modes, snap/grid, share, send-to-orca |
-| `StatusBar.jsx` | Units/build volume/mode/snap/selection summary |
-| `Gallery.jsx` | Public gallery browser with download & delete |
-| `Dialogs.jsx` | Share-to-gallery + Send-to-OrcaSlicer dialogs |
-| `lib/store.js` | Zustand scene store + slicer settings |
-| `lib/transforms.js` | Pure rigid-body transform helpers (translate / rotate / scale) |
-| `lib/historyStack.js` | Pure undo/redo snapshot machinery |
-| `lib/csg.js` | three-bvh-csg evaluator (positive union → negative subtract pipeline) |
-| `lib/manifoldEngine.js` | manifold-3d WASM evaluator (default — guaranteed manifold output) |
-| `lib/geometry.js` | Primitive → BufferGeometry builders |
-| `lib/exporters.js` | STL (bin/ASCII) + 3MF (jszip) + STL/OBJ import + JSON project I/O |
-| `lib/slicer.js` | Synchronous plane-intersection slicer → Marlin-flavoured GCODE |
-| `lib/api.js` | Axios client for `/api/gallery`, `/api/components`, `/api/projects` |
-| `routes/projects.py` | Backend hierarchical project tree CRUD (per-user, auth-required) |
-| `dialogs/ProjectExplorerDialog.jsx` | Frontend tree UI with HTML5 drag-and-drop re-parent (iter 64) + click-based "Move into…" picker |
-| `ProjectBreadcrumb.jsx` | Topbar breadcrumb of `currentProjectId`'s ancestry; ancestor segments load that project's scene on click (iter 65); cloud-save button + Ctrl+S behavior hint (iter 66) |
-| `lib/savePref.js` | Persisted preference: what does Ctrl/Cmd+S do? `local` (default) / `cloud` / `both` (iter 66) |
-| `lib/tipsLibrary.js` | Tip-of-the-day library (10 seed tips, seen-state in localStorage, carousel via "Next tip") (iter 68) |
-| `lib/oversizeCheck.js` | Detect when scene objects exceed the active printer's build volume; computes auto cut-grid (iter 69) |
-| `lib/subdivide.js` | Cut an oversized object along axis-aligned planes + add dowel/dovetail connectors at interfaces (iter 69) |
-| `dialogs/SubdivideDialog.jsx` | Auto/Manual subdivide workflow UI (iter 69) |
-| `lib/useOrcaSlice.js` | Hook: OrcaSlicer profile state, install status polling, SSE progress, runSlice/buildPayload (iter 64) |
-| `lib/gcodeParser.js` | Shared G-code parser + layer pairing + diff helpers (used by GcodePreviewDialog AND Compare Engines overlay) |
-| `dialogs/ToolpathOverlayTab.jsx` | New tab in EngineComparisonDialog: layer-by-layer canvas with built-in vs Orca diff highlight (iter 64) |
+See CHANGELOG.md for the full component-level changelog. Highlights:
+- `Workspace.jsx` shell composes TopToolbar / Left / Viewport / Right / Status
+- `lib/exporters.js` — STL (bin/ASCII) + 3MF (jszip) + STL/OBJ import + JSON project I/O; applies Y-up → Z-up axis conversion for slicer compatibility
+- `lib/useOrcaSlice.js` — Hook: OrcaSlicer profile state, install polling, SSE progress with polling-fallback (iter 78), runSlice/buildPayload
+- `backend/orca_engine.py` — OrcaSlicer CLI integration: async job queue, SSE progress, validation-error visibility with `--debug 5`, fail-log persistence (iter 78)
 
 ## Companion Documents
-- **CHANGELOG.md** — append-only iteration history (everything that has been implemented, with dates and rationale).
+- **CHANGELOG.md** — append-only iteration history.
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
+
+## Current Open Items (as of 2026-06-01)
+
+### Pending P1 (user explicitly requested)
+- **Lay Flat auto-orient button** — picks the largest bounding-box face and rotates the model so it sits on the bed. Solves the WYSIWYG mismatch where users see Y-up in workspace but exported STL is Z-up, leading to manual reorienting in OrcaSlicer.
+- **Orientation warning toast** — detect when a model's longest axis is >3× the shortest *and* positioned standing up; show a pre-slice warning to enable supports or use Lay Flat.
+- **Print-height badge** in workspace toolbar — real-time Z-height in slicer-frame so users can sanity-check before exporting.
+
+### Pending P1 (queued)
+- **Preset categories** — universal/per-printer quick settings like "PETG Strong", "PLA Fast" for slicer settings.
+
+### Backlog (P2/P3)
+- Continue `store.js` refactor (composite-primitives block ~L676; boolean/dim action blocks).
+- `Viewport.jsx` size reduction.
+- Multi-user CRDT collaborative editing (Yjs).
+- Photo-to-plane (experimental).
+
+## Resolved This Session (Iter-78, 2026-06-01)
+- **OrcaSlicer rc=156 / -100 root cause identified**: Model had floating regions (empty layers between Z 4.1-83.1 mm) — not a profile bug. Workaround: enable supports or reorient.
+- **SSE resilience**: `useOrcaSlice.js` now falls back to `/result/{job_id}` polling when Cloudflare drops the progress stream.
+- **SSE keep-alive**: `X-Accel-Buffering: no` header + `: ping` heartbeat every 5s in `/progress/{job_id}` endpoint.
+- **Error visibility**: stderr tail 2 KB → 8 KB; cause-extraction regex catches `empty layer`, `floating regions`, `[error]`, `Mismatched`, etc.; `--debug 5` added to argv for max OrcaSlicer verbosity.
+- **Fail-log endpoint**: `GET /api/slice/orca/fail-log/{job_id}` returns full stderr + stdout + OrcaSlicer's `~/.config/OrcaSlicer/log/*.log` files + staged profile JSONs.
+- **Clickable fail-log link** in slicer popover error toast (absolute URL).
