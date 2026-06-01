@@ -304,7 +304,35 @@ export function SlicerPopover({ anchor, onClose }) {
         <GitCompare size={14} />
         {compareBusy ? "Comparing engines…" : "Compare engines (Built-in vs Orca)"}
       </button>
-      {error && <div className="text-xs text-red-400" data-testid="popover-slice-error">{error}</div>}
+      {error && (
+        <div className="text-xs text-red-400 space-y-1" data-testid="popover-slice-error">
+          {/* Render the fail-log endpoint (if the backend included one
+              in the detail string) as an absolute clickable link so
+              the user can grab the full OrcaSlicer log without having
+              to copy-paste the path. The regex matches the format
+              the backend emits: "...Full log: GET /api/slice/orca/fail-log/{job_id}". */}
+          {(() => {
+            const m = /\/api\/slice\/orca\/fail-log\/([\w-]+)/.exec(error);
+            const before = m ? error.slice(0, m.index).replace(/\s*Full log:\s*GET\s*$/, "").trimEnd() : error;
+            return (
+              <>
+                <div className="whitespace-pre-wrap">{before}</div>
+                {m && (
+                  <a
+                    href={`${window.location.origin}${m[0]}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="popover-slice-error-faillog"
+                    className="inline-block text-orange-300 hover:text-orange-200 underline font-mono"
+                  >
+                    Open full OrcaSlicer log →
+                  </a>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
       {busy && engine === "orca" && progress && !progress.done && (
         <div data-testid="popover-slice-progress" className="bg-slate-950 border border-orange-500/40 rounded p-2 space-y-1">
           <div className="flex items-center justify-between text-[10px] font-mono">
