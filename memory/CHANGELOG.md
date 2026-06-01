@@ -2087,3 +2087,33 @@ with iter-76's coordinate-frame fix.
   OrcaSlicer subprocess and clears the spinner. Switch between
   printers and the bed/hotend/surface values stay per-printer.
 
+
+## 2026-06-01 — Iter-78: SSE resilience + Orca error visibility
+Production was hitting "Lost connection to slicer progress stream"
+within ~1 s of clicking Slice, leaving the UI hanging at 0 %. Root
+cause: Cloudflare buffers `text/event-stream` responses by default
+and closes long-idle streams, and the frontend treated `onerror`
+as a fatal job failure instead of a network blip. Concurrent
+P0: rc=156 / -100 (`CLI_VALIDATE_ERROR`) responses truncated stderr
+to `"exit..."`, hiding the real validation reason.
+
+- `useOrcaSlice.js`: SSE `onerror` now falls back to
+  `waitForSliceResult` polling instead of aborting the slice.
+  Progress shows `"polling (stream dropped)"` so the user knows
+  what's happening.
+- `orca_engine.py` `/progress/{job_id}`:
+  - Added `X-Accel-Buffering: no`, `Cache-Control: no-cache,
+    no-transform`, `Connection: keep-alive` headers.
+  - Emits a leading `: connected` SSE comment to flush headers and
+    a `: ping` heartbeat every ~5 s during idle so Cloudflare
+    doesn't reap the connection.
+- `orca_engine.py` `_perform_slice` error path:
+  - Bumped stderr tail 2 KB → 8 KB.
+  - Scans whole stderr for `[error]` / `Cannot` / `Mismatched` /
+    `out of range` etc. and prepends a distilled cause-summary so
+    the toast leads with the real reason, not the
+    "run found error, return -100" wrapper.
+  - Persists full stderr+stdout to `/tmp/orca-fail-{job_id}.log`.
+- New endpoint `GET /api/slice/orca/fail-log/{job_id}` returns the
+  full log as `text/plain` for any failed job. Linked inline in
+  every error `detail` so users can curl it.

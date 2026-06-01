@@ -721,6 +721,10 @@ async def orca_progress(job_id: str):
     async def gen():
         idle = 0
         last = None
+        # Emit an initial comment frame so the EventSource fires
+        # `open` immediately and intermediate proxies commit headers
+        # before the first real `data:` frame arrives.
+        yield ": connected\n\n"
         while True:
             slot = _PROGRESS.get(job_id)
             if slot is None:
@@ -732,13 +736,35 @@ async def orca_progress(job_id: str):
                 idle = 0
             else:
                 idle += 1
+                # Keep-alive comment every ~5 s (idle ticks at 0.5 s
+                # cadence). SSE comments are silently dropped by the
+                # browser, but they force Cloudflare / Nginx to
+                # acknowledge bytes-on-the-wire so the idle timeout
+                # doesn't fire while Orca is still in `--load-settings`
+                # parsing (which can take 5-15 s before any stdout).
+                if idle % 10 == 0:
+                    yield ": ping\n\n"
             if snap.get("done") or snap.get("error"):
                 break
             if idle > 300:
                 yield f"data: {json.dumps({'percent': snap.get('percent', 0), 'stage': 'no updates', 'done': True, 'error': 'progress stream timed out'})}\n\n"
                 break
             await asyncio.sleep(0.5)
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    # Disable buffering at every layer (Nginx, Cloudflare, browser
+    # cache) so each `data:` frame is flushed immediately. Without
+    # `X-Accel-Buffering: no`, edge proxies hold the response body
+    # in a buffer until the connection closes, which manifests as
+    # the SSE "Lost connection to slicer progress stream" the user
+    # was hitting on production. Iter-78.
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 @router.get("/status", response_model=OrcaStatusResponse)
 async def orca_status():

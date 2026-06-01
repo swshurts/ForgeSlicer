@@ -361,25 +361,40 @@ export function useOrcaSlice() {
     }
     // Wait for the SSE stream to report `done: true` (success or
     // failure). The donePromise rejects if the backend marked the
-    // job as errored.
+    // job as errored OR the SSE connection drops (Cloudflare closes
+    // long-lived event-streams after ~30-60 s on production). When
+    // the SSE drops, we transparently fall back to long-polling
+    // /result/{jobId} so the slice can still complete from the
+    // user's perspective. Iter-78.
+    let polledResult = null;
     try {
       if (donePromise) await donePromise;
     } catch (sseErr) {
-      // SSE-reported failure — fetch /result anyway to get the
-      // structured HTTPException detail (status code + message) the
-      // backend stamped onto the slot.
-      activeJobIdRef.current = null;
+      // Either an SSE network drop ("Lost connection…") or a backend
+      // job-failure event. Poll /result/{jobId} — that endpoint is
+      // the source of truth:
+      //   • If the job is still running, polling continues until
+      //     it finishes (success → 200 with GCODE, failure → 4xx/5xx).
+      //   • If the job already failed, the very first poll throws
+      //     with the backend's structured error detail.
+      // Either way, we end up with the right outcome instead of
+      // the misleading "Lost connection to slicer progress stream."
+      setProgress({ percent: 0, stage: "polling (stream dropped)", done: false });
       try {
-        await orcaApi.sliceResult({ jobId });
-        // Shouldn't reach here — sliceResult should throw on error.
-        throw sseErr;
+        polledResult = await orcaApi.waitForSliceResult({ jobId });
       } catch (resErr) {
+        activeJobIdRef.current = null;
+        setProgress(null);
+        // Prefer the polled result's specific error (e.g. OrcaSlicer
+        // exit code + reason) over the generic SSE drop message.
         throw resErr;
       }
     }
-    // Job done — fetch the GCODE + stats.
+    // Job done — fetch the GCODE + stats. If we already polled and
+    // got the result above, reuse it; otherwise fetch via the
+    // SSE-completion fast path.
     activeJobIdRef.current = null;
-    const r = await orcaApi.sliceResult({ jobId });
+    const r = polledResult || await orcaApi.sliceResult({ jobId });
     return {
       gcode: r.gcode,
       stats: {
