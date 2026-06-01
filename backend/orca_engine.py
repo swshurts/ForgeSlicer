@@ -1196,14 +1196,35 @@ async def _perform_slice(
             stderr_tail = stderr_full[-8000:]
             # Persist full logs to a path that survives workdir cleanup
             # so an admin / the user can fetch the unabridged output via
-            # GET /api/slice/orca/fail-log/{job_id}.
+            # GET /api/slice/orca/fail-log/{job_id}. OrcaSlicer's CLI
+            # writes its REAL diagnostic logs to a file under
+            # `$HOME/.config/OrcaSlicer/log/OrcaSlicer.*.log` (not
+            # stderr), so we also scoop those up here — without this
+            # we get rc=156 + empty stderr and zero signal. Iter-78.
+            slicer_log_text = ""
+            slicer_log_files = []
+            try:
+                log_dir = workdir / ".config" / "OrcaSlicer" / "log"
+                if log_dir.is_dir():
+                    for p in sorted(log_dir.rglob("*.log")):
+                        try:
+                            txt = p.read_text(errors="replace")
+                            slicer_log_files.append(str(p))
+                            slicer_log_text += (
+                                f"\n----- {p.name} ({len(txt)} bytes) -----\n{txt}"
+                            )
+                        except Exception:
+                            pass
+            except Exception as _slog_err:
+                logger.warning("orca slicer-log scrape failed: %s", _slog_err)
             try:
                 fail_log = Path(tempfile.gettempdir()) / f"orca-fail-{job_id}.log"
                 fail_log.write_text(
                     f"=== argv ===\n{argv}\n\n"
                     f"=== rc ===\n{proc.returncode}\n\n"
                     f"=== stderr ===\n{stderr_full}\n\n"
-                    f"=== stdout ===\n{stdout_full}\n"
+                    f"=== stdout ===\n{stdout_full}\n\n"
+                    f"=== orca config logs ({len(slicer_log_files)} file(s)) ==={slicer_log_text}\n"
                 )
             except Exception as _flog_err:
                 logger.warning("orca fail-log write failed: %s", _flog_err)
@@ -1221,7 +1242,7 @@ async def _perform_slice(
                 r"\bexceeds?\b|\btoo (small|large|big|short|tall)\b|"
                 r"\bvalidate\b)"
             )
-            for line in (stderr_full + "\n" + stdout_full).splitlines():
+            for line in (stderr_full + "\n" + stdout_full + "\n" + slicer_log_text).splitlines():
                 s = line.strip()
                 if not s:
                     continue
