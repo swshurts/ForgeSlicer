@@ -1132,6 +1132,12 @@ async def _perform_slice(
         out_3mf = workdir / "out.gcode.3mf"
         argv = [
             str(install.binary),
+            # Max verbosity so OrcaSlicer's BOOST_LOG_TRIVIAL writes
+            # `[error]` lines to stderr instead of swallowing them at
+            # the default `info` severity threshold. Without this we
+            # get rc=156 + empty stderr + no log file for any
+            # validation failure. Iter-78.
+            "--debug", "5",
             *load_settings,
             *[a for a in profile_args if a in ("--load-filaments",) or a.endswith(".json") and "filament" in a],
             "--slice", "0",
@@ -1219,12 +1225,29 @@ async def _perform_slice(
                 logger.warning("orca slicer-log scrape failed: %s", _slog_err)
             try:
                 fail_log = Path(tempfile.gettempdir()) / f"orca-fail-{job_id}.log"
+                # Also include the actual JSON config files we handed
+                # to OrcaSlicer. When stderr is empty and no Orca log
+                # gets written, these are the only signal left — they
+                # let us inspect the staged printer/process/filament
+                # dicts post-hoc and spot the bad field. Iter-78.
+                profile_jsons = ""
+                for fname in ("printer.json", "process.json", "filament.json"):
+                    p = workdir / fname
+                    if p.exists():
+                        try:
+                            profile_jsons += (
+                                f"\n----- {fname} ({p.stat().st_size} bytes) -----\n"
+                                f"{p.read_text(errors='replace')}\n"
+                            )
+                        except Exception:
+                            pass
                 fail_log.write_text(
                     f"=== argv ===\n{argv}\n\n"
                     f"=== rc ===\n{proc.returncode}\n\n"
                     f"=== stderr ===\n{stderr_full}\n\n"
                     f"=== stdout ===\n{stdout_full}\n\n"
-                    f"=== orca config logs ({len(slicer_log_files)} file(s)) ==={slicer_log_text}\n"
+                    f"=== orca config logs ({len(slicer_log_files)} file(s)) ==={slicer_log_text}\n\n"
+                    f"=== staged profile JSONs ==={profile_jsons}\n"
                 )
             except Exception as _flog_err:
                 logger.warning("orca fail-log write failed: %s", _flog_err)
