@@ -22,6 +22,7 @@ import { useOrcaSlice } from "../../lib/useOrcaSlice";
 import { compareEngines } from "../../lib/engineCompare";
 import { computeRotatedBBox } from "../../lib/geometry";
 import GcodePreviewDialog from "../GcodePreviewDialog";
+import PrintPreviewDialog from "../dialogs/PrintPreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
 import EngineComparisonDialog from "../dialogs/EngineComparisonDialog";
 import { PopoverShell, NumberField } from "./PopoverShell";
@@ -57,6 +58,12 @@ export function SlicerPopover({ anchor, onClose }) {
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareResult, setCompareResult] = useState(null);
   const [compareBusy, setCompareBusy] = useState(false);
+  // Print-preview dialog state. When the user clicks "Preview & Slice"
+  // we open the dialog instead of slicing immediately, so they can
+  // see the slicer-frame mesh and re-orient before committing. The
+  // dialog calls back with baked STL bytes which we forward to
+  // runSlice via its `stlBytesOverride` hook. Iter-80.
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   // Engine selector — persisted to localStorage so the user's choice
   // survives a refresh. Defaults to "builtin" so first-time users get
   // the instant slice without a server round-trip.
@@ -74,31 +81,60 @@ export function SlicerPopover({ anchor, onClose }) {
   };
 
   const handleSlice = async () => {
+    // Engine = built-in stays direct (no orientation issue — the
+    // built-in slicer reads the scene objects directly, not via STL).
+    // Engine = orca opens the Print Preview dialog so the user picks
+    // orientation before we hand bytes to OrcaSlicer.
+    if (engine === "orca") {
+      setPreviewDialogOpen(true);
+      return;
+    }
     setError(""); setBusy(true); setStats(null); setLastDownload(null);
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
       const filename = `${safe}.gcode`;
-      let gcode = "";
-      let st = null;
-      if (engine === "orca") {
-        const r = await orca.runSlice(objects);
-        gcode = r.gcode;
-        st = r.stats;
-      } else {
-        const r = await sliceToGCODEAsync(objects, {
-          ...settings,
-          bedX: buildVolume.x,
-          bedY: buildVolume.y,
-        });
-        gcode = r.gcode;
-        st = { ...r.stats, engine: "builtin" };
-      }
+      const r = await sliceToGCODEAsync(objects, {
+        ...settings,
+        bedX: buildVolume.x,
+        bedY: buildVolume.y,
+      });
+      const gcode = r.gcode;
+      const st = { ...r.stats, engine: "builtin" };
       setStats(st);
       downloadText(gcode, filename, "text/plain");
       setLastDownload({ gcode, filename });
     } catch (e) {
       setError(apiErrorMessage(e) || e.message || String(e));
     } finally { setBusy(false); }
+  };
+
+  // Called by PrintPreviewDialog when the user clicks "Slice this
+  // orientation". The dialog hands us already-baked STL bytes (with
+  // the user's chosen rotation pre-applied, in slicer-frame
+  // coordinates, dropped to bed). We forward them to orca.runSlice
+  // via the `stlBytesOverride` hook so the manifold worker is
+  // skipped (the dialog already ran it). Iter-80.
+  const handlePreviewConfirm = async ({ bytes, triangleCount }) => {
+    setError("");
+    setBusy(true);
+    setStats(null);
+    setLastDownload(null);
+    try {
+      const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
+      const filename = `${safe}.gcode`;
+      const r = await orca.runSlice(objects, {
+        stlBytesOverride: bytes,
+        triangleCountOverride: triangleCount,
+      });
+      setStats(r.stats);
+      downloadText(r.gcode, filename, "text/plain");
+      setLastDownload({ gcode: r.gcode, filename });
+      setPreviewDialogOpen(false);
+    } catch (e) {
+      setError(apiErrorMessage(e) || e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleDownloadAgain = () => {
@@ -288,7 +324,7 @@ export function SlicerPopover({ anchor, onClose }) {
         className="w-full h-10 bg-green-500 hover:bg-green-600 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold rounded-md shadow-md transition-all uppercase tracking-wide text-sm flex items-center justify-center gap-2"
       >
         <Activity size={16} />
-        {busy ? "Slicing..." : "Slice & Export GCODE"}
+        {busy ? "Slicing..." : (engine === "orca" ? "Preview & Slice" : "Slice & Export GCODE")}
       </button>
       {/* Compare engines — runs the same scene through built-in + Orca
           in parallel and pops a side-by-side metrics table. Disabled
@@ -443,6 +479,13 @@ export function SlicerPopover({ anchor, onClose }) {
         result={compareResult}
         onClose={() => setCompareOpen(false)}
         onRerun={handleCompare}
+      />
+      <PrintPreviewDialog
+        open={previewDialogOpen}
+        objects={objects}
+        busy={busy}
+        onClose={() => { if (!busy) setPreviewDialogOpen(false); }}
+        onConfirm={handlePreviewConfirm}
       />
     </PopoverShell>
   );

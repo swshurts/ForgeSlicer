@@ -2169,3 +2169,46 @@ were never surfaced — silent corruption of user output.
   - Full suite: 34/34 PASS (17 from iter-78 + 17 prior + 6 new).
   - Testing-agent run iteration_36.json: 0 issues, all 4 features
     verified end-to-end on production URL with seeded mongo session.
+
+## 2026-06-02 — Iter-80: Manifold-3D STL pipeline + Print Preview & Orient dialog
+**Root cause of "spindly-tower GCODE":** ForgeSlicer's CLI slice path
+called `exportSceneToSTLBytes` which routes through bvh-csg. On
+assemblies with multiple positives + multiple negatives (the canonical
+RPI mounting tray: 6 positives + 22 negatives), bvh-csg's Union step
+fails and it falls back to "carve each positive separately, then
+concatenate" — producing a single STL file with N disconnected shells.
+OrcaSlicer's CLI treats those shells as N independent print objects
+scattered across the bed, drops geometry that doesn't touch the bed
+coherently, and generates only spindly tree supports for what's left.
+
+**Fix #1:** `useOrcaSlice.runSlice` + `engineCompare` now use
+`exportSTLBytesAsync` (manifold-3d worker), the same pipeline as
+"Flatten to single mesh". Produces a single watertight body. The
+user's workspace stays as N separate editable components — the merge
+happens in-memory just for the slice. `runSlice` also accepts a new
+`{ stlBytesOverride, triangleCountOverride }` option so the Print
+Preview dialog can ship pre-oriented bytes.
+
+**Fix #2 — `PrintPreviewDialog`:** When the user picks the OrcaSlicer
+engine and clicks SLICE, instead of slicing immediately we open a
+full-screen preview dialog showing the flattened mesh in slicer-frame
+(Z-up) on the actual build-plate grid. The user can:
+  - Click **Auto Lay Flat** — brute-forces all 6 cube face-up
+    orientations, scores each by `bedFootprint − 0.3 × overhangArea −
+    0.05 × height`, picks the winner. Solves the "panel face up vs
+    down" issue the iter-79 Lay Flat couldn't handle alone.
+  - Click any of 6 **Rotate ±90° around X/Y/Z** buttons for manual
+    override; rotations compose.
+  - **Reset** restores the default orientation.
+  - Live stats panel: print height, bed footprint, overhang area
+    (with amber warning when overhang fraction > 25 %).
+  - **Slice this orientation** bakes the chosen rotation into the
+    STL bytes and forwards to `orca.runSlice(objects, {stlBytesOverride})`.
+
+The dialog is wired into `SlicerPopover` — the SLICE button label
+becomes "Preview & Slice" when engine = orca, opens the dialog
+instead of slicing directly. Built-in engine flow is unchanged.
+
+**Testing**: 23/23 backend pytest PASS. Lint clean on all five
+touched files (`PrintPreviewDialog.jsx`, `SlicerPopover.jsx`,
+`useOrcaSlice.js`, `engineCompare.js`, `useOrcaSlice.js`).

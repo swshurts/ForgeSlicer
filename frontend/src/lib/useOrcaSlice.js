@@ -315,7 +315,12 @@ export function useOrcaSlice() {
   //   3. Once SSE reports done, GET /result/{job_id} fetches the GCODE.
   // Returns a uniform `{ gcode, stats }` so SlicerPopover doesn't need
   // to know which engine produced it.
-  const runSlice = async (objects) => {
+  const runSlice = async (objects, opts = {}) => {
+    // `opts.stlBytesOverride` lets a caller (e.g. PrintPreviewDialog,
+    // iter-80) hand us pre-baked STL bytes that already encode the
+    // user-confirmed orientation. When present we skip the worker
+    // export and ship those bytes straight to OrcaSlicer.
+    //
     // Use the manifold-3d worker path (same as the user-facing "Flatten
     // to single mesh" feature) instead of the bvh-csg `exportSceneToSTLBytes`.
     //
@@ -341,16 +346,21 @@ export function useOrcaSlice() {
     // (very old browsers / failed WASM init) — in that case the user
     // gets the old buggy behaviour, but at least it doesn't crash.
     let bytes, triangleCount;
-    try {
-      const r = await exportSTLBytesAsync(objects);
-      bytes = r.bytes;
-      triangleCount = r.triangleCount;
-    } catch (workerErr) {
-      // eslint-disable-next-line no-console
-      console.warn("manifold-3d worker STL export failed, falling back to bvh-csg:", workerErr);
-      const fb = await exportSceneToSTLBytes(objects);
-      bytes = fb.bytes;
-      triangleCount = fb.triangleCount;
+    if (opts.stlBytesOverride) {
+      bytes = opts.stlBytesOverride;
+      triangleCount = opts.triangleCountOverride || 0;
+    } else {
+      try {
+        const r = await exportSTLBytesAsync(objects);
+        bytes = r.bytes;
+        triangleCount = r.triangleCount;
+      } catch (workerErr) {
+        // eslint-disable-next-line no-console
+        console.warn("manifold-3d worker STL export failed, falling back to bvh-csg:", workerErr);
+        const fb = await exportSceneToSTLBytes(objects);
+        bytes = fb.bytes;
+        triangleCount = fb.triangleCount;
+      }
     }
     const b64 = arrayBufferToBase64(bytes);
     const payload = buildPayload();
