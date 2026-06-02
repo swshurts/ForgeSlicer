@@ -40,6 +40,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
 
+## Resolved This Session (Iter-82, 2026-06-02)
+- **Reliable slicer launching** — replaced iframe-based protocol launch with `window.location.href` + anchor fallback. Detects window-blur within 2 s as a "launch likely succeeded" signal; shows green/amber feedback banners so users know whether the hand-off worked.
+- **User-defined custom slicer registry** — localStorage CRUD (`lib/customSlicers.js`) + new `CustomSlicersDialog.jsx`. Add Bambu forks / full-spectrum-colour OrcaSlicer / in-house builds by name + URL protocol + install URL. Test-protocol button verifies you typed it right before downloading.
+- **Preferred slicer + one-click toolbar** — star toggle in OrcaDialog marks any slicer as preferred. Toolbar's primary "Send to X" button honours it over the printer-recommended default; ★ indicator shown when active.
+- 14/14 frontend unit tests pass. Built-in catalogue expanded to include Ultimaker Cura.
+
 ## Resolved This Session (Iter-81, 2026-06-02)
 - **Clone to My Printers** — one-click clone of any bundled OrcaSlicer printer profile into the user's editable `user_printers` collection. Solves the iter-80 friction of retyping every spec just to override Start/End G-code (Klipper macros, etc.). 6 unit tests passing.
 - **Print-time + filament-cost estimator** in Print Preview dialog — heuristic estimate (~±30 % accuracy) of time / filament mm / weight / USD cost so users can compare orientations at the decision point.

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { getSlicersForPrinter } from "../../lib/presets";
+import { getPreferredSlicer, getAllSlicers } from "../../lib/customSlicers";
 import { IconBtn, Divider } from "./ToolbarUI";
 import VoiceButton from "../VoiceButton";
 import HelpMegaMenu from "./HelpMegaMenu";
@@ -35,7 +36,29 @@ export default function SystemRow({
   const objects = useScene((s) => s.objects);
   const clearScene = useScene((s) => s.clearScene);
   const printerId = useScene((s) => s.printerId);
-  const slicers = getSlicersForPrinter(printerId);
+  const printerRecommended = getSlicersForPrinter(printerId);
+  // Iter-82: if the user has starred a preferred slicer in
+  // OrcaDialog, honour it as the toolbar's primary one-click target.
+  // Otherwise fall back to the printer-recommended slicer (the
+  // existing behaviour). The dropdown still shows every option —
+  // built-in + recommended + user-custom — so the user can override
+  // per-print without changing their default.
+  const preferred = getPreferredSlicer();
+  const userSlicers = getAllSlicers();
+  // Build the merged option list, de-duping by id. Order:
+  //   1. Preferred slicer (if any) — first so the primary button hits it
+  //   2. Printer-recommended slicers
+  //   3. Any user-custom slicers not already in the list
+  const slicers = [];
+  const pushedIds = new Set();
+  const pushSlicer = (s) => {
+    if (!s || !s.id || pushedIds.has(s.id)) return;
+    slicers.push(s);
+    pushedIds.add(s.id);
+  };
+  if (preferred) pushSlicer(preferred);
+  for (const s of printerRecommended) pushSlicer(s);
+  for (const s of userSlicers) pushSlicer(s);
   const primarySlicer = slicers[0] || { id: "orca", name: "OrcaSlicer" };
   const alternateSlicers = slicers.slice(1);
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
@@ -136,9 +159,15 @@ export default function SystemRow({
         data-testid="send-to-orcaslicer-btn"
         onClick={() => onSendToOrca(primarySlicer)}
         className="h-8 px-3 ml-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-l flex items-center gap-1.5 shadow"
-        title={`Send to ${primarySlicer.name} (recommended for your printer)`}
+        title={
+          primarySlicer.isPreferred
+            ? `Send to ${primarySlicer.name} (your preferred slicer)`
+            : `Send to ${primarySlicer.name} (recommended for your printer)`
+        }
       >
-        <Printer size={14} /> Send to {primarySlicer.name}
+        <Printer size={14} />
+        {primarySlicer.isPreferred && <span className="text-amber-200">★</span>}
+        Send to {primarySlicer.name}
       </button>
       {alternateSlicers.length > 0 && (
         <div className="relative">

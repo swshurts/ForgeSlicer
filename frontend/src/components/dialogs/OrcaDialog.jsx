@@ -1,151 +1,224 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useScene } from "../../lib/store";
 import { downloadBlob } from "../../lib/exporters";
 import { export3MFBytesAsync } from "../../lib/workerClient";
-import { X, Loader2, Printer, Download } from "lucide-react";
+import {
+  getAllSlicers, getPreferredSlicer, setPreferredSlicerId,
+  launchSlicer,
+} from "../../lib/customSlicers";
+import { X, Loader2, Printer, Download, Star, Settings, CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
+import CustomSlicersDialog from "./CustomSlicersDialog";
 
+// Iter-82: completely rewritten send-to-slicer dialog.
+//   • Slicer registry merges BUILTIN_SLICERS + user-defined customs
+//     (Bambu Studio forks, full-spectrum-colour OrcaSlicer, etc.).
+//   • Reliable launching via window.location.href (formerly iframe).
+//   • "Star" toggle marks the user's preferred slicer for one-click
+//     hand-off from the toolbar. Persisted in localStorage because
+//     URL-protocol handlers are OS-registered, i.e. per-device.
+//   • Detects whether the launch likely succeeded by listening for
+//     a window blur within 2 s (the OS protocol-handler dialog
+//     stealing focus); shows a "Did it open?" follow-up otherwise.
 export function OrcaDialog({ open, onClose, targetSlicer }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const [busy, setBusy] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
+  const [launchState, setLaunchState] = useState(null);   // null | "trying" | "likely" | "uncertain"
+  const [allSlicers, setAllSlicers] = useState(() => getAllSlicers());
+  const [selectedId, setSelectedId] = useState(() => {
+    if (targetSlicer?.id) return targetSlicer.id;
+    const prefer = getPreferredSlicer();
+    return prefer?.id || "orcaslicer";
+  });
+  const [manageOpen, setManageOpen] = useState(false);
 
-  React.useEffect(() => {
+  // When the dialog opens, refresh the slicer list (the user may have
+  // added a custom one since the last open) and reset transient state.
+  useEffect(() => {
     if (open) {
-      const dismissed = (() => { try { return localStorage.getItem("forgeslicer.hideSlicerHelp") === "1"; } catch { return false; } })();
-      setShowHelp(!dismissed && false); // default collapsed; user opens manually
+      setAllSlicers(getAllSlicers());
+      setLaunchState(null);
       setDownloaded(false);
+      // If a target was forced from the toolbar, honour it; otherwise
+      // fall back to preferred / first.
+      if (targetSlicer?.id) {
+        setSelectedId(targetSlicer.id);
+      } else {
+        const prefer = getPreferredSlicer();
+        if (prefer) setSelectedId(prefer.id);
+      }
     }
-  }, [open]);
+  }, [open, targetSlicer]);
 
   if (!open) return null;
 
-  const slicer = targetSlicer || { name: "OrcaSlicer", url: "https://github.com/SoftFever/OrcaSlicer/releases" };
-
-  // Try to launch the slicer via custom URL protocol after download.
-  // Browsers can't tell us if the slicer is installed, so this fails
-  // silently if the protocol isn't registered.
-  const PROTOCOLS = {
-    "OrcaSlicer": "orcaslicer://",
-    "Orca-Flashforge": "orcaslicer://",
-    "Bambu Studio": "bambustudioopen://",
-    "PrusaSlicer": "prusaslicer://",
-    "SuperSlicer": "superslicer://",
-    "Flash Studio Desktop": "flashforge://",
-  };
-  const attemptProtocolLaunch = () => {
-    const proto = PROTOCOLS[slicer.name];
-    if (!proto) return;
-    try {
-      const iframe = document.createElement("iframe");
-      iframe.style.display = "none";
-      iframe.src = proto;
-      document.body.appendChild(iframe);
-      setTimeout(() => {
-        try { document.body.removeChild(iframe); }
-        catch (err) {
-          // iframe already torn down (e.g. user navigated). Safe to ignore.
-          // eslint-disable-next-line no-console
-          console.debug("orca iframe cleanup:", err);
-        }
-      }, 2000);
-    } catch (err) {
-      // Browser blocked the custom-protocol iframe entirely. The user can
-      // still drag the downloaded 3MF into the slicer manually.
-      // eslint-disable-next-line no-console
-      console.warn("orca protocol launch failed:", err);
-    }
-  };
+  const slicer = allSlicers.find((s) => s.id === selectedId) || allSlicers[0];
 
   const handleDownload = async () => {
     setBusy(true);
+    setLaunchState(null);
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
       const { bytes } = await export3MFBytesAsync(objects);
       downloadBlob(new Blob([bytes], { type: "model/3mf" }), `${safe}.3mf`);
       setDownloaded(true);
-      // After the file lands, try to launch the slicer optimistically.
-      attemptProtocolLaunch();
-      // Auto-close so the user doesn't have to hunt for the X. Leaves ~1.5s
-      // for the OS save-as / protocol prompt to take focus first.
-      setTimeout(() => onClose(), 1500);
+      setLaunchState("trying");
+      // Give the browser ~500 ms to finish the download attachment
+      // before stealing focus with the OS protocol dialog. Without
+      // this delay some browsers cancel the download in favour of
+      // the protocol launch.
+      await new Promise((r) => setTimeout(r, 500));
+      const result = await launchSlicer(slicer.protocol);
+      setLaunchState(result.launched ? "likely" : "uncertain");
     } catch (e) {
-      alert(e.message);
+      toast.error(e.message || "Download failed");
     } finally { setBusy(false); }
   };
 
-  const dontShowAgain = () => {
-    try { localStorage.setItem("forgeslicer.hideSlicerHelp", "1"); }
-    catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn("persist hideSlicerHelp failed:", err);
+  const handleTogglePreferred = () => {
+    if (slicer.isPreferred) {
+      setPreferredSlicerId(null);
+      toast.info(`${slicer.name} is no longer your preferred slicer.`);
+    } else {
+      setPreferredSlicerId(slicer.id);
+      toast.success(`${slicer.name} is now your preferred slicer — toolbar one-click hand-off targets it.`);
     }
-    setShowHelp(false);
+    setAllSlicers(getAllSlicers());
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" data-testid="orca-dialog">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl">
+    <>
+    <div
+      className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      data-testid="orca-dialog"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Printer size={16} className="text-orange-400" />
-            <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Send to {slicer.name}</h2>
+            <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Send to Slicer</h2>
           </div>
-          <button onClick={onClose} data-testid="orca-close-btn" className="text-slate-400 hover:text-white"><X size={16} /></button>
+          <button onClick={onClose} data-testid="orca-close-btn" className="text-slate-400 hover:text-white">
+            <X size={16} />
+          </button>
         </div>
         <div className="p-4 flex flex-col gap-3">
+          {/* Slicer chooser with star + manage controls. */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Slicer</span>
+              <button
+                data-testid="orca-manage-slicers-btn"
+                onClick={() => setManageOpen(true)}
+                className="text-[10px] text-purple-300 hover:text-purple-200 flex items-center gap-1"
+              >
+                <Settings size={10} /> Manage my slicers
+              </button>
+            </div>
+            <div className="flex gap-1.5">
+              <select
+                data-testid="orca-slicer-select"
+                value={slicer?.id || ""}
+                onChange={(e) => { setSelectedId(e.target.value); setLaunchState(null); setDownloaded(false); }}
+                className="flex-1 h-9 bg-slate-800 border border-slate-700 rounded px-2 text-sm text-slate-100 focus:outline-none focus:border-orange-500"
+              >
+                <optgroup label="Built-in">
+                  {allSlicers.filter((s) => !s.isUserCustom).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.isPreferred ? "★ " : ""}{s.name}
+                    </option>
+                  ))}
+                </optgroup>
+                {allSlicers.some((s) => s.isUserCustom) && (
+                  <optgroup label="My custom slicers">
+                    {allSlicers.filter((s) => s.isUserCustom).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.isPreferred ? "★ " : ""}{s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <button
+                data-testid="orca-toggle-preferred-btn"
+                onClick={handleTogglePreferred}
+                title={slicer?.isPreferred ? "Remove as preferred" : "Mark as preferred (one-click hand-off target)"}
+                className={`h-9 w-9 rounded border flex items-center justify-center transition-colors ${
+                  slicer?.isPreferred
+                    ? "bg-amber-500/20 border-amber-500/60 text-amber-300"
+                    : "bg-slate-800 border-slate-700 text-slate-400 hover:text-amber-300"
+                }`}
+              >
+                <Star size={14} fill={slicer?.isPreferred ? "currentColor" : "none"} />
+              </button>
+            </div>
+          </div>
+
           <p className="text-sm text-slate-300">
             Downloads a print-ready <span className="font-mono text-orange-400">.3mf</span> for{" "}
-            <span className="font-semibold text-orange-400">{slicer.name}</span>. Double-click the file
-            and your slicer will open it.
+            <span className="font-semibold text-orange-400">{slicer?.name}</span> and tries to launch it
+            via its <span className="font-mono">{slicer?.protocol}</span> handler.
           </p>
           <button
             data-testid="orca-download-btn"
             onClick={handleDownload}
-            disabled={busy || objects.length === 0}
+            disabled={busy || objects.length === 0 || !slicer}
             className="h-10 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 text-white font-semibold rounded flex items-center justify-center gap-2"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            {downloaded ? "Download again" : `Download 3MF for ${slicer.name}`}
+            {downloaded ? "Download & launch again" : `Download 3MF and launch ${slicer?.name || "slicer"}`}
           </button>
 
-          {!showHelp ? (
-            <button
-              data-testid="orca-show-help-btn"
-              onClick={() => setShowHelp(true)}
-              className="text-[11px] text-slate-400 hover:text-orange-400 underline self-start"
-            >
-              Don't have {slicer.name} yet? Show install instructions
-            </button>
-          ) : (
-            <div className="bg-slate-950 border border-slate-800 rounded p-3 text-[11px] text-slate-300 leading-relaxed" data-testid="orca-help-block">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">How to open in {slicer.name}</span>
-                <button
-                  onClick={dontShowAgain}
-                  data-testid="orca-hide-help-btn"
-                  className="text-[10px] text-slate-500 hover:text-slate-300"
-                >
-                  Don't show again
-                </button>
-              </div>
-              <ol className="list-decimal list-inside space-y-1">
-                <li>
-                  Install <a href={slicer.url} target="_blank" rel="noreferrer" className="text-orange-400 underline">{slicer.name}</a> on your computer.
-                </li>
-                <li>Double-click the downloaded <span className="font-mono text-orange-400">.3mf</span> file — {slicer.name} will open it.</li>
-                <li>Or inside {slicer.name}: <span className="font-mono">File → Import / Open → 3MF</span>.</li>
-                <li>Slice with {slicer.name}'s full feature set (infill, supports, multi-material).</li>
-              </ol>
+          {/* Post-launch feedback strip. */}
+          {launchState === "likely" && (
+            <div className="bg-emerald-500/10 border border-emerald-500/40 rounded p-2 text-[11px] text-emerald-200 flex items-start gap-2" data-testid="orca-launch-likely">
+              <CheckCircle2 size={13} className="mt-0.5 flex-shrink-0" />
+              <span>Looks like {slicer?.name} took focus — check your taskbar / dock for it.</span>
             </div>
           )}
+          {launchState === "uncertain" && (
+            <div className="bg-amber-500/10 border border-amber-500/40 rounded p-2 text-[11px] text-amber-200 space-y-1" data-testid="orca-launch-uncertain">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={13} className="mt-0.5 flex-shrink-0" />
+                <span>
+                  Couldn't confirm {slicer?.name} opened. Either it's not installed,
+                  the protocol handler isn't registered, or your browser blocked the launch.
+                  The <span className="font-mono">.3mf</span> downloaded successfully — double-click it.
+                </span>
+              </div>
+              {slicer?.installUrl && (
+                <a
+                  href={slicer.installUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-[10px] text-amber-300 hover:text-amber-100 underline pl-5"
+                  data-testid="orca-launch-install-link"
+                >
+                  Install {slicer.name} →
+                </a>
+              )}
+            </div>
+          )}
+
           <p className="text-[10px] text-slate-500">
-            We assume {slicer.name} is already installed (browsers can't detect it directly).
-            A <span className="font-mono">forgeslicer://</span> companion is on the roadmap for true one-click hand-off.
+            URL-protocol launches are per-device — make sure {slicer?.name} is installed on this computer.
+            For one-click hand-off from anywhere, star a slicer above and use the toolbar's quick-send button.
           </p>
         </div>
       </div>
     </div>
+    {manageOpen && (
+      <CustomSlicersDialog
+        open={manageOpen}
+        onClose={() => { setManageOpen(false); setAllSlicers(getAllSlicers()); }}
+      />
+    )}
+    </>
   );
 }

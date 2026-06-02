@@ -2277,3 +2277,56 @@ quality-of-life features built on top:
     fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/
     *.json`, hashes them, surfaces deltas in an Admin → Profile
     Updates dashboard with optional Resend digest).
+
+## 2026-06-02 — Iter-82: Reliable slicer launch + user-defined slicer registry
+User reported hit-or-miss launching of bundled slicers (Prusa,
+Bambu, etc.) and asked for a way to register custom slicers
+(Bambu Studio forks bypassing cloud handshake, full-spectrum-colour
+OrcaSlicer modifications, in-house company builds).
+
+**Reliability** (`lib/customSlicers.js` `launchSlicer`):
+  • Replaced iframe-based protocol launch with `window.location.href`
+    (the most reliable cross-browser approach per current Chromium
+    docs as of Feb 2026), with an anchor-click fallback for Firefox.
+  • Listens for `window.blur` within a 2 s probe window — if the
+    browser tab loses focus, the OS protocol-handler dialog (or
+    the slicer itself) took focus, which is a strong positive
+    "launch likely succeeded" signal. Surfaces this in the UI as
+    a green "looks like X took focus" banner.
+  • When no focus-loss is detected within 2 s, shows an amber
+    "couldn't confirm — drag the .3mf manually" banner with the
+    slicer's install URL link. No more silent "did anything happen?"
+    confusion.
+
+**Custom slicer registry** (`lib/customSlicers.js` + new
+`CustomSlicersDialog.jsx`):
+  • localStorage-backed CRUD: name + URL protocol + optional install
+    URL. Per-device because OS-registered protocols are per-device.
+  • Built-in catalogue expanded from 6 → 7 entries (added Ultimaker
+    Cura).
+  • Validation: rejects empty names, malformed protocols, and names
+    that collide with built-ins (case-insensitive).
+  • "Test" button per entry runs `launchSlicer` without downloading
+    anything, so users can verify they typed the protocol right
+    BEFORE wasting three downloads finding out.
+  • Documents how to find the right protocol per OS (Windows
+    HKCR\Software\Classes, macOS Info.plist CFBundleURLSchemes,
+    Linux .desktop x-scheme-handler/).
+
+**Preferred-slicer + one-click toolbar** (`OrcaDialog.jsx`,
+`toolbar/SystemRow.jsx`):
+  • Star toggle in OrcaDialog marks any slicer (built-in OR custom)
+    as the user's preferred one-click hand-off target.
+  • Toolbar's primary "Send to X" button now honours the preferred
+    slicer over the printer-recommended one; a ★ shows when
+    preferred is active.
+  • Dropdown still lists every option (preferred + printer-
+    recommended + customs) for per-print overrides.
+
+**Tests** (`customSlicers.test.js` — 14 new):
+  • Built-in catalogue coverage (7 known, all with valid protocols).
+  • CRUD: happy path, empty name reject, malformed protocol reject,
+    built-in name collision (case-insensitive), corrupted JSON
+    tolerance, dedupe on unique-id assignment.
+  • Preferred-flag merge across builtins + customs.
+  • Auto-clearing preferred when the preferred entry is removed.
