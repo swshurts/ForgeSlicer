@@ -23,6 +23,7 @@
 
 import { sliceToGCODEAsync } from "./workerClient";
 import { exportSceneToSTLBytes } from "./exporters";
+import { exportSTLBytesAsync } from "./workerClient";
 import { orcaApi, apiErrorMessage } from "./api";
 import { buildOrcaPayload } from "./orcaProfiles";
 

@@ -27,6 +27,7 @@ import { buildOrcaPayload, isUserPrinterId, userPrinterIdOf } from "./orcaProfil
 import { useSliceSettings } from "./store";
 import { getTempsForPrinter, setTempsForPrinter } from "./tempsByPrinter";
 import { exportSceneToSTLBytes } from "./exporters";
+import { exportSTLBytesAsync } from "./workerClient";
 
 // Convert an ArrayBuffer / Uint8Array to base64 in 32 KB chunks so we
 // don't blow the call-stack on large STLs (Chrome's spread-into-
@@ -315,7 +316,42 @@ export function useOrcaSlice() {
   // Returns a uniform `{ gcode, stats }` so SlicerPopover doesn't need
   // to know which engine produced it.
   const runSlice = async (objects) => {
-    const { bytes, triangleCount } = await exportSceneToSTLBytes(objects);
+    // Use the manifold-3d worker path (same as the user-facing "Flatten
+    // to single mesh" feature) instead of the bvh-csg `exportSceneToSTLBytes`.
+    //
+    // Why: bvh-csg falls back to "carve each positive separately, then
+    // concatenate" when its Union step fails on complex assemblies
+    // (many positives + many negatives — the canonical case is the
+    // RPI mounting tray with 6 positives + 22 negatives). The result
+    // is a *single STL file containing N disjoint shells*, which
+    // OrcaSlicer's CLI treats as N separate objects. Each shell ends
+    // up scattered across the plate, none of them touching the bed
+    // coherently, and the slicer drops most geometry / generates
+    // spindly tree supports for everything — producing the bad
+    // GCODE pattern the user hit repeatedly through iter-78/79.
+    //
+    // The manifold-3d worker does a proper boolean Union that
+    // physically merges all positives into a single watertight body,
+    // then subtracts negatives. The output STL has ONE shell,
+    // OrcaSlicer slices it correctly. The user's workspace stays as
+    // 28 separate editable components — only the STL bytes sent to
+    // the slicer are merged. Iter-80.
+    //
+    // Falls back to bvh-csg only when the worker is unavailable
+    // (very old browsers / failed WASM init) — in that case the user
+    // gets the old buggy behaviour, but at least it doesn't crash.
+    let bytes, triangleCount;
+    try {
+      const r = await exportSTLBytesAsync(objects);
+      bytes = r.bytes;
+      triangleCount = r.triangleCount;
+    } catch (workerErr) {
+      // eslint-disable-next-line no-console
+      console.warn("manifold-3d worker STL export failed, falling back to bvh-csg:", workerErr);
+      const fb = await exportSceneToSTLBytes(objects);
+      bytes = fb.bytes;
+      triangleCount = fb.triangleCount;
+    }
     const b64 = arrayBufferToBase64(bytes);
     const payload = buildPayload();
     // Pre-generate job id and open the SSE stream BEFORE the POST so
