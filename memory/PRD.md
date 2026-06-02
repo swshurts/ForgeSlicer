@@ -30,11 +30,6 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-06-01)
 
-### Pending P1 (user explicitly requested)
-- **Lay Flat auto-orient button** — picks the largest bounding-box face and rotates the model so it sits on the bed. Solves the WYSIWYG mismatch where users see Y-up in workspace but exported STL is Z-up, leading to manual reorienting in OrcaSlicer.
-- **Orientation warning toast** — detect when a model's longest axis is >3× the shortest *and* positioned standing up; show a pre-slice warning to enable supports or use Lay Flat.
-- **Print-height badge** in workspace toolbar — real-time Z-height in slicer-frame so users can sanity-check before exporting.
-
 ### Pending P1 (queued)
 - **Preset categories** — universal/per-printer quick settings like "PETG Strong", "PLA Fast" for slicer settings.
 
@@ -44,7 +39,13 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
 
-## Resolved This Session (Iter-78, 2026-06-01)
+## Resolved This Session (Iter-79, 2026-06-02)
+- **Lay Flat** workspace action — picks shortest axis of combined AABB, rotates assembly so largest face is on the bed, drops to bed. Available in Inspector, ContextMenu, and Slicer Popover quick-action.
+- **SlicerOrientationBadge** — shows slicer-frame X/Y/Z above the Slice button, color-flags tall+thin silhouettes with an inline Lay-Flat shortcut.
+- **Warning extraction on success path** — OrcaSlicer's "empty layer" / "floating regions" / "can't be printed" warnings are now scraped from rc=0 stdout and surfaced via `OrcaSliceStats.warnings` + a dedicated warnings panel in the popover. Silent geometry-drop bugs are now visible.
+- Tests: 34/34 pytest PASS, frontend behavior verified end-to-end by testing-agent.
+
+## Resolved In Iter-78 (2026-06-01)
 - **OrcaSlicer rc=156 / -100 root cause identified**: Model had floating regions (empty layers between Z 4.1-83.1 mm) — not a profile bug. Workaround: enable supports or reorient.
 - **SSE resilience**: `useOrcaSlice.js` now falls back to `/result/{job_id}` polling when Cloudflare drops the progress stream.
 - **SSE keep-alive**: `X-Accel-Buffering: no` header + `: ping` heartbeat every 5s in `/progress/{job_id}` endpoint.

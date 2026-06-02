@@ -2117,3 +2117,55 @@ to `"exit..."`, hiding the real validation reason.
 - New endpoint `GET /api/slice/orca/fail-log/{job_id}` returns the
   full log as `text/plain` for any failed job. Linked inline in
   every error `detail` so users can curl it.
+
+## 2026-06-02 — Iter-79: Lay Flat + WYSIWYG badge + slicer-warning visibility
+Root cause of "ForgeSlicer slice button produces broken GCODE with
+missing panel" identified as tall-thin model orientation: OrcaSlicer's
+CLI drops geometry on layers with no contact area when the model
+stands tall+thin. Manual reorient in OrcaSlicer Desktop worked because
+the GUI exposes a Lay-Flat button — ForgeSlicer was missing the
+equivalent in-workspace control. Also, when supports were enabled the
+CLI returned rc=0 with degraded GCODE *and* warnings in stdout that
+were never surfaced — silent corruption of user output.
+
+**Lay Flat as a workspace primitive** (`store.js layFlatSelection`):
+  - Compute combined world-space AABB of selection (falls back to all
+    visible objects when nothing is selected — needed for the slicer
+    popover's quick-action path).
+  - Pick the shortest axis (= face perpendicular to it has the
+    largest area).
+  - Rotate the assembly 90° around the appropriate axis through the
+    AABB centroid using the same quaternion-delta rigid-body pattern
+    the gizmo uses for multi-select rotation.
+  - Drop to bed in a single Undo entry.
+  - Exposed in three places: Right-Panel Inspector
+    (`[lay-flat-btn]` in a 2-col grid alongside Drop to Bed), right-
+    click ContextMenu (`[ctx-lay-flat-btn]`), and Slicer Popover
+    quick-action (`[popover-slice-quick-lay-flat-btn]`).
+
+**SlicerOrientationBadge** (`SlicerPopover.jsx`):
+  - WYSIWYG: shows the slicer-frame X/Y/Z dimensions computed via
+    the same Y-up → Z-up axis flip the exporter applies
+    (slicer-X = workspace-X, slicer-Y = workspace-Z,
+    slicer-Z = workspace-Y).
+  - Flags "tall & thin" silhouettes (longest > 3× shortest AND
+    vertical axis is longest) with amber border + inline Lay-Flat
+    button so the user fixes it in one click before slicing.
+
+**Slicing-warning extraction on success path** (`orca_engine.py`
+`_perform_slice` rc=0 branch + `OrcaSliceStats.warnings`):
+  - Scans Orca CLI stdout for "empty layer", "floating regions",
+    "can't be printed", "faulty mesh", "object collides",
+    "gcode conflicts" — strips the bracketed timestamp/thread/
+    severity prefix, dedupes, caps at 12.
+  - Surfaces via new `OrcaSliceStats.warnings: list[str] = []` field,
+    rendered in SlicerPopover as `[popover-slice-warnings]` panel
+    with a "consider Lay Flat or open in OrcaSlicer Desktop" prompt.
+
+**Tests**:
+  - `tests/test_orca_warnings_extraction.py` — 6 new pytests covering
+    prefix-stripping, dedupe, 12-cap, variant phrasing, empty-stdout
+    handling.
+  - Full suite: 34/34 PASS (17 from iter-78 + 17 prior + 6 new).
+  - Testing-agent run iteration_36.json: 0 issues, all 4 features
+    verified end-to-end on production URL with seeded mongo session.
