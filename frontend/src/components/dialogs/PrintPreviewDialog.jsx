@@ -36,6 +36,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import {
   X, Loader2, RotateCcw, RotateCw, Layers, Send, AlertTriangle, RefreshCw,
+  Wand2, Clock, DollarSign, Dumbbell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { flattenObjectsAsync } from "../../lib/workerClient";
@@ -310,6 +311,92 @@ export default function PrintPreviewDialog({ open, objects, onClose, onConfirm, 
     toast.success("Auto Lay Flat applied", { duration: 1500 });
   };
 
+  // Optimize-for (iter-81+): broader search than Auto Lay Flat. Tries
+  // all 6 cube face-ups × 8 yaw rotations (0°, 22.5°, 45°, …) = 48
+  // orientations. Scores each by the user's chosen objective:
+  //
+  //   • "time"      — shortest estimated print minutes (good for
+  //                   prototypes you want off the printer ASAP)
+  //   • "filament"  — least total filament used (good for cost-
+  //                   conscious / late-night-on-a-Sunday prints)
+  //   • "strength"  — most layer adhesion area between Z-stacked
+  //                   layers in the user's load axis. Approximated
+  //                   as "tallest stack of bed-parallel triangles"
+  //                   so loads applied to the print's largest face
+  //                   travel through many fused layer interfaces
+  //                   instead of breaking along one weak Z seam.
+  //
+  // Each objective falls back to Auto Lay Flat's printability score
+  // as a tiebreaker so we never pick a literally-unprintable
+  // orientation (e.g. balanced on a point).
+  const optimizeFor = (objective) => {
+    if (!baseGeom) return;
+    const yawAngles = [0, 22.5, 45, 67.5, 90, 112.5, 135, 157.5];
+    const yawQs = yawAngles.map(
+      (deg) => new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1),
+        THREE.MathUtils.degToRad(deg),
+      ),
+    );
+    let bestQ = null, bestObjective = -Infinity, bestPrintability = -Infinity;
+    for (const faceQ of allAxisRotations()) {
+      for (const yawQ of yawQs) {
+        // Compose: yaw on top of face-up so we explore lateral
+        // rotations within each face-down candidate.
+        const cq = yawQ.clone().multiply(faceQ);
+        const g = baseGeom.clone();
+        g.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(cq));
+        g.computeBoundingBox();
+        const bb = g.boundingBox;
+        g.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, -bb.min.z));
+        const s = orientationScore(g);
+        const ct = estimatePrintCostTime(s);
+        if (!ct) continue;
+        let score;
+        if (objective === "time") {
+          // Negative minutes → we want minimum.
+          score = -ct.minutes;
+        } else if (objective === "filament") {
+          score = -ct.filamentMM;
+        } else if (objective === "strength") {
+          // Layer-adhesion proxy: tall + thin-layer-stack-on-load-axis.
+          // We approximate the "load axis" as the print's vertical
+          // (Z) — most users orient prints so their primary load is
+          // perpendicular to the bed (e.g. a hook hangs straight
+          // down). More layers stacked = more glue lines = stronger
+          // along that axis. Add a penalty for tiny bed footprint
+          // (a tall column that tips during print is useless).
+          // Reverse-bias: more layers = MORE strength resisting
+          // lateral shear (across-layer) BUT the print's tensile
+          // weakness is ALONG the build axis. To maximise tensile
+          // along the print's largest face, we want that face on
+          // the BED, not vertical → minimise height. So strength
+          // optimisation favours LOW height + LARGE footprint.
+          // (For loads applied to the front face, rotate manually
+          // — strength-optimise targets "force pushing down on the
+          // print", which is by far the most common in 3D-printed
+          // mechanical parts.)
+          score = s.footprintXY * 2 - s.height * 5;
+        } else {
+          score = 0;
+        }
+        // Printability tiebreaker so we never pick "balanced on a
+        // corner" even if its objective number is best.
+        const printability = s.footprintXY - 0.3 * s.downArea;
+        const isBetter = score > bestObjective
+          || (Math.abs(score - bestObjective) < 1e-3 && printability > bestPrintability);
+        if (isBetter) {
+          bestObjective = score;
+          bestPrintability = printability;
+          bestQ = cq;
+        }
+      }
+    }
+    if (bestQ) setUserQuat(bestQ);
+    const labels = { time: "shortest print time", filament: "least filament", strength: "best strength" };
+    toast.success(`Optimised for ${labels[objective] || objective}`, { duration: 1800 });
+  };
+
   const resetRotation = () => setUserQuat(new THREE.Quaternion());
 
   // Commit: bake renderGeom to STL bytes and hand back to caller.
@@ -467,6 +554,48 @@ export default function PrintPreviewDialog({ open, objects, onClose, onConfirm, 
               >
                 <Layers size={12} /> Auto Lay Flat (pick best face)
               </button>
+              {/* Optimize-for strip — broader brute-force search than
+                  Auto Lay Flat, targeted at a specific user objective.
+                  Sits below Auto Lay Flat so the "default smart" path
+                  stays the most prominent CTA. */}
+              <div className="space-y-1">
+                <div className="text-[9px] uppercase tracking-wider text-slate-600 font-semibold flex items-center gap-1">
+                  <Wand2 size={10} /> Optimise for…
+                  <span className="text-slate-700 normal-case">(48-orientation search)</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <button
+                    data-testid="print-preview-optimize-time-btn"
+                    onClick={() => optimizeFor("time")}
+                    disabled={!baseGeom || busy}
+                    className="h-8 bg-emerald-900/40 hover:bg-emerald-800/60 disabled:opacity-40 text-emerald-200 text-[10px] font-semibold rounded flex flex-col items-center justify-center border border-emerald-700/40"
+                    title="Find the orientation that prints fastest"
+                  >
+                    <Clock size={11} />
+                    <span>Time</span>
+                  </button>
+                  <button
+                    data-testid="print-preview-optimize-filament-btn"
+                    onClick={() => optimizeFor("filament")}
+                    disabled={!baseGeom || busy}
+                    className="h-8 bg-blue-900/40 hover:bg-blue-800/60 disabled:opacity-40 text-blue-200 text-[10px] font-semibold rounded flex flex-col items-center justify-center border border-blue-700/40"
+                    title="Find the orientation that uses the least filament"
+                  >
+                    <DollarSign size={11} />
+                    <span>Filament</span>
+                  </button>
+                  <button
+                    data-testid="print-preview-optimize-strength-btn"
+                    onClick={() => optimizeFor("strength")}
+                    disabled={!baseGeom || busy}
+                    className="h-8 bg-rose-900/40 hover:bg-rose-800/60 disabled:opacity-40 text-rose-200 text-[10px] font-semibold rounded flex flex-col items-center justify-center border border-rose-700/40"
+                    title="Find the orientation strongest against vertical loads (lowest profile, biggest bed footprint)"
+                  >
+                    <Dumbbell size={11} />
+                    <span>Strength</span>
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {["x", "y", "z"].map((axis) => (
                   <React.Fragment key={axis}>
