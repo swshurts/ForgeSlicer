@@ -6,8 +6,14 @@
 // from the chosen process preset so the slice button stays one click
 // away.
 import React, { useState } from "react";
-import { Cpu, CheckCircle2, ExternalLink, Settings } from "lucide-react";
-import { PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS, getPrinterGroups, resolveSystemPresets, USER_PRINTER_PREFIX } from "../../lib/orcaProfiles";
+import { Cpu, CheckCircle2, ExternalLink, Settings, Copy } from "lucide-react";
+import { toast } from "sonner";
+import {
+  PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS,
+  getPrinterGroups, resolveSystemPresets, USER_PRINTER_PREFIX,
+  cloneBundledPrinterToUserPayload,
+} from "../../lib/orcaProfiles";
+import { userPrintersApi, apiErrorMessage } from "../../lib/api";
 import OrcaPresetViewer from "../dialogs/OrcaPresetViewer";
 import UserPrintersDialog from "../dialogs/UserPrintersDialog";
 
@@ -41,6 +47,42 @@ export default function OrcaProfileEditor({
   const [viewer, setViewer] = useState(null);  // { vendor, kind, name } | null
   const [managingPrinters, setManagingPrinters] = useState(false);
   const isUserPrinter = typeof printerId === "string" && printerId.startsWith(USER_PRINTER_PREFIX);
+  const [cloning, setCloning] = useState(false);
+
+  // Iter-81: one-click clone of the currently-selected bundled printer
+  // into the user's "My Printers" collection. Pre-fills every spec
+  // (build volume, nozzle, gcode flavour, retraction, speeds) so the
+  // user only has to paste their Start/End G-code and save. Removes
+  // the "I have to manually re-type 10 fields just to override one
+  // macro" friction the user hit on iter-80.
+  const handleCloneToMyPrinters = async () => {
+    if (isUserPrinter) {
+      toast.info("This is already one of your printers — open My Printers to edit.");
+      setManagingPrinters(true);
+      return;
+    }
+    const payload = cloneBundledPrinterToUserPayload(printerId);
+    if (!payload) {
+      toast.error("Couldn't clone this printer — unknown bundled profile.");
+      return;
+    }
+    setCloning(true);
+    try {
+      const created = await userPrintersApi.create(payload);
+      toast.success(`Cloned "${payload.name}". Opening editor — paste your Start/End G-code and save.`);
+      // Refresh the parent's userPrinters cache so the new entry shows
+      // up in the dropdown's "My Printers" group, then auto-select it.
+      if (onReloadUserPrinters) await onReloadUserPrinters();
+      if (created?.printer_id) onPrinterChange(`${USER_PRINTER_PREFIX}${created.printer_id}`);
+      // Open the dialog scrolled to the just-created entry.
+      setManagingPrinters(true);
+    } catch (err) {
+      toast.error(`Clone failed: ${apiErrorMessage(err)}`);
+    } finally {
+      setCloning(false);
+    }
+  };
+
   return (
     <div
       data-testid="orca-profile-editor"
@@ -53,15 +95,29 @@ export default function OrcaProfileEditor({
         <label className="flex flex-col gap-0.5">
           <div className="flex items-center justify-between">
             <span className="text-[9px] uppercase tracking-wider text-slate-400">Printer</span>
-            <button
-              type="button"
-              data-testid="orca-manage-my-printers-btn"
-              onClick={() => setManagingPrinters(true)}
-              className="text-[9px] text-purple-300 hover:text-purple-200 flex items-center gap-1"
-              title="Manage your custom printers"
-            >
-              <Settings size={9} /> My Printers
-            </button>
+            <div className="flex items-center gap-2">
+              {!isUserPrinter && (
+                <button
+                  type="button"
+                  data-testid="orca-clone-to-my-printers-btn"
+                  onClick={handleCloneToMyPrinters}
+                  disabled={cloning}
+                  className="text-[9px] text-amber-300 hover:text-amber-200 disabled:opacity-40 flex items-center gap-1"
+                  title="Clone this bundled printer into your My Printers, where you can override Start/End G-code (Klipper macros, etc.)"
+                >
+                  <Copy size={9} /> {cloning ? "Cloning…" : "Clone to My Printers"}
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="orca-manage-my-printers-btn"
+                onClick={() => setManagingPrinters(true)}
+                className="text-[9px] text-purple-300 hover:text-purple-200 flex items-center gap-1"
+                title="Manage your custom printers"
+              >
+                <Settings size={9} /> My Printers
+              </button>
+            </div>
           </div>
           <select
             data-testid="orca-profile-printer"

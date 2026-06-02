@@ -645,6 +645,52 @@ export function exportUserPrinterAsOrcaJson(doc) {
   return JSON.stringify(out, null, 2);
 }
 
+/**
+ * Iter-81: clone-from-bundled. Given a bundled printer-profile id
+ * (e.g. "sovol_sv06_plus_ace"), return a `user_printers`-shape payload
+ * pre-populated with that printer's specs and a name suffixed with
+ * " (My Copy)". Used by `OrcaProfileEditor`'s Clone button so the user
+ * doesn't have to retype 10 fields just to override start/end G-code.
+ *
+ * Returns null when the bundled id is unknown (caller handles toast).
+ */
+export function cloneBundledPrinterToUserPayload(printerId, { suffix = " (My Copy)" } = {}) {
+  const def = PRINTER_PROFILES[printerId];
+  if (!def) return null;
+  const prof = def.profile || {};
+  const firstNum = (v, fallback) => {
+    const n = _coerceFirstNumber(v);
+    return n == null ? fallback : n;
+  };
+  // Parse printable_area corners → build_x / build_y. Bundled profiles
+  // store this as a 4-string array; we read the 3rd (top-right corner)
+  // to get the max XY.
+  let bx = 220, by = 220;
+  if (Array.isArray(prof.printable_area) && prof.printable_area.length >= 3) {
+    const m = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(String(prof.printable_area[2] || ""));
+    if (m) { bx = parseFloat(m[1]); by = parseFloat(m[2]); }
+  }
+  return {
+    name: `${def.label}${suffix}`,
+    printer_model: prof.printer_model || def.label,
+    nozzle_diameter: firstNum(prof.nozzle_diameter, 0.4),
+    build_x_mm: bx,
+    build_y_mm: by,
+    build_z_mm: firstNum(prof.printable_height, 250),
+    gcode_flavor: USER_PRINTER_GCODE_FLAVORS.has(prof.gcode_flavor) ? prof.gcode_flavor : "marlin2",
+    max_speed_x: firstNum(prof.machine_max_speed_x, 250),
+    max_speed_y: firstNum(prof.machine_max_speed_y, 250),
+    max_speed_z: firstNum(prof.machine_max_speed_z, 12),
+    max_speed_e: firstNum(prof.machine_max_speed_e, 40),
+    retraction_length: firstNum(prof.retraction_length, 0.8),
+    retraction_speed: firstNum(prof.retraction_speed, 40),
+    start_gcode: "",  // Left empty on purpose: user will paste their Klipper macro etc.
+    end_gcode: "",
+    notes: `Cloned from bundled "${def.label}" profile. Edit Start/End G-code below to match your firmware (Klipper PRINT_START, Marlin macros, etc.).`,
+  };
+}
+
+
 export function buildOrcaPayload({
   printerId, processId, filamentId,
   wallLoops, sparseInfillDensity, sparseInfillPattern,
