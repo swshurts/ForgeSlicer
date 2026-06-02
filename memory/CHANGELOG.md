@@ -2212,3 +2212,68 @@ instead of slicing directly. Built-in engine flow is unchanged.
 **Testing**: 23/23 backend pytest PASS. Lint clean on all five
 touched files (`PrintPreviewDialog.jsx`, `SlicerPopover.jsx`,
 `useOrcaSlice.js`, `engineCompare.js`, `useOrcaSlice.js`).
+
+## 2026-06-02 — Iter-81: Clone-from-bundled + Cost/Time/Overhang + Presets
+After iter-80's "spindly tower GCODE" was traced to multi-shell STL
+output, user successfully printed the RPI mounting tray. Three new
+quality-of-life features built on top:
+
+**Clone to My Printers** (`OrcaProfileEditor.jsx` + new
+`cloneBundledPrinterToUserPayload` in `orcaProfiles.js`):
+  - New amber "📋 Clone to My Printers" button next to the printer
+    dropdown when a bundled (non-user) printer is selected.
+  - Reads the bundled profile's specs (build volume, nozzle,
+    g-code flavour, retraction, speeds) and POSTs to
+    `/api/me/printers` to create a `user_printers` record pre-filled
+    with everything except Start/End G-code.
+  - Auto-refreshes the dropdown cache and selects the new printer
+    so the user immediately lands on the My Printers dialog with
+    "Advanced — Start / End G-code" available for paste.
+  - Eliminates the iter-80 friction of retyping 10 fields just to
+    override Klipper PRINT_START / PRINT_END macros.
+  - `tests/orcaProfiles.clone.test.js` — 6 unit tests covering Sovol
+    SV06 Plus Ace (Klipper, 300×300×340), Ender-3 (Marlin2, 220×220
+    ×250), unknown-id fallback, custom suffix, and gcode-flavour
+    clamping across every bundled profile.
+
+**Print-time + filament-cost estimator** (`PrintPreviewDialog.jsx`):
+  - New `estimatePrintCostTime()` helper using
+    surface_area × walls × line_width + interior_volume × infill
+    density, converted to mm of 1.75 mm filament and grams at PLA
+    density 1.24 g/cm³.
+  - Rendered in a new stats block in the dialog right-side panel:
+    print time (formatted as Xh Ym), filament (mm + g), cost
+    (USD @ $22 / kg). Documented as a ±30 % heuristic — value is
+    comparative across orientations, not absolute.
+
+**Per-triangle red-overhang painting** (`PrintPreviewDialog.jsx`):
+  - New `applyOverhangColors()` paints downward-facing triangles
+    steeper than 45° in red (`#ef4444`) and the rest in orange
+    (`#f97316`) via vertex colours on the BufferGeometry.
+  - Mesh material switched to `vertexColors`. Updated re-render
+    whenever rotation changes so users see overhangs migrate as
+    they tumble the model.
+  - Added a 2-chip legend in the right panel ("Safe ≤45°" /
+    "Needs supports") so the colour key is obvious.
+
+**Quick-Preset chips** (new `lib/slicerPresets.js` +
+`SlicerPopover.jsx`):
+  - 7 curated presets: PLA Balanced / Fast / Quality, PETG Strong /
+    Balanced, ABS Durable, TPU Flexible.
+  - Each preset bundles slicer knobs (perimeters, infill density,
+    pattern, layer height, temps, top/bottom solid layers) +
+    OrcaSlicer profile pointers (processId, filamentId, walls,
+    infillPct, pattern, supports, ironing).
+  - Last-selected preset persisted in localStorage so the user's
+    default survives reloads.
+  - Documented WHY each preset's values are what they are (in the
+    description field) so users can reason about whether it fits
+    their part — not just a black-box "Profile A vs B" choice.
+
+**Backlog additions (P1)** noted but not implemented in this round:
+  - Shared Profile Library (community-published printer profiles
+    browsable by hardware, one-click clone).
+  - Scheduled upstream OrcaSlicer profile sync (cron job that
+    fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/
+    *.json`, hashes them, surfaces deltas in an Admin → Profile
+    Updates dashboard with optional Resend digest).

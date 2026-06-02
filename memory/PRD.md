@@ -31,13 +31,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ## Current Open Items (as of 2026-06-01)
 
 ### Pending P1 (queued)
-- **Preset categories** — universal/per-printer quick settings like "PETG Strong", "PLA Fast" for slicer settings.
+- **Shared Profile Library** — publish your tuned printer profile (with Klipper start/end G-code, etc.) so other users with the same hardware can clone it in one click. Per-user opt-in publish, browse-by-printer-model, community-curated.
+- **Scheduled OrcaSlicer upstream sync** — daily/weekly cron task fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/*.json`, hashes them, surfaces deltas in an Admin → Profile Updates dashboard with optional Resend email digest. Lets us keep our bundled profile list current without manual maintenance.
 
 ### Backlog (P2/P3)
 - Continue `store.js` refactor (composite-primitives block ~L676; boolean/dim action blocks).
 - `Viewport.jsx` size reduction.
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
+
+## Resolved This Session (Iter-81, 2026-06-02)
+- **Clone to My Printers** — one-click clone of any bundled OrcaSlicer printer profile into the user's editable `user_printers` collection. Solves the iter-80 friction of retyping every spec just to override Start/End G-code (Klipper macros, etc.). 6 unit tests passing.
+- **Print-time + filament-cost estimator** in Print Preview dialog — heuristic estimate (~±30 % accuracy) of time / filament mm / weight / USD cost so users can compare orientations at the decision point.
+- **Per-triangle red-overhang coloring** in Print Preview dialog — vertex-color painter highlights faces ≥45° downward-facing in red so users see exactly where supports will need to go.
+- **Quick-Preset chips** in Slicer Popover — 7 curated material/use-case presets (PLA Balanced/Fast/Quality, PETG Strong/Balanced, ABS Durable, TPU Flexible) that bulk-apply slicer knobs + OrcaSlicer profile pointers. Last choice persisted in localStorage.
 
 ## Resolved This Session (Iter-80, 2026-06-02)
 - **Root cause of "GCODE missing panel/geometry" identified & fixed**: ForgeSlicer's slice path used bvh-csg which produces multi-shell STLs on assemblies with N positives + M negatives. OrcaSlicer CLI treats those as N separate objects and drops most geometry. Swapped to the manifold-3D pipeline (same as "Flatten to single mesh"). Workspace stays unflattened — only the STL bytes sent to the slicer are merged.

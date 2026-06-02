@@ -21,6 +21,7 @@ import { apiErrorMessage } from "../../lib/api";
 import { useOrcaSlice } from "../../lib/useOrcaSlice";
 import { compareEngines } from "../../lib/engineCompare";
 import { computeRotatedBBox } from "../../lib/geometry";
+import { PRESET_CATEGORIES } from "../../lib/slicerPresets";
 import GcodePreviewDialog from "../GcodePreviewDialog";
 import PrintPreviewDialog from "../dialogs/PrintPreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
@@ -241,6 +242,29 @@ export function SlicerPopover({ anchor, onClose }) {
           </div>
         )}
       </div>
+
+      <PresetPicker
+        engine={engine}
+        onApply={(preset) => {
+          // Bulk-apply preset settings to the slice-settings store.
+          // OrcaSlicer-engine knobs (walls, infillPct, pattern,
+          // supports, ironing, processId, filamentId) are routed
+          // through their respective setters so the OrcaProfileEditor
+          // re-renders with the new selections. Iter-81.
+          setS(preset.settings);
+          if (engine === "orca") {
+            if (preset.orcaProcessId) orca.setProcess(preset.orcaProcessId);
+            if (preset.orcaFilamentId) orca.setFilament(preset.orcaFilamentId);
+            if (preset.orca) {
+              if (typeof preset.orca.walls === "number") orca.setWalls(preset.orca.walls);
+              if (typeof preset.orca.infillPct === "number") orca.setInfillPct(preset.orca.infillPct);
+              if (preset.orca.pattern) orca.setPattern(preset.orca.pattern);
+              if (typeof preset.orca.supports === "boolean") orca.setSupports(preset.orca.supports);
+              if (typeof preset.orca.ironing === "boolean") orca.setIroning(preset.orca.ironing);
+            }
+          }
+        }}
+      />
 
       <div className="grid grid-cols-2 gap-2">
         <NumberField testid="popover-slice-layer-height" label="Layer Height" value={settings.layerHeight} onChange={(v) => setS({ layerHeight: v })} step={0.05} min={0.05} suffix="mm" />
@@ -593,6 +617,78 @@ function SlicerOrientationBadge({ objects }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// PresetPicker (iter-81) — horizontally-scrollable strip of material/
+// use-case quick-presets. Clicking a chip bulk-applies its settings
+// (perimeters, infill, layer height, temps, OrcaSlicer profile
+// pointers). Selected chip persists in localStorage so the user's
+// last choice survives page reloads, but we don't lock the slider
+// fields after — power users can still tweak each value.
+function PresetPicker({ engine, onApply }) {
+  const [activeId, setActiveId] = useState(() => {
+    try {
+      return localStorage.getItem("forge-slice-preset") || "pla_balanced";
+    } catch {
+      return "pla_balanced";
+    }
+  });
+  const handlePick = (preset) => {
+    setActiveId(preset.id);
+    try { localStorage.setItem("forge-slice-preset", preset.id); } catch { /* ignore */ }
+    onApply(preset);
+  };
+  return (
+    <div className="space-y-1" data-testid="slicer-preset-picker">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-slate-400">
+          Quick Preset
+          <span className="text-slate-600 ml-1 normal-case">— one-click material defaults</span>
+        </div>
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-0.5 px-0.5 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+        {PRESET_CATEGORIES.map((p) => {
+          const active = p.id === activeId;
+          return (
+            <button
+              key={p.id}
+              data-testid={`slicer-preset-${p.id}`}
+              onClick={() => handlePick(p)}
+              title={p.description}
+              className={`flex-shrink-0 h-12 px-2.5 rounded border text-left transition-colors ${
+                active
+                  ? "bg-orange-500/15 border-orange-500 text-orange-200"
+                  : "bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500 hover:bg-slate-800"
+              }`}
+            >
+              <div className="text-[11px] font-semibold leading-tight whitespace-nowrap">{p.label}</div>
+              <div className={`text-[8px] font-mono mt-0.5 inline-block px-1 rounded ${p.badgeClass}`}>
+                {p.badge}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {/* Description of the currently-active preset, so the user
+          understands what they just applied even if they didn't hover
+          to see the tooltip. */}
+      {(() => {
+        const cur = PRESET_CATEGORIES.find((p) => p.id === activeId);
+        if (!cur) return null;
+        return (
+          <div className="text-[10px] text-slate-400 leading-tight pl-0.5" data-testid="slicer-preset-desc">
+            {cur.description}
+            {engine === "builtin" && /pattern|supports|ironing/.test(cur.description) && (
+              <div className="text-[9px] text-amber-500/70 mt-0.5">
+                Some preset values (supports/ironing) only apply when the OrcaSlicer engine is selected.
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
