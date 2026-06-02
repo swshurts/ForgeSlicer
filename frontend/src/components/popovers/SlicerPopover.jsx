@@ -9,10 +9,10 @@
 // SSE progress + slice action + payload builder) lives in
 // `lib/useOrcaSlice.js` so this file can stay focused on the view +
 // engine-agnostic settings.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Sliders, AlertTriangle, CheckCircle2, Download, Eye,
-  Cpu, Zap, Loader2, Send, Activity, GitCompare,
+  Cpu, Zap, Loader2, Send, Activity, GitCompare, Layers,
 } from "lucide-react";
 import { useScene, useSliceSettings } from "../../lib/store";
 import { sliceToGCODEAsync } from "../../lib/workerClient";
@@ -20,6 +20,7 @@ import { downloadText } from "../../lib/exporters";
 import { apiErrorMessage } from "../../lib/api";
 import { useOrcaSlice } from "../../lib/useOrcaSlice";
 import { compareEngines } from "../../lib/engineCompare";
+import { computeRotatedBBox } from "../../lib/geometry";
 import GcodePreviewDialog from "../GcodePreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
 import EngineComparisonDialog from "../dialogs/EngineComparisonDialog";
@@ -279,6 +280,7 @@ export function SlicerPopover({ anchor, onClose }) {
         <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
         <span>Top/bottom solid + sparse infill (rectilinear/grid/gyroid) are now generated. For supports, tree supports, multi-material, and adaptive layer height, export 3MF and slice in OrcaSlicer.</span>
       </div>
+      <SlicerOrientationBadge objects={objects} />
       <button
         data-testid="popover-slice-btn"
         onClick={handleSlice}
@@ -369,6 +371,25 @@ export function SlicerPopover({ anchor, onClose }) {
           <span className="text-slate-500">Filament</span><span className="text-orange-400 text-right">{stats.filamentMM.toFixed(1)} mm</span>
         </div>
       )}
+      {stats?.warnings && stats.warnings.length > 0 && (
+        <div
+          data-testid="popover-slice-warnings"
+          className="bg-amber-500/10 border border-amber-500/50 rounded p-2 space-y-1.5"
+        >
+          <div className="flex items-start gap-2 text-[11px] text-amber-200 font-semibold leading-tight">
+            <span className="mt-0.5">⚠</span>
+            <span>OrcaSlicer reported {stats.warnings.length} warning{stats.warnings.length === 1 ? "" : "s"} — your GCODE may be missing geometry. Consider clicking <b>Lay Flat</b> in the Inspector and re-slicing, or open the project in OrcaSlicer Desktop for full control.</span>
+          </div>
+          <ul className="text-[10px] font-mono text-amber-300/90 list-disc pl-4 space-y-0.5 max-h-32 overflow-y-auto">
+            {stats.warnings.slice(0, 8).map((w, i) => (
+              <li key={i} data-testid={`popover-slice-warning-${i}`} className="break-words">{w}</li>
+            ))}
+            {stats.warnings.length > 8 && (
+              <li className="text-amber-400/70">…and {stats.warnings.length - 8} more</li>
+            )}
+          </ul>
+        </div>
+      )}
       {lastDownload && (
         <div
           data-testid="popover-slice-download-confirm"
@@ -426,3 +447,110 @@ export function SlicerPopover({ anchor, onClose }) {
     </PopoverShell>
   );
 }
+
+// SlicerOrientationBadge — WYSIWYG-ish preview of what the slicer will
+// actually see, computed from the current scene's combined AABB.
+//
+// Why: ForgeSlicer's workspace is Y-up; OrcaSlicer is Z-up. The
+// exporter rotates +90° around X at slice time so the model's
+// workspace-vertical axis becomes the slicer's vertical. That means
+// what looks "lying flat" in workspace may end up standing tall in
+// the slicer (and vice-versa). Showing the slicer-frame X/Y footprint
+// + Z height right above the SLICE button closes the comprehension
+// gap and lets the user spot a "tall thin tower" silhouette before
+// it eats 4 hours of print time. Iter-79.
+//
+// Also surfaces a Lay-Flat shortcut when the model looks tall/thin
+// (longest axis > 3× shortest) so the user fixes it in one click.
+function SlicerOrientationBadge({ objects }) {
+  const layFlatSelection = useScene((s) => s.layFlatSelection);
+
+  const dims = useMemo(() => {
+    if (!objects || objects.length === 0) return null;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    let any = false;
+    for (const o of objects) {
+      if (o.visible === false) continue;
+      try {
+        const bb = computeRotatedBBox(o);
+        const px = o.position[0], py = o.position[1], pz = o.position[2];
+        const lo = [px + bb.min.x, py + bb.min.y, pz + bb.min.z];
+        const hi = [px + bb.max.x, py + bb.max.y, pz + bb.max.z];
+        if (lo[0] < minX) minX = lo[0];
+        if (lo[1] < minY) minY = lo[1];
+        if (lo[2] < minZ) minZ = lo[2];
+        if (hi[0] > maxX) maxX = hi[0];
+        if (hi[1] > maxY) maxY = hi[1];
+        if (hi[2] > maxZ) maxZ = hi[2];
+        any = true;
+      } catch { /* skip */ }
+    }
+    if (!any || !Number.isFinite(minX)) return null;
+    // Workspace (Y-up) → slicer (Z-up): exporter applies makeRotationX(+π/2),
+    // so old +Y → new +Z and old +Z → new -Y. Net dimensional mapping
+    // (extents only, ignoring sign): slicer X = workspace X,
+    // slicer Y = workspace Z, slicer Z = workspace Y.
+    const slicerX = maxX - minX;
+    const slicerY = maxZ - minZ;
+    const slicerZ = maxY - minY;
+    return { slicerX, slicerY, slicerZ };
+  }, [objects]);
+
+  if (!dims) return null;
+  const { slicerX, slicerY, slicerZ } = dims;
+  const longest = Math.max(slicerX, slicerY, slicerZ);
+  const shortest = Math.max(0.01, Math.min(slicerX, slicerY, slicerZ));
+  // "Risky" silhouette: longest > 3× shortest AND the slicer-Z (vertical)
+  // is the longest axis. That's the canonical "tall thin tower" that
+  // makes OrcaSlicer drop layers, generate spindly supports, or fail
+  // outright. Iter-79's MiniRack tray case is the prototype.
+  const tallThin = longest > 3 * shortest && slicerZ >= longest - 1e-3;
+
+  const onLayFlat = () => {
+    // layFlatSelection falls back to "all visible objects" when
+    // nothing is selected (store-level fallback added in iter-79).
+    layFlatSelection(true);
+  };
+
+  return (
+    <div
+      data-testid="popover-slicer-orientation"
+      className={`rounded p-2 text-[11px] font-mono space-y-1 border ${
+        tallThin
+          ? "bg-amber-500/10 border-amber-500/50"
+          : "bg-slate-950 border-slate-700"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+          Slicer sees
+        </div>
+        <div className="text-slate-300">
+          <span className="text-slate-500">X</span> {slicerX.toFixed(1)}
+          <span className="text-slate-500 ml-2">Y</span> {slicerY.toFixed(1)}
+          <span className="text-slate-500 ml-2">Z</span>{" "}
+          <span className={tallThin ? "text-amber-300 font-semibold" : ""}>
+            {slicerZ.toFixed(1)}
+          </span>{" "}
+          <span className="text-slate-500">mm</span>
+        </div>
+      </div>
+      {tallThin && (
+        <div className="flex items-start gap-2 pt-1 border-t border-amber-500/20">
+          <span className="text-amber-200 text-[10px] leading-tight flex-1">
+            Tall &amp; thin silhouette ({(longest / shortest).toFixed(1)}× aspect ratio) — OrcaSlicer may drop geometry or generate spindly supports. Consider laying it flat.
+          </span>
+          <button
+            data-testid="popover-slice-quick-lay-flat-btn"
+            onClick={onLayFlat}
+            className="h-7 px-2 bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-semibold rounded flex items-center gap-1 whitespace-nowrap"
+          >
+            <Layers size={11} /> Lay Flat
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+

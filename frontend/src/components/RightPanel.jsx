@@ -9,7 +9,7 @@ import { printersApi } from "../lib/api";
 import SplineInspectorBlock from "./SplineInspectorBlock";
 import SweepInspectorBlock from "./SweepInspectorBlock";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers } from "lucide-react";
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -581,6 +581,7 @@ function Inspector() {
   const updateDims = useScene((s) => s.updateDims);
   const flipModifier = useScene((s) => s.flipModifier);
   const dropToBed = useScene((s) => s.dropToBed);
+  const layFlatSelection = useScene((s) => s.layFlatSelection);
   const setColorIndex = useScene((s) => s.setColorIndex);
 
   const obj = objects.find((o) => o.id === selectedId);
@@ -629,14 +630,24 @@ function Inspector() {
         </button>
       </div>
 
-      <button
-        data-testid="drop-to-bed-btn"
-        onClick={() => dropToBed(obj.id)}
-        className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-slate-700"
-        title="Drop object so its lowest point sits on Y=0"
-      >
-        <ArrowDownToLine size={13} /> Drop to Bed
-      </button>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          data-testid="drop-to-bed-btn"
+          onClick={() => dropToBed(obj.id)}
+          className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-slate-700"
+          title="Drop object so its lowest point sits on Y=0"
+        >
+          <ArrowDownToLine size={13} /> Drop to Bed
+        </button>
+        <button
+          data-testid="lay-flat-btn"
+          onClick={() => layFlatSelection(true)}
+          className="h-8 bg-orange-600/90 hover:bg-orange-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-orange-400/40"
+          title="Rotate selection so its largest face sits on the bed (then drop). One-click prep for slicing thin/tall models."
+        >
+          <Layers size={13} /> Lay Flat
+        </button>
+      </div>
 
       {obj.modifier !== "negative" && (
         <div data-testid="inspector-color-picker">

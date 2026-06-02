@@ -405,6 +405,10 @@ export function useOrcaSlice() {
         engine: "orca",
         durationSec: r.stats.duration_seconds,
         summary: payload.summary,
+        // Non-fatal slicer warnings (empty-layer / floating-regions
+        // / can't-be-printed). Pass through so the popover can show
+        // a "consider Lay Flat or enable supports" banner. Iter-79.
+        warnings: r.stats.warnings || [],
       },
     };
   };

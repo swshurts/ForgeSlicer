@@ -373,6 +373,19 @@ export default function ContextMenu({ position, onClose }) {
         {count === 0 ? "Nothing selected" : count === 1 ? selectedObjs[0]?.name || "Selection" : `${count} selected`}
       </div>
       <Item
+        icon={Layers}
+        label={count > 1 ? "Lay flat (as unit)" : "Lay flat"}
+        hint="⇲"
+        testid="ctx-lay-flat-btn"
+        disabled={count === 0}
+        onClick={() => {
+          restoreSelection();
+          try { useScene.getState().layFlatSelection(true); }
+          catch (e) { toast.error(`Lay flat failed: ${e?.message || e}`); }
+          onClose();
+        }}
+      />
+      <Item
         icon={ArrowDownToLine}
         label={count > 1 ? "Drop to bed (as unit)" : "Drop to bed"}
         hint="↓"

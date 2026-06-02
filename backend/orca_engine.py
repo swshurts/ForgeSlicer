@@ -624,6 +624,13 @@ class OrcaSliceStats(BaseModel):
     duration_seconds: float
     layers: Optional[int] = None
     filament_mm: Optional[float] = None
+    # Non-fatal warnings extracted from OrcaSlicer's per-slice log.
+    # Populated when the CLI reported "Object can't be printed for empty
+    # layer", "floating regions", or other slicing warnings that still
+    # produced GCODE — but where the user almost certainly wants to
+    # re-orient or enable supports before sending to the printer.
+    # Iter-79.
+    warnings: list[str] = []
 
 
 class OrcaSliceResponse(BaseModel):
@@ -1328,6 +1335,36 @@ async def _perform_slice(
             _job_error(job_id, e.status_code, str(e.detail))
             return
         layers, filament_mm = _scan_gcode_stats(gcode_text)
+        # Scan OrcaSlicer's stdout for non-fatal warnings that still
+        # produced GCODE — most importantly the "empty layer between
+        # Z=X and Z=Y" / "floating regions" pair that tells the user
+        # the slicer dropped some geometry. Surfacing these as a
+        # `warnings` array in the response (rather than failing the
+        # slice) lets the UI display a clear "re-orient or enable
+        # supports" banner alongside the GCODE the user just got.
+        # Iter-79.
+        stdout_full_ok = (stdout or b"").decode(errors="replace")
+        warning_re = re.compile(
+            r"(?i)(empty layer|floating regions?|can't be printed|"
+            r"faulty mesh|object collides|gcode conflicts)"
+        )
+        warnings: list[str] = []
+        for line in stdout_full_ok.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if warning_re.search(s):
+                # Trim Orca's timestamp/thread-id prefix so the UI
+                # message is short and actionable.
+                cleaned = re.sub(
+                    r"^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s*\[[^\]]+\]\s*\[\w+\]\s*",
+                    "",
+                    s,
+                ).strip()
+                if cleaned and cleaned not in warnings:
+                    warnings.append(cleaned)
+            if len(warnings) >= 12:
+                break
         slot = _PROGRESS.get(job_id)
         if slot is not None:
             slot["result"] = {
@@ -1338,6 +1375,7 @@ async def _perform_slice(
                     "duration_seconds": round(duration, 2),
                     "layers": layers,
                     "filament_mm": filament_mm,
+                    "warnings": warnings,
                 },
                 "engine": "orca",
                 "job_id": job_id,

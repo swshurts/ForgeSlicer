@@ -711,6 +711,132 @@ export const useScene = create((set, get) => ({
     }));
   },
 
+  // Lay-flat the current selection: pick the LARGEST face of the
+  // combined world-space bounding box and rotate the assembly so that
+  // face ends up parallel to the build plate (i.e. the assembly's
+  // "thinnest" axis becomes vertical). Then drop-to-bed so the lowest
+  // point sits on Y=0.
+  //
+  // Why this exists (iter-79): in ForgeSlicer's workspace the user can
+  // rotate models with the gizmo, but it's tedious to get a thin/tall
+  // model (panel, tray, sign) onto the bed face-down. Without this,
+  // OrcaSlicer's CLI sees the model in its current orientation and
+  // every FDM heuristic (overhangs, supports, bed adhesion, layer
+  // count, "empty layer" detection) is worse on the wrong orientation
+  // — that's the root cause of all the recent "GCODE has missing
+  // geometry" prints. One-click Lay Flat solves it for 95 % of cases.
+  //
+  // Algorithm:
+  //   1. Compute combined world-space AABB of every selected object,
+  //      accounting for each member's current rotation/scale.
+  //   2. Find the SHORTEST axis (X/Y/Z) — the face perpendicular to
+  //      it is the largest face by area.
+  //   3. If shortest is already Y, the assembly is already flat —
+  //      just drop to bed and return.
+  //   4. Otherwise compute a 90° rotation that aligns the shortest
+  //      axis with world-Y, expressed as a quaternion around the
+  //      assembly centroid (so members orbit cohesively).
+  //   5. Apply the rotation to every member's position + rotation
+  //      using the same quaternion-delta machinery the multi-select
+  //      gizmo uses (see Viewport.jsx handleChange's rotate branch).
+  //   6. Drop the now-flat assembly to the bed.
+  layFlatSelection: (withHistory = true) => {
+    const s = get();
+    let ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
+    // Fall back to "all visible objects" when nothing is explicitly
+    // selected — this is the common case for the slicer popover's
+    // quick Lay-Flat button (user clicks SLICE on the whole scene
+    // without picking individual parts). Iter-79.
+    if (ids.length === 0) {
+      ids = s.objects.filter((o) => o.visible !== false).map((o) => o.id);
+    }
+    if (ids.length === 0) return;
+    const objs = ids.map((id) => s.objects.find((o) => o.id === id)).filter(Boolean);
+    if (objs.length === 0) return;
+
+    // 1. World-space combined AABB.
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (const o of objs) {
+      try {
+        const bb = computeRotatedBBox(o);
+        const px = o.position[0], py = o.position[1], pz = o.position[2];
+        minX = Math.min(minX, px + bb.min.x);
+        minY = Math.min(minY, py + bb.min.y);
+        minZ = Math.min(minZ, pz + bb.min.z);
+        maxX = Math.max(maxX, px + bb.max.x);
+        maxY = Math.max(maxY, py + bb.max.y);
+        maxZ = Math.max(maxZ, pz + bb.max.z);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("layFlatSelection: bbox failed for", o?.id, err);
+      }
+    }
+    if (!Number.isFinite(minX)) return;
+    const extX = maxX - minX;
+    const extY = maxY - minY;
+    const extZ = maxZ - minZ;
+
+    // 2. Shortest axis.
+    let thinAxis;
+    if (extX <= extY && extX <= extZ) thinAxis = "x";
+    else if (extZ <= extX && extZ <= extY) thinAxis = "z";
+    else thinAxis = "y";
+
+    // 3. Already flat — short-circuit to drop-to-bed.
+    if (thinAxis === "y") {
+      get().dropSelectionToBed(withHistory);
+      return;
+    }
+
+    // 4. Rotation: bring the thin axis to world-Y. We rotate +90°
+    // around the appropriate world axis. For thin=X that's the Z axis;
+    // for thin=Z that's the X axis. The sign doesn't matter because
+    // the bbox is symmetric on the thin axis — either ±90° puts the
+    // largest face on the bed.
+    const dQ = new THREE.Quaternion().setFromAxisAngle(
+      thinAxis === "x" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0),
+      Math.PI / 2,
+    );
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const cz = (minZ + maxZ) / 2;
+
+    // 5. Rigid-body apply (same quaternion-delta pattern as gizmo).
+    if (withHistory) s.pushHistory();
+    set((st) => ({
+      objects: st.objects.map((o) => {
+        if (!ids.includes(o.id)) return o;
+        const offset = new THREE.Vector3(
+          o.position[0] - cx,
+          o.position[1] - cy,
+          o.position[2] - cz,
+        ).applyQuaternion(dQ);
+        const oldQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          THREE.MathUtils.degToRad(o.rotation[0]),
+          THREE.MathUtils.degToRad(o.rotation[1]),
+          THREE.MathUtils.degToRad(o.rotation[2]),
+          "XYZ",
+        ));
+        const newQ = dQ.clone().multiply(oldQ);
+        const newEuler = new THREE.Euler().setFromQuaternion(newQ, "XYZ");
+        return {
+          ...o,
+          position: [cx + offset.x, cy + offset.y, cz + offset.z],
+          rotation: [
+            Math.round(THREE.MathUtils.radToDeg(newEuler.x) * 1e4) / 1e4,
+            Math.round(THREE.MathUtils.radToDeg(newEuler.y) * 1e4) / 1e4,
+            Math.round(THREE.MathUtils.radToDeg(newEuler.z) * 1e4) / 1e4,
+          ],
+        };
+      }),
+    }));
+
+    // 6. Land on the bed (no extra history entry — step 5 already
+    // pushed one and we want the whole Lay-Flat as a single Undo step).
+    get().dropSelectionToBed(false);
+  },
+
 
   duplicateObject: (id) => {
     get().pushHistory();
