@@ -1,0 +1,37 @@
+{
+  "summary": "Iter-37 (iter-84) — Frontend-only verification of (a) ZipImportDialog wiring for empty/mesh/Orca-printer ZIPs, and (b) PrintPreviewDialog print-time estimator recalibration. Tests 1 (empty ZIP), 2 (mesh-bundle ZIP with cube.stl) and the estimator constants verification PASS. Test 3 (OrcaSlicer printer.json bundle) FAILS with HTTP 422 because ZipImportDialog sends the wrong field names to POST /api/me/printers.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "ZIP import — OrcaSlicer printer.json bundle",
+        "issue": "POST /api/me/printers returns 422 Unprocessable Entity. ZipImportDialog.handleImportOrcaConfigs (lines 178-181) sends payload keys `build_x`, `build_y`, `build_z` but the backend Pydantic model (routes/user_printers.py:76-78 UserPrinterIn) requires `build_x_mm`, `build_y_mm`, `build_z_mm`. Same likely applies to nozzle_diameter — parser returns a number, schema accepts a single float so that part is OK. The toast in the UI then renders the FastAPI error array poorly: 'Couldn't import config bundle: [object Object],[object Object],[object Object]' (the err.response.data.detail is an array of ValidationErrors which JS stringifies badly). Sonner toast shown but dialog stays open (correct fail-state behaviour). GET /api/me/printers afterwards returns an empty array — confirming the new printer was NOT persisted.",
+        "affected_selectors": ["zip-import-orca-go-btn", "zip-import-dialog"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix ZipImportDialog.jsx lines 178-181: rename payload keys `build_x` → `build_x_mm`, `build_y` → `build_y_mm`, `build_z` → `build_z_mm` to match UserPrinterIn schema. Also consider `gcode_flavor` default `marlin2` (server default) instead of `marlin` for consistency — though `marlin` IS in GCODE_FLAVORS so it would still pass once the *_mm keys are fixed.",
+    "Improve the error toast: stringify FastAPI's detail array properly (e.g. `Array.isArray(detail) ? detail.map(d=>d.msg).join('; ') : String(detail)`) so users see the actual validation problem instead of '[object Object],[object Object]'.",
+    "Optional: parseOrcaPrinterJson in lib/orcaProfiles.js could be enhanced to emit `build_x_mm/build_y_mm/build_z_mm` directly so the dialog doesn't need to remap (currently the dialog reads `parsed.fields.build_x` which probably is undefined → falls back to 220 default — meaning even when bug is fixed, the actual `printable_area`/`printable_height` from the JSON may not be honoured. Worth verifying after rename fix)."
+  ],
+  "critical_code_review_comments": [
+    "Field-name mismatch between frontend payload and backend Pydantic schema (build_x vs build_x_mm) — this is a high-confidence integration bug. Add a small jest unit test or integration test that POSTs the dialog's payload shape against a mocked endpoint to catch future drift.",
+    "ZipImportDialog handleImportOrcaConfigs uses parsed.fields.build_x but no evidence parseOrcaPrinterJson actually populates that key — see /app/frontend/src/lib/orcaProfiles.js:481. The fallback chain (parsed.fields.build_x ?? 220) silently masks parser/key drift.",
+    "Toast error rendering `err?.response?.data?.detail` does not handle the FastAPI ValidationError array format. Add an extractor utility."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "75% (3/4 sub-flows verified — empty ZIP OK, mesh ZIP OK, estimator constants OK, Orca-printer ZIP integration broken)"},
+  "test_credentials": "MongoDB-seeded session token st_test_1780501114702 (per /app/memory/test_credentials.md). Injected as `session_token` httpOnly cookie on the preview origin.",
+  "seed_data_creation": "Inserted one user + one session row into MongoDB (test_database) via mongosh — see test_credentials.md recipe.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test 1 (empty.zip → amber empty state + close button): PASS. Test 2 (JSZip-built ZIP containing valid ASCII STL cube.stl): PASS — mesh-section rendered, default-checked, Import button enabled and labelled 'Import 1 selected file', click added one mesh to `window.__forgeStore.getState().objects` (count went 0→1), sonner toast 'Imported 1 mesh from ZIP.' appeared, dialog auto-closed. Test 3 (OrcaSlicer printer.json bundle): the dialog renders correctly (zip-import-orca-section + zip-import-orca-printer chip + enabled go-btn) BUT clicking go-btn POSTs to /api/me/printers and gets HTTP 422 due to build_x/build_y/build_z vs build_x_mm/build_y_mm/build_z_mm field-name mismatch. Subsequent GET /api/me/printers returns empty `[]` confirming non-persistence. Test 4 (PrintPreviewDialog estimator): not opened end-to-end due to a separate StatusBar crash triggered by my synthetic `addPrimitive('cube', {size:100})` injection (sel.modifier.toUpperCase is not a function — this was my test bug, not the app's). HOWEVER the fix is verified by CODE READING: PrintPreviewDialog.jsx lines 208-209 confirm extrusionFeedMmPerMin=150 and layerChangeOverheadSec=1.0, exactly as the task requested. Hand math for a 100mm cube: shellVolume≈80000, infillVolume≈138000, supportVolume≈72000 → ~290000 mm³ → ~120k mm filament @150 mm/min ≈ 13h (or ~10h excluding bottom-face supports). Far above the previous 15-30 min bug. Window store handle is `window.__forgeStore` (zustand) — use this for state assertions. For mesh-bundle test JSZip CDN load via `import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm')` worked in the browser console.",
+  "rca of the issue": "Root cause: ZipImportDialog.handleImportOrcaConfigs (lines 175-186) constructs the create-printer payload with keys `build_x`, `build_y`, `build_z`, but routes/user_printers.py UserPrinterIn requires `build_x_mm`, `build_y_mm`, `build_z_mm` (the same suffix convention used by the rest of the codebase — see also routes/user_printers.py:130 which reads `doc['build_x_mm']`). When `userPrintersApi.create` POSTs the body, FastAPI rejects with 422 Unprocessable Entity and a `detail: [{type:'missing', loc:['body','build_x_mm'],...}, ...]` array. Reproduction: dispatch the import-zip event with a JSZip containing only printer.json (any shape) → click Import printer profile from bundle → observe 422 in network tab. Mitigation: rename three payload keys in ZipImportDialog.jsx (single-line change per key). Optionally also improve the catch handler at line 195 to render Pydantic's array-of-errors detail format human-readably."
+}

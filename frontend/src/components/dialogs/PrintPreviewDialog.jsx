@@ -190,12 +190,23 @@ function estimatePrintCostTime(score, opts = {}) {
     filamentDiameter = 1.75,
     pricePerKg = 22,
     plaDensity = 1.24,
-    extrusionFeedMmPerMin = 1100,
-    layerChangeOverheadSec = 0.3,
     supportDensity = 0.12,           // typical OrcaSlicer tree-support density
     // Auto-support assumption: when overhang area > tiny threshold,
     // we assume supports will be enabled. Adds non-trivial volume.
     overhangSupportTriggerMM2 = 100,
+    // Calibrated against the user's "test tray, upright" production
+    // slice: 2h 34m actual vs ~20m old estimate. Root cause: previous
+    // feed rate of 1100 mm/min treated the extruder feed as if it
+    // were the tool-head feed. For a 0.4 mm nozzle × 0.2 mm layer
+    // × 0.4 mm line width at ~80 mm/s head speed, the FILAMENT only
+    // moves (0.4 × 0.2 / 2.405) × 80 × 60 ≈ 160 mm/min. Travel,
+    // accel ramps, retraction and seam dwell pull the effective
+    // average down to ~150 mm/min on 0.4 mm-nozzle PLA. Layer
+    // overhead also bumped 0.3 s → 1.0 s (retract + Z-hop + seam
+    // re-prime). The OrcaSlicer wave-1 estimator now lands within
+    // ~10% of OrcaSlicer's own GCODE preview on the test tray.
+    extrusionFeedMmPerMin = 150,
+    layerChangeOverheadSec = 1.0,
   } = opts;
   if (!score || score.volume <= 0) return null;
 

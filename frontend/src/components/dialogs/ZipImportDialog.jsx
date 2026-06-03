@@ -1,35 +1,77 @@
 // Iter-84: ZipImportDialog — preview + pick UI for ZIP archives
 // imported into ForgeSlicer.
 //
-// Two flavours are auto-detected from the archive contents (see
-// `inspectZipFile` in lib/exporters.js):
+// Wired identically to SVGImportDialog: a single top-level <ZipImportDialog />
+// in App.js listens for `forgeslicer:import-zip` window events dispatched by
+// the toolbar's file-input handler (`components/toolbar/projectActions.js`).
+//
+// Two flavours of archive are auto-detected from the contents
+// (see `inspectZipFile` in lib/exporters.js):
 //
 //   1. Mesh bundle  — the ZIP contains one or more .stl / .obj /
 //      .3mf / .glb / .svg files. The user picks which to import
-//      via checkboxes; selected files are imported in sequence
-//      through the existing per-format importers. (The "Thingiverse
-//      multi-part download" case.)
+//      via checkboxes; each selected file is funnelled through the
+//      existing per-format importers (`importAnyMeshFile` → store's
+//      `addImportedMesh`). Covers the Thingiverse "download all"
+//      multi-part case and Printables ZIPs.
 //
 //   2. OrcaSlicer config bundle — the ZIP contains printer.json /
-//      process.json / filament.json. We surface them as a single
-//      "Import as printer profile" action that pipes through the
-//      existing `parseOrcaPrinterJson` helper. (Bulk profile upload
-//      flow the user requested.)
+//      process.json / filament.json. We POST the parsed printer JSON
+//      to /api/me/printers and reload the user's printer list so the
+//      newly imported profile appears in the slicer popover.
 //
-//   3. Mixed — show both sections so the user can do whatever they
-//      came for.
+//   3. Mixed — both sections render so the user can do whatever
+//      they came for.
+//
+// SVG entries get an extra hint in the file list because they get
+// routed to the SVGImportDialog (which still asks for extrusion
+// height etc.) rather than the silent STL/OBJ importer.
 
 import { useEffect, useState } from "react";
 import { X, Loader2, FileBox, Package, CheckSquare, Square as SquareIcon, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { inspectZipFile, meshEntryToFile } from "../../lib/exporters";
+import { inspectZipFile, meshEntryToFile, importAnyMeshFile } from "../../lib/exporters";
+import { useScene } from "../../lib/store";
+import { userPrintersApi } from "../../lib/api";
+import { parseOrcaPrinterJson } from "../../lib/orcaProfiles";
 
-export default function ZipImportDialog({ open, file, onClose, onImportMesh, onImportOrcaConfig }) {
+const SUPPORTED_BLURB = "STL / OBJ / 3MF / GLB / SVG meshes, plus OrcaSlicer printer JSON bundles.";
+
+// SVG entries inside ZIPs get routed back through the dedicated
+// SVGImportDialog so the user can pick extrude height + modifier
+// rather than being silently extruded with defaults.
+function svgEntryToImportEvent(entry) {
+  return entry.blob.text().then((text) => {
+    window.dispatchEvent(new CustomEvent("forgeslicer:import-svg", { detail: { text, name: entry.name } }));
+  });
+}
+
+export default function ZipImportDialog() {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState(null);
   const [manifest, setManifest] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [meshPicks, setMeshPicks] = useState({});         // path → bool
   const [busyAction, setBusyAction] = useState(null);     // null | "meshes" | "orca"
+
+  const addImportedMesh = useScene((s) => s.addImportedMesh);
+
+  // Listen for the toolbar's "open with this ZIP" event.
+  useEffect(() => {
+    const onOpen = (e) => {
+      const f = e.detail?.file;
+      if (!f) return;
+      setFile(f);
+      setManifest(null);
+      setError(null);
+      setMeshPicks({});
+      setBusyAction(null);
+      setOpen(true);
+    };
+    window.addEventListener("forgeslicer:import-zip", onOpen);
+    return () => window.removeEventListener("forgeslicer:import-zip", onOpen);
+  }, []);
 
   // Inspect when dialog opens. Manifest stays in state until close.
   useEffect(() => {
@@ -54,6 +96,13 @@ export default function ZipImportDialog({ open, file, onClose, onImportMesh, onI
 
   if (!open) return null;
 
+  const handleClose = () => {
+    setOpen(false);
+    setFile(null);
+    setManifest(null);
+    setBusyAction(null);
+  };
+
   const allMeshesPicked = manifest && manifest.meshFiles.length > 0
     && manifest.meshFiles.every((f) => meshPicks[f.path]);
   const toggleAll = () => {
@@ -73,17 +122,33 @@ export default function ZipImportDialog({ open, file, onClose, onImportMesh, onI
     setBusyAction("meshes");
     try {
       let success = 0;
+      let svgQueued = 0;
       for (const entry of selected) {
         try {
-          await onImportMesh(meshEntryToFile(entry));
+          // SVGs go through the SVGImportDialog so the user gets
+          // extrusion-height controls. Other meshes go through the
+          // silent importer + are dropped onto the build plate.
+          if (entry.ext === "svg") {
+            await svgEntryToImportEvent(entry);
+            svgQueued++;
+            continue;
+          }
+          const f = meshEntryToFile(entry);
+          const mesh = await importAnyMeshFile(f);
+          addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
           success++;
         } catch (err) {
           toast.error(`Couldn't import ${entry.name}: ${err.message || err}`);
         }
       }
-      if (success > 0) {
-        toast.success(`Imported ${success} of ${selected.length} file${selected.length === 1 ? "" : "s"} from ZIP.`);
-        onClose();
+      // SVGs open their own dialog so we close *this* one even if
+      // only SVGs were queued — otherwise both dialogs stack.
+      if (success > 0 || svgQueued > 0) {
+        const parts = [];
+        if (success > 0) parts.push(`${success} mesh${success === 1 ? "" : "es"}`);
+        if (svgQueued > 0) parts.push(`${svgQueued} SVG${svgQueued === 1 ? "" : "s"} (opens shape editor)`);
+        toast.success(`Imported ${parts.join(" + ")} from ZIP.`);
+        handleClose();
       }
     } finally {
       setBusyAction(null);
@@ -92,64 +157,100 @@ export default function ZipImportDialog({ open, file, onClose, onImportMesh, onI
 
   const handleImportOrcaConfigs = async () => {
     if (!manifest) return;
+    const printerCfg = manifest.orcaConfigs.find((c) => c.role === "printer");
+    if (!printerCfg) {
+      toast.warning("ZIP bundle has no printer.json — can't import as a printer profile.");
+      return;
+    }
     setBusyAction("orca");
     try {
-      const result = await onImportOrcaConfig(manifest.orcaConfigs);
-      if (result?.imported) {
-        toast.success(`Imported "${result.name || "printer profile"}" from ZIP bundle.`);
-        onClose();
+      const text = await printerCfg.blob.text();
+      const parsed = parseOrcaPrinterJson(text);
+      if (!parsed.ok) {
+        toast.error(`Couldn't parse ${printerCfg.name}: ${parsed.error}`);
+        return;
       }
+      // Minimum required fields per /api/me/printers schema. Filename
+      // is a friendly fallback when the JSON omits `name`.
+      const fallbackName = printerCfg.name.replace(/\.json$/i, "").replace(/[_\-]+/g, " ").trim();
+      const payload = {
+        name: parsed.fields.name || fallbackName || "Imported printer",
+        nozzle_diameter: parsed.fields.nozzle_diameter ?? 0.4,
+        build_x: parsed.fields.build_x ?? 220,
+        build_y: parsed.fields.build_y ?? 220,
+        build_z: parsed.fields.build_z ?? 250,
+        gcode_flavor: parsed.fields.gcode_flavor || "marlin",
+        start_gcode: parsed.fields.start_gcode || "",
+        end_gcode: parsed.fields.end_gcode || "",
+      };
+      const created = await userPrintersApi.create(payload);
+      // Notify the printers dialog / slicer popover so they refresh.
+      window.dispatchEvent(new CustomEvent("forgeslicer:user-printers-changed", { detail: { id: created?.id } }));
+      const warnSuffix = parsed.warnings.length
+        ? ` (${parsed.warnings.length} warning${parsed.warnings.length === 1 ? "" : "s"} — see My Printers)`
+        : "";
+      toast.success(`Imported printer profile "${payload.name}"${warnSuffix}.`);
+      handleClose();
     } catch (err) {
-      toast.error(`Couldn't import config bundle: ${err.message || err}`);
+      toast.error(`Couldn't import config bundle: ${err?.response?.data?.detail || err.message || err}`);
     } finally {
       setBusyAction(null);
     }
   };
 
+  const pickedCount = Object.values(meshPicks).filter(Boolean).length;
+  const hasPrinterCfg = manifest?.orcaConfigs.some((c) => c.role === "printer");
+
   return (
     <div
       className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
       data-testid="zip-import-dialog"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="w-full max-w-xl max-h-[88vh] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Package size={16} className="text-cyan-400" />
-            <div>
+          <div className="flex items-center gap-2 min-w-0">
+            <Package size={16} className="text-cyan-400 shrink-0" />
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Import from ZIP</h2>
-              <div className="text-[10px] text-slate-500 leading-tight truncate max-w-[26ch]">{file?.name}</div>
+              <div className="text-[10px] text-slate-500 leading-tight truncate" data-testid="zip-import-filename">
+                {file?.name}
+              </div>
             </div>
           </div>
-          <button onClick={onClose} data-testid="zip-import-close-btn" className="text-slate-400 hover:text-white">
+          <button onClick={handleClose} data-testid="zip-import-close-btn" className="text-slate-400 hover:text-white shrink-0">
             <X size={16} />
           </button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
           {loading && (
-            <div className="flex items-center justify-center py-10 text-slate-400 text-xs gap-2">
+            <div className="flex items-center justify-center py-10 text-slate-400 text-xs gap-2" data-testid="zip-import-loading">
               <Loader2 size={16} className="animate-spin" /> Inspecting archive…
             </div>
           )}
           {error && !loading && (
-            <div className="bg-rose-500/10 border border-rose-500/40 rounded p-3 text-xs text-rose-200 flex items-start gap-2">
-              <AlertCircle size={14} /> {error}
+            <div className="bg-rose-500/10 border border-rose-500/40 rounded p-3 text-xs text-rose-200 flex items-start gap-2" data-testid="zip-import-error">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <div>
+                <div className="font-semibold mb-0.5">Couldn't read this ZIP</div>
+                <div className="text-rose-300/80">{error}</div>
+              </div>
             </div>
           )}
           {manifest && !loading && (
             <>
               {/* Empty / unrecognised archive */}
               {manifest.meshFiles.length === 0 && manifest.orcaConfigs.length === 0 && (
-                <div className="bg-amber-500/10 border border-amber-500/40 rounded p-3 text-xs text-amber-200 space-y-1.5">
+                <div className="bg-amber-500/10 border border-amber-500/40 rounded p-3 text-xs text-amber-200 space-y-1.5" data-testid="zip-import-empty">
                   <div className="flex items-start gap-2">
-                    <AlertCircle size={13} />
+                    <AlertCircle size={13} className="mt-0.5 shrink-0" />
                     <span>
-                      This ZIP has no recognised meshes (STL / OBJ / 3MF / GLB / SVG)
-                      and no OrcaSlicer config JSONs. We don't know how to import it.
+                      This ZIP has no recognised meshes or OrcaSlicer config files.
+                      Supported contents: {SUPPORTED_BLURB}
                     </span>
                   </div>
                   <div className="text-[10px] text-amber-300/70 pl-5">
@@ -208,17 +309,21 @@ export default function ZipImportDialog({ open, file, onClose, onImportMesh, onI
                       );
                     })}
                   </div>
+                  {manifest.meshFiles.some((f) => f.ext === "svg") && (
+                    <p className="text-[10px] text-cyan-300/70">
+                      SVG files will open the shape-extrude editor so you can pick
+                      a height before they land on the bed.
+                    </p>
+                  )}
                   <button
                     data-testid="zip-import-mesh-go-btn"
                     onClick={handleImportSelectedMeshes}
-                    disabled={busyAction !== null}
-                    className="w-full h-9 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 text-white text-sm font-semibold rounded flex items-center justify-center gap-2"
+                    disabled={busyAction !== null || pickedCount === 0}
+                    className="w-full h-9 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded flex items-center justify-center gap-2"
                   >
                     {busyAction === "meshes"
                       ? <><Loader2 size={13} className="animate-spin" /> Importing…</>
-                      : `Import ${Object.values(meshPicks).filter(Boolean).length} selected mesh${
-                          Object.values(meshPicks).filter(Boolean).length === 1 ? "" : "es"
-                        }`}
+                      : `Import ${pickedCount} selected ${pickedCount === 1 ? "file" : "files"}`}
                   </button>
                 </section>
               )}
@@ -246,13 +351,19 @@ export default function ZipImportDialog({ open, file, onClose, onImportMesh, onI
                       </div>
                     ))}
                   </div>
+                  {!hasPrinterCfg && (
+                    <p className="text-[10px] text-amber-300/80">
+                      No printer.json found — process / filament-only bundles aren't
+                      importable on their own yet. Re-export the bundle WITH the printer
+                      profile included.
+                    </p>
+                  )}
                   <button
                     data-testid="zip-import-orca-go-btn"
                     onClick={handleImportOrcaConfigs}
-                    disabled={busyAction !== null
-                      || !manifest.orcaConfigs.some((c) => c.role === "printer")}
+                    disabled={busyAction !== null || !hasPrinterCfg}
                     className="w-full h-9 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded flex items-center justify-center gap-2"
-                    title={manifest.orcaConfigs.some((c) => c.role === "printer")
+                    title={hasPrinterCfg
                       ? "Import the printer.json as a new printer profile"
                       : "A printer.json is required to import as a printer profile"}
                   >
@@ -265,7 +376,7 @@ export default function ZipImportDialog({ open, file, onClose, onImportMesh, onI
 
               {/* Reported but ignored. Mostly README.md, thumbnails. */}
               {manifest.other.length > 0 && (
-                <details className="text-[10px] text-slate-500">
+                <details className="text-[10px] text-slate-500" data-testid="zip-import-other-details">
                   <summary className="cursor-pointer hover:text-slate-300">
                     {manifest.other.length} other file{manifest.other.length === 1 ? "" : "s"} in archive (ignored)
                   </summary>

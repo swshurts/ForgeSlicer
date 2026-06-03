@@ -22,6 +22,7 @@ import { shouldShowThemeHint, markThemeHintSeen, useTheme } from "@/lib/theme";
 import SplashScreen from "@/components/SplashScreen";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import SVGImportDialog from "@/components/SVGImportDialog";
+import ZipImportDialog from "@/components/dialogs/ZipImportDialog";
 
 // Detect the OAuth fragment SYNCHRONOUSLY during render so AuthCallback runs
 // before any /api/auth/me race from a global provider would 401. We read
@@ -121,6 +122,7 @@ function App() {
           <SplashScreen />
           <ReleaseNotesDialog />
           <SVGImportDialog />
+          <ZipImportDialog />
         </AuthProvider>
       </BrowserRouter>
     </div>
