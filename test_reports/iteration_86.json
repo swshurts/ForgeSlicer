@@ -1,0 +1,21 @@
+{
+  "summary": "Iter-86 end-to-end verification of OrcaSlicer upstream sync + frontend synced-printer dropdown integration. Backend: pytest 12/12 PASS on /app/backend/tests/test_orca_upstream.py (including 2 new multi-nozzle tests). GET /api/synced-printers (anonymous) returns 1 row 're3D TerabotX 2' with nozzle_diameter=0.8 (re-parsed on read from raw_profile.nozzle_diameter='0.8;1.75'). Frontend: opened SlicerPopover at /workspace, switched to OrcaSlicer engine, inspected <select data-testid='orca-profile-printer'>: 7 optgroups present — Bambu Lab(4), Prusa(1), Voron(2), Sovol(5), Creality(1), Custom(1), and NEW 'Synced (OrcaSlicer upstream)'(1) containing option value='synced:189b27c12ba443199f90def48cbd167e' label='re3D TerabotX 2'. Selecting it sets the select value to the synced:<uuid> shape with zero console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_orca_upstream.py",
+    "/app/test_reports/pytest/iter86_orca_upstream.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "list_synced_printers re-parses quickfields on every read — fine for the current dataset (~1 row) but if bundled_synced_printers ever grows to thousands of rows, consider caching the parsed snapshot or back-filling on merge so the public endpoint stays O(1) per row.",
+    "orca_upstream.py is ~580 lines and still readable, but the synced-printer public router could be split into its own module to keep concerns separate from the admin sync logic."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Seeded via mongosh: session_token=st_test_iter86_1780506028466 (user 'Iter86 Tester'). Per /app/memory/test_credentials.md.",
+  "seed_data_creation": "Created 1 test user + 1 user_session in MongoDB (test_database) for cookie-based auth on Playwright run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-86 fully verified. Backend tests live at /app/backend/tests/test_orca_upstream.py (12 tests, all pass). Public read endpoint /api/synced-printers returns re3D TerabotX 2 with nozzle_diameter=0.8 because list_synced_printers re-parses raw_profile via _parse_quickfields on read (so old merges benefit from the new multi-nozzle parser). Frontend integration: useOrcaSlice fetches /api/synced-printers on mount and pushes them into orcaProfiles.js via setSyncedPrinters; getPrinterGroups() then renders them under a 'Synced (OrcaSlicer upstream)' optgroup in <select data-testid='orca-profile-printer'>. The synced option value is the literal string 'synced:<uuid>'. Existing bundled optgroups (Bambu/Prusa/Voron/Sovol/Creality/Custom) all still render — synced is additive."
+}

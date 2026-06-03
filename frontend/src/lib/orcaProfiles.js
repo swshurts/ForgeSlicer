@@ -712,7 +712,7 @@ export function buildOrcaPayload({
   const userPrinterId = userPrinterIdOf(printerId);
   const printer = userPrinter
     ? { id: printerId, label: userPrinter.name, profile: {} }
-    : (PRINTER_PROFILES[printerId] || PRINTER_PROFILES.custom);
+    : (getPrinterProfile(printerId) || PRINTER_PROFILES.custom);
   const process = PROCESS_PROFILES[processId] || PROCESS_PROFILES.standard;
   const filament = FILAMENT_PROFILES[filamentId] || FILAMENT_PROFILES.pla;
 
@@ -835,5 +835,71 @@ export function getPrinterGroups() {
   for (const p of Object.values(PRINTER_PROFILES)) {
     (groups[p.category] = groups[p.category] || []).push(p);
   }
+  // Iter-86: merge admin-curated upstream profiles into the same
+  // groupings. They get their own optgroup ("Synced — OrcaSlicer
+  // upstream") so power users see they came from a different source
+  // and can verify the merge timestamp via /admin → Orca sync.
+  const synced = Object.values(_syncedById);
+  if (synced.length > 0) {
+    const cat = "Synced (OrcaSlicer upstream)";
+    groups[cat] = synced.slice().sort((a, b) => a.label.localeCompare(b.label));
+  }
   return groups;
+}
+
+// ---------------------------------------------------------------------
+// Iter-86: globally-synced printers from /api/synced-printers.
+// ---------------------------------------------------------------------
+// `useOrcaSlice` fetches the public endpoint once on mount and calls
+// `setSyncedPrinters(...)` with the array. We convert each row into the
+// same `{id, label, category, profile}` shape PRINTER_PROFILES uses, key
+// it under `synced:<id>`, and surface it everywhere PRINTER_PROFILES is
+// consulted (dropdown grouping + `getPrinterProfile()` lookup).
+//
+// We deliberately keep this as module-level state (NOT a Zustand store)
+// because the data is read-mostly and the only producer is `useOrcaSlice`'s
+// one-shot fetch. Module state stays in sync across every component that
+// imports from this file without prop-drilling.
+let _syncedById = {};
+export const SYNCED_PRINTER_PREFIX = "synced:";
+
+export function setSyncedPrinters(list) {
+  const next = {};
+  for (const row of Array.isArray(list) ? list : []) {
+    if (!row || !row.id) continue;
+    const sid = `${SYNCED_PRINTER_PREFIX}${row.id}`;
+    next[sid] = {
+      id: sid,
+      label: row.name || "Untitled",
+      category: "Synced (OrcaSlicer upstream)",
+      // The raw OrcaSlicer machine JSON. Same shape as PRINTER_PROFILES
+      // entries, so the slice payload builder + iter-70 compatibility
+      // patch pick it up without any special-casing.
+      profile: row.raw_profile && typeof row.raw_profile === "object" ? row.raw_profile : {},
+      // Stash quick-field metadata for the UI (build-volume chip etc.).
+      vendor: row.vendor || "Upstream",
+      nozzle_diameter: row.nozzle_diameter ?? null,
+      build_x_mm: row.build_x_mm ?? null,
+      build_y_mm: row.build_y_mm ?? null,
+      build_z_mm: row.build_z_mm ?? null,
+      gcode_flavor: row.gcode_flavor ?? null,
+      _synced: true,
+    };
+  }
+  _syncedById = next;
+}
+
+export function getSyncedPrinters() {
+  return Object.values(_syncedById);
+}
+
+// Single lookup that respects both the static bundled table AND the
+// dynamically-loaded synced printers. Use this in place of direct
+// `PRINTER_PROFILES[id]` access anywhere a user-selected id is involved.
+export function getPrinterProfile(printerId) {
+  if (!printerId) return null;
+  if (printerId.startsWith(SYNCED_PRINTER_PREFIX)) {
+    return _syncedById[printerId] || null;
+  }
+  return PRINTER_PROFILES[printerId] || null;
 }

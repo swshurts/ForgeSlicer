@@ -332,6 +332,16 @@ export const userPrintersApi = {
   },
 };
 
+// Iter-86: globally-synced printers fetched from SoftFever/OrcaSlicer's
+// repo and merged by admins. Public anonymous read so every slicer
+// popover can show the latest upstream models in the dropdown.
+export const syncedPrintersApi = {
+  list: async () => {
+    const { data } = await axios.get(`${API}/synced-printers`, { timeout: 10000 });
+    return data;
+  },
+};
+
 // Iter-83: Shared Profile Library — community-published printer
 // profiles, browsable without auth, clonable with auth.
 export const sharedPrintersApi = {

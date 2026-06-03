@@ -22,8 +22,8 @@
 //     to BOTH engines.
 //   - All view-layer rendering.
 import { useEffect, useRef, useState } from "react";
-import { orcaApi, userPrintersApi, apiErrorMessage, API as API_BASE } from "./api";
-import { buildOrcaPayload, isUserPrinterId, userPrinterIdOf } from "./orcaProfiles";
+import { orcaApi, userPrintersApi, syncedPrintersApi, apiErrorMessage, API as API_BASE } from "./api";
+import { buildOrcaPayload, isUserPrinterId, userPrinterIdOf, setSyncedPrinters } from "./orcaProfiles";
 import { useSliceSettings } from "./store";
 import { getTempsForPrinter, setTempsForPrinter } from "./tempsByPrinter";
 import { exportSceneToSTLBytes } from "./exporters";
@@ -168,6 +168,32 @@ export function useOrcaSlice() {
         if (!cancelled) setUserPrinters(items || []);
       } catch {
         if (!cancelled) setUserPrinters([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Iter-86: load globally-synced upstream printers once on mount.
+  // Public endpoint, no auth — anonymous visitors get the same enriched
+  // dropdown logged-in users do. Registers them via `setSyncedPrinters`
+  // so `getPrinterGroups()` (consumed by OrcaProfileEditor) merges them
+  // into the categorised <select>. Fire-and-forget: failure leaves the
+  // dropdown showing only bundled + user printers, which is the
+  // pre-iter-86 behaviour.
+  const [syncedPrinters, setSyncedPrintersState] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await syncedPrintersApi.list();
+        if (cancelled) return;
+        setSyncedPrinters(items || []);
+        setSyncedPrintersState(items || []);
+      } catch {
+        if (!cancelled) {
+          setSyncedPrinters([]);
+          setSyncedPrintersState([]);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -479,5 +505,7 @@ export function useOrcaSlice() {
     userPrinters,
     reloadUserPrinters,
     isUserPrinterId,
+    // Iter-86: globally-synced upstream printers (read-only).
+    syncedPrinters,
   };
 }

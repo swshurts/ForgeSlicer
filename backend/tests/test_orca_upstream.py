@@ -91,6 +91,38 @@ def test_parse_quickfields_tolerates_missing_or_malformed():
     assert "build_x_mm" not in weird and "build_y_mm" not in weird
 
 
+def test_parse_quickfields_multi_nozzle_string():
+    """Upstream machine_model abstracts list every nozzle the model
+    supports as a semicolon-delimited string. The smallest one is
+    the canonical default — that's what most variants ship with."""
+    profile = {
+        "type": "machine_model",
+        "name": "Voron 2.4 Common",
+        "nozzle_diameter": "0.4;0.6;0.8",
+        "printable_area": ["0x0", "350x0", "350x350", "0x350"],
+        "printable_height": "300;500",
+        "gcode_flavor": "klipper",
+    }
+    fields = _parse_quickfields(profile)
+    assert fields["nozzle_diameter"] == 0.4   # smallest of the set
+    assert fields["build_x_mm"] == 350
+    assert fields["build_y_mm"] == 350
+    assert fields["build_z_mm"] == 300        # smallest Z = conservative
+    assert fields["gcode_flavor"] == "klipper"
+
+
+def test_parse_quickfields_multi_nozzle_list_of_strings():
+    """OrcaSlicer's bundled abstracts sometimes use a list-of-strings
+    instead of a single semicolon-delimited string. Same intent —
+    pick the smallest nozzle as the canonical value."""
+    fields = _parse_quickfields({
+        "nozzle_diameter": ["0.4", "0.6", "0.8"],
+        "printable_height": 250,
+    })
+    assert fields["nozzle_diameter"] == 0.4
+    assert fields["build_z_mm"] == 250
+
+
 # ---------- HTTP integration tests ----------
 
 @pytest.fixture(scope="module")

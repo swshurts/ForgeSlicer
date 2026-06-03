@@ -176,21 +176,59 @@ async def _fetch_raw_json(client: httpx.AsyncClient, path: str) -> dict:
     return r.json()
 
 
+def _coerce_first_nozzle(value) -> Optional[float]:
+    """OrcaSlicer's `nozzle_diameter` shows up in three shapes:
+      - number: 0.4
+      - list of numbers / strings: [0.4] or ["0.4", "0.6"]
+      - SEMICOLON-DELIMITED string (machine_model abstracts): "0.4;0.6;0.8"
+        These represent profiles that COVER multiple nozzle SKUs. We
+        pick the smallest as the canonical / default — that's the
+        nozzle most concrete-machine variants ship as.
+    Returns None when nothing parseable is present.
+    """
+    if value is None:
+        return None
+    candidates: list[float] = []
+
+    def _push(v):
+        try:
+            if isinstance(v, (int, float)):
+                candidates.append(float(v))
+            elif isinstance(v, str) and v.strip():
+                # A single string may itself contain ";" or "," — split.
+                for piece in re.split(r"[;,]", v):
+                    piece = piece.strip()
+                    if piece:
+                        candidates.append(float(piece))
+        except (TypeError, ValueError):
+            pass
+
+    if isinstance(value, list):
+        for item in value:
+            _push(item)
+    else:
+        _push(value)
+    if not candidates:
+        return None
+    # Smallest nozzle = the "default" SKU for an abstract machine_model.
+    return min(candidates)
+
+
 def _parse_quickfields(profile: dict) -> dict:
     """Extract a few human-readable fields from an OrcaSlicer machine JSON
     so the admin dashboard / synced-printers endpoint can render summary
-    chips without re-parsing the whole profile on the frontend."""
+    chips without re-parsing the whole profile on the frontend.
+
+    Handles three flavours of upstream JSON:
+      - Concrete `machine` profiles (one nozzle / build vol — most rows)
+      - Abstract `machine_model` parents (multi-nozzle strings like
+        "0.4;0.6;0.8", build volume usually still present)
+      - Files that omit fields entirely — we just skip them quietly
+    """
     fields: dict = {}
-    try:
-        nz = profile.get("nozzle_diameter")
-        if isinstance(nz, list) and nz:
-            nz = nz[0]
-        if isinstance(nz, str):
-            nz = float(nz)
-        if isinstance(nz, (int, float)):
-            fields["nozzle_diameter"] = float(nz)
-    except (TypeError, ValueError):
-        pass
+    nz = _coerce_first_nozzle(profile.get("nozzle_diameter"))
+    if nz is not None:
+        fields["nozzle_diameter"] = nz
     # Build volume — printable_area is a 4-corner polygon ["XxY","XxY",...]
     try:
         area = profile.get("printable_area")
@@ -205,8 +243,22 @@ def _parse_quickfields(profile: dict) -> dict:
                 fields["build_x_mm"] = max(xs) - min(xs)
                 fields["build_y_mm"] = max(ys) - min(ys)
         ph = profile.get("printable_height")
+        # Printable height shows up as a number, a numeric string, OR
+        # — on machine_model abstracts — a semicolon-delimited string
+        # like "250;330;500" (one entry per concrete machine variant).
+        # Take the SMALLEST so we don't claim a build volume the
+        # smallest variant can't reach.
         if isinstance(ph, str):
-            ph = float(ph)
+            nums: list[float] = []
+            for piece in re.split(r"[;,]", ph):
+                piece = piece.strip()
+                if not piece:
+                    continue
+                try:
+                    nums.append(float(piece))
+                except ValueError:
+                    pass
+            ph = min(nums) if nums else None
         if isinstance(ph, (int, float)):
             fields["build_z_mm"] = float(ph)
     except (TypeError, ValueError):
@@ -500,17 +552,23 @@ def build_synced_printers_public_router(*, db) -> APIRouter:
         docs = await cursor.to_list(length=2000)
         out: list[SyncedPrinter] = []
         for d in docs:
+            raw = d.get("raw_profile") if isinstance(d.get("raw_profile"), dict) else {}
+            # Re-parse quickfields on read: old merges may have been
+            # promoted before the multi-nozzle parser landed (iter-86).
+            # The stored doc keeps whatever was set at merge time, but
+            # the public response always shows the BEST available data.
+            fresh = _parse_quickfields(raw) if raw else {}
             out.append(SyncedPrinter(
                 id=d.get("id", uuid.uuid4().hex),
                 vendor=d.get("vendor", "Unknown"),
                 name=d.get("name", "Untitled"),
                 source_path=d.get("source_path", ""),
-                nozzle_diameter=d.get("nozzle_diameter"),
-                build_x_mm=d.get("build_x_mm"),
-                build_y_mm=d.get("build_y_mm"),
-                build_z_mm=d.get("build_z_mm"),
-                gcode_flavor=d.get("gcode_flavor"),
-                raw_profile=d.get("raw_profile") if isinstance(d.get("raw_profile"), dict) else {},
+                nozzle_diameter=d.get("nozzle_diameter") if d.get("nozzle_diameter") is not None else fresh.get("nozzle_diameter"),
+                build_x_mm=d.get("build_x_mm") if d.get("build_x_mm") is not None else fresh.get("build_x_mm"),
+                build_y_mm=d.get("build_y_mm") if d.get("build_y_mm") is not None else fresh.get("build_y_mm"),
+                build_z_mm=d.get("build_z_mm") if d.get("build_z_mm") is not None else fresh.get("build_z_mm"),
+                gcode_flavor=d.get("gcode_flavor") or fresh.get("gcode_flavor"),
+                raw_profile=raw,
                 merged_at=d.get("merged_at", ""),
             ))
         return out
