@@ -2330,3 +2330,50 @@ OrcaSlicer modifications, in-house company builds).
     tolerance, dedupe on unique-id assignment.
   • Preferred-flag merge across builtins + customs.
   • Auto-clearing preferred when the preferred entry is removed.
+
+## 2026-06-02 — Iter-83: Orientation-dependent cost/time + Shared Profile Library
+Three composing improvements:
+
+**Bug fix: cost/time/filament estimate was rotation-invariant**
+(`PrintPreviewDialog.jsx`). The previous heuristic used `totalArea`
+and `volume` — both rigid-body invariants — so Optimise-for-Time
+and Optimise-for-Filament returned identical numbers regardless of
+orientation. The new `estimatePrintCostTime` decomposes filament
+into walls (vertical-wall area × wallCount × lineWidth), top solid
+(topArea × topLayers × lineWidth), bottom solid (footprintXY ×
+bottomLayers × lineWidth), infill (interior volume × density), and
+SUPPORTS (downArea × estimated support-column height × support
+density). `orientationScore` now also returns `verticalWallArea`
+and `topArea`. Supports are the biggest swing between orientations
+(can double total filament + time), which is the whole point of
+the Optimise-for buttons.
+
+**"Copy filename" on launch-uncertain banner** (`OrcaDialog.jsx`).
+The browser sandbox blocks reading the actual download path, but
+the filename is plenty to paste into a file-manager search.
+
+**Shared Profile Library MVP** — new backend + UI:
+  • `backend/routes/shared_printers.py`:
+      GET    /api/shared-printers              (optional ?printer_model filter)
+      GET    /api/shared-printers/{pid}
+      POST   /api/shared-printers/{pid}/clone  (auth required)
+      POST   /api/shared-printers/{pid}/flag   (auth required)
+      POST   /api/me/printers/{pid}/publish    (owner only)
+      POST   /api/me/printers/{pid}/unpublish  (owner only)
+  • `tests/test_shared_printers.py` — 9 new pytests covering
+    publish → browse → clone → unpublish lifecycle, ownership
+    checks (404 on other-user publish attempts), unauth browse,
+    clone-counter increment, printer_model filter, flag counter.
+  • `frontend/src/components/dialogs/SharedProfileLibraryDialog.jsx`
+    — browse + clone UI with text filter, expandable details panel
+    showing start/end g-code + notes, clone counter, flag button.
+  • `frontend/src/components/dialogs/UserPrintersDialog.jsx` —
+    new emerald "Browse Shared Library" CTA + per-row 🌐 publish/
+    unpublish toggle. Clones go into the user's library marked
+    "(Shared)" with a credit line in notes.
+  • Privacy: profiles are private by default. Publishing reveals
+    the owner's display name (or email-prefix fallback).
+  • Moderation: anyone-can-flag (auth required) increments a
+    counter; admins review. No auto-takedown.
+
+**Total tests this iteration**: 37 backend pytest pass (9 new).

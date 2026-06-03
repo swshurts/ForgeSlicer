@@ -18,9 +18,11 @@
 // flows (Save Design, Save Component, etc.).
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, X, AlertCircle, CheckCircle2, FileJson, Download } from "lucide-react";
+import { Plus, Trash2, Pencil, X, AlertCircle, CheckCircle2, FileJson, Download, Share2, Globe2 } from "lucide-react";
 import { userPrintersApi, apiErrorMessage } from "../../lib/api";
 import { parseOrcaPrinterJson, exportUserPrinterAsOrcaJson } from "../../lib/orcaProfiles";
+import { toast } from "sonner";
+import SharedProfileLibraryDialog from "./SharedProfileLibraryDialog";
 
 const GCODE_FLAVORS = [
   { id: "marlin2",  label: "Marlin 2.x" },
@@ -57,6 +59,7 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);   // { id?, draft } or null
   const [saving, setSaving] = useState(false);
+  const [showSharedLibrary, setShowSharedLibrary] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -132,6 +135,7 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
   if (!open) return null;
 
   return (
+    <>
     <div
       data-testid="user-printers-dialog"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
@@ -175,7 +179,15 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
                 Printer dropdown — useful for 2026-era hardware OrcaSlicer
                 hasn&apos;t bundled a preset for yet.
               </p>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <button
+                  data-testid="user-printers-browse-shared-btn"
+                  onClick={() => setShowSharedLibrary(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded hover:bg-emerald-500 transition-colors"
+                  title="Browse community-published printer profiles to clone instead of starting from scratch"
+                >
+                  <Globe2 size={12} /> Browse Shared Library
+                </button>
                 <button
                   data-testid="user-printers-new-btn"
                   onClick={startCreate}
@@ -208,6 +220,36 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
                       {row.build_x_mm}×{row.build_y_mm}×{row.build_z_mm} mm · {row.nozzle_diameter} mm nozzle · {row.gcode_flavor}
                     </div>
                   </div>
+                  <button
+                    data-testid={`user-printer-publish-${row.printer_id}`}
+                    onClick={async () => {
+                      try {
+                        if (row.is_public) {
+                          await userPrintersApi.unpublish(row.printer_id);
+                          toast.info(`"${row.name}" is no longer shared publicly.`);
+                        } else {
+                          await userPrintersApi.publish(row.printer_id);
+                          toast.success(`"${row.name}" published to the Shared Profile Library!`);
+                        }
+                        load();
+                      } catch (err) {
+                        toast.error(apiErrorMessage(err));
+                      }
+                    }}
+                    className={`p-1.5 transition-colors ${
+                      row.is_public
+                        ? "text-emerald-400 hover:text-emerald-300"
+                        : "text-slate-400 hover:text-emerald-400"
+                    }`}
+                    aria-label={row.is_public ? "Unpublish from Shared Library" : "Share to Library"}
+                    title={
+                      row.is_public
+                        ? "Currently shared publicly — click to unpublish"
+                        : "Share this profile to the public Shared Library so other users with the same printer can clone it"
+                    }
+                  >
+                    {row.is_public ? <Globe2 size={14} /> : <Share2 size={14} />}
+                  </button>
                   <button
                     data-testid={`user-printer-download-${row.printer_id}`}
                     onClick={() => downloadRow(row)}
@@ -267,6 +309,14 @@ export default function UserPrintersDialog({ open, onClose, onChanged }) {
         )}
       </div>
     </div>
+    {showSharedLibrary && (
+      <SharedProfileLibraryDialog
+        open={showSharedLibrary}
+        onClose={() => setShowSharedLibrary(false)}
+        onCloned={() => { setShowSharedLibrary(false); load(); }}
+      />
+    )}
+    </>
   );
 }
 

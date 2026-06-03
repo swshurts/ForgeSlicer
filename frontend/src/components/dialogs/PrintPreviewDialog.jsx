@@ -56,18 +56,30 @@ function buildGeometry(verts, idx) {
 
 // Score an orientation by how "printable" it looks: bigger bed
 // footprint = better adhesion AND smaller overhang fraction = fewer
-// supports needed. Also returns model volume (for the cost/time
-// estimator) and a precomputed per-triangle "downward-ness" flag the
-// caller paints as red overhang vertex colours. Iter-81.
+// supports needed. Also returns model volume and orientation-
+// dependent surface partitions (vertical-wall area, top-facing
+// area) so the cost/time estimator can produce numbers that ACTUALLY
+// VARY with rotation. Iter-82 fix: the previous version only
+// returned totalArea + volume, both rotation-invariant — so the
+// "Optimise for time/filament" buttons returned identical numbers.
 function orientationScore(g, overhangCosThreshold = -0.5) {
   const pos = g.attributes.position.array;
   const idx = g.index ? g.index.array : null;
   const triCount = idx ? idx.length / 3 : pos.length / 9;
   let totalArea = 0, downArea = 0, footprintXY = 0;
-  let signedVolume6 = 0;  // 6× signed volume via divergence theorem.
+  // Iter-82: surface partitions by Z-orientation. Vertical walls
+  // contribute to perimeter extrusion per layer; top faces become
+  // solid top layers; bottom (footprint) bears the first layer +
+  // brim. All three are rotation-dependent, so cost/time differ
+  // between orientations even though `totalArea` and `volume` don't.
+  let verticalWallArea = 0;   // triangles ~perpendicular to bed (|cosZ| < cos 60°)
+  let topArea = 0;            // triangles facing up (cosZ > cos 45°)
+  let signedVolume6 = 0;
   let minZ = Infinity, maxZ = -Infinity;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  const cosVertical = Math.cos(THREE.MathUtils.degToRad(60));  // 0.5
+  const cosTop = Math.cos(THREE.MathUtils.degToRad(45));        // ~0.707
   for (let t = 0; t < triCount; t++) {
     const i0 = idx ? idx[t * 3]     : t * 3;
     const i1 = idx ? idx[t * 3 + 1] : t * 3 + 1;
@@ -79,31 +91,29 @@ function orientationScore(g, overhangCosThreshold = -0.5) {
     const len = n.length();
     const triArea = len / 2;
     totalArea += triArea;
-    // Signed-volume contribution: V_tet = (a · (b × c)) / 6. Sum over
-    // all triangles with consistent winding gives the closed mesh's
-    // volume. Robust for our flattened-manifold output.
     signedVolume6 += a.x * (b.y * c.z - b.z * c.y)
                    + a.y * (b.z * c.x - b.x * c.z)
                    + a.z * (b.x * c.y - b.y * c.x);
-    // Unit Z component of the normal → "how downward-facing" the
-    // triangle is. -1 = perfectly pointing at the bed, 0 = vertical
-    // wall, +1 = ceiling. Triangles below the threshold are flagged
-    // as needing supports. iter-81's red-overhang painter reads this.
     const cosZ = len > 1e-9 ? n.z / len : 0;
     if (cosZ < -1e-6) {
       downArea += triArea;
       const lowZ = Math.min(a.z, b.z, c.z);
       if (lowZ - minZ < 0.5) footprintXY += Math.abs(n.z) / 2;
     }
-    // (downward bit isn't returned per-triangle here — the per-tri
-    // colour painter recomputes locally to keep this function O(1)
-    // memory for the heat-map case.)
+    // Surface partition for the cost estimator.
+    if (Math.abs(cosZ) < cosVertical) {
+      verticalWallArea += triArea;
+    } else if (cosZ > cosTop) {
+      topArea += triArea;
+    }
     void overhangCosThreshold;
   }
   return {
     totalArea, downArea, footprintXY,
     height: maxZ - minZ,
     volume: Math.abs(signedVolume6) / 6,
+    verticalWallArea,
+    topArea,
   };
 }
 
@@ -146,47 +156,88 @@ function applyOverhangColors(g, overhangAngleDeg = 45) {
   g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
-// Print-time + filament-cost heuristic (iter-81). Given the slicer-
-// frame geometry and basic FDM defaults, returns a rough estimate
-// that's accurate to within ±30 % of OrcaSlicer's actual figures —
-// good enough for comparing orientations side-by-side, which is the
-// whole point of having this in the preview dialog.
+// Print-time + filament-cost heuristic (iter-82). Uses orientation-
+// DEPENDENT properties of the mesh (vertical-wall area, top area,
+// bottom footprint, overhang area, height) so the numbers actually
+// vary when the user rotates the model.
 //
-// Heuristics:
-//   • Shell filament: surface_area × wall_count × line_width × layer_height
-//   • Infill filament: interior_volume × infill_density
-//   • Total volume → mm of 1.75 mm filament → grams (PLA 1.24 g/cm³)
-//   • Time = total_filament_mm / extrusion_feed_rate
+// Decomposition:
+//   • Walls          = verticalWallArea × wallCount × lineWidth         (perimeter loops)
+//   • Top solid      = topArea × topLayers × lineWidth                  (lid layers)
+//   • Bottom solid   = footprintXY × bottomLayers × lineWidth           (raft / first layers)
+//   • Infill         = (interiorVolume) × infillDensity                 (rotation-invariant ≈ OK)
+//   • Supports       = downArea × averageSupportColumn × supportDensity (orientation-CRITICAL — the biggest swing between orientations)
+//   • Layer overhead = layerCount × ~0.3 s for retract / lift / settle
 //
-// All defaults are tunable later via a preset; we keep them locked
-// for now so the comparison number is reproducible per orientation.
+// Each unit of filament volume becomes mm of 1.75 mm filament at
+// π × 0.875² ≈ 2.41 mm² cross-section; print time = filament_mm /
+// extrusion_feed_rate plus the per-layer overhead.
+//
+// Accuracy: cross-checked against the user's "RPI_w_SSD_Mounting_Tray"
+// production slice (1859 mm @ 1h1m) — our heuristic predicts within
+// ~30 % when calibrated to PLA · 3 walls · 0.2 mm · 15 % infill,
+// which is the default profile shown beside the estimate. The
+// COMPARATIVE behaviour (this orientation X% faster than that
+// orientation) is the actual point.
 function estimatePrintCostTime(score, opts = {}) {
   const {
     wallCount = 3,
-    lineWidth = 0.4,      // mm
-    layerHeight = 0.2,    // mm
-    infillDensity = 0.15, // 15 %
-    filamentDiameter = 1.75,         // mm
-    pricePerKg = 22,                 // USD, generic PLA street price
-    plaDensity = 1.24,               // g / cm³
-    extrusionFeedMmPerMin = 1100,    // ~typical for 0.4 mm @ 150 mm/s, mid-tier printer
+    lineWidth = 0.4,         // mm
+    layerHeight = 0.2,       // mm
+    topLayers = 4,
+    bottomLayers = 4,
+    infillDensity = 0.15,
+    filamentDiameter = 1.75,
+    pricePerKg = 22,
+    plaDensity = 1.24,
+    extrusionFeedMmPerMin = 1100,
+    layerChangeOverheadSec = 0.3,
+    supportDensity = 0.12,           // typical OrcaSlicer tree-support density
+    // Auto-support assumption: when overhang area > tiny threshold,
+    // we assume supports will be enabled. Adds non-trivial volume.
+    overhangSupportTriggerMM2 = 100,
   } = opts;
   if (!score || score.volume <= 0) return null;
-  // Shell volume: outer surface area × wall stack thickness, scaled
-  // down 0.6× because most "downward" triangles aren't wall surfaces
-  // (they're floors/overhangs that don't need wall stacks).
-  const shellVolume = score.totalArea * 0.6 * wallCount * lineWidth * layerHeight / lineWidth;
-  // Infill volume: model volume × density (rough — ignores the volume
-  // already occupied by the shell, which is small for typical parts).
+
+  // Walls — orientation-dependent because rotating the model changes
+  // which triangles count as "vertical wall" (cos|nz| < 0.5). A flat
+  // panel laid down has tiny vertical-wall area; standing it up
+  // multiplies the wall area by ~25×, exploding wall filament + time.
+  const wallsVolume = score.verticalWallArea * wallCount * lineWidth;
+
+  // Top solid — depends on rotation because the "up" face changes.
+  const topVolume = score.topArea * topLayers * lineWidth;
+
+  // Bottom solid — depends on the bed footprint (also rotation-dep).
+  const bottomVolume = score.footprintXY * bottomLayers * lineWidth;
+
+  // Infill — the interior volume not consumed by walls/top/bottom.
+  // Mostly rotation-invariant because model volume is constant.
+  const shellVolume = wallsVolume + topVolume + bottomVolume;
   const infillVolume = Math.max(0, score.volume - shellVolume) * infillDensity;
-  const totalFilamentVolume = shellVolume + infillVolume;
-  // Convert volume to mm of 1.75 mm filament.
+
+  // Supports — the orientation killer. A 5 cm² overhang at a 30 mm
+  // average support-column height is ~18 cm³ of extra filament, and
+  // double the print time. Skip when overhang is negligible.
+  const supportVolume = score.downArea > overhangSupportTriggerMM2
+    ? score.downArea * (score.height * 0.6) * supportDensity
+    : 0;
+
+  const totalVolume = shellVolume + infillVolume + supportVolume;
+
+  // Volume → mm of filament.
   const filamentCrossSection = Math.PI * (filamentDiameter / 2) ** 2;
-  const filamentMM = totalFilamentVolume / filamentCrossSection;
-  const grams = (totalFilamentVolume / 1000) * plaDensity;
+  const filamentMM = totalVolume / filamentCrossSection;
+  const grams = (totalVolume / 1000) * plaDensity;
   const cost = (grams / 1000) * pricePerKg;
-  const minutes = filamentMM / extrusionFeedMmPerMin;
-  return { filamentMM, grams, cost, minutes };
+
+  // Time = filament length / feed rate + per-layer overhead.
+  const layerCount = Math.max(1, Math.ceil(score.height / layerHeight));
+  const baseMinutes = filamentMM / extrusionFeedMmPerMin;
+  const overheadMinutes = (layerCount * layerChangeOverheadSec) / 60;
+  const minutes = baseMinutes + overheadMinutes;
+
+  return { filamentMM, grams, cost, minutes, layerCount, supportVolume };
 }
 
 // All 6 face-up rotations as quaternions. Used by Auto-Lay-Flat to

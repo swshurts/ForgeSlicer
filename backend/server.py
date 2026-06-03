@@ -23,6 +23,7 @@ import admin as admin_module
 import orca_engine
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
+from routes.shared_printers import build_shared_printers_router, build_publish_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -490,6 +491,9 @@ api_router.include_router(build_projects_router(db, get_current_user))
 # upstream Orca preset shipment hasn't caught up to). The slice endpoint
 # accepts a `user_printer_id` and resolves through these records.
 api_router.include_router(build_user_printers_router(db, get_current_user))
+# Iter-83: Shared Profile Library — community-published printer profiles.
+api_router.include_router(build_shared_printers_router(db, get_current_user, get_optional_user))
+api_router.include_router(build_publish_router(db, get_current_user))
 
 
 # Wire the user-printers DB lookup + auth extractor into orca_engine so

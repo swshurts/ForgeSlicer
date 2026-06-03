@@ -31,14 +31,19 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ## Current Open Items (as of 2026-06-01)
 
 ### Pending P1 (queued)
-- **Shared Profile Library** — publish your tuned printer profile (with Klipper start/end G-code, etc.) so other users with the same hardware can clone it in one click. Per-user opt-in publish, browse-by-printer-model, community-curated.
-- **Scheduled OrcaSlicer upstream sync** — daily/weekly cron task fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/*.json`, hashes them, surfaces deltas in an Admin → Profile Updates dashboard with optional Resend email digest. Lets us keep our bundled profile list current without manual maintenance.
+- **Scheduled OrcaSlicer upstream sync** — daily/weekly cron task fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/*.json`, hashes them, surfaces deltas in an Admin → Profile Updates dashboard with optional Resend email digest.
 
 ### Backlog (P2/P3)
 - Continue `store.js` refactor (composite-primitives block ~L676; boolean/dim action blocks).
 - `Viewport.jsx` size reduction.
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
+- Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
+
+## Resolved This Session (Iter-83, 2026-06-02)
+- **Cost/time/filament now orientation-dependent**: `estimatePrintCostTime` decomposes into walls × top-solid × bottom-solid × infill × supports using rotation-DEPENDENT surface partitions. Optimise-for-Time / Optimise-for-Filament now return distinct results per orientation.
+- **"Copy filename" button** on the slicer launch-uncertain banner (`OrcaDialog`).
+- **Shared Profile Library MVP**: full publish/browse/clone/flag lifecycle backed by 6 endpoints + Mongo collection (`user_printers.is_public`). Frontend: "Browse Shared Library" CTA + 🌐 publish toggle in My Printers. 9/9 new pytest pass; 37/37 backend total.
 
 ## Resolved This Session (Iter-82, 2026-06-02)
 - **Reliable slicer launching** — replaced iframe-based protocol launch with `window.location.href` + anchor fallback. Detects window-blur within 2 s as a "launch likely succeeded" signal; shows green/amber feedback banners so users know whether the hand-off worked.

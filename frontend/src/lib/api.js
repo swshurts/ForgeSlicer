@@ -314,6 +314,56 @@ export const userPrintersApi = {
     );
     return data;
   },
+  publish: async (printerId) => {
+    const { data } = await axios.post(
+      `${API}/me/printers/${encodeURIComponent(printerId)}/publish`,
+      null,
+      { timeout: 10000 },
+    );
+    return data;
+  },
+  unpublish: async (printerId) => {
+    const { data } = await axios.post(
+      `${API}/me/printers/${encodeURIComponent(printerId)}/unpublish`,
+      null,
+      { timeout: 10000 },
+    );
+    return data;
+  },
+};
+
+// Iter-83: Shared Profile Library — community-published printer
+// profiles, browsable without auth, clonable with auth.
+export const sharedPrintersApi = {
+  list: async ({ printerModel } = {}) => {
+    const params = {};
+    if (printerModel) params.printer_model = printerModel;
+    const { data } = await axios.get(`${API}/shared-printers`, { params, timeout: 10000 });
+    return data;
+  },
+  get: async (printerId) => {
+    const { data } = await axios.get(
+      `${API}/shared-printers/${encodeURIComponent(printerId)}`,
+      { timeout: 10000 },
+    );
+    return data;
+  },
+  clone: async (printerId) => {
+    const { data } = await axios.post(
+      `${API}/shared-printers/${encodeURIComponent(printerId)}/clone`,
+      null,
+      { timeout: 10000 },
+    );
+    return data;
+  },
+  flag: async (printerId) => {
+    const { data } = await axios.post(
+      `${API}/shared-printers/${encodeURIComponent(printerId)}/flag`,
+      null,
+      { timeout: 10000 },
+    );
+    return data;
+  },
 };
 
 // Human-friendly error formatter for the catch-block. axios's "Network Error"

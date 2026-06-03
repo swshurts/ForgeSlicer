@@ -6,7 +6,7 @@ import {
   getAllSlicers, getPreferredSlicer, setPreferredSlicerId,
   launchSlicer,
 } from "../../lib/customSlicers";
-import { X, Loader2, Printer, Download, Star, Settings, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Loader2, Printer, Download, Star, Settings, CheckCircle2, AlertCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
 import CustomSlicersDialog from "./CustomSlicersDialog";
 
@@ -27,6 +27,7 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
   const [downloaded, setDownloaded] = useState(false);
   const [launchState, setLaunchState] = useState(null);   // null | "trying" | "likely" | "uncertain"
   const [allSlicers, setAllSlicers] = useState(() => getAllSlicers());
+  const [lastFilename, setLastFilename] = useState("");
   const [selectedId, setSelectedId] = useState(() => {
     if (targetSlicer?.id) return targetSlicer.id;
     const prefer = getPreferredSlicer();
@@ -61,6 +62,7 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
     setLaunchState(null);
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
+      setLastFilename(`${safe}.3mf`);
       const { bytes } = await export3MFBytesAsync(objects);
       downloadBlob(new Blob([bytes], { type: "model/3mf" }), `${safe}.3mf`);
       setDownloaded(true);
@@ -183,15 +185,45 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
             </div>
           )}
           {launchState === "uncertain" && (
-            <div className="bg-amber-500/10 border border-amber-500/40 rounded p-2 text-[11px] text-amber-200 space-y-1" data-testid="orca-launch-uncertain">
+            <div className="bg-amber-500/10 border border-amber-500/40 rounded p-2 text-[11px] text-amber-200 space-y-1.5" data-testid="orca-launch-uncertain">
               <div className="flex items-start gap-2">
                 <AlertCircle size={13} className="mt-0.5 flex-shrink-0" />
                 <span>
                   Couldn't confirm {slicer?.name} opened. Either it's not installed,
                   the protocol handler isn't registered, or your browser blocked the launch.
-                  The <span className="font-mono">.3mf</span> downloaded successfully — double-click it.
+                  The <span className="font-mono">.3mf</span> downloaded successfully — open it manually.
                 </span>
               </div>
+              {/* Iter-82+: filename clipboard helper. We can't read
+                  the OS download path (browser sandbox), but the
+                  user always knows where their default Downloads
+                  folder is, and copying the exact filename eliminates
+                  the "is it called sketch (3).3mf or sketch (4).3mf?"
+                  hunt. Includes a platform-aware locate command in
+                  the tooltip. */}
+              {lastFilename && (
+                <div className="flex items-center gap-1.5 pl-5">
+                  <code
+                    data-testid="orca-launch-filename"
+                    className="flex-1 text-[10px] font-mono bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-amber-100 truncate"
+                  >
+                    {lastFilename}
+                  </code>
+                  <button
+                    data-testid="orca-launch-copy-filename-btn"
+                    onClick={() => {
+                      navigator.clipboard
+                        ?.writeText(lastFilename)
+                        .then(() => toast.success(`Copied "${lastFilename}" to clipboard.`))
+                        .catch(() => toast.error("Copy failed — your browser blocked clipboard access."));
+                    }}
+                    className="h-6 px-2 text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 rounded border border-amber-500/40 flex items-center gap-1"
+                    title={`Copy "${lastFilename}" — paste it into your file manager's search to locate the download`}
+                  >
+                    <Copy size={10} /> Copy filename
+                  </button>
+                </div>
+              )}
               {slicer?.installUrl && (
                 <a
                   href={slicer.installUrl}
