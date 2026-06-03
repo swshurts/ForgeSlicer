@@ -25,6 +25,7 @@ import { saveProjectJSON } from "../lib/exporters";
 import { pickNextUnseen, markSeen, tipProgress } from "../lib/tipsLibrary";
 import { reportSceneOversize } from "../lib/oversizeCheck";
 import SubdivideDialog from "./dialogs/SubdivideDialog";
+import WorkspaceDropZone from "./WorkspaceDropZone";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -713,6 +714,7 @@ export default function Workspace() {
         }}
       />
       <ProjectExplorerDialog open={projectExplorerOpen} onClose={() => setProjectExplorerOpen(false)} />
+      <WorkspaceDropZone />
       <SubdivideDialog
         open={subdivideTargetId !== null}
         objectId={subdivideTargetId}

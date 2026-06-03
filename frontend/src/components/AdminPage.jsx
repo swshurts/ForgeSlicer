@@ -6,8 +6,9 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Hexagon, Loader2, RefreshCw, Search, Shield, ShieldCheck,
   Sparkles, Award, Ban, KeyRound, Trash2, ListChecks, BarChart3, Users,
-  AlertCircle, CheckCircle2, Clock, Download,
+  AlertCircle, CheckCircle2, Clock, Download, GitBranch,
 } from "lucide-react";
+import OrcaUpstreamTab from "./admin/OrcaUpstreamTab";
 
 // Convert a 2D array of strings into a CSV blob and trigger a download.
 // Cells are wrapped in double-quotes when they contain commas/quotes/newlines
@@ -403,6 +404,7 @@ export default function AdminPage() {
   const TABS = [
     { key: "analytics", label: "Analytics", icon: BarChart3 },
     { key: "users",     label: "Users",     icon: Users },
+    { key: "orca-upstream", label: "Orca sync", icon: GitBranch },
     { key: "audit",     label: "Audit log", icon: ListChecks },
   ];
 
@@ -444,6 +446,7 @@ export default function AdminPage() {
 
         {tab === "analytics" && <AnalyticsTab />}
         {tab === "users" && <UsersTab adminInfo={adminInfo} />}
+        {tab === "orca-upstream" && <OrcaUpstreamTab />}
         {tab === "audit" && <AuditTab />}
       </main>
     </div>

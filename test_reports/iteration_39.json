@@ -1,0 +1,28 @@
+{
+  "summary": "Iter-85 (iter-39 of testing) — Backend pytest 10/10 GREEN on the live preview. Frontend admin OrcaUpstream tab is fully wired: sub-tabs (pending/merged/dismissed/runs) render, manual Sync-Now works against SoftFever/OrcaSlicer (1266 candidates seen → row appears in Run History), diff overlay opens/closes with JSON, merge produces the exact toast and surfaces the printer on the public anonymous /api/synced-printers endpoint, dismiss removes from pending and surfaces in dismissed tab. Workspace drag-and-drop window listeners are correctly wired: STL drop adds 1 object to the scene store with the exact 'Dropped 1 mesh onto the build plate.' toast, ZIP drop dispatches forgeslicer:import-zip and opens the existing zip-import-dialog. The drop overlay (workspace-drop-overlay) only mounts when dragDepth>0 (correct gating via isFileDrag check on dataTransfer.types) — verified by code reading; the synthesized dragenter via the JS DragEvent constructor doesn't expose 'Files' in types, which is the same Playwright limitation the request statement called out.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_orca_upstream.py",
+    "/app/test_reports/pytest/iter39_orca_upstream.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WorkspaceDropZone.jsx uses a sound depth-counter pattern and isFileDrag(types includes 'Files') gate — overlay won't flicker on nested children. data-testid='workspace-drop-overlay' is conditionally rendered (returns null until active||busy), which is the correct UX, but unit tests that assert presence-on-mount will need to fake a real dragenter via CDP.",
+    "OrcaUpstreamTab.jsx: action buttons (view/merge/dismiss) only render for status='pending' rows; this is intentional and not a bug — merged/dismissed rows show audit metadata (by-user · timestamp) instead. Worth documenting for future testers who may assume the same selectors apply across sub-tabs.",
+    "orca_upstream.py: first manual sync against SoftFever returned 1266 candidates / 1084 unchanged / 134 skipped / 0 new in 0.9s (cache hot from the prior scheduled 28.2s run that imported 182 deltas). GitHub rate-limit handling was not exercised (no 502 seen) but the code path exists.",
+    "/api/synced-printers correctly returns merged docs anonymously. Sample row has raw_profile preserved with full machine_model metadata — good. Note that for upstream machine_model rows (not concrete machine rows), nozzle_diameter/build_x_mm/build_y_mm/build_z_mm come back as null because _parse_quickfields can't parse '0.8;1.75' style multi-nozzle strings — acceptable, but worth a future enhancement so the public popover can still show build volume for abstract base models."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (10/10 pytest)", "frontend": "100% (all admin OrcaUpstream + DnD criteria verified)" },
+  "test_credentials": "Seeded MongoDB admin session: user_id=admin_iter39_1780502827062, session_token=st_admin_iter39_1780502827062, is_admin=true + is_super_admin=true. Injected as httpOnly cookie on preview origin per /app/memory/test_credentials.md pattern.",
+  "seed_data_creation": "Inserted one admin user + one user_sessions row into MongoDB test_database via mongosh. During the test the production scheduled run had already populated ~182 pending deltas; the manual Sync-Now added a second run history row. One delta ('re3D TerabotX 2') was promoted into bundled_synced_printers and one delta ('re3D TerabotX 2 1.75 nozzle') was dismissed — both real entries from SoftFever/OrcaSlicer upstream. These will linger in the DB until iteration cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-85 OrcaSlicer upstream sync feature is GREEN end-to-end. Backend test file at /app/backend/tests/test_orca_upstream.py covers all critical paths (admin auth gate, public read, merge promotion, dismiss). For UI retest: (1) seed admin via the mongosh snippet, (2) inject session_token cookie, (3) /admin → admin-tab-orca-upstream → click sub-tabs. The Workspace drag-drop overlay can only be visually triggered via real DataTransfer (CDP Input.dispatchDragEvent) — synthesizing via `new DragEvent({dataTransfer:new DataTransfer()})` does NOT propagate 'Files' into the `types` array even though `dt.items.add(file)` works for `drop`. Validate the listener wiring by code-reading WorkspaceDropZone.jsx + functional drop test (which DOES work end-to-end). The merge/dismiss action seeded one row each in bundled_synced_printers and orca_upstream_deltas — non-cleaned, may show up in future tests under vendor='re3D'.",
+  "rca of the issue": "No issues identified. All features behaved per spec."
+}

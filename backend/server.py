@@ -21,6 +21,7 @@ import auth_local
 import billing
 import admin as admin_module
 import orca_engine
+import orca_upstream
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router
@@ -494,6 +495,36 @@ api_router.include_router(build_user_printers_router(db, get_current_user))
 # Iter-83: Shared Profile Library — community-published printer profiles.
 api_router.include_router(build_shared_printers_router(db, get_current_user, get_optional_user))
 api_router.include_router(build_publish_router(db, get_current_user))
+
+
+# Iter-85: Scheduled OrcaSlicer upstream sync. Polls SoftFever/OrcaSlicer
+# for printer-profile changes, surfaces deltas to admins, lets them merge
+# new/changed profiles into bundled_synced_printers (served publicly by
+# /api/synced-printers and merged into the frontend's printer dropdown).
+async def _require_admin_for_upstream(request: Request) -> dict:
+    user = await get_current_user(request)
+    if not (user.get("is_admin") or user.get("is_super_admin")):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    if user.get("banned"):
+        raise HTTPException(status_code=403, detail="Account suspended.")
+    return user
+
+api_router.include_router(orca_upstream.build_orca_upstream_router(
+    db=db,
+    require_admin=_require_admin_for_upstream,
+))
+api_router.include_router(orca_upstream.build_synced_printers_public_router(db=db))
+
+
+@app.on_event("startup")
+async def _start_orca_upstream_scheduler() -> None:
+    """Spawn the 24h sync daemon. The background task is fire-and-forget;
+    it logs every run and never propagates exceptions to the event loop."""
+    try:
+        orca_upstream.start_scheduler(db)
+        logging.getLogger(__name__).info("orca-upstream scheduler started (24h interval)")
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("orca-upstream scheduler failed to start: %s", e)
 
 
 # Wire the user-printers DB lookup + auth extractor into orca_engine so

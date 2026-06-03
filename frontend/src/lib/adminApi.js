@@ -51,4 +51,31 @@ export const adminApi = {
     const { data } = await axios.post(`${API}/admin/content/remove`, { item_id, item_type, reason }, cfg);
     return data;
   },
+  // Iter-85 — OrcaSlicer upstream profile sync.
+  orcaUpstream: {
+    sync: async () => {
+      const { data } = await axios.post(`${API}/admin/orca-upstream/sync`, null, cfg);
+      return data;
+    },
+    runs: async (limit = 20) => {
+      const { data } = await axios.get(`${API}/admin/orca-upstream/runs`, { ...cfg, params: { limit } });
+      return data;
+    },
+    deltas: async (status = "pending", limit = 200) => {
+      const { data } = await axios.get(`${API}/admin/orca-upstream/deltas`, { ...cfg, params: { status, limit } });
+      return data;
+    },
+    deltaDiff: async (deltaId) => {
+      const { data } = await axios.get(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/diff`, cfg);
+      return data;
+    },
+    mergeDelta: async (deltaId) => {
+      const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/merge`, null, cfg);
+      return data;
+    },
+    dismissDelta: async (deltaId) => {
+      const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/dismiss`, null, cfg);
+      return data;
+    },
+  },
 };
