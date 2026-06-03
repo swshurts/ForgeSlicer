@@ -31,14 +31,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ## Current Open Items (as of 2026-06-03)
 
 ### Pending P1 (queued)
-- **Scheduled OrcaSlicer upstream sync** — daily/weekly cron task fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/*.json`, hashes them, surfaces deltas in an Admin → Profile Updates dashboard with optional Resend email digest.
+- _(All P1 items currently closed.)_
 
 ### Backlog (P2/P3)
+- Slicer-popover integration of `/api/synced-printers` (admins can merge upstream profiles today; the slicer dropdown still reads from the hardcoded `PRINTER_PROFILES` table — a one-pass merge in `orcaProfiles.js` would surface every merged synced printer to every user).
+- `_parse_quickfields` enhancement to handle upstream "machine_model" abstracts with multi-nozzle strings ("0.4;0.6;0.8") — currently those expose null build-volume fields on the public endpoint.
 - Continue `store.js` refactor (composite-primitives block ~L676; boolean/dim action blocks).
 - `Viewport.jsx` size reduction.
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
 - Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
+
+## Resolved This Session (Iter-85, 2026-06-03)
+- **Workspace drag-and-drop importer** — `WorkspaceDropZone.jsx` is a window-level listener with a depth-counter overlay. Dragging STL / OBJ / 3MF / GLB / SVG / ZIP onto the workspace shows an orange "Drop to import" overlay and routes the dropped files through the existing importers (silent mesh add, SVG editor event, ZIP picker event). Toast summarises how many landed on the bed and what was ignored.
+- **Scheduled OrcaSlicer upstream sync (P1)** — `orca_upstream.py` polls `SoftFever/OrcaSlicer` once at startup and every 24h via an asyncio daemon, diffs git-blob SHAs against `orca_upstream_cache`, and surfaces deltas in a new admin tab (`Orca sync`). Admins can Sync Now, view JSON, Merge → promotes the cached profile into `bundled_synced_printers` exposed publicly at `/api/synced-printers`, or Dismiss. End-to-end testing showed 1266 candidate profiles seen, 182 first-run deltas, public endpoint serving merged printers anonymously. 10/10 backend pytest + frontend acceptance criteria pass.
 
 ## Resolved This Session (Iter-84, 2026-06-03)
 - **ZIP file imports** — `ZipImportDialog` is now wired end-to-end. Dropping a `.zip` on the toolbar Import button auto-detects mesh bundles (STL/OBJ/3MF/GLB/SVG) vs OrcaSlicer config bundles (printer.json). Mesh bundle: user picks which files via checkboxes → each routes through `importAnyMeshFile` and lands on the bed; SVGs hand off to the existing extrude-editor. Config bundle: parses `printer.json` via `parseOrcaPrinterJson` and POSTs to `/api/me/printers` with the correct `build_*_mm` field names; emits `forgeslicer:user-printers-changed` so the slicer popover refreshes. Pydantic 422 errors now render readably ("field: msg; field: msg") instead of "[object Object]". 4/4 frontend acceptance tests pass.
