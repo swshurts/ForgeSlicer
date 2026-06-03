@@ -1,0 +1,23 @@
+{
+  "summary": "Iter-87 verification of (a) PHOTO-TO-PLANE new feature and (b) composite + viewport-overlay REFACTOR. All targets pass with ZERO console errors. Backend regression /app/backend/tests/test_orca_upstream.py 12/12 PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_orca_upstream.py",
+    "/app/test_reports/pytest/iter87_orca_upstream.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "store.js is still 1389 lines — even after iter-87 extraction it remains the largest single module. Continue the slicing pattern (e.g., extract booleanActions / historyActions next) to keep below the 700-line guideline.",
+    "Viewport.jsx is still 1294 lines despite the two overlay extractions — next logical extraction is the gizmo/transform-control handler block.",
+    "PhotoToPlaneDialog.jsx is 480 lines containing canvas pixel processing + UI + mesh-builder logic. Consider extracting the heightmap-mesh builder into a pure util (e.g. lib/heightmap.js) so it is unit-testable independently of the React component.",
+    "createCompositeActions uses a shared closure-captured `appendAndSelect` — clean. Builder injection via `deps` keeps the action factory testable without importing Three.js."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "MongoDB-seeded session: session_token=st_test_iter87_1780509029685 (user_id=user_test_iter87_1780509029685, name='Iter87 Tester'). Per /app/memory/test_credentials.md.",
+  "seed_data_creation": "Inserted 1 user + 1 user_session row into mongodb test_database for Playwright cookie auth.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-87 fully verified end-to-end. REFACTOR proof: (1) createCompositeActions is spread into the Zustand store at store.js:1227. All 5 composite buttons exercised via LeftPanel's Combo tab and each produced the expected parts: slot +3 (Slot · core/cap A/cap B), fastener +4 (Bolt/Bolt Bore/Head Counterbore/Nut), countersink +2 (CS Bore/CS Cup), hex pocket +1 (Hex Pocket), gusset +1 (Gusset). The outliner correctly groups them under group headers. (2) MeasurementsOverlay + ComponentDimensionsOverlay: validated by directly invoking beginComponentDimension(o1.id) → commitComponentDimension(o2.id) on two cubes 40mm apart — the YELLOW chip 'Cube ↔ Cube 40.00 mm  ΔX +40.00 mm · ΔY +0.00 mm · ΔZ +0.00 mm  ×' rendered exactly as expected. Manually injected a measurement via setState({measurements:[...]}) and inspector showed 'Measurements: 1' with a Clear measurements button. PHOTO-TO-PLANE: AI tab → photo-to-plane-btn → dialog opens → DataTransfer-uploaded a 200×200 synthesised PNG (black square + white circle) → preview canvas (420×260) rendered with center pixel [0,0,0] before invert and [255,255,255] after invert → resolution/relief/gain/invert controls all triggered re-render → generate-btn produced 1 new object 'test (heightmap)' with 102396 triangles, 80×80×5.6mm; sonner toast appeared 'Added \"test\" — 102396 triangles, 80×80×5.6 mm.'; dialog auto-closed; new heightmap mesh visible on the bed in the screenshot as a circular relief on a white square plane. ZERO console errors across all flows (no 'Cannot read property of undefined' regressions in the refactored measurement/dimension paths)."
+}

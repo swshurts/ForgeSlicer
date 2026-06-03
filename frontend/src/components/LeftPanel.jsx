@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
+import PhotoToPlaneDialog from "./dialogs/PhotoToPlaneDialog";
 import HardwareLibraryDialog from "./dialogs/HardwareLibraryDialog";
 import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
 
@@ -316,6 +317,7 @@ export default function LeftPanel() {
   const objects = useScene((s) => s.objects);
   const [outlinerCtx, setOutlinerCtx] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [photoPlaneOpen, setPhotoPlaneOpen] = useState(false);
   // Hardware library dialog state lives here (instead of being lifted
   // to Workspace) because nothing outside LeftPanel needs to coordinate
   // with it — it just overlays the viewport when open, and the only
@@ -385,7 +387,7 @@ export default function LeftPanel() {
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} />}
-        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} />}
+        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} />}
       </div>
 
       {/* ---- Outliner (unchanged) ---- */}
@@ -408,6 +410,7 @@ export default function LeftPanel() {
       </div>
       {outlinerCtx && <ContextMenu position={outlinerCtx} onClose={() => setOutlinerCtx(null)} />}
       <AIGenerateDialog open={aiOpen} onClose={() => setAiOpen(false)} />
+      <PhotoToPlaneDialog open={photoPlaneOpen} onClose={() => setPhotoPlaneOpen(false)} />
       <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
       <TextureLibraryDialog
         open={textureLibraryOpen}
@@ -503,7 +506,7 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
   );
 }
 
-function TabAI({ onOpenAi }) {
+function TabAI({ onOpenAi, onOpenPhotoPlane }) {
   return (
     <>
       <SectionHeader
@@ -512,7 +515,7 @@ function TabAI({ onOpenAi }) {
         label="AI Generate"
         right={<span className="text-[9px] uppercase tracking-wider text-fuchsia-400/80 border border-fuchsia-500/40 rounded px-1.5 py-0.5">beta</span>}
       />
-      <div className="p-3">
+      <div className="p-3 space-y-2">
         <button
           data-testid="ai-generate-btn"
           onClick={onOpenAi}
@@ -522,9 +525,23 @@ function TabAI({ onOpenAi }) {
           <Sparkles size={14} />
           Generate from Text · Image
         </button>
-        <p className="mt-2 text-[10px] text-slate-500 leading-snug">
+        <p className="text-[10px] text-slate-500 leading-snug">
           Describe a shape or upload a picture — get a printable mesh you can carve &amp; slice.
         </p>
+        <div className="pt-2 border-t border-slate-800/80">
+          <button
+            data-testid="photo-to-plane-btn"
+            onClick={onOpenPhotoPlane}
+            className="w-full h-11 rounded-md border border-cyan-500/40 bg-gradient-to-br from-cyan-500/10 via-blue-500/10 to-cyan-500/10 hover:border-cyan-400 hover:from-cyan-500/20 transition-all flex items-center justify-center gap-2 text-cyan-300 text-xs font-semibold tracking-wide"
+            title="Convert a photo into a heightmap relief — lithophanes, coins, custom emboss"
+          >
+            <Sparkles size={13} />
+            Photo → Heightmap Plane
+          </button>
+          <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
+            Bright pixels become tall, dark pixels stay thin. Perfect for lithophanes and reliefs.
+          </p>
+        </div>
       </div>
     </>
   );

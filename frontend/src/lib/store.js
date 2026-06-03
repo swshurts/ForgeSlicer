@@ -37,6 +37,9 @@ import { PRIMITIVE_DEFAULTS, newId, buildPrimitive } from "./primitiveDefaults";
 // extraction). The slice exports a factory returning the action
 // methods to spread into the main store below.
 import { rulerRefStillValid, createRulerActions } from "./rulerActions";
+// Composite-primitive action slice (iter-87 extraction — was ~50
+// lines of repeated pushHistory+build+set boilerplate inlined here).
+import { createCompositeActions } from "./compositeActions";
 
 const defaultPrinterId = "custom";
 const defaultFilamentId = "pla";
@@ -277,59 +280,12 @@ export const useScene = create((set, get) => ({
   //   - Nut: positioned at the FAR side of where a typical 10mm-thick
   //         host part would be, so threads engage past the work face
   //
-  // `opts.boltR` / `opts.pitch` / `opts.workThickness` let downstream
-  // callers customise; defaults match the bolt primitive's defaults
-  // (M10 ish — 5mm major radius, 1.5mm pitch).
-  addFastenerPair: (opts = {}) => {
-    get().pushHistory();
-    const { parts, groupId, primaryId } = buildFastenerPair(opts, { buildPrimitive, newId });
-    set((s) => ({
-      objects: [...s.objects, ...parts],
-      selectedId: primaryId,
-      selectedIds: parts.map((p) => p.id),
-    }));
-    return groupId;
-  },
-
-  // ---- Composite macros (iter 50) ---------------------------------
-  // Each composite is a small assembly the user can drop with ONE
-  // click. All members share a groupId so they move/rotate as a unit
-  // and ungroup-able for fine-tuning. Pure builders live in
-  // `lib/composites.js`; the store actions are thin pushHistory + set
-  // wrappers so undo captures the entire assembly in one snapshot.
-
-  addCountersink: (opts = {}) => {
-    get().pushHistory();
-    const { parts, groupId, primaryId } = buildCountersink(opts, { buildPrimitive, newId });
-    set((s) => ({
-      objects: [...s.objects, ...parts],
-      selectedId: primaryId,
-      selectedIds: parts.map((p) => p.id),
-    }));
-    return groupId;
-  },
-
-  addHexPocket: (opts = {}) => {
-    get().pushHistory();
-    const { parts, groupId, primaryId } = buildHexPocket(opts, { buildPrimitive, newId });
-    set((s) => ({
-      objects: [...s.objects, ...parts],
-      selectedId: primaryId,
-      selectedIds: parts.map((p) => p.id),
-    }));
-    return groupId;
-  },
-
-  addGusset: (opts = {}) => {
-    get().pushHistory();
-    const { parts, groupId, primaryId } = buildGusset(opts, { buildPrimitive, newId });
-    set((s) => ({
-      objects: [...s.objects, ...parts],
-      selectedId: primaryId,
-      selectedIds: parts.map((p) => p.id),
-    }));
-    return groupId;
-  },
+  // Fastener Pair / Countersink / Hex Pocket / Gusset / Slot — these
+  // composite-drop actions are spread in from `compositeActions.js`
+  // (iter-87 extraction). See that file for the per-composite docs.
+  // Pre-iter-87 these lived as five repeated pushHistory+build+set
+  // blocks inlined here — moving them out reduced ~50 lines and
+  // gave us one clean place for any future composite to land.
 
   // Add a user-drawn sketch as an extruded scene object. `points` is an
   // array of `[x, z]` world-plane coordinates (same units as `position`).
@@ -529,20 +485,10 @@ export const useScene = create((set, get) => ({
   },
 
   // ---------- Composite primitives ----------
-  // Slot / racetrack hole — see `lib/composites.js#buildSlot` for the
-  // construction details. The store action is the thin pushHistory +
-  // set wrapper so the slot lands as a single undo step. Returns the
-  // assembly's groupId.
-  addSlot: (modifier = "negative", overrides = {}) => {
-    get().pushHistory();
-    const { parts, groupId, primaryId } = buildSlot({ modifier, ...overrides }, { buildPrimitive, newId });
-    set((s) => ({
-      objects: [...s.objects, ...parts],
-      selectedId: primaryId,
-      selectedIds: parts.map((p) => p.id),
-    }));
-    return groupId;
-  },
+  // `addSlot`, `addFastenerPair`, `addCountersink`, `addHexPocket`,
+  // `addGusset` are spread in from `./compositeActions.js` (iter-87
+  // extraction). They each drop a pre-grouped assembly as a single
+  // undo step and return the assembly's groupId.
 
   // Atomic "boolean replace" — remove a set of objects AND insert one or more
   // new objects in a single store mutation that pushes history exactly once.
@@ -1272,6 +1218,20 @@ export const useScene = create((set, get) => ({
   // output here so every method becomes a direct store action with
   // no behaviour change. See `rulerActions.js` for the docstrings.
   ...createRulerActions(set, get),
+
+  // ---- Composite primitives (iter-87 extraction) ----
+  // Each composite drops a pre-grouped assembly (slot, fastener pair,
+  // countersink, hex pocket, gusset) as a single undo step. Builders
+  // live in `./composites.js`; the action wrappers live in
+  // `./compositeActions.js`.
+  ...createCompositeActions({
+    get,
+    set,
+    deps: {
+      buildFastenerPair, buildCountersink, buildHexPocket,
+      buildGusset, buildSlot, buildPrimitive, newId,
+    },
+  }),
 
   clearScene: () => {
     get().pushHistory();

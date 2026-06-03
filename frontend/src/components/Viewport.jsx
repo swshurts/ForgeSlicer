@@ -7,9 +7,11 @@ import { useScene } from "../lib/store";
 import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
-import { computeComponentDimension, fmtSignedMm } from "../lib/componentDimensions";
+import { fmtSignedMm } from "../lib/componentDimensions";
 import { nearestSnapPoint, allSnapPoints, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
 import ContextMenu from "./ContextMenu";
+import { MeasurementsLayer } from "./viewport/MeasurementsOverlay";
+import { ComponentDimensionsLayer } from "./viewport/ComponentDimensionsOverlay";
 
 const POSITIVE_COLOR = "#F97316";
 const NEGATIVE_COLOR = "#06B6D4";
@@ -502,113 +504,13 @@ function BBoxChip() {
   );
 }
 
-function MeasurementsLayer() {
-  const measurements = useScene((s) => s.measurements);
-  const pending = useScene((s) => s.pendingMeasurePoint);
-  const measureMode = useScene((s) => s.measureMode);
-  const removeMeasurement = useScene((s) => s.removeMeasurement);
-  if (!measureMode) return null; // hide everything when measure tool is off
-  return (
-    <group>
-      {measurements.map((m) => (
-        <MeasurementLine key={m.id} measurement={m} onRemove={removeMeasurement} />
-      ))}
-      <PendingMarker pt={pending} />
-    </group>
-  );
-}
+// MeasurementsLayer is imported from ./viewport/MeasurementsOverlay
+// (iter-87 extraction). The PendingMarker + MeasurementLine helpers
+// it composes also live there now.
 
-// ---- Component-pair dimension overlay (Blender-style) ----
-// One <ComponentDimensionLine/> per stored {objIdA, objIdB} pair. Math
-// is recomputed every render from the current store state so the chip
-// values stay live during a transform drag. We DO NOT subscribe to the
-// individual object positions — instead we read `objects` once (it's
-// already in render scope via the parent group), and let React's normal
-// re-render cycle fire when the store changes.
-function ComponentDimensionLine({ dim, objects, onRemove }) {
-  const a = objects.find((o) => o.id === dim.objIdA);
-  const b = objects.find((o) => o.id === dim.objIdB);
-  const d = useMemo(() => computeComponentDimension(a, b), [a, b]);
-  // Hook order MUST be stable: keep every hook call above any early-return.
-  // `points` and `mid` are cheap derivations from `d` so we compute them
-  // unconditionally (they're discarded when d is null below).
-  const points = useMemo(() => {
-    if (!d) return [new THREE.Vector3(), new THREE.Vector3()];
-    return [
-      new THREE.Vector3(d.centerA[0], d.centerA[1], d.centerA[2]),
-      new THREE.Vector3(d.centerB[0], d.centerB[1], d.centerB[2]),
-    ];
-  }, [d]);
-  if (!d) return null;
-  const mid = new THREE.Vector3(
-    (d.centerA[0] + d.centerB[0]) / 2,
-    (d.centerA[1] + d.centerB[1]) / 2,
-    (d.centerA[2] + d.centerB[2]) / 2
-  );
-  return (
-    <group>
-      <Line points={points} color="#FBBF24" lineWidth={2} dashed dashSize={2} gapSize={1.5} depthTest={false} />
-      <mesh position={points[0]} renderOrder={1000}>
-        <sphereGeometry args={[1.1, 16, 16]} />
-        <meshBasicMaterial color="#FBBF24" depthTest={false} />
-      </mesh>
-      <mesh position={points[1]} renderOrder={1000}>
-        <sphereGeometry args={[1.1, 16, 16]} />
-        <meshBasicMaterial color="#FBBF24" depthTest={false} />
-      </mesh>
-      <Html position={mid} center zIndexRange={[50, 0]} sprite={false}>
-        <div
-          data-testid={`component-dim-label-${dim.id}`}
-          className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-950/95 border border-amber-400/70 text-amber-200 text-[11px] font-mono rounded-md shadow-xl whitespace-nowrap select-none"
-          style={{ pointerEvents: "auto" }}
-        >
-          <div className="flex flex-col leading-tight">
-            <span className="text-amber-300 text-[9px] uppercase tracking-wider">
-              {(a?.name || "?")} ↔ {(b?.name || "?")}
-            </span>
-            <span className="font-bold tracking-tight text-white">
-              {d.distance.toFixed(2)} mm
-            </span>
-            <span className="text-[9.5px] text-slate-400">
-              <span data-testid={`component-dim-dx-${dim.id}`}>ΔX {fmtSignedMm(d.delta[0])}</span>
-              {" · "}
-              <span data-testid={`component-dim-dy-${dim.id}`}>ΔY {fmtSignedMm(d.delta[1])}</span>
-              {" · "}
-              <span data-testid={`component-dim-dz-${dim.id}`}>ΔZ {fmtSignedMm(d.delta[2])}</span>
-            </span>
-          </div>
-          <button
-            data-testid={`component-dim-close-${dim.id}`}
-            onClick={(e) => { e.stopPropagation(); onRemove(dim.id); }}
-            className="w-4 h-4 rounded-sm bg-slate-800 hover:bg-red-500/40 text-slate-400 hover:text-white flex items-center justify-center leading-none"
-            title="Remove this dimension"
-          >
-            <span className="text-[12px] leading-none -mt-px">×</span>
-          </button>
-        </div>
-      </Html>
-    </group>
-  );
-}
-
-function ComponentDimensionsLayer() {
-  const dims = useScene((s) => s.componentDimensions);
-  const objects = useScene((s) => s.objects);
-  const removeComponentDimension = useScene((s) => s.removeComponentDimension);
-  if (!dims || dims.length === 0) return null;
-  return (
-    <group>
-      {dims.map((d) => (
-        <ComponentDimensionLine
-          key={d.id}
-          dim={d}
-          objects={objects}
-          onRemove={removeComponentDimension}
-        />
-      ))}
-    </group>
-  );
-}
+// ComponentDimensionsLayer + ComponentDimensionLine are imported from
+// ./viewport/ComponentDimensionsOverlay (iter-87 extraction). They
+// render the yellow dashed pair-lines + ΔX/ΔY/ΔZ chips.
 
 // ---- Anchored Ruler overlay (TinkerCAD-style) ----
 // Renders three blue dashed axis-rays from the anchor world-point out to
