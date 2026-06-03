@@ -25,7 +25,7 @@ export default function SVGImportDialog() {
   const [svgText, setSvgText] = useState("");
   const [error, setError] = useState("");
   const [parsed, setParsed] = useState(null);
-  const [height, setHeight] = useState(5);
+  const [height, setHeight] = useState(3);
   const [maxSize, setMaxSize] = useState(80);
   const [modifier, setModifier] = useState("positive");
   const [groupAsOne, setGroupAsOne] = useState(true);
@@ -163,16 +163,19 @@ export default function SVGImportDialog() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400">Extrude height</span>
+                <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                  Extrude height
+                  <span className="text-slate-600 normal-case ml-1">— most logos look right at 3–5 mm</span>
+                </span>
                 <div className="flex items-center gap-2">
                   <input
                     data-testid="svg-import-height"
-                    type="range" min={0.5} max={30} step={0.5}
+                    type="range" min={0.5} max={5} step={0.1}
                     value={height}
                     onChange={(e) => setHeight(parseFloat(e.target.value))}
                     className="flex-1 accent-orange-500"
                   />
-                  <span className="text-xs font-mono text-orange-300 w-14 text-right">{height} mm</span>
+                  <span className="text-xs font-mono text-orange-300 w-14 text-right">{height.toFixed(1)} mm</span>
                 </div>
               </label>
 

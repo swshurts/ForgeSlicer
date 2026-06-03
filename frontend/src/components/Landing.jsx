@@ -118,14 +118,14 @@ export default function Landing() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".stl,.obj,.3mf"
+                accept=".stl,.obj,.3mf,.glb,.gltf,.svg,.zip"
                 onChange={handleFileChange}
                 className="hidden"
                 data-testid="hero-import-file-input"
               />
             </div>
             <p className="mt-3 text-[11px] text-slate-500 max-w-xl">
-              Already started a project elsewhere? Drop in an existing STL, 3MF, or OBJ and pick up right where you left off — measurements, booleans, and slicing all work on imports.
+              Already started a project elsewhere? Drop in an existing STL, 3MF, OBJ, GLB, SVG, or ZIP bundle and pick up right where you left off — measurements, booleans, and slicing all work on imports.
             </p>
             {importError && (
               <div data-testid="hero-import-error" className="mt-3 flex items-start gap-2 px-3 py-2 rounded bg-red-500/10 border border-red-500/40 text-red-300 text-xs max-w-xl">

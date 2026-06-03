@@ -79,16 +79,26 @@ export function makeProjectActions({ store, setBusyMsg }) {
       }
     },
 
-    // ---- Import STL / OBJ / 3MF / SVG ----
+    // ---- Import STL / OBJ / 3MF / SVG / ZIP ----
     // SVG opens the dedicated dialog (extrude + sizing controls);
-    // mesh formats route through the worker importers.
+    // ZIP opens the per-entry picker (iter-84); mesh formats route
+    // through the worker importers.
     handleImport: async () => {
       try {
-        const file = await openFileDialog(".stl,.obj,.3mf,.svg");
+        const file = await openFileDialog(".stl,.obj,.3mf,.svg,.zip");
         const ext = file.name.split(".").pop().toLowerCase();
         if (ext === "svg") {
           const text = await file.text();
           window.dispatchEvent(new CustomEvent("forgeslicer:import-svg", { detail: { text, name: file.name } }));
+          return;
+        }
+        if (ext === "zip") {
+          // Hand off to the ZIP-import dialog (auto-detects mesh
+          // bundle vs. OrcaSlicer config bundle and shows the
+          // appropriate picker). The dialog calls back per file
+          // via the same `addImportedMesh` action used for direct
+          // STL/OBJ/3MF imports.
+          window.dispatchEvent(new CustomEvent("forgeslicer:import-zip", { detail: { file } }));
           return;
         }
         setBusyMsg("Importing...");

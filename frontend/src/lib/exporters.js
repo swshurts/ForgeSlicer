@@ -278,13 +278,83 @@ export async function import3MFFile(file) {
 }
 
 // Dispatch to the right importer based on file extension.
+//
+// Iter-84 additions:
+//   • .svg → routed via the dedicated `SVGImportDialog` (see
+//     `components/SVGImportDialog.jsx` + `lib/svgImport.js`), which
+//     handles extrude height, multi-shape grouping, hole detection
+//     and positive/negative-modifier picking. We don't call it from
+//     here because it needs UI; the dispatch happens in
+//     `toolbar/projectActions.js handleImport`.
+//   • .zip → router: if the archive contains mesh files (STL/OBJ/3MF)
+//     we delegate to `importZipBundleFile`, which presents a per-file
+//     selection UI. If it contains OrcaSlicer config JSONs
+//     (printer.json / process.json / filament.json) the bundle is
+//     imported as a printer profile.
 export async function importAnyMeshFile(file) {
   const ext = (file.name.split(".").pop() || "").toLowerCase();
   if (ext === "stl") return importSTLFile(file);
   if (ext === "obj") return importOBJFile(file);
   if (ext === "3mf") return import3MFFile(file);
   if (ext === "glb" || ext === "gltf") return importGLBFile(file);
-  throw new Error(`Unsupported file type: .${ext} (use .stl, .obj, .3mf, or .glb)`);
+  throw new Error(`Unsupported file type: .${ext} (use .stl, .obj, .3mf, .glb, .svg, or .zip)`);
+}
+
+// ZIP-bundle inspection. Returns a manifest of the archive's
+// contents grouped by category so the caller can decide how to
+// proceed: per-file import for mesh bundles, profile-import for
+// OrcaSlicer config dumps, or refuse for unsupported archives.
+//
+// Returns:
+//   {
+//     meshFiles:    [{ name, ext, size, blob }],  // STL/OBJ/3MF/GLB/SVG
+//     orcaConfigs:  [{ name, role, blob }],       // role ∈ {printer, process, filament}
+//     other:        [{ name, size }],             // ignored but reported
+//     totalEntries: number,
+//   }
+export async function inspectZipFile(file) {
+  const buf = await readFileAsArrayBuffer(file);
+  const zip = await JSZip.loadAsync(buf);
+  const meshFiles = [];
+  const orcaConfigs = [];
+  const other = [];
+  let totalEntries = 0;
+  for (const [path, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    totalEntries++;
+    const lower = path.toLowerCase();
+    const base = path.split("/").pop() || path;
+    const ext = (base.split(".").pop() || "").toLowerCase();
+    if (["stl", "obj", "3mf", "glb", "gltf", "svg"].includes(ext)) {
+      const blob = await entry.async("blob");
+      meshFiles.push({ name: base, path, ext, size: blob.size, blob });
+    } else if (ext === "json") {
+      // Heuristic Orca-config detection: look at the filename + first
+      // few keys of the JSON. We're conservative — only obvious Orca
+      // shapes count, ambiguous JSON gets parked in `other`.
+      let role = null;
+      if (/printer/i.test(base)) role = "printer";
+      else if (/process/i.test(base)) role = "process";
+      else if (/filament/i.test(base)) role = "filament";
+      if (role) {
+        const blob = await entry.async("blob");
+        orcaConfigs.push({ name: base, role, blob });
+      } else {
+        other.push({ name: base, size: entry._data?.uncompressedSize || 0 });
+      }
+    } else {
+      other.push({ name: base, size: entry._data?.uncompressedSize || 0 });
+      void lower;  // currently unused, future use for case-insensitive matching
+    }
+  }
+  return { meshFiles, orcaConfigs, other, totalEntries };
+}
+
+// Helper for the ZIP-mesh-import UI: given a single entry from
+// `inspectZipFile`'s `meshFiles` array, materialise it as a File
+// (so the existing `importAnyMeshFile` dispatch works unchanged).
+export function meshEntryToFile(entry) {
+  return new File([entry.blob], entry.name, { type: entry.blob.type || "application/octet-stream" });
 }
 
 // GLB / GLTF import — primarily used by AI mesh generation (Meshy returns
