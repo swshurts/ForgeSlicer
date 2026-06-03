@@ -1,0 +1,26 @@
+{
+  "summary": "Iter-38 — Retest of the ZipImportDialog OrcaSlicer-config import path (iter-37 regression). The single-bug fix (build_x/y/z → build_x_mm/y_mm/z_mm payload keys, gcode_flavor default marlin → marlin2, improved Pydantic detail toast) is verified GREEN. All four acceptance criteria pass end-to-end against the live preview backend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix verified at ZipImportDialog.jsx lines 179-188: payload now correctly uses build_x_mm / build_y_mm / build_z_mm with gcode_flavor default 'marlin2'. Parser orcaProfiles.js already emits *_mm-suffixed keys (lines 677-679), so the pass-through is correct.",
+    "Improved catch-block at lines 197-215 now properly extracts FastAPI ValidationError detail array into 'field: msg; field: msg' strings instead of '[object Object]'. Good defensive coverage of array/string/fallback branches."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only retest)", "frontend": "100% (4/4 acceptance criteria)"},
+  "test_credentials": "MongoDB-seeded session token st_test_1780501406768 / user_test1780501406768 (per /app/memory/test_credentials.md). Injected as session_token httpOnly cookie on the preview origin.",
+  "seed_data_creation": "Inserted one user + one session row into MongoDB test_database via mongosh.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-37 ZIP-import OrcaSlicer config-bundle bug is FIXED. Verified flow: dispatch forgeslicer:import-zip with a JSZip-built printer.json {type:'machine', name:'Test ZIP Printer Retest', nozzle_diameter:['0.4'], printable_area:['0x0','200x0','200x200','0x200'], printable_height:'180', gcode_flavor:'marlin2'} → click zip-import-orca-go-btn → POST /api/me/printers returns 200 → sonner toast 'Imported printer profile \"Test ZIP Printer Retest\".' shows → dialog auto-closes (count=0) → GET /api/me/printers returns one row with name='Test ZIP Printer Retest', build_x_mm=200, build_y_mm=200, build_z_mm=180, nozzle_diameter=0.4, gcode_flavor='marlin2'. Auth via /api/auth/me also OK with seeded bearer/cookie. window.__forgeStore confirmed available. JSZip via 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm' works in the browser console. No other regressions surfaced during this targeted retest.",
+  "rca of the issue": "Original iter-37 RCA stands: payload key mismatch (build_x vs build_x_mm) caused FastAPI 422. Fix applied in ZipImportDialog.jsx lines 179-188 renames the three keys, switches gcode_flavor default to 'marlin2', and adds an array-aware Pydantic-detail extractor for the error toast. Verified by observed network 200 + persisted row matching all input dims."
+}

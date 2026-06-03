@@ -171,15 +171,18 @@ export default function ZipImportDialog() {
         return;
       }
       // Minimum required fields per /api/me/printers schema. Filename
-      // is a friendly fallback when the JSON omits `name`.
+      // is a friendly fallback when the JSON omits `name`. Field names
+      // (build_*_mm, gcode_flavor, etc.) MUST match UserPrinterIn in
+      // routes/user_printers.py — the parser already emits the
+      // _mm-suffixed keys, the dialog just passes them through.
       const fallbackName = printerCfg.name.replace(/\.json$/i, "").replace(/[_\-]+/g, " ").trim();
       const payload = {
         name: parsed.fields.name || fallbackName || "Imported printer",
         nozzle_diameter: parsed.fields.nozzle_diameter ?? 0.4,
-        build_x: parsed.fields.build_x ?? 220,
-        build_y: parsed.fields.build_y ?? 220,
-        build_z: parsed.fields.build_z ?? 250,
-        gcode_flavor: parsed.fields.gcode_flavor || "marlin",
+        build_x_mm: parsed.fields.build_x_mm ?? 220,
+        build_y_mm: parsed.fields.build_y_mm ?? 220,
+        build_z_mm: parsed.fields.build_z_mm ?? 250,
+        gcode_flavor: parsed.fields.gcode_flavor || "marlin2",
         start_gcode: parsed.fields.start_gcode || "",
         end_gcode: parsed.fields.end_gcode || "",
       };
@@ -192,7 +195,24 @@ export default function ZipImportDialog() {
       toast.success(`Imported printer profile "${payload.name}"${warnSuffix}.`);
       handleClose();
     } catch (err) {
-      toast.error(`Couldn't import config bundle: ${err?.response?.data?.detail || err.message || err}`);
+      // FastAPI ValidationError surfaces `detail` as an array of
+      // {type, loc, msg, ...} objects. Stringifying that with the
+      // default join produces "[object Object],[object Object]"
+      // which tells the user nothing — extract the `msg` fields
+      // (and the offending field name from `loc`) instead.
+      const detail = err?.response?.data?.detail;
+      let humanError;
+      if (Array.isArray(detail)) {
+        humanError = detail.map((d) => {
+          const field = Array.isArray(d?.loc) ? d.loc.filter((p) => p !== "body").join(".") : "";
+          return field ? `${field}: ${d.msg}` : d.msg;
+        }).join("; ");
+      } else if (typeof detail === "string") {
+        humanError = detail;
+      } else {
+        humanError = err.message || String(err);
+      }
+      toast.error(`Couldn't import config bundle: ${humanError}`);
     } finally {
       setBusyAction(null);
     }
