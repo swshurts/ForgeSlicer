@@ -34,13 +34,16 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - _(All P1 items currently closed.)_
 
 ### Backlog (P2/P3)
-- Slicer-popover integration of `/api/synced-printers` (admins can merge upstream profiles today; the slicer dropdown still reads from the hardcoded `PRINTER_PROFILES` table — a one-pass merge in `orcaProfiles.js` would surface every merged synced printer to every user).
-- `_parse_quickfields` enhancement to handle upstream "machine_model" abstracts with multi-nozzle strings ("0.4;0.6;0.8") — currently those expose null build-volume fields on the public endpoint.
 - Continue `store.js` refactor (composite-primitives block ~L676; boolean/dim action blocks).
 - `Viewport.jsx` size reduction.
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
 - Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
+- Admin email digest via Resend for new merged upstream profiles (nice-to-have follow-up to iter-85).
+
+## Resolved This Session (Iter-86, 2026-06-03)
+- **Synced upstream printers in the slicer dropdown** — `useOrcaSlice` fetches `/api/synced-printers` on mount and hydrates a module-level cache in `orcaProfiles.js`. `getPrinterGroups()` now emits a new "Synced (OrcaSlicer upstream)" optgroup so every user sees admin-merged upstream profiles in the printer dropdown. Selecting a synced printer encodes its id as `synced:<uuid>`; `buildOrcaPayload` resolves the raw profile via the new `getPrinterProfile()` helper.
+- **`_parse_quickfields` multi-nozzle support** — `nozzle_diameter` strings like `"0.4;0.6;0.8"` and lists `["0.4","0.6","0.8"]` now decompose to the smallest (canonical) nozzle. Same for `printable_height` multi-value strings. `/api/synced-printers` re-parses on read so previously-merged abstracts auto-benefit without requiring re-merge. 12/12 backend pytest green.
 
 ## Resolved This Session (Iter-85, 2026-06-03)
 - **Workspace drag-and-drop importer** — `WorkspaceDropZone.jsx` is a window-level listener with a depth-counter overlay. Dragging STL / OBJ / 3MF / GLB / SVG / ZIP onto the workspace shows an orange "Drop to import" overlay and routes the dropped files through the existing importers (silent mesh add, SVG editor event, ZIP picker event). Toast summarises how many landed on the bed and what was ignored.
