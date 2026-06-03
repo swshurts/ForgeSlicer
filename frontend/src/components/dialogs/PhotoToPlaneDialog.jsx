@@ -37,156 +37,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { X, Image as ImageIcon, Loader2, RefreshCw, AlertCircle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useScene } from "../../lib/store";
+import { loadImage, imageToLuminance, buildHeightmapMesh, estimateTriangleCount } from "../../lib/heightmap";
 
-// Read a File into an HTMLImageElement so Canvas can paint it. Promise-
-// based — we only resolve once the image's `decode()` finishes.
-function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new window.Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e || new Error("Image load failed")); };
-    img.src = url;
-  });
-}
-
-// Sample image into a `resW × resH` luminance grid in [0,1]. Aspect
-// ratio is preserved on the wider axis — the shorter axis gets fewer
-// rows/cols proportionally.
-function imageToLuminance(img, resTarget, opts = {}) {
-  const { gain = 1, invert = false } = opts;
-  const aspect = img.width / img.height;
-  const resW = aspect >= 1 ? resTarget : Math.max(8, Math.round(resTarget * aspect));
-  const resH = aspect >= 1 ? Math.max(8, Math.round(resTarget / aspect)) : resTarget;
-  const canvas = document.createElement("canvas");
-  canvas.width = resW; canvas.height = resH;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Couldn't get 2D context");
-  ctx.drawImage(img, 0, 0, resW, resH);
-  const { data } = ctx.getImageData(0, 0, resW, resH);
-  const lum = new Float32Array(resW * resH);
-  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-    // ITU-R BT.709 luminance coefficients — accurate for sRGB photos.
-    let l = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
-    // Contrast curve around midpoint, then clamp.
-    l = (l - 0.5) * gain + 0.5;
-    if (l < 0) l = 0; else if (l > 1) l = 1;
-    if (invert) l = 1 - l;
-    lum[j] = l;
-  }
-  return { lum, resW, resH };
-}
-
-// Build a watertight heightmap mesh:
-//   - Top surface: grid of triangles deformed by `lum` * reliefH (+ base).
-//   - Bottom surface: flat grid at y = 0.
-//   - Four perimeter walls so the mesh is closed.
-// Output: Float32Array of contiguous triangle vertices [x,y,z,x,y,z,...].
-function buildHeightmapMesh(lum, resW, resH, widthMM, baseHeight, reliefH) {
-  // Physical extents — preserve photo aspect on the plate.
-  const aspect = resW / resH;
-  const sizeX = aspect >= 1 ? widthMM : widthMM * aspect;
-  const sizeZ = aspect >= 1 ? widthMM / aspect : widthMM;
-  const dx = sizeX / (resW - 1);
-  const dz = sizeZ / (resH - 1);
-
-  // Pre-compute top-grid positions (centered on origin in X/Z).
-  const topVerts = new Float32Array(resW * resH * 3);
-  for (let zi = 0; zi < resH; zi++) {
-    for (let xi = 0; xi < resW; xi++) {
-      const idx = (zi * resW + xi) * 3;
-      const x = xi * dx - sizeX / 2;
-      const z = zi * dz - sizeZ / 2;
-      const y = baseHeight + lum[zi * resW + xi] * reliefH;
-      topVerts[idx]     = x;
-      topVerts[idx + 1] = y;
-      topVerts[idx + 2] = z;
-    }
-  }
-
-  // Allocate output array. Two surfaces × (resW-1)(resH-1) quads × 6
-  // vertices/quad × 3 coords. Plus 4 perimeter strips of length (resW-1)
-  // or (resH-1) each — also 6 verts/quad. Generous overestimate.
-  const triCount = 2 * (resW - 1) * (resH - 1) * 2  // top + bottom
-                 + 2 * (resW - 1) * 2               // front + back strips
-                 + 2 * (resH - 1) * 2;              // left + right strips
-  const out = new Float32Array(triCount * 9);
-  let p = 0;
-
-  const writeTri = (ax, ay, az, bx, by, bz, cx, cy, cz) => {
-    out[p++] = ax; out[p++] = ay; out[p++] = az;
-    out[p++] = bx; out[p++] = by; out[p++] = bz;
-    out[p++] = cx; out[p++] = cy; out[p++] = cz;
-  };
-  const top = (xi, zi) => {
-    const i = (zi * resW + xi) * 3;
-    return [topVerts[i], topVerts[i + 1], topVerts[i + 2]];
-  };
-  const bot = (xi, zi) => [xi * dx - sizeX / 2, 0, zi * dz - sizeZ / 2];
-
-  // Top surface — winding CCW when viewed from above (+Y up).
-  for (let zi = 0; zi < resH - 1; zi++) {
-    for (let xi = 0; xi < resW - 1; xi++) {
-      const [a0, a1, a2] = top(xi,     zi);
-      const [b0, b1, b2] = top(xi + 1, zi);
-      const [c0, c1, c2] = top(xi + 1, zi + 1);
-      const [d0, d1, d2] = top(xi,     zi + 1);
-      // Two triangles per quad; CCW from +Y.
-      writeTri(a0, a1, a2, d0, d1, d2, b0, b1, b2);
-      writeTri(b0, b1, b2, d0, d1, d2, c0, c1, c2);
-    }
-  }
-  // Bottom surface — opposite winding (CW from +Y means CCW from -Y).
-  for (let zi = 0; zi < resH - 1; zi++) {
-    for (let xi = 0; xi < resW - 1; xi++) {
-      const [a0, a1, a2] = bot(xi,     zi);
-      const [b0, b1, b2] = bot(xi + 1, zi);
-      const [c0, c1, c2] = bot(xi + 1, zi + 1);
-      const [d0, d1, d2] = bot(xi,     zi + 1);
-      writeTri(a0, a1, a2, b0, b1, b2, d0, d1, d2);
-      writeTri(b0, b1, b2, c0, c1, c2, d0, d1, d2);
-    }
-  }
-  // Perimeter walls — connect top edge to bottom edge.
-  // Front edge (zi=0)
-  for (let xi = 0; xi < resW - 1; xi++) {
-    const [a0, a1, a2] = top(xi,     0);
-    const [b0, b1, b2] = top(xi + 1, 0);
-    const [c0, c1, c2] = bot(xi + 1, 0);
-    const [d0, d1, d2] = bot(xi,     0);
-    writeTri(a0, a1, a2, b0, b1, b2, c0, c1, c2);
-    writeTri(a0, a1, a2, c0, c1, c2, d0, d1, d2);
-  }
-  // Back edge (zi=resH-1) — reversed winding.
-  for (let xi = 0; xi < resW - 1; xi++) {
-    const [a0, a1, a2] = top(xi,     resH - 1);
-    const [b0, b1, b2] = top(xi + 1, resH - 1);
-    const [c0, c1, c2] = bot(xi + 1, resH - 1);
-    const [d0, d1, d2] = bot(xi,     resH - 1);
-    writeTri(b0, b1, b2, a0, a1, a2, d0, d1, d2);
-    writeTri(b0, b1, b2, d0, d1, d2, c0, c1, c2);
-  }
-  // Left edge (xi=0)
-  for (let zi = 0; zi < resH - 1; zi++) {
-    const [a0, a1, a2] = top(0, zi);
-    const [b0, b1, b2] = top(0, zi + 1);
-    const [c0, c1, c2] = bot(0, zi + 1);
-    const [d0, d1, d2] = bot(0, zi);
-    writeTri(b0, b1, b2, a0, a1, a2, d0, d1, d2);
-    writeTri(b0, b1, b2, d0, d1, d2, c0, c1, c2);
-  }
-  // Right edge (xi=resW-1)
-  for (let zi = 0; zi < resH - 1; zi++) {
-    const [a0, a1, a2] = top(resW - 1, zi);
-    const [b0, b1, b2] = top(resW - 1, zi + 1);
-    const [c0, c1, c2] = bot(resW - 1, zi + 1);
-    const [d0, d1, d2] = bot(resW - 1, zi);
-    writeTri(a0, a1, a2, b0, b1, b2, c0, c1, c2);
-    writeTri(a0, a1, a2, c0, c1, c2, d0, d1, d2);
-  }
-
-  return { vertices: out, sizeX, sizeZ, height: baseHeight + reliefH };
-}
+// loadImage, imageToLuminance, buildHeightmapMesh, estimateTriangleCount
+// moved to lib/heightmap.js (iter-87 follow-up) so the canvas-pixel →
+// vertex-grid pipeline can be unit-tested independently of React.
 
 const RESOLUTIONS = [
   { key: "low",  label: "Low (60×60)",   res: 60 },
@@ -451,10 +306,7 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
               <div className="text-[9px] uppercase tracking-wider text-slate-500">Est. output</div>
               <div>Plate ≈ {widthMM.toFixed(0)} mm wide</div>
               <div>Total height ≈ {(baseH + reliefH).toFixed(1)} mm</div>
-              <div>Triangles ≈ {(() => {
-                const r = RESOLUTIONS.find((x) => x.key === resKey).res;
-                return (2 * (r - 1) * (r - 1) * 2 + 8 * (r - 1)).toLocaleString();
-              })()}</div>
+              <div>Triangles ≈ {estimateTriangleCount(RESOLUTIONS.find((x) => x.key === resKey).res).toLocaleString()}</div>
             </div>
           </div>
         </div>

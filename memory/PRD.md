@@ -34,12 +34,17 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - _(All P1 items currently closed.)_
 
 ### Backlog (P2/P3)
-- Continue `store.js` refactor (composite-primitives block ~L676; boolean/dim action blocks).
-- `Viewport.jsx` size reduction.
 - Multi-user CRDT collaborative editing (Yjs).
-- Photo-to-plane (experimental).
 - Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
-- Admin email digest via Resend for new merged upstream profiles (nice-to-have follow-up to iter-85).
+- Admin email digest via Resend for new merged upstream profiles.
+- Continue store.js refactor: extract booleanActions / historyActions next (1389 lines still over the 700 guideline).
+- Continue Viewport.jsx refactor: extract the gizmo/transform-control handler block + ruler overlay block (1294 lines).
+- "Suggest this profile" community link on the OrcaSlicer admin tab.
+
+## Resolved This Session (Iter-87, 2026-06-03)
+- **Photo-to-plane (experimental)** — new dialog in LeftPanel → AI tab. Drag/drop or pick an image → luminance heightmap → triangulated mesh on the build plate. Tuned for lithophanes by default (invert ON, 0.6 mm base, 3 mm relief). Resolution low/med/high. Watertight output via top + bottom + perimeter wall triangulation. Pure client-side (no upload, no API costs). Mesh-builder extracted to `lib/heightmap.js` with 11 unit tests covering extents, aspect ratio, watertightness, and degenerate-triangle prevention.
+- **Composite-action extraction from store.js** — `addFastenerPair`, `addCountersink`, `addHexPocket`, `addGusset`, `addSlot` factored out into `lib/compositeActions.js` (~64 lines) using the same factory pattern as iter-74's ruler-action slice. store.js: 1430 → 1389 lines. All five composites verified to drop the expected parts after the refactor.
+- **Viewport overlay extractions** — `MeasurementsLayer` and `ComponentDimensionsLayer` (plus their inner Line/Marker helpers) moved to `components/viewport/MeasurementsOverlay.jsx` and `components/viewport/ComponentDimensionsOverlay.jsx`. Viewport.jsx: 1393 → 1294 lines. Green-line measurement chip + yellow-dashed component-pair chip both verified to render exactly as before the move.
 
 ## Resolved This Session (Iter-86, 2026-06-03)
 - **Synced upstream printers in the slicer dropdown** — `useOrcaSlice` fetches `/api/synced-printers` on mount and hydrates a module-level cache in `orcaProfiles.js`. `getPrinterGroups()` now emits a new "Synced (OrcaSlicer upstream)" optgroup so every user sees admin-merged upstream profiles in the printer dropdown. Selecting a synced printer encodes its id as `synced:<uuid>`; `buildOrcaPayload` resolves the raw profile via the new `getPrinterProfile()` helper.
