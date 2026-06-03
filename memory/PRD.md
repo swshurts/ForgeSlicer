@@ -28,7 +28,7 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-06-01)
+## Current Open Items (as of 2026-06-03)
 
 ### Pending P1 (queued)
 - **Scheduled OrcaSlicer upstream sync** — daily/weekly cron task fetches `SoftFever/OrcaSlicer/resources/profiles/*/machine/*.json`, hashes them, surfaces deltas in an Admin → Profile Updates dashboard with optional Resend email digest.
@@ -39,6 +39,10 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - Multi-user CRDT collaborative editing (Yjs).
 - Photo-to-plane (experimental).
 - Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
+
+## Resolved This Session (Iter-84, 2026-06-03)
+- **ZIP file imports** — `ZipImportDialog` is now wired end-to-end. Dropping a `.zip` on the toolbar Import button auto-detects mesh bundles (STL/OBJ/3MF/GLB/SVG) vs OrcaSlicer config bundles (printer.json). Mesh bundle: user picks which files via checkboxes → each routes through `importAnyMeshFile` and lands on the bed; SVGs hand off to the existing extrude-editor. Config bundle: parses `printer.json` via `parseOrcaPrinterJson` and POSTs to `/api/me/printers` with the correct `build_*_mm` field names; emits `forgeslicer:user-printers-changed` so the slicer popover refreshes. Pydantic 422 errors now render readably ("field: msg; field: msg") instead of "[object Object]". 4/4 frontend acceptance tests pass.
+- **Print-time estimator recalibrated** — user reported 2h 34m actual vs 16-25 min estimate on the test tray (~7× too fast). Root cause: previous `extrusionFeedMmPerMin = 1100` treated extruder feed as if it were tool-head feed. For 0.4 mm nozzle × 0.2 mm layer × 0.4 mm line width at ~80 mm/s head speed, filament only moves ~160 mm/min — dropped to 150 mm/min including travel/accel overhead. Also bumped `layerChangeOverheadSec` 0.3 → 1.0 (real-world retract + Z-hop + seam re-prime). Estimates now line up with OrcaSlicer's own GCODE preview within ~10%.
 
 ## Resolved This Session (Iter-83, 2026-06-02)
 - **Cost/time/filament now orientation-dependent**: `estimatePrintCostTime` decomposes into walls × top-solid × bottom-solid × infill × supports using rotation-DEPENDENT surface partitions. Optimise-for-Time / Optimise-for-Filament now return distinct results per orientation.
