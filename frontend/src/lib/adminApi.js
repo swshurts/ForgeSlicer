@@ -73,6 +73,13 @@ export const adminApi = {
       const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/merge`, null, cfg);
       return data;
     },
+    mergeAllPending: async () => {
+      // Iter-91: bulk-merge entry point for the first-run 1800+ deltas
+      // scenario. Backend reuses the per-delta merge core and tallies
+      // failures rather than aborting.
+      const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/merge-all`, null, cfg);
+      return data;
+    },
     dismissDelta: async (deltaId) => {
       const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/dismiss`, null, cfg);
       return data;

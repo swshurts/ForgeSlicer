@@ -367,3 +367,115 @@ def test_digest_send_now_admin_only():
     r = requests.post(f"{API}/admin/orca-upstream/digest/send-now", timeout=10)
     assert r.status_code == 401
 
+
+
+# ---------- Iter-91: Bulk merge-all endpoint tests ----------
+
+
+def test_merge_all_pending_admin_only():
+    r = requests.post(f"{API}/admin/orca-upstream/deltas/merge-all", timeout=10)
+    assert r.status_code == 401
+
+
+def test_merge_all_pending_rejects_non_admin(authed_plain_session):
+    sess, _ = authed_plain_session
+    r = sess.post(f"{API}/admin/orca-upstream/deltas/merge-all", timeout=10)
+    assert r.status_code == 403
+
+
+def test_merge_all_pending_merges_every_pending_delta(authed_admin_session, db):
+    """Seed three pending deltas + caches; call merge-all; expect all
+    three to be merged into bundled_synced_printers AND their delta
+    rows flipped to status=merged. The endpoint reports counts."""
+    sess, _ = authed_admin_session
+    suffix = uuid.uuid4().hex[:8]
+    seeded: list[tuple[str, str]] = []  # (delta_id, path)
+    for i in range(3):
+        path = f"resources/profiles/BulkTest_{suffix}/machine/BulkProbe {i}.json"
+        delta_id = uuid.uuid4().hex
+        sha = secrets.token_hex(20)
+        now = datetime.now(timezone.utc).isoformat()
+        db.orca_upstream_deltas.insert_one({
+            "id": delta_id, "path": path,
+            "vendor": f"BulkTest_{suffix}", "name": f"BulkProbe {i}",
+            "kind": "new", "prev_sha": None, "new_sha": sha,
+            "detected_at": now, "status": "pending",
+        })
+        db.orca_upstream_cache.insert_one({
+            "path": path, "vendor": f"BulkTest_{suffix}",
+            "name": f"BulkProbe {i}", "sha": sha,
+            "raw_json": {
+                "type": "machine",
+                "name": f"BulkProbe {i}",
+                "nozzle_diameter": ["0.4"],
+                "printable_area": ["0x0", "200x0", "200x200", "0x200"],
+                "printable_height": "220",
+                "gcode_flavor": "marlin2",
+            },
+            "fetched_at": now,
+        })
+        seeded.append((delta_id, path))
+    try:
+        r = sess.post(f"{API}/admin/orca-upstream/deltas/merge-all", timeout=30)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        # At least our 3 seeded deltas got merged. Real systems may have
+        # other pending deltas in flight — don't assume exclusivity.
+        assert body["merged"] >= 3
+        # Every seeded delta should now be marked merged.
+        for delta_id, _ in seeded:
+            d = db.orca_upstream_deltas.find_one({"id": delta_id})
+            assert d["status"] == "merged", f"delta {delta_id} not merged: {d}"
+        # Every seeded path should now exist in bundled_synced_printers.
+        for _, path in seeded:
+            doc = db.bundled_synced_printers.find_one({"source_path": path})
+            assert doc is not None, f"missing synced doc for {path}"
+    finally:
+        for delta_id, path in seeded:
+            db.orca_upstream_deltas.delete_one({"id": delta_id})
+            db.orca_upstream_cache.delete_one({"path": path})
+            db.bundled_synced_printers.delete_one({"source_path": path})
+
+
+def test_merge_all_pending_is_idempotent(authed_admin_session, db):
+    """Calling merge-all twice in a row must not double-create rows in
+    bundled_synced_printers and must not error on already-merged deltas
+    (they're filtered out by the status=pending query on the second
+    pass)."""
+    sess, _ = authed_admin_session
+    suffix = uuid.uuid4().hex[:8]
+    path = f"resources/profiles/IdemTest_{suffix}/machine/IdemProbe.json"
+    delta_id = uuid.uuid4().hex
+    sha = secrets.token_hex(20)
+    now = datetime.now(timezone.utc).isoformat()
+    db.orca_upstream_deltas.insert_one({
+        "id": delta_id, "path": path,
+        "vendor": f"IdemTest_{suffix}", "name": "IdemProbe",
+        "kind": "new", "prev_sha": None, "new_sha": sha,
+        "detected_at": now, "status": "pending",
+    })
+    db.orca_upstream_cache.insert_one({
+        "path": path, "vendor": f"IdemTest_{suffix}", "name": "IdemProbe",
+        "sha": sha, "raw_json": {
+            "type": "machine", "name": "IdemProbe",
+            "nozzle_diameter": ["0.4"],
+            "printable_area": ["0x0", "180x0", "180x180", "0x180"],
+            "printable_height": "200", "gcode_flavor": "klipper",
+        }, "fetched_at": now,
+    })
+    try:
+        r1 = sess.post(f"{API}/admin/orca-upstream/deltas/merge-all", timeout=30)
+        assert r1.status_code == 200
+        assert r1.json()["merged"] >= 1
+        # Second call: our seeded row is no longer pending, so it
+        # shouldn't be touched. Endpoint still 200s.
+        r2 = sess.post(f"{API}/admin/orca-upstream/deltas/merge-all", timeout=30)
+        assert r2.status_code == 200
+        # Exactly one synced doc per source_path.
+        synced_for_path = list(db.bundled_synced_printers.find({"source_path": path}))
+        assert len(synced_for_path) == 1
+    finally:
+        db.orca_upstream_deltas.delete_one({"id": delta_id})
+        db.orca_upstream_cache.delete_one({"path": path})
+        db.bundled_synced_printers.delete_one({"source_path": path})

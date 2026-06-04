@@ -35,11 +35,18 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ### Backlog (P2/P3)
 - Multi-user CRDT collaborative editing (Yjs) — **deferred until post-beta**; user wants to price as a premium feature.
-- Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
-- Continue store.js refactor: extract booleanActions / historyActions next (1389 lines still over the 700 guideline).
-- Continue Viewport.jsx refactor: extract the gizmo/transform-control handler block + ruler overlay block (1294 lines).
-- "Suggest this profile" community link on the OrcaSlicer admin tab.
+- (P3) Shared Auth between sister app LithoForge and ForgeSlicer (via Emergent-managed Google Auth).
+- (P3) One-way handoff button from LithoForge to ForgeSlicer.
+- Continue store.js refactor: extract booleanActions / historyActions next (still over the 700 guideline).
+- Continue Viewport.jsx refactor: extract the gizmo/transform-control handler block.
 - Potential perf tweak: debounce text-preview re-render (~150 ms) in PhotoToPlaneDialog for long strings on low-end CPUs.
+- (Non-blocking polish) "Suggest a profile" CTA is buried — surface it on the bottom status-bar PRINTER label or top toolbar.
+- (Non-blocking polish) `/admin` auto-theme banner intercepts pointer events on the tab strip — lower z-index / bound pointer-events to its visual rect.
+- (Non-blocking polish) Moderation Delete button only shows on Recent tab for `is_public:true` rows — unpublished+cleared rows become unreachable from the UI; show Delete on both tabs.
+
+## Resolved This Session (Iter-91, 2026-02-XX)
+- **Bulk "Merge all pending" for upstream profiles** — admin tab now shows a banner above the pending-deltas table (`upstream-merge-all-btn`) that one-click promotes every pending OrcaSlicer upstream profile into `bundled_synced_printers`. Built for the first-run scenario where the daily sync surfaces 1800+ legitimate vetted profiles. Endpoint: `POST /api/admin/orca-upstream/deltas/merge-all`. Idempotent (status=pending query filter + upsert keyed on `source_path`), tallies failures rather than aborting on a single bad cache row. 4 new pytest cases (auth gate, non-admin gate, bulk merge of 3 seeded deltas, idempotency) — all green (21/21 total in test_orca_upstream.py).
+
 
 ## Resolved This Session (Iter-89, 2026-06-04)
 - **Brand mark on landing** — Celtic-knot anvil logo (`/forgeslicer-logo.webp`) replaces the placeholder orange hexagon in the landing header (scaled 28×28px) and appears as a corner badge in the hero card.

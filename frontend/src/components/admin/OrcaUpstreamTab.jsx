@@ -216,6 +216,8 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
   const [runsOpen, setRunsOpen] = useState(false);
   // Iter-90: community suggestions queue.
   const [suggestions, setSuggestions] = useState([]);
+  // Iter-91: bulk-merge progress flag for the "Merge all pending" CTA.
+  const [bulkMerging, setBulkMerging] = useState(false);
 
   const refresh = useCallback(async (statusKey) => {
     setLoading(true);
@@ -291,6 +293,39 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
       toast.error(`Dismiss failed: ${err?.response?.data?.detail || err.message}`);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  // Iter-91: bulk merge for the first-run "1800+ pending" scenario.
+  // OrcaSlicer's bundled machine JSON is already maintainer-reviewed
+  // upstream, so importing in bulk is safe — but we still gate with a
+  // window.confirm() because this writes ~1800 docs into
+  // bundled_synced_printers and is therefore worth a beat of friction.
+  const handleMergeAll = async () => {
+    if (bulkMerging) return;
+    const pendingCount = deltas.length;
+    const proceed = window.confirm(
+      `Merge all ${pendingCount} pending upstream profile${pendingCount === 1 ? "" : "s"}?\n\n` +
+      `These are OrcaSlicer's own bundled machine presets (vetted upstream). ` +
+      `Each becomes available in every user's slicer dropdown under "Synced (OrcaSlicer upstream)".\n\n` +
+      `Idempotent — re-running is safe.`
+    );
+    if (!proceed) return;
+    setBulkMerging(true);
+    try {
+      const res = await adminApi.orcaUpstream.mergeAllPending();
+      if (res.failed > 0) {
+        toast.warning(`Merged ${res.merged} of ${res.total_pending_before} (${res.failed} failed — see admin console).`);
+        // Surface the first few failure reasons so admins can act.
+        console.warn("orca-upstream bulk-merge failures:", res.failures);
+      } else {
+        toast.success(`Merged all ${res.merged} pending upstream profile${res.merged === 1 ? "" : "s"} into the global library.`);
+      }
+      await refresh(tab);
+    } catch (err) {
+      toast.error(`Bulk merge failed: ${err?.response?.data?.detail || err.message}`);
+    } finally {
+      setBulkMerging(false);
     }
   };
 
@@ -499,7 +534,30 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
       )}
 
       {!loading && tab !== "runs" && tab !== "suggestions" && (
-        <div className="bg-slate-900 border border-slate-800 rounded" data-testid={`upstream-deltas-${tab}`}>
+        <div className="space-y-2">
+          {tab === "pending" && deltas.length > 0 && (
+            <div
+              className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-900 border border-slate-800 rounded"
+              data-testid="upstream-bulk-merge-banner"
+            >
+              <div className="text-[11px] text-slate-300 flex-1">
+                <span className="text-cyan-300 font-semibold">{deltas.length}</span> pending profile{deltas.length === 1 ? "" : "s"} ready to merge.{" "}
+                <span className="text-slate-500">Safe to bulk-import — these are OrcaSlicer's own vetted bundled JSON.</span>
+              </div>
+              <button
+                data-testid="upstream-merge-all-btn"
+                disabled={bulkMerging}
+                onClick={handleMergeAll}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] uppercase tracking-wider font-semibold text-white bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 rounded whitespace-nowrap"
+                title="Merge every pending upstream profile in one go. Idempotent — safe to re-run."
+              >
+                {bulkMerging
+                  ? <><Loader2 size={12} className="animate-spin" /> Merging {deltas.length}…</>
+                  : <><Check size={12} /> Merge all pending</>}
+              </button>
+            </div>
+          )}
+          <div className="bg-slate-900 border border-slate-800 rounded" data-testid={`upstream-deltas-${tab}`}>
           {deltas.length === 0 ? (
             <div className="px-4 py-10 text-center text-xs text-slate-500 space-y-1">
               <div className="flex items-center justify-center gap-2 text-slate-400">
@@ -537,6 +595,7 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
               </tbody>
             </table>
           )}
+          </div>
         </div>
       )}
 

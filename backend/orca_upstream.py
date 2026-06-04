@@ -620,15 +620,12 @@ def build_orca_upstream_router(*, db, require_admin) -> APIRouter:
             "current_sha": cache.get("sha") if cache else None,
         }
 
-    @router.post("/deltas/{delta_id}/merge")
-    async def merge_delta(delta_id: str, admin=Depends(require_admin)):
-        """Promote a delta into bundled_synced_printers. Uses the CURRENT
-        cached JSON for the path (which is the version the sync just
-        recorded). Idempotent — re-running on an already-merged delta is
-        a no-op."""
-        delta = await db.orca_upstream_deltas.find_one({"id": delta_id}, {"_id": 0})
-        if not delta:
-            raise HTTPException(status_code=404, detail="Delta not found")
+    async def _merge_single_delta(delta: dict, admin_email: str) -> dict:
+        """Shared core for single-merge and bulk-merge. Promotes ONE
+        delta's cached JSON into bundled_synced_printers + flips the
+        delta status to merged. Returns {ok, merged_doc_id, skipped?}.
+        Raises HTTPException only for caller-facing single-merge errors;
+        the bulk path catches and tallies them as failures."""
         if delta["status"] == "merged":
             return {"ok": True, "already_merged": True, "merged_doc_id": delta.get("merged_doc_id")}
         cache = await db.orca_upstream_cache.find_one(
@@ -637,9 +634,6 @@ def build_orca_upstream_router(*, db, require_admin) -> APIRouter:
         )
         if not cache or not isinstance(cache.get("raw_json"), dict):
             raise HTTPException(status_code=409, detail="No cached JSON for this delta — re-run sync first.")
-        # Upsert into the publicly-served collection. We key on path so
-        # repeated merges of the same printer (after upstream changes)
-        # overwrite the previous synced doc instead of stacking duplicates.
         synced_id = uuid.uuid4().hex
         quick = _parse_quickfields(cache["raw_json"])
         synced_doc = {
@@ -650,7 +644,7 @@ def build_orca_upstream_router(*, db, require_admin) -> APIRouter:
             "source_sha": cache["sha"],
             "raw_profile": cache["raw_json"],
             "merged_at": _now_iso(),
-            "merged_by": admin.get("email", "admin"),
+            "merged_by": admin_email,
             **quick,
         }
         existing = await db.bundled_synced_printers.find_one(
@@ -667,15 +661,65 @@ def build_orca_upstream_router(*, db, require_admin) -> APIRouter:
         else:
             await db.bundled_synced_printers.insert_one(synced_doc)
         await db.orca_upstream_deltas.update_one(
-            {"id": delta_id},
+            {"id": delta["id"]},
             {"$set": {
                 "status": "merged",
-                "action_by": admin.get("email", "admin"),
+                "action_by": admin_email,
                 "action_at": _now_iso(),
                 "merged_doc_id": synced_id,
             }},
         )
         return {"ok": True, "merged_doc_id": synced_id}
+
+    @router.post("/deltas/{delta_id}/merge")
+    async def merge_delta(delta_id: str, admin=Depends(require_admin)):
+        """Promote a delta into bundled_synced_printers. Uses the CURRENT
+        cached JSON for the path (which is the version the sync just
+        recorded). Idempotent — re-running on an already-merged delta is
+        a no-op."""
+        delta = await db.orca_upstream_deltas.find_one({"id": delta_id}, {"_id": 0})
+        if not delta:
+            raise HTTPException(status_code=404, detail="Delta not found")
+        return await _merge_single_delta(delta, admin.get("email", "admin"))
+
+    @router.post("/deltas/merge-all")
+    async def merge_all_pending(admin=Depends(require_admin)):
+        """Bulk-merge every currently-pending delta. Built for the
+        first-run scenario where the daily sync surfaces 1800+ legitimate
+        upstream profiles — reviewing them one-by-one is impractical, and
+        the underlying data is OrcaSlicer's own vetted bundled JSON, so
+        bulk-importing is safe.
+
+        We pull pending deltas in one query, then merge each using the
+        same helper as the single-merge endpoint (idempotent upsert keyed
+        on source_path). No GitHub calls — all JSON has already been
+        fetched into orca_upstream_cache by the sync step. Failures are
+        tallied rather than aborting so a single bad cache row doesn't
+        kill the whole batch.
+        """
+        admin_email = admin.get("email", "admin")
+        cursor = db.orca_upstream_deltas.find(
+            {"status": "pending"}, {"_id": 0},
+        )
+        pending = await cursor.to_list(length=10000)
+        merged_count = 0
+        failed: list[dict] = []
+        for delta in pending:
+            try:
+                await _merge_single_delta(delta, admin_email)
+                merged_count += 1
+            except HTTPException as e:
+                failed.append({"id": delta.get("id"), "name": delta.get("name"), "reason": e.detail})
+            except Exception as e:  # noqa: BLE001 - tally and continue
+                logger.warning("orca-upstream bulk-merge failed for %s: %s", delta.get("path"), e)
+                failed.append({"id": delta.get("id"), "name": delta.get("name"), "reason": str(e)})
+        return {
+            "ok": True,
+            "merged": merged_count,
+            "failed": len(failed),
+            "failures": failed[:50],  # truncate to keep response small
+            "total_pending_before": len(pending),
+        }
 
     @router.post("/deltas/{delta_id}/dismiss")
     async def dismiss_delta(delta_id: str, admin=Depends(require_admin)):
