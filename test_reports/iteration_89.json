@@ -1,0 +1,39 @@
+{
+  "summary": "Iter-90 verification across all four features: (1) Brand mark — verified Celtic-knot anvil img on /signin, /signup, /forgot-password, /gallery, /pricing — zero hexagon icons remain. (2) Admin moderation tab — flagged-row Clear/Unpublish/Delete all wired up, Clear toast 'Cleared 3 flags' fired, flag_count went 3→0 in Mongo; Unpublish via window.confirm() flipped is_public→false in Mongo. Delete-on-Recent flow only available for is_public:true rows (post-unpublish row drops out of Recent, expected). (3) Community suggestions — POST /api/upstream-suggestions worked (200), GET /api/upstream-suggestions/mine returned 1, admin upstream-subtab-suggestions tab renders the table with the correct resolve testid `upstream-suggestion-resolve-<id>`. (4) Refactor regression — workspace/admin pages render normally; window.__forgeStore still exposed (per iter-88 context). Backend pytest 12/12 PASS on test_iter90, 16/17 PASS on test_orca_upstream (1 flake = Resend send-now timeout, known/expected).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/orca-upstream/digest/send-now", "issue": "ReadTimeout (45s) on send-now — known-flaky due to Resend integration; matches expectation in review request"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin auto-theme banner", "issues": ["Same banner pointer-event interception noted in iter-87 and iter-88 still present — tab clicks must be fired via element.click() since Playwright force=True is blocked. Non-blocking; user just clicks Got-it once."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter90_moderation_and_suggestions.py",
+    "/app/backend/tests/test_orca_upstream.py",
+    "/app/test_reports/pytest/iter90_moderation.xml",
+    "/app/test_reports/pytest/iter90_orca_upstream.xml"
+  ],
+  "action_items": [
+    "(Non-blocking) The 'Suggest a profile' button lives inside the OrcaProfileEditor popover, which is reached via the bottom status-bar 'PRINTER: …' or the Inspector printer dropdown — NOT via the Send-to-OrcaSlicer top-toolbar button. The 'Manage my slicers' link from Send-to-Slicer opens a different (My Custom Slicers) dialog. Worth a 1-line clarification in the agent-to-agent note for future testing agents.",
+    "(Non-blocking) Auto-theme banner pointer interception on /admin still present (3rd iteration in a row) — recommend reducing its z-index or bounding pointer-events to its visual rect."
+  ],
+  "critical_code_review_comments": [
+    "SharedPrintersModerationTab Clear/Unpublish/Delete actions all use admin endpoints with consistent status flow (toast → refresh). Delete button only shows on Recent tab and only for is_public rows — this means an unpublished-then-flag-cleared row is unreachable from the UI without a Mongo restore. Consider showing Delete on both tabs OR auto-restoring/showing all rows on Recent regardless of is_public.",
+    "OrcaProfileEditor's suggest-profile entry point is buried — users have to navigate Inspector → printer dropdown → Manage profile → 'Don't see yours?' before discovering it. Consider a top-level CTA from the printer status bar.",
+    "store.js refactor: createProfileActions extraction (-52 lines) is clean; profileActions.js correctly re-exports setPrinter / setFilament / setMyPrinter — verified by code-reading + no console errors in workspace.",
+    "RulerLayers.jsx extraction (-236 lines from Viewport.jsx) — code-reviewed, exports RulerAnchorLayer + PinnedRulerLayer + resolveSnapWorld. No runtime test executed (workspace loaded clean, no console errors)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% on iter90 (12/12), 94% on orca-upstream (16/17, 1 known flake)", "frontend": "100% on brand-mark + admin moderation + admin suggestions sub-tab + workspace load"},
+  "test_credentials": "MongoDB-seeded admin session_token=st_test_iter90_admin_1780543603 (user_id=user_test_iter90_admin_1780543603, is_admin/is_super_admin=true) + user session_token=st_test_iter90_user_1780543603 — both cleaned up post-run.",
+  "seed_data_creation": "Seeded admin+user sessions, 1 flagged user_printer row test-mod-1, 1 upstream_suggestion via user POST. ALL cleaned up at end of run via mongosh deleteMany.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter-90 4 features verified. BACKEND: pytest /app/backend/tests/test_iter90_moderation_and_suggestions.py = 12/12 in 2.25s. BACKEND endpoints confirmed return-codes: GET /api/admin/shared-printers/flagged anon=401, POST /api/upstream-suggestions anon=401 (when payload has correct printer_name field; 422 first if missing), GET /api/admin/orca-upstream/suggestions anon=401. FRONTEND: brand-mark imgs verified on /signin, /signup, /forgot-password, /gallery, /pricing — all show /forgeslicer-logo.webp, 0 hexagons. Admin tabs are admin-tab-{analytics,users,orca-upstream,shared-moderation,audit}. Moderation sub-tabs shared-mod-tab-{flagged,recent}. Row testids shared-mod-row-<pid>, shared-mod-clear-<pid>, shared-mod-unpublish-<pid>, shared-mod-delete-<pid>. Unpublish + Delete trigger window.confirm() — wire Playwright with page.on('dialog', lambda d: asyncio.create_task(d.accept(...))). Admin suggestions: admin-tab-orca-upstream → upstream-subtab-suggestions → upstream-suggestions-table with upstream-suggestion-resolve-<id> per row. Resolve triggers window.prompt — same dialog handler accepts default value as the note. IMPORTANT for next agent: 'orca-suggest-profile-btn' is NOT reached via [data-testid=send-to-orcaslicer-btn] → [orca-manage-slicers-btn] (which opens 'My Custom Slicers' dialog). It's inside OrcaProfileEditor, opened via Inspector printer dropdown or bottom-status PRINTER label. The auto-theme banner on /admin still intercepts pointer events on tab strip — fire tab clicks programmatically with element.click(). Backend test_orca_upstream send-now case still flaky (~45s timeout) — count 16/17 as full pass."
+}

@@ -54,9 +54,7 @@ export default function ResetPassword() {
         </Link>
         <div className="flex-1" />
         <Link to="/" className="flex items-center gap-2 select-none">
-          <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-            <Hexagon size={16} className="text-white" strokeWidth={2.4} />
-          </div>
+          <img src="/forgeslicer-logo.webp" alt="ForgeSlicer" width={28} height={28} className="rounded shadow-lg shadow-orange-900/30" />
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
       </header>

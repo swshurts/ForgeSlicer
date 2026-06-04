@@ -9,6 +9,7 @@ import {
   AlertCircle, CheckCircle2, Clock, Download, GitBranch,
 } from "lucide-react";
 import OrcaUpstreamTab from "./admin/OrcaUpstreamTab";
+import SharedPrintersModerationTab from "./admin/SharedPrintersModerationTab";
 
 // Convert a 2D array of strings into a CSV blob and trigger a download.
 // Cells are wrapped in double-quotes when they contain commas/quotes/newlines
@@ -405,6 +406,7 @@ export default function AdminPage() {
     { key: "analytics", label: "Analytics", icon: BarChart3 },
     { key: "users",     label: "Users",     icon: Users },
     { key: "orca-upstream", label: "Orca sync", icon: GitBranch },
+    { key: "shared-moderation", label: "Moderation", icon: Shield },
     { key: "audit",     label: "Audit log", icon: ListChecks },
   ];
 
@@ -447,6 +449,7 @@ export default function AdminPage() {
         {tab === "analytics" && <AnalyticsTab />}
         {tab === "users" && <UsersTab adminInfo={adminInfo} />}
         {tab === "orca-upstream" && <OrcaUpstreamTab />}
+        {tab === "shared-moderation" && <SharedPrintersModerationTab />}
         {tab === "audit" && <AuditTab />}
       </main>
     </div>

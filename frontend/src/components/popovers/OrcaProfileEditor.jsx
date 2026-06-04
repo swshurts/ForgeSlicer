@@ -6,7 +6,7 @@
 // from the chosen process preset so the slice button stays one click
 // away.
 import React, { useState } from "react";
-import { Cpu, CheckCircle2, ExternalLink, Settings, Copy } from "lucide-react";
+import { Cpu, CheckCircle2, ExternalLink, Settings, Copy, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
   PROCESS_PROFILES, FILAMENT_PROFILES, INFILL_PATTERNS,
@@ -172,6 +172,20 @@ export default function OrcaProfileEditor({
               <ExternalLink size={8} className="flex-shrink-0 opacity-60 group-hover:opacity-100" />
             </button>
           )}
+          {/* Iter-90: tiny community-suggestion link. Lives at the
+              bottom of the printer dropdown area so users who don't
+              see their printer can quickly nominate it without
+              hunting through settings. */}
+          <button
+            type="button"
+            data-testid="orca-suggest-profile-btn"
+            onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:open-suggest-profile"))}
+            className="text-[9px] text-orange-300/80 hover:text-orange-200 font-mono leading-tight pl-0.5 mt-0.5 inline-flex items-center gap-1 transition-colors"
+            title="Don't see your printer? Suggest one to the team."
+          >
+            <Sparkles size={9} className="flex-shrink-0" />
+            <span>Don't see yours? Suggest a profile →</span>
+          </button>
         </label>
         <div className="grid grid-cols-2 gap-1.5">
           <label className="flex flex-col gap-0.5 min-w-0">

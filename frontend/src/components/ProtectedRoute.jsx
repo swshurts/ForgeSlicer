@@ -1,7 +1,7 @@
 import React from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Loader2, Lock, LogIn, Hexagon, ArrowLeft } from "lucide-react";
+import { Loader2, Lock, LogIn, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 
 // Gate that wraps protected routes. Renders the children only when the user
@@ -45,9 +45,7 @@ export default function ProtectedRoute({ children, label = "this page" }) {
         </Link>
         <div className="flex-1" />
         <Link to="/" className="flex items-center gap-2 select-none">
-          <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-            <Hexagon size={16} className="text-white" strokeWidth={2.4} />
-          </div>
+          <img src="/forgeslicer-logo.webp" alt="ForgeSlicer" width={28} height={28} className="rounded shadow-lg shadow-orange-900/30" />
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
       </header>

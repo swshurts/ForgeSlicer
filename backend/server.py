@@ -24,7 +24,7 @@ import orca_engine
 import orca_upstream
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
-from routes.shared_printers import build_shared_printers_router, build_publish_router
+from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -514,6 +514,18 @@ api_router.include_router(orca_upstream.build_orca_upstream_router(
     require_admin=_require_admin_for_upstream,
 ))
 api_router.include_router(orca_upstream.build_synced_printers_public_router(db=db))
+# Iter-90: public community-suggestions endpoint (auth required to write,
+# but no admin needed). Mounted alongside the synced-printers public route.
+api_router.include_router(orca_upstream.build_upstream_suggestions_public_router(
+    db=db,
+    get_current_user=get_current_user,
+))
+# Iter-90: admin moderation surface for the shared-printer library.
+# Reuses the same auth helper so the access model stays uniform.
+api_router.include_router(build_shared_printer_admin_router(
+    db=db,
+    require_admin=_require_admin_for_upstream,
+))
 
 
 @app.on_event("startup")

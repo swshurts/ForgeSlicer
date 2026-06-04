@@ -342,6 +342,26 @@ export const syncedPrintersApi = {
   },
 };
 
+// Iter-90: community-suggestion API — any authenticated user may
+// nominate a printer they'd like the admin team to merge. Mirror of
+// adminApi.orcaUpstream.listSuggestions for admins.
+export const upstreamSuggestionsApi = {
+  submit: async ({ printer_name, vendor, notes, upstream_url }) => {
+    const { data } = await axios.post(
+      `${API}/upstream-suggestions`,
+      { printer_name, vendor, notes, upstream_url },
+      { withCredentials: true, timeout: 10000 },
+    );
+    return data;
+  },
+  mine: async () => {
+    const { data } = await axios.get(`${API}/upstream-suggestions/mine`, {
+      withCredentials: true, timeout: 10000,
+    });
+    return data;
+  },
+};
+
 // Iter-83: Shared Profile Library — community-published printer
 // profiles, browsable without auth, clonable with auth.
 export const sharedPrintersApi = {

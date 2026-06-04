@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { Loader2, CheckCircle2, AlertCircle, Hexagon } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { API } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -58,9 +58,7 @@ export default function BillingSuccessPage() {
     <div className="min-h-screen bg-slate-950 text-white flex flex-col" data-testid="billing-success-page">
       <header className="h-14 border-b border-slate-800 bg-slate-900 flex items-center px-4">
         <Link to="/" className="flex items-center gap-2 select-none">
-          <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-            <Hexagon size={16} className="text-white" strokeWidth={2.4} />
-          </div>
+          <img src="/forgeslicer-logo.webp" alt="ForgeSlicer" width={28} height={28} className="rounded shadow-lg shadow-orange-900/30" />
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
       </header>

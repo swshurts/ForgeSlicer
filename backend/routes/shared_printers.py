@@ -206,6 +206,135 @@ def build_shared_printers_router(db, get_current_user, get_current_user_optional
     return router
 
 
+def build_shared_printer_admin_router(db, require_admin):
+    """Iter-90: admin-only moderation surface for shared printer
+    library entries that users have flagged. Mounted under
+    /admin/shared-printers so it stays separate from the public
+    `/shared-printers` browse routes.
+
+    Moderation primitives the admin tab needs:
+      - List flagged (flag_count > 0) — defaults to highest-first
+      - List recent — for periodic spot-checks even of un-flagged
+        entries
+      - Unpublish (soft-takedown: is_public=false, flags preserved)
+      - Reset flags after a manual review (keeps the row published)
+      - Hard-delete (only when the entry is verifiably abusive)
+
+    Every action writes an audit-log row to `admin_actions`.
+    """
+    router = APIRouter(prefix="/admin/shared-printers", tags=["admin", "shared-printers"])
+
+    async def _audit(admin: dict, action: str, target: dict, **extra) -> None:
+        await db.admin_actions.insert_one({
+            "id": uuid.uuid4().hex,
+            "ts": _now_iso(),
+            "admin_id": admin.get("user_id"),
+            "admin_email": admin.get("email"),
+            "action": action,
+            "target_type": "shared_printer",
+            "target_id": target.get("printer_id"),
+            "target_owner": target.get("user_id"),
+            **extra,
+        })
+
+    @router.get("/flagged")
+    async def list_flagged(
+        min_flags: int = Query(1, ge=0),
+        limit: int = Query(100, ge=1, le=500),
+        admin=Depends(require_admin),
+    ):
+        """Surface shared printers with N or more flags. Default
+        `min_flags=1` gives the actionable list; setting to 0 lets the
+        admin spot-check ALL published rows."""
+        query = {"is_public": True, "flag_count": {"$gte": min_flags}}
+        cursor = db.user_printers.find(
+            query,
+            {"_id": 0},
+        ).sort([("flag_count", -1), ("published_at", -1)]).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    @router.get("/recent")
+    async def list_recent(
+        limit: int = Query(50, ge=1, le=200),
+        admin=Depends(require_admin),
+    ):
+        """Recently-published rows (regardless of flag count) — used
+        for proactive moderation. Sorted newest-first."""
+        cursor = db.user_printers.find(
+            {"is_public": True},
+            {"_id": 0},
+        ).sort("published_at", -1).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    @router.post("/{pid}/unpublish")
+    async def admin_unpublish(pid: str, admin=Depends(require_admin)):
+        """Soft-takedown: hide the entry from the public library but
+        keep the row + flag history intact in case the owner appeals."""
+        target = await db.user_printers.find_one(
+            {"printer_id": pid, "is_public": True},
+            {"_id": 0, "printer_id": 1, "user_id": 1, "name": 1, "flag_count": 1},
+        )
+        if not target:
+            raise HTTPException(404, "Shared printer not found or already unpublished")
+        await db.user_printers.update_one(
+            {"printer_id": pid},
+            {"$set": {
+                "is_public": False,
+                "published_at": None,
+                "moderated_at": _now_iso(),
+                "moderated_by": admin.get("email"),
+            }},
+        )
+        await _audit(admin, "shared_printer_unpublish", target,
+                     prior_flag_count=target.get("flag_count", 0),
+                     printer_name=target.get("name"))
+        return {"unpublished": True, "printer_id": pid}
+
+    @router.post("/{pid}/clear-flags")
+    async def admin_clear_flags(pid: str, admin=Depends(require_admin)):
+        """Reset flag_count to 0 after a manual review confirmed the
+        entry is fine. Keeps the entry published. Records the previous
+        flag count in the audit log."""
+        target = await db.user_printers.find_one(
+            {"printer_id": pid},
+            {"_id": 0, "printer_id": 1, "user_id": 1, "name": 1, "flag_count": 1},
+        )
+        if not target:
+            raise HTTPException(404, "Shared printer not found")
+        await db.user_printers.update_one(
+            {"printer_id": pid},
+            {"$set": {
+                "flag_count": 0,
+                "flags_cleared_at": _now_iso(),
+                "flags_cleared_by": admin.get("email"),
+            }},
+        )
+        await _audit(admin, "shared_printer_clear_flags", target,
+                     prior_flag_count=target.get("flag_count", 0),
+                     printer_name=target.get("name"))
+        return {"flag_count": 0, "printer_id": pid,
+                "prior_flag_count": target.get("flag_count", 0)}
+
+    @router.delete("/{pid}")
+    async def admin_delete(pid: str, admin=Depends(require_admin)):
+        """Hard-delete the row. Only for verifiably abusive content
+        (no recovery path). Audit-logged with a snapshot of the row
+        in case we need to forensically reference it later."""
+        target = await db.user_printers.find_one(
+            {"printer_id": pid},
+            {"_id": 0},
+        )
+        if not target:
+            raise HTTPException(404, "Shared printer not found")
+        await db.user_printers.delete_one({"printer_id": pid})
+        await _audit(admin, "shared_printer_delete", target,
+                     printer_name=target.get("name"),
+                     snapshot=target)
+        return {"deleted": True, "printer_id": pid}
+
+    return router
+
+
 def build_publish_router(db, get_current_user):
     """Publish / unpublish actions on the OWNER's printers. Mounted
     under /me/printers to keep ownership locality."""

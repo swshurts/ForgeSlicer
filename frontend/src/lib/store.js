@@ -40,6 +40,9 @@ import { rulerRefStillValid, createRulerActions } from "./rulerActions";
 // Composite-primitive action slice (iter-87 extraction — was ~50
 // lines of repeated pushHistory+build+set boilerplate inlined here).
 import { createCompositeActions } from "./compositeActions";
+// Profile / preferences action slice (iter-90 extraction — printer
+// + filament + my-printer + auto-drop toggles + community list).
+import { createProfileActions } from "./profileActions";
 
 const defaultPrinterId = "custom";
 const defaultFilamentId = "pla";
@@ -164,73 +167,11 @@ export const useScene = create((set, get) => ({
   },
 
   // ---- profile actions ----
-  setPrinter: (id) => {
-    const s = get();
-    // Look in built-in first, then community
-    let p = PRINTERS.find((x) => x.id === id);
-    if (!p) {
-      const c = s.communityPrinters.find((x) => x.id === id);
-      if (c) {
-        p = {
-          id: c.id,
-          brand: c.brand,
-          name: c.name,
-          buildVolume: { x: c.build_x, y: c.build_y, z: c.build_z },
-          maxNozzleTemp: c.max_nozzle_temp,
-          maxBedTemp: c.max_bed_temp,
-          defaultNozzle: c.default_nozzle,
-          defaultPrintSpeed: c.default_print_speed,
-        };
-      }
-    }
-    if (!p) p = getPrinter(defaultPrinterId);
-    set({
-      printerId: p.id,
-      buildVolume: { ...p.buildVolume },
-    });
-  },
-  setFilament: (id) => set({ filamentId: id }),
-
-  // Mark the currently-selected printer as "my default" — written to
-  // localStorage so the next workspace mount restores it automatically.
-  // Pass `null` to clear the preference.
-  setMyPrinter: (id) => {
-    if (typeof window !== "undefined" && window.localStorage) {
-      try {
-        if (id) window.localStorage.setItem("forge.printer.mine", id);
-        else window.localStorage.removeItem("forge.printer.mine");
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("persist myPrinterId failed:", err);
-      }
-    }
-    set({ myPrinterId: id || null });
-  },
-  setAutoDropOnRotate: (v) => {
-    if (typeof window !== "undefined" && window.localStorage) {
-      try { window.localStorage.setItem("forge.autoDropOnRotate", v ? "true" : "false"); }
-      catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("persist autoDropOnRotate failed:", err);
-      }
-    }
-    set({ autoDropOnRotate: !!v });
-  },
-  setAutoDropNew: (v) => {
-    if (typeof window !== "undefined" && window.localStorage) {
-      try { window.localStorage.setItem("forge.autoDropNew", v ? "true" : "false"); }
-      catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("persist autoDropNew failed:", err);
-      }
-    }
-    set({ autoDropNew: !!v });
-  },
-  setCommunityPrinters: (list) => set({ communityPrinters: list }),
-  addCommunityPrinter: (p) =>
-    set((s) => ({ communityPrinters: [p, ...s.communityPrinters] })),
-  removeCommunityPrinter: (id) =>
-    set((s) => ({ communityPrinters: s.communityPrinters.filter((c) => c.id !== id) })),
+  // setPrinter / setFilament / setMyPrinter / setAutoDropOnRotate /
+  // setAutoDropNew / setCommunityPrinters / addCommunityPrinter /
+  // removeCommunityPrinter all live in `./profileActions.js` (iter-90
+  // extraction). They handle the printer/filament selection + the
+  // workspace preference toggles, including localStorage persistence.
 
   // ---- scene mutations ----
   setProjectName: (name) => set({ projectName: name }),
@@ -1218,6 +1159,13 @@ export const useScene = create((set, get) => ({
   // output here so every method becomes a direct store action with
   // no behaviour change. See `rulerActions.js` for the docstrings.
   ...createRulerActions(set, get),
+
+  // ---- Profile + preferences (iter-90 extraction) ----
+  ...createProfileActions({
+    get,
+    set,
+    deps: { PRINTERS, getPrinter, defaultPrinterId },
+  }),
 
   // ---- Composite primitives (iter-87 extraction) ----
   // Each composite drops a pre-grouped assembly (slot, fastener pair,

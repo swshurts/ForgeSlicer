@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { authApi } from "../lib/auth";
 import { toast } from "sonner";
-import { Hexagon, Loader2, AlertCircle, Wand2 } from "lucide-react";
+import { Loader2, AlertCircle, Wand2 } from "lucide-react";
 
 export default function MagicLinkLanding() {
   const location = useLocation();
@@ -40,9 +40,7 @@ export default function MagicLinkLanding() {
     <div className="min-h-screen bg-slate-950 text-white flex flex-col" data-testid="magic-link-landing-page">
       <header className="h-14 border-b border-slate-800 bg-slate-900 flex items-center px-4">
         <Link to="/" className="flex items-center gap-2 select-none ml-auto">
-          <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-            <Hexagon size={16} className="text-white" strokeWidth={2.4} />
-          </div>
+          <img src="/forgeslicer-logo.webp" alt="ForgeSlicer" width={28} height={28} className="rounded shadow-lg shadow-orange-900/30" />
           <span className="text-sm font-bold tracking-tight">ForgeSlicer</span>
         </Link>
       </header>

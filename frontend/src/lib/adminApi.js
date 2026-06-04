@@ -77,6 +77,19 @@ export const adminApi = {
       const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/dismiss`, null, cfg);
       return data;
     },
+    // Iter-90: community-suggestion queue.
+    listSuggestions: async (status = "open") => {
+      const { data } = await axios.get(`${API}/admin/orca-upstream/suggestions`, { ...cfg, params: { status } });
+      return data;
+    },
+    resolveSuggestion: async (sid, notes = "") => {
+      const { data } = await axios.post(`${API}/admin/orca-upstream/suggestions/${encodeURIComponent(sid)}/resolve`, { notes }, cfg);
+      return data;
+    },
+    rejectSuggestion: async (sid, notes = "") => {
+      const { data } = await axios.post(`${API}/admin/orca-upstream/suggestions/${encodeURIComponent(sid)}/reject`, { notes }, cfg);
+      return data;
+    },
     // Iter-88: admin digest. The scheduler fires the digest at most
     // once a week; the "send now" route bypasses the cooldown for
     // QA / copy-tweaking flows.

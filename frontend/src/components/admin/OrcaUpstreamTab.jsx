@@ -214,6 +214,8 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
   const [busyId, setBusyId] = useState(null);
   const [diff, setDiff] = useState(null);
   const [runsOpen, setRunsOpen] = useState(false);
+  // Iter-90: community suggestions queue.
+  const [suggestions, setSuggestions] = useState([]);
 
   const refresh = useCallback(async (statusKey) => {
     setLoading(true);
@@ -221,6 +223,9 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
       if (statusKey === "runs") {
         const r = await adminApi.orcaUpstream.runs(20);
         setRuns(r);
+      } else if (statusKey === "suggestions") {
+        const s = await adminApi.orcaUpstream.listSuggestions("open");
+        setSuggestions(s);
       } else {
         const d = await adminApi.orcaUpstream.deltas(statusKey);
         setDeltas(d);
@@ -298,12 +303,39 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
     }
   };
 
+  // Iter-90: resolve / reject a community suggestion. `prompt()` is
+  // the cheapest path to ask for resolution notes; admins only do
+  // this a few times a week so it doesn't need its own modal.
+  const handleResolveSuggestion = async (s) => {
+    const notes = window.prompt(`Resolve "${s.printer_name}"?\n\nOptional notes (visible to the submitter):`, "");
+    if (notes === null) return;
+    try {
+      await adminApi.orcaUpstream.resolveSuggestion(s.id, notes);
+      toast.success(`Marked "${s.printer_name}" resolved.`);
+      await refresh("suggestions");
+    } catch (err) {
+      toast.error(`Couldn't resolve: ${err?.response?.data?.detail || err.message}`);
+    }
+  };
+  const handleRejectSuggestion = async (s) => {
+    const notes = window.prompt(`Reject "${s.printer_name}"?\n\nReason (visible to the submitter):`, "");
+    if (notes === null) return;
+    try {
+      await adminApi.orcaUpstream.rejectSuggestion(s.id, notes);
+      toast.success(`Rejected "${s.printer_name}".`);
+      await refresh("suggestions");
+    } catch (err) {
+      toast.error(`Couldn't reject: ${err?.response?.data?.detail || err.message}`);
+    }
+  };
+
   const lastRun = runs[0];
   const subTabs = useMemo(() => [
-    { key: "pending",   label: "Pending",   accent: "border-orange-400 text-orange-200" },
-    { key: "merged",    label: "Merged",    accent: "border-green-400 text-green-200" },
-    { key: "dismissed", label: "Dismissed", accent: "border-slate-400 text-slate-300" },
-    { key: "runs",      label: "Run history", accent: "border-cyan-400 text-cyan-200" },
+    { key: "pending",     label: "Pending",     accent: "border-orange-400 text-orange-200" },
+    { key: "merged",      label: "Merged",      accent: "border-green-400 text-green-200" },
+    { key: "dismissed",   label: "Dismissed",   accent: "border-slate-400 text-slate-300" },
+    { key: "suggestions", label: "Suggestions", accent: "border-fuchsia-400 text-fuchsia-200" },
+    { key: "runs",        label: "Run history", accent: "border-cyan-400 text-cyan-200" },
   ], []);
 
   return (
@@ -361,6 +393,72 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
         </div>
       )}
 
+      {!loading && tab === "suggestions" && (
+        <div className="bg-slate-900 border border-slate-800 rounded" data-testid="upstream-suggestions-table">
+          {suggestions.length === 0 ? (
+            <div className="px-4 py-10 text-center text-xs text-slate-500 space-y-1">
+              <div className="flex items-center justify-center gap-2 text-slate-400">
+                <Sparkles size={14} /> No open community suggestions.
+              </div>
+              <div className="text-[10px] text-slate-600">
+                Users can submit suggestions from the slicer popover ("Don't see yours? Suggest a profile").
+              </div>
+            </div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="text-[9px] uppercase tracking-wider text-slate-500 bg-slate-950/50">
+                <tr>
+                  <th className="px-2 py-1.5 text-left">Printer</th>
+                  <th className="px-2 py-1.5 text-left">Submitter</th>
+                  <th className="px-2 py-1.5 text-left">Submitted</th>
+                  <th className="px-2 py-1.5 text-left">Notes / URL</th>
+                  <th className="px-2 py-1.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suggestions.map((s) => (
+                  <tr key={s.id} className="border-b border-slate-800/60 hover:bg-slate-800/30" data-testid={`upstream-suggestion-row-${s.id}`}>
+                    <td className="py-2 px-2 align-top">
+                      <div className="text-xs font-mono text-slate-200">{s.printer_name}</div>
+                      <div className="text-[10px] text-slate-500">{s.vendor || "—"}</div>
+                    </td>
+                    <td className="py-2 px-2 align-top text-[10px] text-slate-400">{s.submitter_email || s.submitted_by}</td>
+                    <td className="py-2 px-2 align-top text-[10px] text-slate-400">{relTime(s.submitted_at)}</td>
+                    <td className="py-2 px-2 align-top text-[10px] text-slate-300 max-w-xs">
+                      {s.notes && <div className="italic text-slate-400 mb-1 line-clamp-3">{s.notes}</div>}
+                      {s.upstream_url && (
+                        <a href={s.upstream_url} target="_blank" rel="noopener noreferrer"
+                           className="text-cyan-400 hover:text-cyan-200 inline-flex items-center gap-1 underline decoration-dotted truncate max-w-full">
+                          {s.upstream_url.replace(/^https?:\/\//, "").slice(0, 50)}
+                        </a>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 align-top text-right whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          data-testid={`upstream-suggestion-resolve-${s.id}`}
+                          onClick={() => handleResolveSuggestion(s)}
+                          className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-300 hover:bg-emerald-500/10 rounded inline-flex items-center gap-1"
+                        >
+                          <Check size={10} /> Resolve
+                        </button>
+                        <button
+                          data-testid={`upstream-suggestion-reject-${s.id}`}
+                          onClick={() => handleRejectSuggestion(s)}
+                          className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-slate-300 hover:bg-slate-700 rounded inline-flex items-center gap-1"
+                        >
+                          <XIcon size={10} /> Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
       {!loading && tab === "runs" && (
         <div className="bg-slate-900 border border-slate-800 rounded" data-testid="upstream-runs-table">
           {runs.length === 0
@@ -400,7 +498,7 @@ export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pen
         </div>
       )}
 
-      {!loading && tab !== "runs" && (
+      {!loading && tab !== "runs" && tab !== "suggestions" && (
         <div className="bg-slate-900 border border-slate-800 rounded" data-testid={`upstream-deltas-${tab}`}>
           {deltas.length === 0 ? (
             <div className="px-4 py-10 text-center text-xs text-slate-500 space-y-1">

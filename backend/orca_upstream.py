@@ -57,7 +57,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -135,6 +135,27 @@ class SyncedPrinter(BaseModel):
     gcode_flavor: Optional[str] = None
     raw_profile: dict = Field(default_factory=dict)
     merged_at: str
+
+
+class UpstreamSuggestionIn(BaseModel):
+    """Iter-90: a community user nominates a printer they'd like merged.
+    Schema is intentionally loose — most users don't know GitHub paths,
+    so a printer name + vendor + optional URL is the minimum bar."""
+    printer_name: str = Field(..., min_length=2, max_length=140)
+    vendor: Optional[str] = Field(None, max_length=80)
+    notes: Optional[str] = Field(None, max_length=1000)
+    upstream_url: Optional[str] = Field(None, max_length=400)  # GitHub blob URL or any reference
+
+
+class UpstreamSuggestion(UpstreamSuggestionIn):
+    id: str
+    submitted_at: str
+    submitted_by: Optional[str] = None
+    submitter_email: Optional[str] = None
+    status: str = "open"          # "open" | "resolved" | "rejected"
+    resolved_by: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolution_notes: Optional[str] = None
 
 
 # ----------------------- Sync implementation --------------------------
@@ -671,6 +692,113 @@ def build_orca_upstream_router(*, db, require_admin) -> APIRouter:
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Delta not found or not pending")
         return {"ok": True}
+
+    # ---- Iter-90: community suggestions (admin-side) ----
+
+    @router.get("/suggestions")
+    async def list_suggestions(
+        status: Optional[str] = "open",
+        limit: int = Query(200, ge=1, le=500),
+        admin=Depends(require_admin),
+    ):
+        """Show user-submitted "merge this printer please" suggestions.
+        Defaults to status=open so the main view is actionable; the
+        admin can flip to resolved/rejected via query param."""
+        query: dict = {}
+        if status and status in ("open", "resolved", "rejected"):
+            query["status"] = status
+        cursor = db.orca_upstream_suggestions.find(query, {"_id": 0}).sort("submitted_at", -1).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    @router.post("/suggestions/{sid}/resolve")
+    async def resolve_suggestion(sid: str, payload: dict = None, admin=Depends(require_admin)):
+        """Mark the suggestion as resolved — typically because the admin
+        merged the matching upstream profile."""
+        notes = (payload or {}).get("notes") or ""
+        result = await db.orca_upstream_suggestions.update_one(
+            {"id": sid, "status": "open"},
+            {"$set": {
+                "status": "resolved",
+                "resolved_by": admin.get("email"),
+                "resolved_at": _now_iso(),
+                "resolution_notes": notes[:1000],
+            }},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(404, "Suggestion not found or not open")
+        return {"ok": True}
+
+    @router.post("/suggestions/{sid}/reject")
+    async def reject_suggestion(sid: str, payload: dict = None, admin=Depends(require_admin)):
+        """Reject a suggestion (out of scope, duplicate, spam, etc.)."""
+        notes = (payload or {}).get("notes") or ""
+        result = await db.orca_upstream_suggestions.update_one(
+            {"id": sid, "status": "open"},
+            {"$set": {
+                "status": "rejected",
+                "resolved_by": admin.get("email"),
+                "resolved_at": _now_iso(),
+                "resolution_notes": notes[:1000],
+            }},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(404, "Suggestion not found or not open")
+        return {"ok": True}
+
+    return router
+
+
+def build_upstream_suggestions_public_router(*, db, get_current_user) -> APIRouter:
+    """Iter-90: public-write endpoint for users to suggest upstream
+    profiles. Any authenticated user may POST one suggestion at a time.
+    Rate-limited at the application layer below (max 5 open per user)
+    so a spammer can't drown the admin queue."""
+    router = APIRouter(tags=["upstream-suggestions"])
+
+    @router.post("/upstream-suggestions", response_model=UpstreamSuggestion)
+    async def submit_suggestion(payload: UpstreamSuggestionIn, request: Request):
+        user = await get_current_user(request)
+        # Spam guard: cap each user at 5 open suggestions. Admins clear
+        # the queue by resolving/rejecting — once they do, the user
+        # can submit again.
+        open_for_user = await db.orca_upstream_suggestions.count_documents({
+            "submitted_by": user["user_id"], "status": "open",
+        })
+        if open_for_user >= 5:
+            raise HTTPException(
+                429,
+                "You already have 5 open suggestions — wait for an admin to review them before adding more.",
+            )
+        sid = uuid.uuid4().hex
+        doc = {
+            "id": sid,
+            "submitted_at": _now_iso(),
+            "submitted_by": user["user_id"],
+            "submitter_email": user.get("email"),
+            "status": "open",
+            "printer_name": payload.printer_name.strip(),
+            "vendor": (payload.vendor or "").strip() or None,
+            "notes": (payload.notes or "").strip() or None,
+            "upstream_url": (payload.upstream_url or "").strip() or None,
+            "resolved_by": None,
+            "resolved_at": None,
+            "resolution_notes": None,
+        }
+        await db.orca_upstream_suggestions.insert_one(dict(doc))
+        return UpstreamSuggestion(**{k: v for k, v in doc.items() if k != "_id"})
+
+    @router.get("/upstream-suggestions/mine", response_model=list[UpstreamSuggestion])
+    async def my_suggestions(request: Request):
+        """Lets a user see whether their suggestion is still open or
+        resolved — closes the feedback loop so they know the team
+        read it."""
+        user = await get_current_user(request)
+        cursor = db.orca_upstream_suggestions.find(
+            {"submitted_by": user["user_id"]},
+            {"_id": 0},
+        ).sort("submitted_at", -1).limit(50)
+        items = await cursor.to_list(length=50)
+        return [UpstreamSuggestion(**i) for i in items]
 
     return router
 
