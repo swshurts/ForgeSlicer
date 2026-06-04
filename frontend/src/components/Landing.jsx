@@ -167,18 +167,17 @@ export default function Landing() {
                 background: "radial-gradient(circle at 50% 52%, rgba(249,115,22,0.28) 0%, rgba(249,115,22,0.06) 38%, transparent 65%)",
               }}
             />
-            {/* iter-89.1: brand mark is now the hero centerpiece per
-                user feedback. Drop-shadow blooms the orange embers so
-                the mark glows on the dark plate. */}
+            {/* iter-89.2: brand mark fills the whole plate. The
+                synthetic LAYER/FILAMENT HUD chip was removed per user
+                feedback — it wasn't real data anyway, and the logo
+                stands on its own now that everything else on the page
+                explains what ForgeSlicer does. */}
             <img
               src="/forgeslicer-logo.webp"
               alt="ForgeSlicer mark"
               data-testid="landing-hero-logo"
-              className="absolute inset-0 m-auto w-[72%] h-[72%] object-contain drop-shadow-[0_0_60px_rgba(249,115,22,0.45)]"
+              className="absolute inset-0 w-full h-full object-contain p-2 drop-shadow-[0_0_60px_rgba(249,115,22,0.45)]"
             />
-            <div className="absolute bottom-4 left-4 right-4 bg-slate-950/80 backdrop-blur border border-slate-800 rounded px-3 py-2 font-mono text-[10px] text-slate-400 flex justify-between">
-              <span>LAYER: 247/420</span><span className="text-orange-400">FILAMENT: 4.21 m</span>
-            </div>
           </div>
         </div>
 

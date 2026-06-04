@@ -511,15 +511,22 @@ function TabAI({ onOpenAi, onOpenPhotoPlane }) {
     <>
       <SectionHeader
         icon={Sparkles}
-        accent="text-fuchsia-400"
+        accent="text-orange-400"
         label="AI Generate"
-        right={<span className="text-[9px] uppercase tracking-wider text-fuchsia-400/80 border border-fuchsia-500/40 rounded px-1.5 py-0.5">beta</span>}
+        right={<span className="text-[9px] uppercase tracking-wider text-orange-400/90 border border-orange-500/40 rounded px-1.5 py-0.5">beta</span>}
       />
+      {/* iter-89.2: re-skinned the AI panel to match the rest of the
+          LeftPanel orange-on-slate palette. The previous fuchsia /
+          cyan pastels at 10% opacity read as washed out next to the
+          rest of the app's primitive / component buttons. Now using
+          two saturation tiers of orange so the primary action (AI
+          Generate) leads visually and the secondary action (Photo
+          → Heightmap) supports without competing. */}
       <div className="p-3 space-y-2">
         <button
           data-testid="ai-generate-btn"
           onClick={onOpenAi}
-          className="w-full h-12 rounded-md border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-500/10 via-purple-500/10 to-orange-500/10 hover:border-fuchsia-500 hover:from-fuchsia-500/20 transition-all flex items-center justify-center gap-2 text-fuchsia-300 text-xs font-semibold tracking-wide"
+          className="w-full h-12 rounded-md bg-orange-500 hover:bg-orange-400 text-white shadow-lg shadow-orange-900/30 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
           title="Generate a 3D model from text or an image"
         >
           <Sparkles size={14} />
@@ -532,7 +539,7 @@ function TabAI({ onOpenAi, onOpenPhotoPlane }) {
           <button
             data-testid="photo-to-plane-btn"
             onClick={onOpenPhotoPlane}
-            className="w-full h-11 rounded-md border border-cyan-500/40 bg-gradient-to-br from-cyan-500/10 via-blue-500/10 to-cyan-500/10 hover:border-cyan-400 hover:from-cyan-500/20 transition-all flex items-center justify-center gap-2 text-cyan-300 text-xs font-semibold tracking-wide"
+            className="w-full h-11 rounded-md border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 hover:border-orange-500 text-orange-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
             title="Convert a photo or typed text into a heightmap relief — lithophanes, keychains, signs"
           >
             <Sparkles size={13} />
