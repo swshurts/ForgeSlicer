@@ -41,6 +41,11 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - "Suggest this profile" community link on the OrcaSlicer admin tab.
 - Potential perf tweak: debounce text-preview re-render (~150 ms) in PhotoToPlaneDialog for long strings on low-end CPUs.
 
+## Resolved This Session (Iter-89, 2026-06-04)
+- **Brand mark on landing** — Celtic-knot anvil logo (`/forgeslicer-logo.webp`) replaces the placeholder orange hexagon in the landing header (scaled 28×28px) and appears as a corner badge in the hero card.
+- **Hero copy refresh** — dropped the "Slice (sort of…)" wink + dotted-underline tooltip. With real OrcaSlicer / Bambu / Prusa integration now shipping, the verbiage now reads "Model. Carve. **Slice.** Print." and the supporting paragraph leads with "Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own with a single click — or export STL / 3MF directly."
+- **LithoForge cross-link** — header + footer now point to the sister app at `lithoforge.com` with a "Forge Suite" framing.
+
 ## Resolved This Session (Iter-88, 2026-06-04)
 - **Admin upstream digest** — weekly Resend-powered email to every admin summarising new/changed upstream OrcaSlicer profiles since the last digest. Silent weeks send nothing (no-op when no deltas detected since last fire). State persisted in `orca_upstream_digest_state` singleton so restarts don't re-spam. Admin tab now exposes a `data-testid="upstream-digest-send-btn"` button that bypasses the 7-day cooldown for QA / copy-tweaking. Backend: 4 new pytest cases (17/17 total green, 42s runtime).
 - **Text → plane (heightmap)** — extended PhotoToPlaneDialog with a Source toggle (Photo / Text). In text mode the user types a string + picks one of 4 system-font families; the canvas-rendered text feeds through the SAME `imageToLuminance` → `buildHeightmapMesh` pipeline as photos. Keychains, name plates, signs. New `textToCanvas(text, opts)` helper in `lib/heightmap.js` with jsdom-resilient unit tests (skipped when no Canvas 2D context, smoke-tests the friendly-error path).

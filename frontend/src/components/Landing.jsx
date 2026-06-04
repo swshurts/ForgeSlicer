@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Hexagon, Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
@@ -46,15 +46,36 @@ export default function Landing() {
       {/* Header */}
       <header className="h-14 border-b border-slate-800 bg-slate-950/70 backdrop-blur flex items-center px-6 sticky top-0 z-10">
         <Link to="/" className="flex items-center gap-2 select-none">
-          <div className="w-7 h-7 rounded bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-            <Hexagon size={16} className="text-white" strokeWidth={2.4} />
-          </div>
+          {/* iter-89: switch the placeholder hexagon for the
+              Celtic-knot anvil logo. The logo is decorative — kept
+              small (28px) so it doesn't dominate the header. */}
+          <img
+            src="/forgeslicer-logo.webp"
+            alt="ForgeSlicer"
+            width={28}
+            height={28}
+            className="rounded shadow-lg shadow-orange-900/30"
+          />
           <div className="leading-tight">
             <div className="text-[14px] font-bold tracking-tight">ForgeSlicer</div>
             <div className="text-[9px] uppercase tracking-widest text-orange-400 -mt-0.5">CAD + Slice</div>
           </div>
         </Link>
         <div className="flex-1" />
+        {/* iter-89: cross-link to the sister tool. The user owns
+            both domains and is positioning them as a "Forge Suite".
+            External link → opens in a new tab so users keep their
+            ForgeSlicer session intact. */}
+        <a
+          href="https://lithoforge.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="landing-lithoforge-link"
+          className="h-8 px-3 text-xs text-slate-400 hover:text-orange-300 hidden sm:flex items-center gap-1.5 transition-colors"
+          title="Open LithoForge — our sister tool for lithophanes &amp; multi-color prints"
+        >
+          <Sparkles size={13} className="text-orange-400" /> LithoForge
+        </a>
         <Link to="/gallery" data-testid="landing-gallery-link" className="h-8 px-3 text-xs text-slate-300 hover:text-white flex items-center gap-1.5">
           <Globe size={14} /> Public Gallery
         </Link>
@@ -73,32 +94,13 @@ export default function Landing() {
             </div>
             <h1 className="mt-5 text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
               Model. Carve.<br />
-              <span
-                data-testid="hero-slice-tooltip"
-                className="relative group/slice inline-block cursor-help"
-              >
-                <span className="text-orange-400 underline decoration-dotted decoration-orange-500/60 underline-offset-[6px]">
-                  Slice (sort of...).
-                </span>
-                {/* Tooltip — hover-revealed via Tailwind's group-hover/slice variant.
-                    Explains that ForgeSlicer's GCODE output is a perimeter-only shell
-                    preview, not a production-ready slice. Positioned below the word so
-                    it doesn't clip the header above. */}
-                <span
-                  role="tooltip"
-                  data-testid="hero-slice-tooltip-body"
-                  className="invisible opacity-0 group-hover/slice:visible group-hover/slice:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-3 w-[320px] bg-slate-900 border border-orange-500/40 rounded-lg p-3 text-xs leading-relaxed text-slate-200 shadow-2xl z-20 normal-case tracking-normal font-normal"
-                >
-                  <span className="block text-orange-300 font-semibold mb-1 text-[10px] uppercase tracking-wider">
-                    What "sort of" means
-                  </span>
-                  ForgeSlicer's built-in GCODE output is an <span className="text-orange-300">outer-shell preview</span> — perimeter contours only, no solid infill, no support generation. Great for design verification on your printer; for a production print, hand it off to OrcaSlicer or another full slicer in one click.
-                </span>
+              <span className="text-orange-400">
+                Slice.
               </span>{" "}
               Print.
             </h1>
             <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl">
-              CAD for people who wish they could do CAD, but don't know how... 3D modeler with positive &amp; negative parts, real boolean operations, and a built-in GCODE slicer — all in one browser tab. Shared components and models for updating and improving your designs. Export STL, 3MF, or hand off to OrcaSlicer in a click.
+              CAD for people who wish they could do CAD, but don't know how — 3D modeler with positive &amp; negative parts, real boolean operations, and integrated production slicing. Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own with a single click — or export STL / 3MF directly. All in your browser tab.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/workspace" data-testid="hero-cta-workspace" className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2">
@@ -159,6 +161,17 @@ export default function Landing() {
               className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-60"
               alt=""
             />
+            {/* iter-89: brand mark as a corner badge — keeps the
+                striking anvil hero shot front-and-centre while
+                surfacing the Celtic-knot logo for brand recall. */}
+            <div className="absolute top-3 right-3 w-14 h-14 rounded-lg bg-slate-950/80 backdrop-blur border border-orange-500/30 p-1.5 shadow-2xl">
+              <img
+                src="/forgeslicer-logo.webp"
+                alt="ForgeSlicer mark"
+                data-testid="landing-hero-logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
             <div className="absolute bottom-4 left-4 right-4 bg-slate-950/80 backdrop-blur border border-slate-800 rounded px-3 py-2 font-mono text-[10px] text-slate-400 flex justify-between">
               <span>LAYER: 247/420</span><span className="text-orange-400">FILAMENT: 4.21 m</span>
             </div>
@@ -169,12 +182,18 @@ export default function Landing() {
           <Feature icon={Box} title="Primitive Library" desc="Cubes, spheres, cylinders, cones, tori — drop them in and edit dimensions numerically or with gizmos." accent="bg-orange-500" />
           <Feature icon={Combine} title="True Boolean Ops" desc="Union, subtract, intersect with three-bvh-csg. Positive & negative parts compose into a clean watertight mesh." accent="bg-cyan-500" />
           <Feature icon={Move3D} title="Precise Transforms" desc="Per-axis numeric position, rotation, scale. Snap-to-grid in mm or degrees. Build-plate bounds checking." accent="bg-emerald-500" />
-          <Feature icon={Layers} title="STL · 3MF · GCODE" desc="Export print-ready files locally, then open in OrcaSlicer for production-quality slicing." accent="bg-amber-500" />
+          <Feature icon={Layers} title="STL · 3MF · GCODE" desc="Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own — one click, real production slicing." accent="bg-amber-500" />
         </div>
       </main>
 
-      <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500">
-        ForgeSlicer · A unified 3D-modeling + slicing playground. Mesh by your fingertips.
+      <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500 space-y-1.5">
+        <div>ForgeSlicer · A unified 3D-modeling + slicing playground. Mesh by your fingertips.</div>
+        <div className="text-[10px] text-slate-600">
+          Part of the Forge Suite ·{" "}
+          <a href="https://lithoforge.com" target="_blank" rel="noopener noreferrer" className="text-orange-400/80 hover:text-orange-300">
+            LithoForge
+          </a>{" "}for lithophanes &amp; multi-color prints
+        </div>
       </footer>
     </div>
   );
