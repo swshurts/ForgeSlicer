@@ -50,6 +50,8 @@ const ALLOWED_ORIGINS = [
   "https://lithoforge.com",
   "https://www.lithoforge.com",
   "https://lithoforge.preview.emergentagent.com",
+  // LithoForge's current preview/staging URL (pre-domain-cutover).
+  "https://color-match-slicer.preview.emergentagent.com",
   // Local dev — same host as preview, so any localhost dev server on
   // either app side can rehearse the flow without code changes.
   "http://localhost:3000",
@@ -281,7 +283,7 @@ export default function Handoff() {
 // Maps an allowed origin back to a short identifier used in the
 // `?from=<source>` query string and in the workspace attribution chip.
 function sourceKeyFromOrigin(origin) {
-  if (origin.includes("lithoforge")) return "lithoforge";
+  if (origin.includes("lithoforge") || origin.includes("color-match-slicer")) return "lithoforge";
   if (origin.includes("localhost")) return "dev";
   return "sister-app";
 }
