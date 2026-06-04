@@ -53,7 +53,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -85,6 +85,9 @@ MACHINE_PATH_RE = re.compile(
 SKIP_PATTERNS = re.compile(r"(?i)(_common|fdm_machine_common|^base_|_base$|abstract)")
 
 SYNC_INTERVAL_SECONDS = 24 * 60 * 60  # 24h
+# Digest cadence — fire one summary email per week per admin even when
+# the daily sync ran every day. Spam control: silent weeks send nothing.
+DIGEST_INTERVAL_SECONDS = 7 * 24 * 60 * 60
 HTTP_TIMEOUT = 20.0
 
 
@@ -390,6 +393,14 @@ async def _scheduler_loop(db) -> None:
                 **result.model_dump(),
                 "trigger": "scheduled",
             })
+            # Weekly admin digest — fires at most once per
+            # DIGEST_INTERVAL_SECONDS even though sync runs daily.
+            # `send_admin_digest_if_due` no-ops when not yet due, when
+            # Resend is unconfigured, or when no admins exist.
+            try:
+                await send_admin_digest_if_due(db)
+            except Exception as digest_err:  # noqa: BLE001
+                logger.warning("orca-upstream digest send failed (non-fatal): %s", digest_err)
         except Exception as e:  # noqa: BLE001
             logger.warning("orca-upstream scheduled sync failed: %s", e)
         await asyncio.sleep(SYNC_INTERVAL_SECONDS)
@@ -400,6 +411,107 @@ def start_scheduler(db) -> asyncio.Task:
     @app.on_event('startup') hook. Returns the task handle so callers
     could cancel it during tests."""
     return asyncio.create_task(_scheduler_loop(db))
+
+
+async def send_admin_digest_if_due(db) -> dict:
+    """Email every admin a "here's what changed upstream since last
+    digest" summary. Returns counts so callers (and tests) can verify
+    behaviour. Pure no-op when:
+      - Resend isn't configured (logged once at boot)
+      - Less than DIGEST_INTERVAL_SECONDS since the last successful send
+      - No new/changed pending deltas have appeared since `since_iso`
+
+    State is persisted in a singleton `orca_upstream_digest_state` doc
+    keyed by `_id='singleton'` so the scheduler can survive restarts
+    without re-spamming admins.
+    """
+    # Lazy import — `email_service` lives at the same level but pulling
+    # it in here keeps the dependency graph in one place.
+    import email_service  # noqa: WPS433 - intentional lazy import
+
+    now = datetime.now(timezone.utc)
+    state = await db.orca_upstream_digest_state.find_one({"_id": "singleton"}) or {}
+    last_iso = state.get("last_sent_at")
+    if last_iso:
+        try:
+            last_dt = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+            if (now - last_dt).total_seconds() < DIGEST_INTERVAL_SECONDS:
+                return {"sent": 0, "skipped": "cooldown", "next_due_seconds":
+                        int(DIGEST_INTERVAL_SECONDS - (now - last_dt).total_seconds())}
+        except (TypeError, ValueError):
+            # Corrupt state row → treat as never-sent and continue.
+            last_dt = None
+    since_iso = last_iso or (now - timedelta(seconds=DIGEST_INTERVAL_SECONDS)).isoformat()
+
+    # Pull deltas newer than `since_iso`. We deliberately do NOT filter
+    # by status — admins want to know about changes regardless of
+    # whether someone already merged/dismissed mid-week. The status is
+    # surfaced in the email row table.
+    cursor = db.orca_upstream_deltas.find(
+        {"detected_at": {"$gt": since_iso}},
+        {"_id": 0, "vendor": 1, "name": 1, "kind": 1, "status": 1, "path": 1},
+    )
+    deltas = await cursor.to_list(length=2000)
+    new_deltas = [d for d in deltas if d.get("kind") == "new"]
+    changed_deltas = [d for d in deltas if d.get("kind") == "changed"]
+    if not new_deltas and not changed_deltas:
+        # Update last_sent_at anyway so a slow week doesn't accumulate
+        # into a flood the moment something changes.
+        await db.orca_upstream_digest_state.update_one(
+            {"_id": "singleton"},
+            {"$set": {"_id": "singleton", "last_sent_at": now.isoformat(), "last_status": "no-changes"}},
+            upsert=True,
+        )
+        return {"sent": 0, "skipped": "no-changes"}
+
+    # Fetch admin recipients. Mirrors `_require_admin_for_upstream` in
+    # server.py — anyone with `is_admin=True` OR `is_super_admin=True`
+    # and a non-empty email gets the digest.
+    admin_cursor = db.users.find(
+        {"$or": [{"is_admin": True}, {"is_super_admin": True}],
+         "email": {"$exists": True, "$ne": ""},
+         "banned": {"$ne": True}},
+        {"_id": 0, "email": 1, "name": 1},
+    )
+    admins = await admin_cursor.to_list(length=200)
+    if not admins:
+        return {"sent": 0, "skipped": "no-admins"}
+
+    sent_count = 0
+    failed_count = 0
+    for admin in admins:
+        msg_id = await email_service.send_upstream_digest(
+            admin["email"],
+            admin.get("name") or "Admin",
+            new_deltas=new_deltas,
+            changed_deltas=changed_deltas,
+            period_label="since the last digest",
+        )
+        if msg_id:
+            sent_count += 1
+        else:
+            failed_count += 1
+
+    await db.orca_upstream_digest_state.update_one(
+        {"_id": "singleton"},
+        {"$set": {
+            "_id": "singleton",
+            "last_sent_at": now.isoformat(),
+            "last_status": "sent",
+            "last_recipients": sent_count,
+            "last_new_count": len(new_deltas),
+            "last_changed_count": len(changed_deltas),
+        }},
+        upsert=True,
+    )
+    logger.info(
+        "orca-upstream digest: %d admins notified (%d new, %d changed, %d failed)",
+        sent_count, len(new_deltas), len(changed_deltas), failed_count,
+    )
+    return {
+        "sent": sent_count, "failed": failed_count,
+        "new": len(new_deltas), "changed": len(changed_deltas),
+    }
 
 
 # ----------------------------- Router ---------------------------------
@@ -421,6 +533,29 @@ def build_orca_upstream_router(*, db, require_admin) -> APIRouter:
             "trigger": f"manual ({admin.get('email', 'admin')})",
         })
         return result
+
+    @router.post("/digest/send-now")
+    async def trigger_digest(admin=Depends(require_admin)):
+        """Bypass the weekly cooldown and send the digest email
+        immediately to every admin. Used for QA + dry-runs by the
+        super-admin who's tuning the email copy. Returns the same
+        counts dict the scheduler logs."""
+        # Reset the cooldown so this path always fires.
+        await db.orca_upstream_digest_state.update_one(
+            {"_id": "singleton"},
+            {"$set": {"last_sent_at": None}},
+            upsert=True,
+        )
+        return await send_admin_digest_if_due(db)
+
+    @router.get("/digest/state")
+    async def get_digest_state(admin=Depends(require_admin)):
+        """Surface the digest singleton row so the admin UI can show
+        'Last digest sent N days ago to M admins'."""
+        state = await db.orca_upstream_digest_state.find_one(
+            {"_id": "singleton"}, {"_id": 0},
+        )
+        return state or {"last_sent_at": None}
 
     @router.get("/runs")
     async def list_runs(limit: int = 20, admin=Depends(require_admin)):

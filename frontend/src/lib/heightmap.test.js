@@ -15,7 +15,7 @@
  *   - tall pixels actually appear tall on the top surface
  *   - bottom surface stays flat at y=0
  */
-import { buildHeightmapMesh, estimateTriangleCount } from "./heightmap";
+import { buildHeightmapMesh, estimateTriangleCount, textToCanvas } from "./heightmap";
 
 describe("estimateTriangleCount", () => {
   test("zero / one resolution returns 0", () => {
@@ -112,3 +112,54 @@ describe("buildHeightmapMesh", () => {
     }
   });
 });
+
+describe("textToCanvas (iter-88)", () => {
+  // jsdom (and node-canvas-less test envs) returns null from
+  // HTMLCanvasElement.getContext("2d"). When that's the case the helper
+  // can't measure text or paint pixels, so these tests skip cleanly
+  // rather than failing the suite. In a real browser these all pass.
+  const canvasOk = (() => {
+    try {
+      const c = document.createElement("canvas");
+      return !!c.getContext("2d");
+    } catch { return false; }
+  })();
+  const maybe = canvasOk ? test : test.skip;
+
+  maybe("returns a canvas with positive dimensions", () => {
+    const c = textToCanvas("Hello");
+    expect(c).toBeInstanceOf(HTMLCanvasElement);
+    expect(c.width).toBeGreaterThan(0);
+    expect(c.height).toBeGreaterThan(0);
+  });
+
+  maybe("longer strings produce wider canvases (1-char vs 16-char)", () => {
+    const a = textToCanvas("A");
+    const b = textToCanvas("Sixteen Char Text");
+    expect(b.width).toBeGreaterThan(a.width);
+  });
+
+  maybe("empty/whitespace input falls back to default placeholder", () => {
+    const c = textToCanvas("");
+    expect(c.width).toBeGreaterThan(0);
+    expect(c.height).toBeGreaterThan(0);
+  });
+
+  maybe("background is white when default options are used", () => {
+    const c = textToCanvas("X");
+    const ctx = c.getContext("2d");
+    const data = ctx.getImageData(1, 1, 1, 1).data;
+    expect(data[0]).toBeGreaterThan(250);
+    expect(data[1]).toBeGreaterThan(250);
+    expect(data[2]).toBeGreaterThan(250);
+  });
+
+  // ALWAYS-runnable smoke test: even without a 2D context, calling
+  // textToCanvas with a missing context must throw a friendly error
+  // rather than silently producing a blank canvas.
+  test("throws a friendly error when 2D context is unavailable", () => {
+    if (canvasOk) return; // skip in real-browser environments
+    expect(() => textToCanvas("Hello")).toThrow(/2D context/);
+  });
+});
+

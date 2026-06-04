@@ -19,7 +19,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import {
   RefreshCw, Loader2, GitBranch, Check, X as XIcon, Clock,
-  AlertCircle, ChevronDown, ChevronRight, Sparkles, Package,
+  AlertCircle, ChevronDown, ChevronRight, Sparkles, Package, Mail,
 } from "lucide-react";
 import { adminApi } from "../../lib/adminApi";
 
@@ -153,8 +153,60 @@ function DiffPanel({ data, onClose }) {
   );
 }
 
-export default function OrcaUpstreamTab() {
-  const [tab, setTab] = useState("pending");           // pending | merged | dismissed | runs
+// Iter-88 — "Send digest now" button + cooldown chip. Loads the
+// singleton digest-state on mount so admins see how long it's been
+// since the last fire-off. The "Send now" action bypasses the weekly
+// cooldown on the backend (admin route resets `last_sent_at` to null
+// before re-invoking the digest path).
+function DigestButton() {
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    adminApi.orcaUpstream.digestState().then(setState).catch(() => {});
+  }, []);
+  const handleSend = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await adminApi.orcaUpstream.sendDigestNow();
+      if (res.skipped === "no-changes") {
+        toast.info("No new or changed upstream profiles since the last digest — nothing to send.");
+      } else if (res.skipped === "no-admins") {
+        toast.warning("No admins on file to receive a digest.");
+      } else {
+        toast.success(`Digest sent to ${res.sent} admin${res.sent === 1 ? "" : "s"} (${res.new} new, ${res.changed} changed).`);
+      }
+      const next = await adminApi.orcaUpstream.digestState();
+      setState(next);
+    } catch (err) {
+      toast.error(`Couldn't send digest: ${err?.response?.data?.detail || err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const last = state?.last_sent_at ? relTime(state.last_sent_at) : "never";
+  return (
+    <div className="flex items-center gap-2" data-testid="upstream-digest-block">
+      <div className="text-[10px] text-slate-500 leading-tight text-right">
+        <div>Last digest:</div>
+        <div className="text-slate-400" data-testid="upstream-digest-last">{last}</div>
+      </div>
+      <button
+        data-testid="upstream-digest-send-btn"
+        onClick={handleSend}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] uppercase tracking-wider font-semibold text-cyan-200 border border-cyan-500/40 hover:border-cyan-400 hover:bg-cyan-500/10 disabled:opacity-50 rounded"
+        title="Email every admin a summary of new + changed upstream profiles. Skips silently if nothing changed."
+      >
+        {busy
+          ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
+          : <><Mail size={12} /> Send digest</>}
+      </button>
+    </div>
+  );
+}
+
+export default function OrcaUpstreamTab() {  const [tab, setTab] = useState("pending");           // pending | merged | dismissed | runs
   const [deltas, setDeltas] = useState([]);
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -274,6 +326,7 @@ export default function OrcaUpstreamTab() {
               Last sync: {relTime(lastRun.finished_at || lastRun.started_at)}
             </div>
           )}
+          <DigestButton />
           <button
             data-testid="upstream-sync-now-btn"
             disabled={syncing}

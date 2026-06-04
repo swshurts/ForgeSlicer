@@ -181,3 +181,55 @@ export function estimateTriangleCount(res) {
   if (res < 2) return 0;
   return 4 * (res - 1) * (res - 1) + 8 * (res - 1);
 }
+
+// Render a string of text onto a canvas so the same heightmap pipeline
+// can be used to produce name plates / keychains / signs. Returns the
+// HTMLCanvasElement directly — `imageToLuminance` accepts any image
+// source `ctx.drawImage` does, so a canvas is a drop-in replacement
+// for the loaded photo's HTMLImageElement.
+//
+// Defaults render BLACK text on a WHITE background — combined with the
+// dialog's invert toggle (on by default) the text becomes the TALL part
+// of the relief, which is what users want for keychains: legible
+// letters standing proud of a flat base.
+//
+// Sizing: the canvas auto-fits the text bounding box plus a margin so
+// the heightmap pipeline doesn't waste resolution on whitespace.
+export function textToCanvas(text, opts = {}) {
+  const {
+    fontFamily = "system-ui, sans-serif",
+    fontWeight = 700,
+    fontSize = 240,           // High res so downsample to 100×100 stays crisp.
+    color = "#000",
+    background = "#fff",
+    paddingPct = 0.12,        // 12% breathing room around the glyphs.
+  } = opts;
+  const safeText = (text || "").trim() || "Hello";
+
+  // First pass — measure the text on a throwaway canvas.
+  const measureCanvas = document.createElement("canvas");
+  const mctx = measureCanvas.getContext("2d");
+  if (!mctx) throw new Error("Couldn't get 2D context for text measurement");
+  mctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+  const metrics = mctx.measureText(safeText);
+  const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.8;
+  const descent = metrics.actualBoundingBoxDescent || fontSize * 0.2;
+  const textW = Math.max(1, metrics.width);
+  const textH = ascent + descent;
+  const padX = textW * paddingPct;
+  const padY = textH * paddingPct;
+
+  // Second pass — real canvas sized to the measured glyphs + padding.
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(textW + padX * 2);
+  canvas.height = Math.ceil(textH + padY * 2);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Couldn't get 2D context for text render");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = color;
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+  ctx.fillText(safeText, padX, padY + ascent);
+  return canvas;
+}

@@ -77,5 +77,16 @@ export const adminApi = {
       const { data } = await axios.post(`${API}/admin/orca-upstream/deltas/${encodeURIComponent(deltaId)}/dismiss`, null, cfg);
       return data;
     },
+    // Iter-88: admin digest. The scheduler fires the digest at most
+    // once a week; the "send now" route bypasses the cooldown for
+    // QA / copy-tweaking flows.
+    digestState: async () => {
+      const { data } = await axios.get(`${API}/admin/orca-upstream/digest/state`, cfg);
+      return data;
+    },
+    sendDigestNow: async () => {
+      const { data } = await axios.post(`${API}/admin/orca-upstream/digest/send-now`, null, cfg);
+      return data;
+    },
   },
 };

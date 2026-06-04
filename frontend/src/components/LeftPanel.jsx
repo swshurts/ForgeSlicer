@@ -533,13 +533,13 @@ function TabAI({ onOpenAi, onOpenPhotoPlane }) {
             data-testid="photo-to-plane-btn"
             onClick={onOpenPhotoPlane}
             className="w-full h-11 rounded-md border border-cyan-500/40 bg-gradient-to-br from-cyan-500/10 via-blue-500/10 to-cyan-500/10 hover:border-cyan-400 hover:from-cyan-500/20 transition-all flex items-center justify-center gap-2 text-cyan-300 text-xs font-semibold tracking-wide"
-            title="Convert a photo into a heightmap relief — lithophanes, coins, custom emboss"
+            title="Convert a photo or typed text into a heightmap relief — lithophanes, keychains, signs"
           >
             <Sparkles size={13} />
-            Photo → Heightmap Plane
+            Photo / Text → Heightmap
           </button>
           <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
-            Bright pixels become tall, dark pixels stay thin. Perfect for lithophanes and reliefs.
+            Bright pixels become tall, dark pixels stay thin. Perfect for lithophanes, keychains &amp; name plates.
           </p>
         </div>
       </div>

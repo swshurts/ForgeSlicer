@@ -309,3 +309,61 @@ def test_dismiss_marks_delta_dismissed(authed_admin_session, db):
         assert r2.status_code == 404
     finally:
         db.orca_upstream_deltas.delete_one({"id": seed_id})
+
+
+# ---------- Iter-88: Digest endpoint tests ----------
+
+
+def test_digest_state_endpoint_admin_only(authed_plain_session):
+    """Non-admin must not see digest state — 403."""
+    sess, _ = authed_plain_session
+    r = sess.get(f"{API}/admin/orca-upstream/digest/state", timeout=10)
+    assert r.status_code == 403
+
+
+def test_digest_state_endpoint_unauth():
+    """Anonymous request → 401, before the admin check runs."""
+    r = requests.get(f"{API}/admin/orca-upstream/digest/state", timeout=10)
+    assert r.status_code == 401
+
+
+def test_digest_state_endpoint_returns_state(authed_admin_session, db):
+    """Admin GET /digest/state returns the singleton row, or a default
+    when no row exists yet."""
+    sess, _ = authed_admin_session
+    # Clear any prior state for a clean baseline.
+    db.orca_upstream_digest_state.delete_one({"_id": "singleton"})
+    r = sess.get(f"{API}/admin/orca-upstream/digest/state", timeout=10)
+    assert r.status_code == 200
+    body = r.json()
+    assert "last_sent_at" in body
+    assert body["last_sent_at"] is None
+
+
+def test_digest_send_now_returns_counts(authed_admin_session, db):
+    """The send-now route bypasses the weekly cooldown. It MUST always
+    return 200 with a counts dict — either {sent, failed, new, changed}
+    or {sent:0, skipped:'<reason>'}. In a test env where Resend isn't
+    configured, sends will fail silently with `msg_id=None` → counted
+    as failed, NOT as sent. Either response shape is acceptable here;
+    we just verify the route's contract."""
+    sess, _ = authed_admin_session
+    r = sess.post(f"{API}/admin/orca-upstream/digest/send-now", timeout=45)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Either we report counts (sent/failed/new/changed) or we explicitly
+    # skip (no-changes / no-admins). Both shapes are valid contract.
+    assert "sent" in body
+    if "skipped" in body:
+        assert body["skipped"] in ("no-changes", "no-admins")
+    else:
+        # When the route DID try to send, the counts dict must have the
+        # full four-key shape.
+        for k in ("sent", "failed", "new", "changed"):
+            assert k in body, f"missing key {k}: {body}"
+
+
+def test_digest_send_now_admin_only():
+    r = requests.post(f"{API}/admin/orca-upstream/digest/send-now", timeout=10)
+    assert r.status_code == 401
+

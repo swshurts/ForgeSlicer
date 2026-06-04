@@ -34,19 +34,32 @@
 //   - invert ON (lithophane convention)
 
 import React, { useEffect, useRef, useState } from "react";
-import { X, Image as ImageIcon, Loader2, RefreshCw, AlertCircle, Sparkles } from "lucide-react";
+import { X, Image as ImageIcon, Loader2, RefreshCw, AlertCircle, Sparkles, Type } from "lucide-react";
 import { toast } from "sonner";
 import { useScene } from "../../lib/store";
-import { loadImage, imageToLuminance, buildHeightmapMesh, estimateTriangleCount } from "../../lib/heightmap";
+import { loadImage, imageToLuminance, buildHeightmapMesh, estimateTriangleCount, textToCanvas } from "../../lib/heightmap";
 
 // loadImage, imageToLuminance, buildHeightmapMesh, estimateTriangleCount
 // moved to lib/heightmap.js (iter-87 follow-up) so the canvas-pixel →
 // vertex-grid pipeline can be unit-tested independently of React.
+// Iter-88: `textToCanvas` joins the toolkit so the same pipeline can
+// produce keychains / name plates / signs from a typed string.
 
 const RESOLUTIONS = [
   { key: "low",  label: "Low (60×60)",   res: 60 },
   { key: "med",  label: "Medium (100×100)", res: 100 },
   { key: "high", label: "High (160×160)", res: 160 },
+];
+
+// Built-in font choices. We rely on widely-available system fonts so
+// nothing has to ship with the app. The visual style of the heightmap
+// is dominated by the bold strokes anyway — exotic display fonts add
+// little after the relief extrudes.
+const FONTS = [
+  { key: "sans",    label: "Sans",    family: "system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" },
+  { key: "serif",   label: "Serif",   family: "Georgia, 'Times New Roman', Times, serif" },
+  { key: "mono",    label: "Mono",    family: "ui-monospace, 'IBM Plex Mono', Menlo, Consolas, monospace" },
+  { key: "display", label: "Display", family: "Impact, 'Arial Black', sans-serif" },
 ];
 
 export default function PhotoToPlaneDialog({ open, onClose }) {
@@ -62,6 +75,12 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
   const [reliefH, setReliefH] = useState(3);
   const [invert, setInvert] = useState(true);
   const [gain, setGain] = useState(1.4);
+  // Iter-88: source mode. "photo" is the original flow. "text" swaps
+  // the file dropzone for a text input + font picker, then routes the
+  // rendered canvas through the same imageToLuminance pipeline.
+  const [sourceMode, setSourceMode] = useState("photo"); // "photo" | "text"
+  const [textValue, setTextValue] = useState("ForgeSlicer");
+  const [fontKey, setFontKey] = useState("display");
   const previewCanvasRef = useRef(null);
 
   // Reset when reopened.
@@ -101,6 +120,25 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
     if (ar >= 1) drawH = cw / ar; else drawW = ch * ar;
     ctx.drawImage(tmp, (cw - drawW) / 2, (ch - drawH) / 2, drawW, drawH);
   }, [img, resKey, gain, invert]);
+
+  // Iter-88 — when source mode is "text", render the typed string into
+  // a canvas and feed it through the SAME `img` slot. `imageToLuminance`
+  // accepts any image source `ctx.drawImage` does (canvas counts), so
+  // no pipeline changes are needed downstream.
+  useEffect(() => {
+    if (!open || sourceMode !== "text") return;
+    try {
+      const canvas = textToCanvas(textValue, {
+        fontFamily: FONTS.find((f) => f.key === fontKey).family,
+        fontWeight: 800,
+      });
+      setImg(canvas);
+      setFile({ name: `${textValue.replace(/[^a-z0-9_-]+/gi, "_") || "text"}.txt` });
+    } catch (e) {
+      setError(`Couldn't render text: ${e.message || e}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sourceMode, textValue, fontKey]);
 
   const pickFile = async (f) => {
     if (!f) return;
@@ -162,8 +200,8 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-cyan-400" />
             <div>
-              <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Photo to plane</h2>
-              <div className="text-[10px] text-slate-500 leading-tight">Heightmap relief from any photo — great for lithophanes &amp; coins</div>
+              <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Photo / Text → plane</h2>
+              <div className="text-[10px] text-slate-500 leading-tight">Heightmap relief from a photo or typed text — great for lithophanes, keychains, signs &amp; coins</div>
             </div>
           </div>
           <button onClick={onClose} data-testid="photo-to-plane-close-btn" className="text-slate-400 hover:text-white">
@@ -172,14 +210,70 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* LEFT — drop zone + preview */}
+          {/* LEFT — source picker + height-map preview */}
           <div className="space-y-3">
-            {!img ? (
+            {/* Iter-88 source-mode toggle. Switches the dropzone to a
+                text input + font picker. Clearing img on switch forces
+                a fresh render of the chosen source. */}
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 border border-slate-800 rounded">
+              <button
+                data-testid="photo-to-plane-mode-photo"
+                onClick={() => { setSourceMode("photo"); setImg(null); setFile(null); }}
+                className={`h-7 text-[10px] uppercase tracking-wider font-semibold rounded flex items-center justify-center gap-1.5 transition-colors ${
+                  sourceMode === "photo" ? "bg-cyan-500/20 text-cyan-200" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <ImageIcon size={11} /> Photo
+              </button>
+              <button
+                data-testid="photo-to-plane-mode-text"
+                onClick={() => { setSourceMode("text"); setImg(null); setFile(null); }}
+                className={`h-7 text-[10px] uppercase tracking-wider font-semibold rounded flex items-center justify-center gap-1.5 transition-colors ${
+                  sourceMode === "text" ? "bg-cyan-500/20 text-cyan-200" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Type size={11} /> Text
+              </button>
+            </div>
+
+            {sourceMode === "text" && (
+              <div className="space-y-2" data-testid="photo-to-plane-text-controls">
+                <input
+                  data-testid="photo-to-plane-text-input"
+                  type="text"
+                  value={textValue}
+                  onChange={(e) => setTextValue(e.target.value)}
+                  maxLength={48}
+                  placeholder="Type a name or short phrase…"
+                  className="w-full h-9 bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded text-sm text-white px-3 outline-none"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400">Font</span>
+                    <select
+                      data-testid="photo-to-plane-font"
+                      value={fontKey}
+                      onChange={(e) => setFontKey(e.target.value)}
+                      className="w-full h-8 bg-slate-950 border border-slate-700 rounded text-xs text-white px-2"
+                    >
+                      {FONTS.map((f) => (
+                        <option key={f.key} value={f.key}>{f.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="text-[10px] text-slate-500 self-end pb-1.5 leading-tight">
+                    Dark text → tall extrusion when invert is on (the default).
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {sourceMode === "photo" && !img && (
               <label
                 data-testid="photo-to-plane-drop"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
-                className="block h-64 rounded-lg border-2 border-dashed border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/5 cursor-pointer flex items-center justify-center text-center p-6 transition-colors"
+                className="block h-56 rounded-lg border-2 border-dashed border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/5 cursor-pointer flex items-center justify-center text-center p-6 transition-colors"
               >
                 <input
                   data-testid="photo-to-plane-file-input"
@@ -194,27 +288,31 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
                   <div className="text-[10px] text-slate-500 mt-1">PNG · JPG · WEBP · HEIC</div>
                 </div>
               </label>
-            ) : (
+            )}
+
+            {img && (
               <div className="space-y-2">
                 <div className="relative">
                   <canvas
                     ref={previewCanvasRef}
                     width={420}
-                    height={260}
-                    className="w-full h-64 bg-slate-950 rounded border border-slate-800"
+                    height={sourceMode === "text" ? 180 : 260}
+                    className={`w-full bg-slate-950 rounded border border-slate-800 ${sourceMode === "text" ? "h-44" : "h-64"}`}
                     data-testid="photo-to-plane-preview-canvas"
                   />
                   <div className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-slate-900/80 text-cyan-300 px-1.5 py-0.5 rounded">
                     Height preview
                   </div>
                 </div>
-                <button
-                  data-testid="photo-to-plane-clear-btn"
-                  onClick={() => { setFile(null); setImg(null); }}
-                  className="w-full h-7 text-[10px] uppercase tracking-wider text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 rounded flex items-center justify-center gap-1.5"
-                >
-                  <RefreshCw size={11} /> Pick a different photo
-                </button>
+                {sourceMode === "photo" && (
+                  <button
+                    data-testid="photo-to-plane-clear-btn"
+                    onClick={() => { setFile(null); setImg(null); }}
+                    className="w-full h-7 text-[10px] uppercase tracking-wider text-slate-300 hover:text-white border border-slate-700 hover:border-slate-500 rounded flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw size={11} /> Pick a different photo
+                  </button>
+                )}
               </div>
             )}
             {error && (
