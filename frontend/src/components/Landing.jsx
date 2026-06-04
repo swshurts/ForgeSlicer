@@ -152,26 +152,30 @@ export default function Landing() {
           </div>
 
           <div className="relative aspect-square rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 overflow-hidden">
+            {/* Subtle blueprint-grid background — references CAD without
+                competing with the brand mark. */}
             <div className="absolute inset-0 opacity-20" style={{
               backgroundImage: "linear-gradient(rgba(249,115,22,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(249,115,22,0.18) 1px, transparent 1px)",
               backgroundSize: "32px 32px",
             }} />
-            <img
-              src="https://images.unsplash.com/photo-1709626011485-6fe000ea2dbc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHw0fHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85"
-              className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-60"
-              alt=""
+            {/* Warm forge-glow halo behind the mark — picks up the
+                orange embers in the logo and ties into the
+                'CAD + Slice' accent colour. */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: "radial-gradient(circle at 50% 52%, rgba(249,115,22,0.28) 0%, rgba(249,115,22,0.06) 38%, transparent 65%)",
+              }}
             />
-            {/* iter-89: brand mark as a corner badge — keeps the
-                striking anvil hero shot front-and-centre while
-                surfacing the Celtic-knot logo for brand recall. */}
-            <div className="absolute top-3 right-3 w-14 h-14 rounded-lg bg-slate-950/80 backdrop-blur border border-orange-500/30 p-1.5 shadow-2xl">
-              <img
-                src="/forgeslicer-logo.webp"
-                alt="ForgeSlicer mark"
-                data-testid="landing-hero-logo"
-                className="w-full h-full object-contain"
-              />
-            </div>
+            {/* iter-89.1: brand mark is now the hero centerpiece per
+                user feedback. Drop-shadow blooms the orange embers so
+                the mark glows on the dark plate. */}
+            <img
+              src="/forgeslicer-logo.webp"
+              alt="ForgeSlicer mark"
+              data-testid="landing-hero-logo"
+              className="absolute inset-0 m-auto w-[72%] h-[72%] object-contain drop-shadow-[0_0_60px_rgba(249,115,22,0.45)]"
+            />
             <div className="absolute bottom-4 left-4 right-4 bg-slate-950/80 backdrop-blur border border-slate-800 rounded px-3 py-2 font-mono text-[10px] text-slate-400 flex justify-between">
               <span>LAYER: 247/420</span><span className="text-orange-400">FILAMENT: 4.21 m</span>
             </div>
