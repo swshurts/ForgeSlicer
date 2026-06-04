@@ -118,7 +118,12 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
-          <Toaster richColors closeButton position="top-center" />
+          {/* iter-88: top-right position avoids overlapping the
+              admin tab strip (testing agent reported the older
+              top-center toast intercepted clicks even when it didn't
+              visually overlap, since sonner sets pointer-events:auto
+              on the surrounding viewport). */}
+          <Toaster richColors closeButton position="top-right" />
           <SplashScreen />
           <ReleaseNotesDialog />
           <SVGImportDialog />

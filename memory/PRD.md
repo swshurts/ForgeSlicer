@@ -28,18 +28,23 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-06-03)
+## Current Open Items (as of 2026-06-04)
 
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
 ### Backlog (P2/P3)
-- Multi-user CRDT collaborative editing (Yjs).
+- Multi-user CRDT collaborative editing (Yjs) — **deferred until post-beta**; user wants to price as a premium feature.
 - Admin moderation dashboard for flagged shared profiles (counter exists; UI deferred).
-- Admin email digest via Resend for new merged upstream profiles.
 - Continue store.js refactor: extract booleanActions / historyActions next (1389 lines still over the 700 guideline).
 - Continue Viewport.jsx refactor: extract the gizmo/transform-control handler block + ruler overlay block (1294 lines).
 - "Suggest this profile" community link on the OrcaSlicer admin tab.
+- Potential perf tweak: debounce text-preview re-render (~150 ms) in PhotoToPlaneDialog for long strings on low-end CPUs.
+
+## Resolved This Session (Iter-88, 2026-06-04)
+- **Admin upstream digest** — weekly Resend-powered email to every admin summarising new/changed upstream OrcaSlicer profiles since the last digest. Silent weeks send nothing (no-op when no deltas detected since last fire). State persisted in `orca_upstream_digest_state` singleton so restarts don't re-spam. Admin tab now exposes a `data-testid="upstream-digest-send-btn"` button that bypasses the 7-day cooldown for QA / copy-tweaking. Backend: 4 new pytest cases (17/17 total green, 42s runtime).
+- **Text → plane (heightmap)** — extended PhotoToPlaneDialog with a Source toggle (Photo / Text). In text mode the user types a string + picks one of 4 system-font families; the canvas-rendered text feeds through the SAME `imageToLuminance` → `buildHeightmapMesh` pipeline as photos. Keychains, name plates, signs. New `textToCanvas(text, opts)` helper in `lib/heightmap.js` with jsdom-resilient unit tests (skipped when no Canvas 2D context, smoke-tests the friendly-error path).
+- **Sonner toast position** — moved from `top-center` → `top-right` after the testing agent caught the auto-theme banner intercepting admin-tab clicks even when not visually overlapping (sonner sets `pointer-events:auto` on its viewport).
 
 ## Resolved This Session (Iter-87, 2026-06-03)
 - **Photo-to-plane (experimental)** — new dialog in LeftPanel → AI tab. Drag/drop or pick an image → luminance heightmap → triangulated mesh on the build plate. Tuned for lithophanes by default (invert ON, 0.6 mm base, 3 mm relief). Resolution low/med/high. Watertight output via top + bottom + perimeter wall triangulation. Pure client-side (no upload, no API costs). Mesh-builder extracted to `lib/heightmap.js` with 11 unit tests covering extents, aspect ratio, watertightness, and degenerate-triangle prevention.
