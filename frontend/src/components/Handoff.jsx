@@ -85,10 +85,26 @@ export default function Handoff() {
   useEffect(() => {
     function onMessage(event) {
       if (handledRef.current) return;
-      if (!ALLOWED_ORIGINS.includes(event.origin)) return; // silent drop
+      // Only react to OUR protocol messages — ignore everything else
+      // (React DevTools, browser extensions, etc.) without spamming
+      // the console. If the type matches but the origin is wrong, log
+      // a warning so the LithoForge dev can see WHY the handoff was
+      // dropped (otherwise it just looks like a 20s timeout).
+      const isOurProtocol =
+        event.data && typeof event.data === "object" &&
+        typeof event.data.type === "string" &&
+        event.data.type.startsWith("forgeslicer:handoff:");
+      if (!isOurProtocol) return;
+      if (!ALLOWED_ORIGINS.includes(event.origin)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[forgeslicer/handoff] Dropping message from non-allowlisted origin "${event.origin}". ` +
+          `Add it to ALLOWED_ORIGINS in /app/frontend/src/components/Handoff.jsx.`
+        );
+        return;
+      }
 
       const msg = event.data;
-      if (!msg || typeof msg !== "object") return;
       if (msg.type !== "forgeslicer:handoff:stl") return;
 
       const filename = String(msg.filename || "model.stl").slice(0, 200);
@@ -160,12 +176,24 @@ export default function Handoff() {
     // point we don't know which allowed origin opened us — the *next*
     // inbound message gets validated by the strict allowlist check
     // above. The ready ping carries no sensitive data.
-    if (window.opener) {
+    //
+    // We re-send the ping every second for the first ~5 seconds in
+    // case the opener's listener wasn't attached yet when the first
+    // ping fired (slow JS startup on the opener side, hydration
+    // delays, etc.). Cheap insurance; LithoForge's listener
+    // de-duplicates by setting `readyReceived=true`.
+    let readyPings = 0;
+    const sendReady = () => {
+      if (handledRef.current) return;
+      if (!window.opener) return;
       try {
         window.opener.postMessage({ type: "forgeslicer:handoff:ready" }, "*");
       } catch {
         // Opener is cross-origin and may reject — we still listen.
       }
+    };
+    if (window.opener) {
+      sendReady();
     } else {
       // Opened directly (no opener) — show guidance instead of waiting forever.
       setStatus("error");
@@ -174,17 +202,33 @@ export default function Handoff() {
         "Open it via your sister app's \"Send to ForgeSlicer\" button instead of typing the URL directly.",
       );
     }
+    const readyInterval = setInterval(() => {
+      readyPings += 1;
+      if (readyPings >= 5 || handledRef.current) {
+        clearInterval(readyInterval);
+        return;
+      }
+      sendReady();
+    }, 1000);
 
-    // Timeout for waiting state — if no payload arrives in 20s, give up.
+    // Timeout for waiting state — bumped from 20s to 90s (iter-93)
+    // to match LithoForge's 90s side. Large STLs on slow connections
+    // can take 30-60 s to fetch + transfer, so 20 s was firing
+    // prematurely. 90s lines up with both sides' patience budget.
     const t = setTimeout(() => {
       if (!handledRef.current) {
         setStatus("error");
-        setErrorMsg("No payload received from the opener (timed out after 20s).");
+        setErrorMsg(
+          "No payload received from the opener (timed out after 90s). " +
+          "If this keeps happening, check the browser console on the LithoForge tab — " +
+          "ForgeSlicer logs a warning when it drops a message from a non-allowlisted origin."
+        );
       }
-    }, 20000);
+    }, 90000);
 
     return () => {
       window.removeEventListener("message", onMessage);
+      clearInterval(readyInterval);
       clearTimeout(t);
     };
   }, [navigate]);
