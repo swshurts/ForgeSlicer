@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 // is logged in; otherwise shows a sign-in card that preserves the requested
 // path so the user lands back there after sign-in completes (regardless of
 // auth method used).
-export default function ProtectedRoute({ children, label = "this page" }) {
+export default function ProtectedRoute({ children, label = "this page", allowGuestFromHandoff = false }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -26,6 +26,16 @@ export default function ProtectedRoute({ children, label = "this page" }) {
   // bounces back to the sign-in card — looking like the redirect failed.
   const stateUser = location.state?.user;
 
+  // Iter-92 — `?from=<sister-app>` lets cross-app handoffs (LithoForge,
+  // etc.) drop the user directly on the bed in guest mode. Existing
+  // ForgeSlicer accounts still see the workspace as usual; only the
+  // anonymous-visitor branch is altered. The handoff page sets this
+  // query param after validating the postMessage origin, so an
+  // attacker can't forge it by pasting a URL — they'd just land on the
+  // workspace with no pending model (effectively the same as visiting
+  // the workspace anonymously).
+  const fromHandoff = allowGuestFromHandoff && new URLSearchParams(location.search).get("from");
+
   if (loading && !stateUser) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center" data-testid="protected-loading">
@@ -35,6 +45,7 @@ export default function ProtectedRoute({ children, label = "this page" }) {
   }
 
   if (user || stateUser) return children;
+  if (fromHandoff) return children;
 
   const returnPath = location.pathname + (location.search || "");
   return (

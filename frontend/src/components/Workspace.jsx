@@ -46,6 +46,12 @@ export default function Workspace() {
   const [subdivideTargetId, setSubdivideTargetId] = useState(null);
   const [projectExplorerOpen, setProjectExplorerOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
+  // Iter-92 — when an STL arrives via cross-app handoff (LithoForge ➜
+  // ForgeSlicer) we stash the attribution metadata so a sticky chip
+  // can show "Imported from LithoForge · model.stl" with a back-link
+  // to the original project page. Independent of `importBanner` (which
+  // auto-dismisses) — the chip persists until the user closes it.
+  const [importSource, setImportSource] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Voice command may emit a "forgeslicer:open-dialog" event to open a named
@@ -419,15 +425,17 @@ export default function Workspace() {
     return () => window.removeEventListener("forgeslicer:auto-save-now", handler);
   }, [serialize]);
 
-  // Load a file handed off from the Landing page (one-shot, survives
-  // StrictMode double-mount because takePendingImport() is idempotent — once
-  // it returns the File, subsequent calls return null even if the effect
-  // re-runs. We intentionally do NOT abort the in-flight work on cleanup so
-  // the imported mesh always lands in the Zustand store (which is global,
-  // not tied to this component instance).
+  // Load a file handed off from the Landing page OR from a sister-app
+  // postMessage flow (Iter-92, /handoff). One-shot, survives StrictMode
+  // double-mount because takePendingImport() is idempotent — once it
+  // returns the payload, subsequent calls return null even if the
+  // effect re-runs. We intentionally do NOT abort the in-flight work on
+  // cleanup so the imported mesh always lands in the Zustand store.
   useEffect(() => {
-    const file = takePendingImport();
-    if (!file) return;
+    const payload = takePendingImport();
+    if (!payload) return;
+    const file = payload.file;
+    const meta = payload.meta;
     (async () => {
       try {
         const mesh = await importAnyMeshFile(file);
@@ -435,9 +443,34 @@ export default function Workspace() {
         setProjectName(mesh.name);
         setImportBanner({
           kind: "ok",
-          message: `Imported "${file.name}" — ready to edit.`,
+          message: meta?.sourceLabel
+            ? `Imported "${file.name}" from ${meta.sourceLabel} — ready to edit.`
+            : `Imported "${file.name}" — ready to edit.`,
         });
+        if (meta?.sourceLabel) {
+          setImportSource({ ...meta, filename: file.name });
+        }
         setTimeout(() => setImportBanner(null), 4000);
+
+        // Iter-92 — Guest mode from a sister-app handoff: nudge sign-up
+        // ONCE after the model lands. Skipped for already-signed-in
+        // users; the toast itself is best-effort (toast import already
+        // present at the top of this file).
+        const fromParam = searchParams.get("from");
+        if (fromParam && !user) {
+          setTimeout(() => {
+            toast.info("Save your work?", {
+              description: "Create a free ForgeSlicer account to keep this design, publish it to the gallery, or hand it off to your slicer.",
+              duration: 10000,
+              action: {
+                label: "Sign up",
+                onClick: () => {
+                  window.location.href = `/signin?mode=register&return=${encodeURIComponent("/workspace")}`;
+                },
+              },
+            });
+          }, 1500);
+        }
       } catch (e) {
         setImportBanner({
           kind: "err",
@@ -739,6 +772,40 @@ export default function Workspace() {
               dismiss
             </button>
           )}
+        </div>
+      )}
+      {/* Iter-92 — Sticky attribution chip for cross-app handoffs.
+          Sits below the TopToolbar (which is ~h-12), centred. Closeable
+          by the user once they no longer need the back-link. */}
+      {importSource && (
+        <div
+          data-testid="import-source-chip"
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-40 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 backdrop-blur border border-orange-500/40 shadow-lg shadow-orange-900/20 text-[11px]"
+        >
+          <span className="text-slate-400">Imported from</span>
+          {importSource.sourceUrl ? (
+            <a
+              data-testid="import-source-link"
+              href={importSource.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-orange-300 hover:text-orange-200 font-semibold underline decoration-dotted"
+            >
+              {importSource.sourceLabel}
+            </a>
+          ) : (
+            <span className="text-orange-300 font-semibold">{importSource.sourceLabel}</span>
+          )}
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-300 font-mono truncate max-w-[24ch]">{importSource.filename}</span>
+          <button
+            data-testid="import-source-dismiss"
+            onClick={() => setImportSource(null)}
+            className="ml-1 text-slate-500 hover:text-white"
+            aria-label="Dismiss"
+          >
+            <X size={12} />
+          </button>
         </div>
       )}
     </div>

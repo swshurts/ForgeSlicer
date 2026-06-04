@@ -36,13 +36,22 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Backlog (P2/P3)
 - Multi-user CRDT collaborative editing (Yjs) — **deferred until post-beta**; user wants to price as a premium feature.
 - (P3) Shared Auth between sister app LithoForge and ForgeSlicer (via Emergent-managed Google Auth).
-- (P3) One-way handoff button from LithoForge to ForgeSlicer.
 - Continue store.js refactor: extract booleanActions / historyActions next (still over the 700 guideline).
 - Continue Viewport.jsx refactor: extract the gizmo/transform-control handler block.
 - Potential perf tweak: debounce text-preview re-render (~150 ms) in PhotoToPlaneDialog for long strings on low-end CPUs.
 - (Non-blocking polish) "Suggest a profile" CTA is buried — surface it on the bottom status-bar PRINTER label or top toolbar.
 - (Non-blocking polish) `/admin` auto-theme banner intercepts pointer events on the tab strip — lower z-index / bound pointer-events to its visual rect.
 - (Non-blocking polish) Moderation Delete button only shows on Recent tab for `is_public:true` rows — unpublished+cleared rows become unreachable from the UI; show Delete on both tabs.
+
+## Resolved This Session (Iter-92, 2026-02-XX)
+- **Cross-app handoff receiver for LithoForge → ForgeSlicer** — new `/handoff` route handshakes via `postMessage` with the opener tab. Origin allowlist hard-coded (`lithoforge.com`, `www.lithoforge.com`, the preview/dev URLs); anything else is silently dropped. Payload validated (`type === "forgeslicer:handoff:stl"`, filename ext in `.stl/.obj/.3mf/.glb`, ≤50 MB, `data: ArrayBuffer` or `dataUrl: data:...` accepted). Receipt acknowledged back to the opener via `forgeslicer:handoff:received`. 20s timeout falls back to a friendly error card with an "Open the slicer anyway" CTA.
+- **Guest mode for handoffs** — `ProtectedRoute` accepts a new `allowGuestFromHandoff` prop; when present and `?from=<source>` is on the URL, anonymous visitors land directly on the workspace (with the model already on the bed) instead of bouncing to sign-in. Existing signed-in users skip the guest-mode branch entirely — they just see the workspace as usual (rule 3.ii from the user's clarification).
+- **Attribution chip** — sticky pill at top of the workspace: "Imported from **LithoForge** · `model.stl`" with the source label hyperlinked back to the originating project page when LithoForge passes `sourceUrl`. User-dismissible via × button.
+- **Sign-up nudge** — for guest-mode handoffs ONLY, a sonner toast appears 1.5s post-import: "Save your work? Create a free ForgeSlicer account..." with a Sign up button that returns to `/workspace` post-auth. Skipped silently when an existing user lands on the page.
+- **`pendingImport` envelope shape** — extended to `{ file, meta: { sourceLabel, sourceUrl, sourceKey } | null }`. Landing-page imports pass `meta=null` (back-compat); handoffs pass full metadata. `Workspace.jsx` consumes both shapes via the new envelope contract.
+- **E2E smoke verified** — synthetic postMessage from `https://lithoforge.com` decoded the STL → routed to `/workspace?from=lithoforge` → mesh in viewport, attribution chip visible, sign-up toast appeared. Disallowed origin (`https://evil.example.com`) was silently rejected (page stayed in waiting state, no navigation, no pending import).
+- **LithoForge integration snippet** documented in `Handoff.jsx` JSDoc — drop-in for the LithoForge "Send to ForgeSlicer" button.
+
 
 ## Resolved This Session (Iter-91, 2026-02-XX)
 - **Bulk "Merge all pending" for upstream profiles** — admin tab now shows a banner above the pending-deltas table (`upstream-merge-all-btn`) that one-click promotes every pending OrcaSlicer upstream profile into `bundled_synced_printers`. Built for the first-run scenario where the daily sync surfaces 1800+ legitimate vetted profiles. Endpoint: `POST /api/admin/orca-upstream/deltas/merge-all`. Idempotent (status=pending query filter + upsert keyed on `source_path`), tallies failures rather than aborting on a single bad cache row. 4 new pytest cases (auth gate, non-admin gate, bulk merge of 3 seeded deltas, idempotency) — all green (21/21 total in test_orca_upstream.py).

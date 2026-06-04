@@ -15,6 +15,7 @@ import AuthorProfile from "@/components/AuthorProfile";
 import AdminPage from "@/components/AdminPage";
 import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
+import Handoff from "@/components/Handoff";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -57,9 +58,10 @@ function AppRouter() {
       <Route
         path="/workspace"
         element={
-          <ProtectedRoute label="the workspace"><Workspace /></ProtectedRoute>
+          <ProtectedRoute label="the workspace" allowGuestFromHandoff><Workspace /></ProtectedRoute>
         }
       />
+      <Route path="/handoff" element={<Handoff />} />
       <Route
         path="/profile"
         element={
