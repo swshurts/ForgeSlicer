@@ -14,7 +14,7 @@ import SettingsDialog from "./dialogs/SettingsDialog";
 import ProjectExplorerDialog from "./dialogs/ProjectExplorerDialog";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { useScene } from "../lib/store";
-import { importSTLFile, importAnyMeshFile } from "../lib/exporters";
+import { importSTLFile, importAnyMeshFile, import3MFFileMulti } from "../lib/exporters";
 import { computeRotatedBBox } from "../lib/geometry";
 import { takePendingImport } from "../lib/pendingImport";
 import { API } from "../lib/api";
@@ -439,13 +439,34 @@ export default function Workspace() {
     const meta = payload.meta;
     (async () => {
       try {
-        const mesh = await importAnyMeshFile(file);
-        addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-        setProjectName(mesh.name);
+        // Iter-94 Phase 2 — when the incoming file is a 3MF, use the
+        // multi-object importer so per-object colors from
+        // <basematerials> reach the workspace. STL/OBJ/etc fall back
+        // to the legacy single-mesh importer.
+        const isThreeMF = /\.3mf$/i.test(file.name);
+        let primaryName = "";
+        if (isThreeMF) {
+          const multi = await import3MFFileMulti(file);
+          primaryName = multi.fileName;
+          // Add each object as a separate mesh. The first object's
+          // name becomes the project name; subsequent objects keep
+          // their own names (visible in the Outliner) so the user can
+          // identify tone-by-tone.
+          multi.objects.forEach((o) => {
+            addImportedMesh(o.name, o.vertices, o.indices, o.originalBbox, {
+              customColor: o.displaycolor || undefined,
+              materialName: o.materialName || undefined,
+            });
+          });
+        } else {
+          const mesh = await importAnyMeshFile(file);
+          primaryName = mesh.name;
+          addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+        }
+        setProjectName(primaryName);
         // Iter-94 — stash the pristine 3MF bytes (if any) so OrcaDialog
         // can hand them off to OrcaSlicer's desktop app with all the
-        // original color / multi-material metadata intact. The
-        // in-memory mesh above strips colors during triangulation.
+        // original color / multi-material metadata intact.
         if (meta?.pristineBytes) {
           setPristineImport(meta.pristineBytes, meta.pristineFilename || file.name);
         }

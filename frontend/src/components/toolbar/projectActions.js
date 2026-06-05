@@ -13,7 +13,7 @@
 
 import {
   saveProjectJSON, openFileDialog,
-  importSTLFile, importOBJFile, import3MFFile, readFileAsText,
+  importSTLFile, importOBJFile, import3MFFile, import3MFFileMulti, readFileAsText,
   downloadBlob,
 } from "../../lib/exporters";
 import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "../../lib/workerClient";
@@ -103,19 +103,37 @@ export function makeProjectActions({ store, setBusyMsg }) {
         }
         setBusyMsg("Importing...");
         // Iter-94 — if it's a 3MF, capture the original bytes BEFORE
-        // dispatching to the parser. The parser flattens to a single
-        // mesh of triangles and drops every material / color attribute,
-        // so we can't reconstruct them later. OrcaDialog uses these
-        // bytes to round-trip color info to OrcaSlicer's desktop app.
+        // dispatching to the parser. The legacy parser flattens to a
+        // single mesh of triangles and drops every material / color
+        // attribute, so we can't reconstruct them later. OrcaDialog
+        // uses these bytes to round-trip color info to OrcaSlicer's
+        // desktop app.
         if (ext === "3mf") {
           try {
             const buf = await file.arrayBuffer();
             get().setPristineImport(new Uint8Array(buf), file.name);
           } catch (err) {
-            // Non-fatal — if the slice fails the user just loses the
-            // color round-trip, the geometry still imports below.
+            // Non-fatal — if this fails the user just loses the
+            // color round-trip; the geometry still imports below.
             // eslint-disable-next-line no-console
             console.warn("Couldn't stash pristine 3MF bytes:", err);
+          }
+          // Iter-94 Phase 2 — for 3MFs we prefer the multi-object
+          // importer so per-object displaycolors land in the scene.
+          // Falls back to the legacy single-mesh path on any parse
+          // error so a malformed 3MF doesn't block the import flow.
+          try {
+            const multi = await import3MFFileMulti(file);
+            multi.objects.forEach((o) => {
+              get().addImportedMesh(o.name, o.vertices, o.indices, o.originalBbox, {
+                customColor: o.displaycolor || undefined,
+                materialName: o.materialName || undefined,
+              });
+            });
+            return;
+          } catch (parseErr) {
+            // eslint-disable-next-line no-console
+            console.warn("Multi-object 3MF import failed; falling back to legacy single-mesh path:", parseErr);
           }
         }
         const mesh =

@@ -164,35 +164,192 @@ export function readFileAsArrayBuffer(file) {
 }
 
 // ---------- STL/OBJ/3MF Import ----------
-function _parseModelXml(xml, positions, indices, baseOffsetRef) {
+
+// Iter-94 Phase 2 — Per-object 3MF parser.
+//
+// The legacy `_parseModelXml` collapsed every `<object>` into a single
+// merged triangle soup, dropping color / material / per-object identity.
+// This new parser keeps each object distinct AND extracts the
+// `<basematerials>` displaycolor → per-object color mapping that
+// LithoForge (and any other multi-material exporter) writes.
+//
+// Returns an array of objects in the form:
+//   [{ name, vertices: Float32Array, indices: Uint32Array | null,
+//      displaycolor: "#rrggbb" | null, materialName: string | null }]
+// where the vertex array is in 3MF-native Z-up coordinates (we do the
+// Y-up conversion ONCE on each object after parsing, just like the
+// old legacy path).
+//
+// Handles three shapes of 3MF object encoding seen in the wild:
+//   1) Plain mesh + pid/pindex on the object       (LithoForge default)
+//   2) Plain mesh + per-triangle p1/p2/p3 colors   (lithophane tone maps)
+//   3) <components> referencing sub-objects        (Bambu/Orca splits)
+// For (2) we use the FIRST triangle's color as the object's overall
+// color (good enough for lithophanes, where a single object = a single
+// filament slot). True per-triangle vertex colors would need to flow
+// into a Float32Array vertex-color attribute — possible but not
+// shipped here.
+function _parseBaseMaterials(doc, NS) {
+  const out = {}; // { groupId: [{ name, displaycolor }] }
+  const groups = doc.getElementsByTagNameNS(NS, "basematerials");
+  for (let g = 0; g < groups.length; g++) {
+    const group = groups[g];
+    const gid = group.getAttribute("id");
+    if (!gid) continue;
+    const entries = [];
+    const bases = group.getElementsByTagNameNS(NS, "base");
+    for (let i = 0; i < bases.length; i++) {
+      const name = bases[i].getAttribute("name") || `material_${i}`;
+      // displaycolor is "#RRGGBB" or "#RRGGBBAA" in 3MF. We trim to RGB.
+      const raw = bases[i].getAttribute("displaycolor") || "";
+      const m = /^#([0-9a-f]{6})/i.exec(raw);
+      const displaycolor = m ? `#${m[1].toLowerCase()}` : null;
+      entries.push({ name, displaycolor });
+    }
+    out[gid] = entries;
+  }
+  return out;
+}
+
+function _parseObjectsRich(xml) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   const parserError = doc.getElementsByTagName("parsererror")[0];
   if (parserError) {
     throw new Error("3MF XML parse error: " + parserError.textContent);
   }
-  const NS_WILDCARD = "*";
-  const objectNodes = doc.getElementsByTagNameNS(NS_WILDCARD, "object");
+  const NS = "*";
+  const materialsByGroup = _parseBaseMaterials(doc, NS);
+  // First pass — collect every <object> by id so <components> can
+  // resolve sibling references in the second pass.
+  const objectNodes = doc.getElementsByTagNameNS(NS, "object");
+  const byId = {};
   for (let oi = 0; oi < objectNodes.length; oi++) {
-    const mesh = objectNodes[oi].getElementsByTagNameNS(NS_WILDCARD, "mesh")[0];
-    if (!mesh) continue;
-    const verts = mesh.getElementsByTagNameNS(NS_WILDCARD, "vertex");
-    const startOffset = baseOffsetRef.value;
+    const obj = objectNodes[oi];
+    const id = obj.getAttribute("id");
+    if (!id) continue;
+    byId[id] = obj;
+  }
+
+  // Resolves an <object>'s displaycolor based on its pid (group) and
+  // pindex (default base material). Returns null when either is
+  // missing or the material has no displaycolor.
+  const objectDisplayColor = (obj) => {
+    const pid = obj.getAttribute("pid");
+    if (!pid) return { hex: null, name: null };
+    const group = materialsByGroup[pid];
+    if (!group) return { hex: null, name: null };
+    const pindex = parseInt(obj.getAttribute("pindex") || "0", 10) || 0;
+    const mat = group[pindex] || group[0];
+    return mat ? { hex: mat.displaycolor, name: mat.name } : { hex: null, name: null };
+  };
+
+  const parseMesh = (obj) => {
+    const mesh = obj.getElementsByTagNameNS(NS, "mesh")[0];
+    if (!mesh) return null;
+    const verts = mesh.getElementsByTagNameNS(NS, "vertex");
+    const tris = mesh.getElementsByTagNameNS(NS, "triangle");
+    if (verts.length === 0 || tris.length === 0) return null;
+    const positions = new Float32Array(verts.length * 3);
     for (let i = 0; i < verts.length; i++) {
-      positions.push(
-        parseFloat(verts[i].getAttribute("x")) || 0,
-        parseFloat(verts[i].getAttribute("y")) || 0,
-        parseFloat(verts[i].getAttribute("z")) || 0,
-      );
+      positions[i * 3]     = parseFloat(verts[i].getAttribute("x")) || 0;
+      positions[i * 3 + 1] = parseFloat(verts[i].getAttribute("y")) || 0;
+      positions[i * 3 + 2] = parseFloat(verts[i].getAttribute("z")) || 0;
     }
-    const tris = mesh.getElementsByTagNameNS(NS_WILDCARD, "triangle");
+    const indices = new Uint32Array(tris.length * 3);
     for (let i = 0; i < tris.length; i++) {
-      indices.push(
-        (parseInt(tris[i].getAttribute("v1"), 10) || 0) + startOffset,
-        (parseInt(tris[i].getAttribute("v2"), 10) || 0) + startOffset,
-        (parseInt(tris[i].getAttribute("v3"), 10) || 0) + startOffset,
-      );
+      indices[i * 3]     = parseInt(tris[i].getAttribute("v1"), 10) || 0;
+      indices[i * 3 + 1] = parseInt(tris[i].getAttribute("v2"), 10) || 0;
+      indices[i * 3 + 2] = parseInt(tris[i].getAttribute("v3"), 10) || 0;
     }
-    baseOffsetRef.value += verts.length;
+    // Fallback per-triangle color when the object itself has no pid:
+    // grab the first triangle's pid/p1 lookup. Common in lithophane
+    // tone-mapped exports where every triangle of one shade shares a
+    // material. Treats the object as monochrome (close enough for
+    // lithophanes; true per-triangle vertex colors would need a
+    // BufferAttribute, which Three.js renders but ForgeSlicer's
+    // store/exporter pipeline doesn't yet thread through).
+    let triLevelColor = null;
+    if (tris.length > 0) {
+      const firstTri = tris[0];
+      const pid = obj.getAttribute("pid") || firstTri.getAttribute("pid");
+      const p1 = firstTri.getAttribute("p1");
+      if (pid && p1 != null) {
+        const group = materialsByGroup[pid];
+        if (group) {
+          const mat = group[parseInt(p1, 10) || 0] || group[0];
+          if (mat?.displaycolor) {
+            triLevelColor = { hex: mat.displaycolor, name: mat.name };
+          }
+        }
+      }
+    }
+    return { positions, indices, triLevelColor };
+  };
+
+  // Pass 2 — recursively flatten composite objects (<components>)
+  // into individual meshes. We tag each output with the source
+  // object's id+name so the workspace's Outliner shows distinct rows.
+  const out = []; // [{ name, positions, indices, hex, materialName }]
+  const visited = new Set();
+  const walk = (obj, inheritedColor) => {
+    const id = obj.getAttribute("id") || "";
+    if (visited.has(id)) return; // guard against malicious cycles
+    visited.add(id);
+    const own = objectDisplayColor(obj);
+    const meshData = parseMesh(obj);
+    if (meshData) {
+      const baseName = obj.getAttribute("name") || `object_${id}`;
+      // Resolve color: explicit object color > per-triangle color
+      // > inherited from parent component.
+      const colorSource = own.hex
+        ? own
+        : (meshData.triLevelColor || inheritedColor || { hex: null, name: null });
+      out.push({
+        name: baseName,
+        positions: meshData.positions,
+        indices: meshData.indices,
+        hex: colorSource.hex,
+        materialName: colorSource.name,
+      });
+    }
+    // Resolve children.
+    const components = obj.getElementsByTagNameNS(NS, "component");
+    for (let i = 0; i < components.length; i++) {
+      const refId = components[i].getAttribute("objectid");
+      if (!refId) continue;
+      const ref = byId[refId];
+      if (ref) walk(ref, own.hex ? own : inheritedColor);
+    }
+  };
+
+  // Walk only top-level <build><item objectid=…>> roots when present,
+  // so <components> children aren't double-emitted. Falls back to
+  // walking every object if no <build> section exists.
+  const items = doc.getElementsByTagNameNS(NS, "item");
+  if (items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const refId = items[i].getAttribute("objectid");
+      if (!refId) continue;
+      const ref = byId[refId];
+      if (ref) walk(ref, null);
+    }
+  } else {
+    for (const obj of Object.values(byId)) walk(obj, null);
+  }
+  return out;
+}
+
+// Legacy single-flat-mesh path — kept for back-compat with callers
+// (toolbar Import button, ZIP-bundle helper) that haven't migrated to
+// the multi-object envelope yet. New code should prefer
+// `import3MFFileMulti`.
+function _parseModelXml(xml, positions, indices, baseOffsetRef) {
+  const objs = _parseObjectsRich(xml);
+  for (const o of objs) {
+    const startOffset = baseOffsetRef.value;
+    for (let i = 0; i < o.positions.length; i++) positions.push(o.positions[i]);
+    for (let i = 0; i < o.indices.length; i++) indices.push(o.indices[i] + startOffset);
+    baseOffsetRef.value += o.positions.length / 3;
   }
 }
 
@@ -270,6 +427,126 @@ export async function import3MFFile(file) {
     vertices: verts,
     indices: indices.length ? new Uint32Array(indices) : null,
     originalBbox: {
+      x: maxX - minX,
+      y: maxY - minY,
+      z: maxZ - minZ,
+    },
+  };
+}
+
+// Iter-94 Phase 2 — multi-object 3MF importer.
+//
+// Returns ALL objects in the file as separate meshes, each carrying
+// the displaycolor from its 3MF `<basematerials>` reference. Use this
+// (instead of `import3MFFile`) anywhere the caller wants per-object
+// coloring in the workspace — typically the handoff/drop-zone import
+// path for LithoForge files.
+//
+// Return shape:
+//   {
+//     objects: [{ name, vertices, indices, originalBbox,
+//                 displaycolor: "#rrggbb" | null,
+//                 materialName: string | null }],
+//     fileName: string,                  // base of the source filename
+//     mergedOriginalBbox: { x,y,z },     // bbox of all objects combined,
+//                                        // for the legacy single-mesh stat path
+//   }
+//
+// Coordinate convention: each object's vertices are in Y-up Three.js
+// space, with the COMBINED-scene origin centred on XZ and the entire
+// import sitting on Y=0. Per-object relative positions are preserved
+// so a multi-tone lithophane stays aligned tone-to-tone.
+export async function import3MFFileMulti(file) {
+  const buf = await readFileAsArrayBuffer(file);
+  const zip = await JSZip.loadAsync(buf);
+  let modelFile = zip.file("3D/3dmodel.model");
+  if (!modelFile) {
+    const candidates = zip.file(/3dmodel\.model$/i);
+    modelFile = candidates && candidates[0];
+  }
+  if (!modelFile) throw new Error("Invalid 3MF: missing 3D/3dmodel.model");
+
+  // Collect objects from the primary model file first; if it yields
+  // none, fall back to scanning every `*.model` in the archive (Bambu /
+  // Orca split workloads).
+  const primaryXml = await modelFile.async("text");
+  let rich = _parseObjectsRich(primaryXml);
+  if (rich.length === 0) {
+    const allModelFiles = zip.file(/\.model$/i) || [];
+    for (const f of allModelFiles) {
+      if (f === modelFile) continue;
+      const txt = await f.async("text");
+      const fromFile = _parseObjectsRich(txt);
+      if (fromFile.length > 0) {
+        rich = fromFile;
+        break;
+      }
+    }
+  }
+  if (rich.length === 0) {
+    throw new Error(
+      "3MF contains no vertex data — the file may use the beam-lattice " +
+      "or component-reference extension which ForgeSlicer doesn't import yet."
+    );
+  }
+
+  // Pass 1 — apply Z-up → Y-up rotation to every object's vertices
+  // in place, then compute a combined bbox so we can centre/drop the
+  // whole import as a single unit (preserving inter-object offsets).
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (const o of rich) {
+    const v = o.positions;
+    for (let i = 0; i < v.length; i += 3) {
+      const oldY = v[i + 1];
+      const oldZ = v[i + 2];
+      v[i + 1] = oldZ;
+      v[i + 2] = -oldY;
+      const x = v[i], y = v[i + 1], z = v[i + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+  }
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  // Pass 2 — recentre & drop. Also compute each object's individual
+  // bbox AFTER the global recentre so the Inspector "dims" panel
+  // shows real per-object dimensions.
+  const fileBase = file.name.replace(/\.[^.]+$/, "");
+  const out = rich.map((o, idx) => {
+    const v = o.positions;
+    let omnX = Infinity, omnY = Infinity, omnZ = Infinity;
+    let omxX = -Infinity, omxY = -Infinity, omxZ = -Infinity;
+    for (let i = 0; i < v.length; i += 3) {
+      v[i] -= cx;
+      v[i + 1] -= minY;
+      v[i + 2] -= cz;
+      const x = v[i], y = v[i + 1], z = v[i + 2];
+      if (x < omnX) omnX = x; if (x > omxX) omxX = x;
+      if (y < omnY) omnY = y; if (y > omxY) omxY = y;
+      if (z < omnZ) omnZ = z; if (z > omxZ) omxZ = z;
+    }
+    return {
+      // Prefer the object's own name; fall back to `<file>-tone<n>`
+      // so the Outliner has a meaningful row per tone.
+      name: o.name || `${fileBase}-part-${idx + 1}`,
+      vertices: v,
+      indices: o.indices,
+      displaycolor: o.hex || null,
+      materialName: o.materialName || null,
+      originalBbox: {
+        x: omxX - omnX,
+        y: omxY - omnY,
+        z: omxZ - omnZ,
+      },
+    };
+  });
+
+  return {
+    objects: out,
+    fileName: fileBase,
+    mergedOriginalBbox: {
       x: maxX - minX,
       y: maxY - minY,
       z: maxZ - minZ,

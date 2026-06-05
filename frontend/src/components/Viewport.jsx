@@ -18,6 +18,16 @@ const NEGATIVE_COLOR = "#06B6D4";
 
 function colorForObject(obj) {
   if (obj.modifier === "negative") return NEGATIVE_COLOR;
+  // Iter-94 Phase 2 — when a 3MF was imported with a per-object
+  // displaycolor (typically from LithoForge's per-tone export), the
+  // store stores that hex on `customColor`. It overrides the palette
+  // lookup so the viewport reproduces the source colours exactly,
+  // not just to the nearest of the 8 palette slots. User can still
+  // override via the Inspector's color picker (which writes
+  // colorIndex AND clears customColor).
+  if (typeof obj.customColor === "string" && /^#[0-9a-f]{6}$/i.test(obj.customColor)) {
+    return obj.customColor;
+  }
   const idx = obj.colorIndex | 0;
   // Map the picker swatch directly to the rendered colour. We used to special-
   // case slot-0 to ForgeSlicer's house orange, which meant picking "White"

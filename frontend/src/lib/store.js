@@ -392,13 +392,21 @@ export const useScene = create((set, get) => ({
   closeTextureLibrary: () =>
     set({ textureLibraryOpen: false, textureLibraryTargetId: null }),
 
-  addImportedMesh: (name, vertices, indices = null, originalBbox = null) => {
+  addImportedMesh: (name, vertices, indices = null, originalBbox = null, opts = {}) => {
     get().pushHistory();
+    // Iter-94 Phase 2 — `opts.customColor` is an optional "#rrggbb"
+    // string sourced from a 3MF's <basematerials> displaycolor. When
+    // present the viewport renders this exact color instead of using
+    // the MULTICOLOR_PALETTE swatch; the user can still override it
+    // via the Inspector's color picker.
+    // `opts.modifier` lets multi-object handoffs flag negative parts
+    // (rare for lithophanes; defaults to "positive").
+    const modifier = opts.modifier === "negative" ? "negative" : "positive";
     let obj = {
       id: newId("mesh"),
       name: name || "Imported Mesh",
       type: "imported",
-      modifier: "positive",
+      modifier,
       visible: true,
       locked: false,
       position: [0, 0, 0],
@@ -406,6 +414,8 @@ export const useScene = create((set, get) => ({
       scale: [1, 1, 1],
       dims: {},
       colorIndex: 0,
+      customColor: typeof opts.customColor === "string" ? opts.customColor : null,
+      materialName: opts.materialName || null,
       originalBbox: originalBbox || undefined, // {x,y,z} in mm at scale 1
       geometry: { vertices, indices },
     };
@@ -878,7 +888,11 @@ export const useScene = create((set, get) => ({
     get().pushHistory();
     set((s) => ({
       objects: s.objects.map((o) =>
-        o.id === id ? { ...o, colorIndex: Math.max(0, Math.min(7, idx | 0)) } : o
+        // Iter-94 Phase 2 — picking a palette swatch overrides any
+        // imported `customColor`. Clearing it ensures the next render
+        // uses the palette lookup so the user's manual pick is what
+        // they see (not the original LithoForge tone).
+        o.id === id ? { ...o, colorIndex: Math.max(0, Math.min(7, idx | 0)), customColor: null } : o
       ),
     }));
   },

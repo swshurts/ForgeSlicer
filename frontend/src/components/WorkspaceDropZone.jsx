@@ -18,7 +18,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
-import { importAnyMeshFile } from "../lib/exporters";
+import { importAnyMeshFile, import3MFFileMulti } from "../lib/exporters";
 import { useScene } from "../lib/store";
 
 const MESH_EXTS = new Set(["stl", "obj", "3mf", "glb", "gltf"]);
@@ -101,19 +101,28 @@ export default function WorkspaceDropZone() {
         }
         if (MESH_EXTS.has(ext)) {
           try {
-            const mesh = await importAnyMeshFile(file);
-            addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-            // Iter-94 — preserve original 3MF bytes so OrcaDialog can
-            // forward them to OrcaSlicer's desktop app with the
-            // per-object color / multi-material metadata intact.
-            // Only the LAST 3MF wins when multiple are dropped at
-            // once — the typical case is a single file, and tracking
-            // per-object pristine bytes would explode complexity.
             if (ext === "3mf") {
+              // Iter-94 Phase 2 — preserve per-object color via the
+              // multi-object importer. Each <object> in the 3MF gets
+              // its own row in the Outliner with the correct
+              // displaycolor; the original bytes also go into the
+              // pristine slot so Send-to-OrcaSlicer can round-trip
+              // the full multi-material metadata.
               const buf = await file.arrayBuffer();
               setPristineImport(new Uint8Array(buf), file.name);
+              const multi = await import3MFFileMulti(file);
+              multi.objects.forEach((o) => {
+                addImportedMesh(o.name, o.vertices, o.indices, o.originalBbox, {
+                  customColor: o.displaycolor || undefined,
+                  materialName: o.materialName || undefined,
+                });
+              });
+              importedMeshes += multi.objects.length;
+            } else {
+              const mesh = await importAnyMeshFile(file);
+              addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+              importedMeshes++;
             }
-            importedMeshes++;
           } catch (err) {
             toast.error(`Couldn't import ${file.name}: ${err.message || err}`);
           }
