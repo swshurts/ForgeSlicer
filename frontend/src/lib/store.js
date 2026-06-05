@@ -70,6 +70,26 @@ export const useScene = create((set, get) => ({
   currentProjectId: null,
   currentProjectName: null,
 
+  // Iter-94 — Pristine 3MF bytes preserved verbatim from the original
+  // import. When LithoForge (or any sister-app handoff) sends a multi-
+  // material / per-object-coloured 3MF, the in-memory mesh that
+  // ForgeSlicer derives from it strips every bit of color/material/
+  // filament-slot metadata (the importer flattens to triangles). To
+  // round-trip those colors through OrcaSlicer's desktop app, we keep
+  // the ORIGINAL bytes here and let `OrcaDialog` hand them off
+  // unchanged when the user hasn't materially edited the scene.
+  //
+  // Cleared on `newProject()` and on any `loadProject()` that doesn't
+  // explicitly re-set it. Set by the Workspace import-side-effect
+  // when a 3MF lands via the handoff route or workspace drop-zone.
+  pristine3MFBytes: null,    // Uint8Array | null
+  pristine3MFFilename: null, // string | null
+  setPristineImport: (bytes, filename) => set({
+    pristine3MFBytes: bytes && bytes.byteLength ? bytes : null,
+    pristine3MFFilename: filename || null,
+  }),
+  clearPristineImport: () => set({ pristine3MFBytes: null, pristine3MFFilename: null }),
+
   // ---- profiles ----
   printerId: defaultPrinterId,
   filamentId: defaultFilamentId,

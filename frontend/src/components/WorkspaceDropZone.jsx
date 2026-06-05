@@ -29,6 +29,7 @@ function extOf(name) {
 
 export default function WorkspaceDropZone() {
   const addImportedMesh = useScene((s) => s.addImportedMesh);
+  const setPristineImport = useScene((s) => s.setPristineImport);
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
   // Counter pattern — dragenter/leave fire on EVERY child element so
@@ -102,6 +103,16 @@ export default function WorkspaceDropZone() {
           try {
             const mesh = await importAnyMeshFile(file);
             addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+            // Iter-94 — preserve original 3MF bytes so OrcaDialog can
+            // forward them to OrcaSlicer's desktop app with the
+            // per-object color / multi-material metadata intact.
+            // Only the LAST 3MF wins when multiple are dropped at
+            // once — the typical case is a single file, and tracking
+            // per-object pristine bytes would explode complexity.
+            if (ext === "3mf") {
+              const buf = await file.arrayBuffer();
+              setPristineImport(new Uint8Array(buf), file.name);
+            }
             importedMeshes++;
           } catch (err) {
             toast.error(`Couldn't import ${file.name}: ${err.message || err}`);

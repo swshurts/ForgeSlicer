@@ -102,6 +102,22 @@ export function makeProjectActions({ store, setBusyMsg }) {
           return;
         }
         setBusyMsg("Importing...");
+        // Iter-94 — if it's a 3MF, capture the original bytes BEFORE
+        // dispatching to the parser. The parser flattens to a single
+        // mesh of triangles and drops every material / color attribute,
+        // so we can't reconstruct them later. OrcaDialog uses these
+        // bytes to round-trip color info to OrcaSlicer's desktop app.
+        if (ext === "3mf") {
+          try {
+            const buf = await file.arrayBuffer();
+            get().setPristineImport(new Uint8Array(buf), file.name);
+          } catch (err) {
+            // Non-fatal — if the slice fails the user just loses the
+            // color round-trip, the geometry still imports below.
+            // eslint-disable-next-line no-console
+            console.warn("Couldn't stash pristine 3MF bytes:", err);
+          }
+        }
         const mesh =
           ext === "obj" ? await importOBJFile(file)
           : ext === "3mf" ? await import3MFFile(file)

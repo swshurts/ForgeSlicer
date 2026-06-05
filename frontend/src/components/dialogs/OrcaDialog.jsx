@@ -23,6 +23,16 @@ import CustomSlicersDialog from "./CustomSlicersDialog";
 export function OrcaDialog({ open, onClose, targetSlicer }) {
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
+  // Iter-94 — preserved-color round-trip. When the user imported a 3MF
+  // (typically from LithoForge's "Send to ForgeSlicer"), these are the
+  // ORIGINAL bytes with all the per-object / per-material color info
+  // intact. The in-memory mesh derived from them loses color during
+  // triangulation, so re-baking via export3MFBytesAsync(objects)
+  // produces a colorless 3MF. Forwarding pristine bytes is the only
+  // way to preserve multi-material info through to OrcaSlicer.
+  const pristine3MFBytes = useScene((s) => s.pristine3MFBytes);
+  const pristine3MFFilename = useScene((s) => s.pristine3MFFilename);
+  const [preserveColors, setPreserveColors] = useState(true);
   const [busy, setBusy] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [launchState, setLaunchState] = useState(null);   // null | "trying" | "likely" | "uncertain"
@@ -62,9 +72,29 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
     setLaunchState(null);
     try {
       const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-      setLastFilename(`${safe}.3mf`);
-      const { bytes } = await export3MFBytesAsync(objects);
-      downloadBlob(new Blob([bytes], { type: "model/3mf" }), `${safe}.3mf`);
+      let bytes;
+      let outFilename;
+      // Iter-94 — pristine-bytes pass-through. When the user imported
+      // a colored 3MF and hasn't ticked the "lose colors" override, we
+      // hand the ORIGINAL bytes to the slicer. This preserves every
+      // bit of multi-material / filament-slot data the source file
+      // carried (LithoForge's per-tone color assignments, Bambu's
+      // AMS slot tags, etc.). Re-baking via export3MFBytesAsync
+      // would flatten the colored mesh back to a single uncolored
+      // body — that's why STL/colorless-3MF was the old default.
+      if (pristine3MFBytes && preserveColors) {
+        bytes = pristine3MFBytes;
+        // Preserve original filename when sensible (keeps the user's
+        // mental model of "this is the LithoForge file"); fall back
+        // to the safe-project-name path otherwise.
+        outFilename = pristine3MFFilename || `${safe}.3mf`;
+      } else {
+        const r = await export3MFBytesAsync(objects);
+        bytes = r.bytes;
+        outFilename = `${safe}.3mf`;
+      }
+      setLastFilename(outFilename);
+      downloadBlob(new Blob([bytes], { type: "model/3mf" }), outFilename);
       setDownloaded(true);
       setLaunchState("trying");
       // Give the browser ~500 ms to finish the download attachment
@@ -167,6 +197,38 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
             <span className="font-semibold text-orange-400">{slicer?.name}</span> and tries to launch it
             via its <span className="font-mono">{slicer?.protocol}</span> handler.
           </p>
+
+          {/* Iter-94 — preserve-color toggle. Only surfaces when a
+              pristine 3MF (typically from a LithoForge handoff or a
+              user-imported multi-material 3MF) is in the store. When
+              ticked, OrcaSlicer receives the original bytes with all
+              per-object color/material assignments intact; when off,
+              we re-bake from the in-memory mesh (drops colors but
+              picks up any edits the user made in the workspace). */}
+          {pristine3MFBytes && (
+            <label
+              data-testid="orca-preserve-colors-row"
+              className="flex items-start gap-2.5 px-3 py-2 bg-cyan-500/5 border border-cyan-500/30 rounded text-[11px] cursor-pointer"
+            >
+              <input
+                data-testid="orca-preserve-colors-checkbox"
+                type="checkbox"
+                checked={preserveColors}
+                onChange={(e) => setPreserveColors(e.target.checked)}
+                className="mt-0.5 accent-cyan-400"
+              />
+              <span className="flex-1 leading-relaxed text-cyan-100">
+                <span className="font-semibold">Preserve colors from import</span>
+                <span className="block text-[10px] text-cyan-300/80 mt-0.5">
+                  Sends the original{" "}
+                  <span className="font-mono">{pristine3MFFilename || "imported"}</span>{" "}
+                  file unchanged — keeps per-object color / multi-material info.
+                  Untick to re-bake from current scene (colors will be stripped, but edits in ForgeSlicer apply).
+                </span>
+              </span>
+            </label>
+          )}
+
           <button
             data-testid="orca-download-btn"
             onClick={handleDownload}

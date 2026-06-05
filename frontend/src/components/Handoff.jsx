@@ -143,10 +143,18 @@ export default function Handoff() {
       // Materialise as a File so the existing `importAnyMeshFile`
       // dispatcher works unchanged.
       const file = new File([buffer], filename, { type: "application/octet-stream" });
+      // Iter-94 — for 3MFs (which can carry multi-material / per-object
+      // color info), keep the ORIGINAL bytes so OrcaDialog can hand
+      // them off to OrcaSlicer's desktop app unchanged. The in-memory
+      // mesh that ForgeSlicer derives from the same file loses every
+      // bit of that color info (the importer flattens to triangles).
+      const isThreeMF = /\.3mf$/i.test(filename);
       const meta = {
         sourceLabel: typeof msg.sourceLabel === "string" ? msg.sourceLabel.slice(0, 60) : "Sister app",
         sourceUrl: typeof msg.sourceUrl === "string" ? msg.sourceUrl.slice(0, 500) : null,
         sourceKey: sourceKeyFromOrigin(event.origin),
+        pristineBytes: isThreeMF ? new Uint8Array(buffer) : null,
+        pristineFilename: isThreeMF ? filename : null,
       };
       setPendingImport(file, meta);
       handledRef.current = true;

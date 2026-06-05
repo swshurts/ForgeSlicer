@@ -94,6 +94,7 @@ export default function Workspace() {
   const setRemixOf = useScene((s) => s.setRemixOf);
   const loadProject = useScene((s) => s.loadProject);
   const resizeSceneToBed = useScene((s) => s.resizeSceneToBed);
+  const setPristineImport = useScene((s) => s.setPristineImport);
   const objects = useScene((s) => s.objects);
   const projectName = useScene((s) => s.projectName);
   const serialize = useScene((s) => s.serialize);
@@ -441,6 +442,13 @@ export default function Workspace() {
         const mesh = await importAnyMeshFile(file);
         addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
         setProjectName(mesh.name);
+        // Iter-94 — stash the pristine 3MF bytes (if any) so OrcaDialog
+        // can hand them off to OrcaSlicer's desktop app with all the
+        // original color / multi-material metadata intact. The
+        // in-memory mesh above strips colors during triangulation.
+        if (meta?.pristineBytes) {
+          setPristineImport(meta.pristineBytes, meta.pristineFilename || file.name);
+        }
         setImportBanner({
           kind: "ok",
           message: meta?.sourceLabel
