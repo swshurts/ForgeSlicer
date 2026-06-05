@@ -5,6 +5,17 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#000000" />
         <meta name="description" content="A product of emergent.sh" />
+        <!-- Iter-95 — force browsers to re-fetch the HTML shell on
+             every navigation. Without this, an old shell can keep
+             pointing at a stale `main.<hash>.js` bundle for hours
+             after a redeploy, which is exactly how three browsers got
+             "spoiled" during the LithoForge handoff debug cycle.
+             These metas are belt-and-braces — the server already
+             sends Cache-Control: no-cache for /index.html — but they
+             survive proxies/CDNs that strip headers. -->
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="Expires" content="0" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap" rel="stylesheet" />
