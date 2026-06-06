@@ -18,7 +18,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
-import { importAnyMeshFile, import3MFFileMulti } from "../lib/exporters";
+import { importAnyMeshFile, import3MFFileMulti, countMeshTriangles, HEAVY_MESH_TRIANGLE_THRESHOLD } from "../lib/exporters";
 import { useScene } from "../lib/store";
 
 const MESH_EXTS = new Set(["stl", "obj", "3mf", "glb", "gltf"]);
@@ -85,6 +85,11 @@ export default function WorkspaceDropZone() {
     setBusy(true);
     try {
       let importedMeshes = 0;
+      // Iter-96 — accumulate triangle counts across every imported
+      // mesh in the drop so we can surface a single warning toast at
+      // the end rather than one per file (a 5-tone lithophane would
+      // otherwise spam the user with 5 toasts).
+      let totalTriangles = 0;
       const unsupported = [];
       for (const file of files) {
         const ext = extOf(file.name);
@@ -116,11 +121,13 @@ export default function WorkspaceDropZone() {
                   customColor: o.displaycolor || undefined,
                   materialName: o.materialName || undefined,
                 });
+                totalTriangles += countMeshTriangles(o.vertices, o.indices);
               });
               importedMeshes += multi.objects.length;
             } else {
               const mesh = await importAnyMeshFile(file);
               addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+              totalTriangles += countMeshTriangles(mesh.vertices, mesh.indices);
               importedMeshes++;
             }
           } catch (err) {
@@ -134,6 +141,15 @@ export default function WorkspaceDropZone() {
         toast.success(
           `Dropped ${importedMeshes} ${importedMeshes === 1 ? "mesh" : "meshes"} onto the build plate.`,
         );
+      }
+      // Iter-96 — heavy-mesh warning. Persistent until dismissed
+      // because subsequent slicing/boolean ops will visibly stall and
+      // a 4s success toast would have evaporated by then.
+      if (totalTriangles > HEAVY_MESH_TRIANGLE_THRESHOLD) {
+        toast.warning("Heavy mesh", {
+          description: `${totalTriangles.toLocaleString()} triangles total — slicing and boolean ops will be slow. Consider decimating the mesh before importing.`,
+          duration: 12000,
+        });
       }
       if (unsupported.length > 0) {
         toast.warning(

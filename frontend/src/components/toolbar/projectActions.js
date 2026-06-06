@@ -15,7 +15,9 @@ import {
   saveProjectJSON, openFileDialog,
   importSTLFile, importOBJFile, import3MFFile, import3MFFileMulti, readFileAsText,
   downloadBlob,
+  countMeshTriangles, HEAVY_MESH_TRIANGLE_THRESHOLD,
 } from "../../lib/exporters";
+import { toast } from "sonner";
 import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "../../lib/workerClient";
 
 export function makeProjectActions({ store, setBusyMsg }) {
@@ -34,6 +36,21 @@ export function makeProjectActions({ store, setBusyMsg }) {
     if (typeof store === "function") return store;
     return () => store;
   })();
+
+  // Iter-96 — Heavy-mesh warning helper shared by every import path
+  // in this module. A persistent (12 s) sonner toast is the right
+  // surface here because the toolbar-import flow doesn't have access
+  // to the Workspace's in-component banner state — and a regular
+  // ephemeral toast would evaporate before the user notices that
+  // subsequent slicing/boolean ops feel slow.
+  const warnIfHeavy = (triangleCount) => {
+    if (triangleCount > HEAVY_MESH_TRIANGLE_THRESHOLD) {
+      toast.warning("Heavy mesh", {
+        description: `${triangleCount.toLocaleString()} triangles — slicing and boolean ops will be slow. Consider decimating the mesh before importing.`,
+        duration: 12000,
+      });
+    }
+  };
 
   return {
     // ---- Boolean (union / subtract / intersect of last two or selected) ----
@@ -124,12 +141,15 @@ export function makeProjectActions({ store, setBusyMsg }) {
           // error so a malformed 3MF doesn't block the import flow.
           try {
             const multi = await import3MFFileMulti(file);
+            let totalTriangles = 0;
             multi.objects.forEach((o) => {
               get().addImportedMesh(o.name, o.vertices, o.indices, o.originalBbox, {
                 customColor: o.displaycolor || undefined,
                 materialName: o.materialName || undefined,
               });
+              totalTriangles += countMeshTriangles(o.vertices, o.indices);
             });
+            warnIfHeavy(totalTriangles);
             return;
           } catch (parseErr) {
             // eslint-disable-next-line no-console
@@ -141,6 +161,7 @@ export function makeProjectActions({ store, setBusyMsg }) {
           : ext === "3mf" ? await import3MFFile(file)
           : await importSTLFile(file);
         get().addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+        warnIfHeavy(countMeshTriangles(mesh.vertices, mesh.indices));
       } catch (e) {
         if (e.message !== "No file selected" && typeof window !== "undefined" && window.alert) {
           window.alert("Import failed: " + e.message);

@@ -165,6 +165,26 @@ export function readFileAsArrayBuffer(file) {
 
 // ---------- STL/OBJ/3MF Import ----------
 
+// Iter-96 — Heavy-mesh threshold. Above this count, ForgeSlicer's
+// boolean ops, slicer prep, and the OrcaSlicer hand-off all start to
+// stall on commodity hardware. We surface a soft warning chip when an
+// import crosses the line; users with beefier machines can dismiss it
+// and proceed. 500K is the empirical knee-of-the-curve for our worker
+// pipeline; numbers above ~2M routinely make the browser unresponsive
+// during slicing and ~4M (the LithoForge bug we saw) tips into the
+// "wait 30+ s per action" range.
+export const HEAVY_MESH_TRIANGLE_THRESHOLD = 500_000;
+
+// Counts triangles for either an indexed mesh (preferred — `indices`
+// is a Uint32Array of length 3*tri-count) or a non-indexed mesh where
+// every group of 9 floats in `vertices` is one triangle. Returns 0
+// for empty / malformed input so callers don't have to null-check.
+export function countMeshTriangles(vertices, indices) {
+  if (indices && indices.length) return Math.floor(indices.length / 3);
+  if (vertices && vertices.length) return Math.floor(vertices.length / 9);
+  return 0;
+}
+
 // Iter-94 Phase 2 — Per-object 3MF parser.
 //
 // The legacy `_parseModelXml` collapsed every `<object>` into a single

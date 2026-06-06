@@ -14,7 +14,7 @@ import SettingsDialog from "./dialogs/SettingsDialog";
 import ProjectExplorerDialog from "./dialogs/ProjectExplorerDialog";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { useScene } from "../lib/store";
-import { importSTLFile, importAnyMeshFile, import3MFFileMulti } from "../lib/exporters";
+import { importSTLFile, importAnyMeshFile, import3MFFileMulti, countMeshTriangles, HEAVY_MESH_TRIANGLE_THRESHOLD } from "../lib/exporters";
 import { computeRotatedBBox } from "../lib/geometry";
 import { takePendingImport } from "../lib/pendingImport";
 import { API } from "../lib/api";
@@ -52,6 +52,11 @@ export default function Workspace() {
   // to the original project page. Independent of `importBanner` (which
   // auto-dismisses) — the chip persists until the user closes it.
   const [importSource, setImportSource] = useState(null);
+  // Iter-96 — { triangleCount, filename } | null. Persistent warning chip
+  // shown when an import exceeds HEAVY_MESH_TRIANGLE_THRESHOLD so users
+  // know future actions (boolean ops, slicing, OrcaSlicer hand-off)
+  // will be slower than usual. Dismissable via the chip's × button.
+  const [heavyMeshWarning, setHeavyMeshWarning] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Voice command may emit a "forgeslicer:open-dialog" event to open a named
@@ -445,6 +450,7 @@ export default function Workspace() {
         // to the legacy single-mesh importer.
         const isThreeMF = /\.3mf$/i.test(file.name);
         let primaryName = "";
+        let totalTriangles = 0;
         if (isThreeMF) {
           const multi = await import3MFFileMulti(file);
           primaryName = multi.fileName;
@@ -457,13 +463,22 @@ export default function Workspace() {
               customColor: o.displaycolor || undefined,
               materialName: o.materialName || undefined,
             });
+            totalTriangles += countMeshTriangles(o.vertices, o.indices);
           });
         } else {
           const mesh = await importAnyMeshFile(file);
           primaryName = mesh.name;
           addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+          totalTriangles = countMeshTriangles(mesh.vertices, mesh.indices);
         }
         setProjectName(primaryName);
+        // Iter-96 — surface a heavy-mesh warning chip so users know
+        // why subsequent actions feel slow. Specifically motivated by
+        // LithoForge handoffs that arrived at 4M+ triangles before
+        // its decimation fix.
+        if (totalTriangles > HEAVY_MESH_TRIANGLE_THRESHOLD) {
+          setHeavyMeshWarning({ triangleCount: totalTriangles, filename: file.name });
+        }
         // Iter-94 — stash the pristine 3MF bytes (if any) so OrcaDialog
         // can hand them off to OrcaSlicer's desktop app with all the
         // original color / multi-material metadata intact.
@@ -830,6 +845,32 @@ export default function Workspace() {
           <button
             data-testid="import-source-dismiss"
             onClick={() => setImportSource(null)}
+            className="ml-1 text-slate-500 hover:text-white"
+            aria-label="Dismiss"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      {/* Iter-96 — Heavy-mesh warning chip. Sits just below the
+          import-source chip (or where it would be) so the two stack
+          naturally for handoff imports. Yellow accent to distinguish
+          from the orange attribution chip. Persists until dismissed. */}
+      {heavyMeshWarning && (
+        <div
+          data-testid="heavy-mesh-warning-chip"
+          className={`fixed left-1/2 -translate-x-1/2 z-40 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 backdrop-blur border border-yellow-500/40 shadow-lg shadow-yellow-900/20 text-[11px] ${importSource ? "top-24" : "top-14"}`}
+        >
+          <span className="text-yellow-300 font-semibold">Heavy mesh</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-300 font-mono">
+            {heavyMeshWarning.triangleCount.toLocaleString()} triangles
+          </span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">slicing & boolean ops will be slow</span>
+          <button
+            data-testid="heavy-mesh-warning-dismiss"
+            onClick={() => setHeavyMeshWarning(null)}
             className="ml-1 text-slate-500 hover:text-white"
             aria-label="Dismiss"
           >
