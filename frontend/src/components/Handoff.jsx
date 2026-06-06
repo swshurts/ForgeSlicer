@@ -26,9 +26,12 @@
 //
 //   const w = window.open("https://forgeslicer.com/handoff", "_blank");
 //   const post = () => w.postMessage({
-//     type: "forgeslicer:handoff:stl",
-//     filename: "my-lithophane.stl",
-//     data: stlArrayBuffer,            // OR `dataUrl: "data:application/sla;base64,..."`
+//     // `forgeslicer:handoff:model` is the modern type (preferred —
+//     // works for STL/OBJ/3MF/GLB). `forgeslicer:handoff:stl` is the
+//     // legacy alias and remains accepted for backward compatibility.
+//     type: "forgeslicer:handoff:model",
+//     filename: "my-lithophane.3mf",
+//     data: modelArrayBuffer,          // OR `dataUrl: "data:application/sla;base64,..."`
 //     sourceLabel: "LithoForge",       // shown as attribution chip
 //     sourceUrl: "https://lithoforge.com/projects/abc123",
 //   }, "https://forgeslicer.com");
@@ -98,7 +101,6 @@ export default function Handoff() {
         event.data.type.startsWith("forgeslicer:handoff:");
       if (!isOurProtocol) return;
       if (!ALLOWED_ORIGINS.includes(event.origin)) {
-        // eslint-disable-next-line no-console
         console.warn(
           `[forgeslicer/handoff] Dropping message from non-allowlisted origin "${event.origin}". ` +
           `Add it to ALLOWED_ORIGINS in /app/frontend/src/components/Handoff.jsx.`
@@ -107,7 +109,14 @@ export default function Handoff() {
       }
 
       const msg = event.data;
-      if (msg.type !== "forgeslicer:handoff:stl") return;
+      // Iter-97 — accept the new `forgeslicer:handoff:model` message
+      // type alongside the legacy `forgeslicer:handoff:stl` name. The
+      // semantics are identical (LithoForge already overloads `:stl`
+      // for 3MF payloads by extension check), but the `:model` name is
+      // more honest about what's actually transported. Once every
+      // caller migrates we can drop `:stl` here — until then both
+      // names route through the same handler.
+      if (msg.type !== "forgeslicer:handoff:stl" && msg.type !== "forgeslicer:handoff:model") return;
 
       const filename = String(msg.filename || "model.stl").slice(0, 200);
       if (!/\.(stl|obj|3mf|glb)$/i.test(filename)) {
@@ -206,11 +215,17 @@ export default function Handoff() {
       sendReady();
     } else {
       // Opened directly (no opener) — show guidance instead of waiting forever.
-      setStatus("error");
-      setErrorMsg(
-        "This page is the receiver for a sister-app handoff. " +
-        "Open it via your sister app's \"Send to ForgeSlicer\" button instead of typing the URL directly.",
-      );
+      // Deferred via queueMicrotask so the state update happens AFTER the
+      // effect commits; otherwise React 19 flags this as a
+      // set-state-in-effect violation (synchronous setState inside an
+      // effect body causes an immediate re-render before paint).
+      queueMicrotask(() => {
+        setStatus("error");
+        setErrorMsg(
+          "This page is the receiver for a sister-app handoff. " +
+          "Open it via your sister app's \"Send to ForgeSlicer\" button instead of typing the URL directly.",
+        );
+      });
     }
     const readyInterval = setInterval(() => {
       readyPings += 1;
@@ -272,7 +287,7 @@ export default function Handoff() {
             <div className="w-10 h-10 mx-auto rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mb-3">
               <AlertCircle size={20} />
             </div>
-            <h1 className="text-lg font-semibold tracking-tight" data-testid="handoff-error">Handoff didn't complete</h1>
+            <h1 className="text-lg font-semibold tracking-tight" data-testid="handoff-error">Handoff didn&apos;t complete</h1>
             <p className="text-xs text-slate-400 mt-2">{errorMsg}</p>
             <button
               data-testid="handoff-go-workspace"
