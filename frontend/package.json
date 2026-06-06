@@ -34,6 +34,7 @@
     "@react-three/drei": "9.114.0",
     "@react-three/fiber": "^9.6.1",
     "axios": "^1.8.4",
+    "braintree-web-drop-in": "^1.46.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

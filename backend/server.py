@@ -19,6 +19,7 @@ import meshy_service
 import email_service
 import auth_local
 import billing
+import braintree_billing
 import admin as admin_module
 import orca_engine
 import orca_upstream
@@ -93,6 +94,10 @@ async def _upsert_user_from_emergent(profile: dict) -> dict:
         "last_login_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(doc)
+    # `insert_one` mutates `doc` by adding `_id` (BSON ObjectId). Strip
+    # it before returning so callers serialising the dict to JSON don't
+    # blow up on the non-JSON-serializable ObjectId.
+    doc.pop("_id", None)
     return doc
 
 
@@ -571,6 +576,10 @@ orca_engine.register_user_id_extractor(_extract_user_id_for_slice)
 # we registered with them).
 billing_api_router = billing.get_router(db, get_optional_user)
 billing_webhook_router = billing.get_webhook_router(db)
+# Iter-98 — Braintree alongside the Stripe path. New checkout UI on
+# the pricing page routes here; Stripe routes stay mounted so any
+# historical session ids still resolve via /api/billing/status.
+braintree_api_router = braintree_billing.get_router(db, get_optional_user)
 
 
 # ---------- Contributor tier ----------
@@ -1650,6 +1659,7 @@ app.include_router(api_router)
 # uses the exact `/api/webhook/stripe` path Stripe expects (no prefix).
 app.include_router(billing_api_router)
 app.include_router(billing_webhook_router)
+app.include_router(braintree_api_router)
 
 app.add_middleware(
     CORSMiddleware,

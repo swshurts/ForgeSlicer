@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Loader2, CreditCard, AlertCircle } from "lucide-react
 import { API } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
+import BraintreeDialog from "./BraintreeDialog";
 
 /**
  * Pricing page.
@@ -12,20 +13,26 @@ import UserMenu from "./UserMenu";
  * Single source of truth for package data is the BACKEND (`/api/billing/packages`)
  * so the displayed prices can NEVER drift from what's charged at checkout.
  *
- * Flow:
- *  1. User clicks Upgrade on a tier → POST /api/billing/checkout
- *  2. Backend creates a Stripe session, persists a payment_transactions
- *     row with status "initiated", returns a checkout URL.
- *  3. Frontend hard-redirects to Stripe's hosted checkout.
- *  4. After success, Stripe redirects back to /billing/success?session_id=...
- *     which polls /api/billing/status/{session_id} until paid.
+ * Flow (iter-98 — Braintree replaces the Stripe redirect):
+ *  1. User clicks Upgrade on a tier → BraintreeDialog opens.
+ *  2. Dialog fetches a client token, mounts Drop-in (PayPal + Venmo + cards).
+ *  3. On submit, dialog POSTs the nonce to /api/billing/braintree/checkout.
+ *  4. Backend charges + grants the tier in one round-trip; on success
+ *     we refresh the user from AuthContext so the UI reflects the new tier.
+ *
+ * The old Stripe path (/api/billing/checkout → hosted redirect) is still
+ * mounted server-side so historical session_ids in /billing/success keep
+ * resolving — but no UI on this page kicks off a new Stripe session.
  */
 export default function PricingPage() {
-  const { user } = useAuth();
+  const { user, refresh: refreshAuth } = useAuth();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busyPkg, setBusyPkg] = useState(null);
   const [error, setError] = useState("");
+  // Iter-98 — the Braintree dialog runs in-app, not as a hard redirect,
+  // so we track which package the user picked and surface a single
+  // dialog instance for it.
+  const [selectedPkg, setSelectedPkg] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,19 +49,15 @@ export default function PricingPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const handleCheckout = async (pkgId) => {
-    setError(""); setBusyPkg(pkgId);
-    try {
-      const r = await axios.post(
-        `${API}/billing/checkout`,
-        { package_id: pkgId, origin_url: window.location.origin },
-        { withCredentials: true },
-      );
-      window.location.href = r.data.url;
-    } catch (e) {
-      setError(e.response?.data?.detail || e.message);
-      setBusyPkg(null);
-    }
+  const handleCheckout = (pkg) => {
+    setError("");
+    setSelectedPkg(pkg);
+  };
+
+  const handleSuccess = async () => {
+    // Backend already flipped the tier; pull the fresh user record so
+    // the "Current plan" pip lights up immediately.
+    try { await refreshAuth?.(); } catch { /* noop */ }
   };
 
   const currentTier = user?.subscription_tier || "free";
@@ -122,18 +125,29 @@ export default function PricingPage() {
                 perks={p.perks}
                 current={currentTier === p.id}
                 ctaLabel={currentTier === p.id ? "Current plan" : (user ? `Upgrade to ${p.name}` : "Sign in to upgrade")}
-                disabled={!user || currentTier === p.id || busyPkg !== null}
-                busy={busyPkg === p.id}
-                onClick={() => handleCheckout(p.id)}
+                disabled={!user || currentTier === p.id}
+                busy={false}
+                onClick={() => handleCheckout(p)}
               />
             ))}
           </div>
         )}
 
         <p className="text-[10px] text-slate-500 text-center mt-10">
-          Payments processed by Stripe. We never see your card details. You'll receive a receipt by email after every charge.
+          Payments processed by Braintree (a PayPal company). Pay with PayPal, Venmo, or any major card. We never see your card details. You&apos;ll receive a receipt by email after every charge.
         </p>
       </main>
+
+      {/* Iter-98 — Braintree Drop-in checkout dialog. Mounts when a
+          package is selected; teardown is automatic on close. */}
+      <BraintreeDialog
+        open={!!selectedPkg}
+        onClose={() => setSelectedPkg(null)}
+        packageId={selectedPkg?.id}
+        packageName={selectedPkg?.name}
+        amountDisplay={selectedPkg ? `$${Math.floor(selectedPkg.amount)} / yr` : ""}
+        onSuccess={handleSuccess}
+      />
     </div>
   );
 }

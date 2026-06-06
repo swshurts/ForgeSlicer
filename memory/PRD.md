@@ -43,6 +43,17 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - (Non-blocking polish) `/admin` auto-theme banner intercepts pointer events on the tab strip — lower z-index / bound pointer-events to its visual rect.
 - (Non-blocking polish) Moderation Delete button only shows on Recent tab for `is_public:true` rows — unpublished+cleared rows become unreachable from the UI; show Delete on both tabs.
 
+## Resolved This Session (Iter-98, 2026-02-XX)
+- **PayPal Braintree replaces Stripe** as ForgeSlicer's primary payment rail (Stripe code stays mounted for historical transactions).
+- New module `backend/braintree_billing.py` mirrors `billing.py`: re-uses the same `PACKAGES` catalog so prices can never drift between providers. Server-authoritative on amount.
+- Endpoints: `GET /api/billing/braintree/client-token` (auth-gated), `POST /api/billing/braintree/checkout` (charges via `transaction.sale` + grants tier idempotently in one round-trip).
+- `BRAINTREE_ENV=sandbox|production` env var toggle.
+- Frontend: `BraintreeDialog.jsx` (PayPal + Venmo + cards Drop-in modal). `PricingPage.jsx` opens dialog on Upgrade (no hard redirect). Footnote updated.
+- E2E sandbox verified: $50 captured via Braintree transaction `592ndbv7`, tier flipped to `maker`, idempotency holds. Drop-in modal renders with Card + PayPal options.
+
+## Resolved This Session (Iter-97, 2026-02-XX)
+- ForgeSlicer `/handoff` accepts both `forgeslicer:handoff:stl` (legacy) and `forgeslicer:handoff:model` (modern) message types.
+
 ## Resolved This Session (Iter-94, 2026-02-XX)
 - **Per-object color round-trip for 3MF imports** (LithoForge → ForgeSlicer → OrcaSlicer).
 - **Phase 1 — Pristine 3MF pass-through**: when a 3MF arrives via handoff, workspace drop-zone, or toolbar Import, the original bytes are stashed in `useScene().pristine3MFBytes`. The Send-to-Slicer dialog surfaces a new cyan "Preserve colors from import" checkbox (default ON) — ticked sends the *original* LithoForge bytes to OrcaSlicer with every per-object color/multi-material tag intact; unticked falls back to the re-baked path (picks up workspace edits but strips colors).
