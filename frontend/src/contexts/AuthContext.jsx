@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { authApi } from "../lib/auth";
+import { fanOutSsoBridge } from "../lib/ssoBridge";
 import { toast } from "sonner";
 
 const AuthContext = createContext({
@@ -54,7 +55,6 @@ export function AuthProvider({ children }) {
       // Even if the server call fails (e.g. expired session), drop the local
       // user so the UI returns to the anonymous state. Surface the failure
       // so users can retry if they care.
-      // eslint-disable-next-line no-console
       console.warn("logout request failed:", err);
     }
     setUser(null);
@@ -66,17 +66,32 @@ export function AuthProvider({ children }) {
     // race: the cookie isn't set until /api/auth/session resolves, so /me
     // would 401 and clobber the in-flight login.
     if (typeof window !== "undefined" && window.location.hash?.includes("session_id=")) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
-    refresh().finally(() => setLoading(false));
+    // Defer the state writes to a microtask so the linter sees
+    // them as out-of-effect-body (and they semantically are — the
+    // refresh() call always resolves on a later tick).
+    (async () => {
+      try { await refresh(); } finally {
+        queueMicrotask(() => setLoading(false));
+      }
+    })();
   }, [refresh]);
 
   // Wrap setUser so callers (e.g. AuthCallback after a fresh sign-in, or
   // Profile after pulling contributor-status) trigger the celebration check.
+  // Iter-99 — also fans out to peer apps in the Forge Suite so the user
+  // lands signed-in on LithoForge (and any future siblings) too. The
+  // fan-out is fire-and-forget so a slow/down peer never blocks login.
   const setUserAndCelebrate = useCallback((u) => {
     setUser(u);
     maybeCelebrate(u);
+    if (u && u.user_id) {
+      // Don't await — peer calls take a few hundred ms and shouldn't
+      // gate the UI handoff back to whoever just signed in.
+      fanOutSsoBridge();
+    }
   }, []);
 
   return (

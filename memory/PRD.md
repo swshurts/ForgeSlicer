@@ -43,6 +43,15 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - (Non-blocking polish) `/admin` auto-theme banner intercepts pointer events on the tab strip — lower z-index / bound pointer-events to its visual rect.
 - (Non-blocking polish) Moderation Delete button only shows on Recent tab for `is_public:true` rows — unpublished+cleared rows become unreachable from the UI; show Delete on both tabs.
 
+## Resolved This Session (Iter-99, 2026-02-XX)
+- **Forge Suite SSO bridge** — symmetric cross-app session bridge. Sign into ForgeSlicer → fan-out POST to each peer's `/api/auth/sso-bridge` with a short-lived (60 s) HS256 JWT → peer auto-provisions the user by email and sets its own session cookie. Visiting the peer is instantly signed in.
+- **Backend**: new `backend/sso_bridge.py` with `GET /api/auth/sso-bridge/mint` (auth-gated, mints JWT) and `POST /api/auth/sso-bridge` (validates JWT, upserts user, sets session cookie). Origin-allowlisted via `FORGE_SUITE_PEERS`. Issuer-allowlisted (rejects tokens claiming to be from ForgeSlicer itself).
+- **Frontend**: new `lib/ssoBridge.js` fan-out helper, wired into `AuthContext.setUserAndCelebrate` so every successful login (Google, password, magic link) triggers it. Fire-and-forget — a slow peer never blocks the user's main login.
+- **Env vars** added to `backend/.env`: `FORGE_SUITE_SECRET` (32-byte hex), `FORGE_SUITE_PEERS` (LithoForge URLs), `FORGE_SUITE_APP_NAME=forgeslicer`.
+- **Tests**: 8 pytest cases in `tests/test_sso_bridge.py` covering auth gate, missing/garbage/expired/wrong-secret/disallowed-iss tokens, new-user upsert with cookie + audit log, and replay idempotency. All passing.
+- **Audit log integration**: every bridge accept writes a row to `admin_audit_log` with `action=sso_bridge.accept` so super-admins can trace cross-app sign-ins.
+- **LithoForge handoff doc** at `/app/memory/FORGE_SUITE_SSO_BRIDGE.md` — drop-in module + frontend snippet + env-var values + smoke-test playbook so LithoForge can build the mirror side without re-deriving the protocol.
+
 ## Resolved This Session (Iter-98, 2026-02-XX)
 - **PayPal Braintree replaces Stripe** as ForgeSlicer's primary payment rail (Stripe code stays mounted for historical transactions).
 - New module `backend/braintree_billing.py` mirrors `billing.py`: re-uses the same `PACKAGES` catalog so prices can never drift between providers. Server-authoritative on amount.

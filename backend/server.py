@@ -20,6 +20,7 @@ import email_service
 import auth_local
 import billing
 import braintree_billing
+import sso_bridge
 import admin as admin_module
 import orca_engine
 import orca_upstream
@@ -580,6 +581,17 @@ billing_webhook_router = billing.get_webhook_router(db)
 # the pricing page routes here; Stripe routes stay mounted so any
 # historical session ids still resolve via /api/billing/status.
 braintree_api_router = braintree_billing.get_router(db, get_optional_user)
+
+# Iter-99 — Forge Suite SSO bridge. Lets a user signed into a peer
+# app (LithoForge today, future siblings later) auto-land signed in
+# on ForgeSlicer. Mounted at /api/auth/sso-bridge/* alongside the
+# existing Google + local-auth flows.
+sso_bridge_router = sso_bridge.get_router(
+    db,
+    get_optional_user,
+    _set_session_cookie,
+    _public_user,
+)
 
 
 # ---------- Contributor tier ----------
@@ -1660,6 +1672,7 @@ app.include_router(api_router)
 app.include_router(billing_api_router)
 app.include_router(billing_webhook_router)
 app.include_router(braintree_api_router)
+app.include_router(sso_bridge_router)
 
 app.add_middleware(
     CORSMiddleware,
