@@ -212,9 +212,15 @@ export async function fanOutSsoBridge() {
     if (!token || !Array.isArray(peers) || peers.length === 0) return;
     await Promise.allSettled(
       peers.map((peer) =>
+        // MUST be `mode: "cors"`, not `"no-cors"`. Browsers strip all
+        // non-safelisted request headers (including our custom
+        // `X-Forge-Suite-Token`) in no-cors mode — the peer receives
+        // an empty header and 400/403s. `cors` mode + the peer's
+        // matching CORS response headers (see backend section below)
+        // is the only way the custom token survives the trip.
         fetch(`${peer}/api/auth/sso-bridge`, {
           method: "POST",
-          mode: "no-cors",
+          mode: "cors",
           credentials: "include",
           headers: { "X-Forge-Suite-Token": token },
         })
@@ -229,6 +235,46 @@ export async function fanOutSsoBridge() {
 ```
 
 Then call `fanOutSsoBridge()` from LithoForge's auth context wherever you currently set the user object after a fresh sign-in. ForgeSlicer wires it into the `setUserAndCelebrate` callback so any login path triggers it (Google OAuth, password, magic link).
+
+### CORS requirements on the receiving backend (critical)
+
+For `mode: "cors"` to work end-to-end, both apps' backends MUST respond to the cross-origin POST with these headers:
+
+```
+Access-Control-Allow-Origin: <the peer's origin, NOT *>
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: X-Forge-Suite-Token, Content-Type
+Access-Control-Allow-Methods: POST, OPTIONS
+```
+
+Wildcard `Access-Control-Allow-Origin: *` is **forbidden by the CORS spec when combined with `Allow-Credentials: true`** — the browser refuses to send/store cookies and the bridge silently fails. Each app must reflect the SPECIFIC peer origin (or use a regex that matches it).
+
+For LithoForge's FastAPI app, the simplest fix is to update the `CORSMiddleware` config in `server.py`:
+
+```python
+from starlette.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origin_regex=(
+        # LithoForge's own production + preview
+        r"^https://lithoforge\.net$"
+        r"|^https://www\.lithoforge\.net$"
+        # ForgeSlicer (Forge Suite peer)
+        r"|^https://forgeslicer\.com$"
+        r"|^https://www\.forgeslicer\.com$"
+        # Emergent preview/host pattern (covers both apps' previews)
+        r"|^https://[a-z0-9-]+\.preview\.emergentagent\.com$"
+        r"|^https://[a-z0-9-]+\.emergent\.host$"
+        r"|^http://localhost(:\d+)?$"
+    ),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+ForgeSlicer has the matching config — its CORS regex now allows `lithoforge.net`/`www.lithoforge.net`.
 
 ## Step 4 — Cookie attributes (very important)
 

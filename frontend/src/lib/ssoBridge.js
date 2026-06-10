@@ -49,9 +49,24 @@ export async function fanOutSsoBridge() {
     // at least dispatched before they move on.
     await Promise.allSettled(
       peers.map((peer) =>
+        // Iter-99.1 — MUST be `mode: "cors"`. The earlier `no-cors`
+        // attempt looks like the right "fire-and-forget" pattern, but
+        // browsers silently STRIP all non-safelisted request headers
+        // in no-cors mode (the spec calls these "forbidden header
+        // names"). That includes our custom `X-Forge-Suite-Token`, so
+        // the peer received an empty header and 400'd / 403'd.
+        //
+        // Switching to `cors` mode means the browser does a CORS
+        // preflight (OPTIONS) first, the peer answers with
+        // `Access-Control-Allow-Origin: <our origin>`,
+        // `Access-Control-Allow-Credentials: true`, and
+        // `Access-Control-Allow-Headers: X-Forge-Suite-Token`, and
+        // THEN the real POST goes through with the header intact.
+        // Set-Cookie still lands on the peer's domain because
+        // credentials: "include" + the matching ACAC: true header.
         fetch(`${peer}/api/auth/sso-bridge`, {
           method: "POST",
-          mode: "no-cors",
+          mode: "cors",
           credentials: "include",
           headers: { "X-Forge-Suite-Token": token },
         })

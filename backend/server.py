@@ -1686,6 +1686,8 @@ app.add_middleware(
     # is supported without hard-coding URLs.
     allow_origin_regex=(
         r"^https://forgeslicer\.com$"
+        r"|^https://lithoforge\.net$"
+        r"|^https://www\.lithoforge\.net$"
         r"|^https://[a-z0-9-]+\.preview\.emergentagent\.com$"
         r"|^https://[a-z0-9-]+\.emergent\.host$"
         r"|^http://localhost(:\d+)?$"
