@@ -2508,3 +2508,36 @@ unchanged.
   objects ON TOP OF the existing cube; banner shows "Added design
   \"Pitman Arm\" to scene — 5 objects."
 - Fit-to-bed remix link still navigates directly (unchanged).
+
+---
+
+## Iter-100.4 — Gallery preview keyboard shortcuts (2026-02-10)
+
+**Why**: User asked for the QoL improvement teased in the previous
+finish. The original phrasing ("Open editable in workspace") was
+muddled — Replace plate already loads the design as editable
+project JSON when available, so a third CTA would have been
+redundant. Pivoted to keyboard shortcuts on the dialog instead:
+small, invisible-until-discovered, real power-user payoff that
+fits the existing two-CTA pattern.
+
+**Changes**:
+- `frontend/src/components/dialogs/GalleryPreviewDialog.jsx`:
+  • New keydown listener while the dialog is open: `R` triggers
+    Replace plate, `A` triggers Add to current plate, `Esc` still
+    closes (unchanged).
+  • Suppressed while loading / on error so the keystrokes can't
+    bypass the disabled-button gate.
+  • Ignores when modifier keys are held or an input/textarea is
+    focused (defence in depth — the dialog has no inputs today).
+  • Discoverable `<kbd>A</kbd>` and `<kbd>R</kbd>` chips glued
+    onto the CTA buttons so users SEE the shortcut without having
+    to discover it accidentally. Tinted to match each button
+    (slate on secondary, orange on primary).
+
+**Verified end-to-end (Playwright)**:
+- Pressing `R` with the dialog open navigates to
+  `/workspace?remix=<id>`.
+- Pressing `A` navigates to `/workspace?addComponent=1` with the
+  design payload staged.
+- Pressing `Esc` removes the dialog from the DOM.

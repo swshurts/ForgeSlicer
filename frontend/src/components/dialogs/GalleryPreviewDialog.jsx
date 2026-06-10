@@ -135,12 +135,28 @@ export default function GalleryPreviewDialog({ item, open, onClose }) {
   }, [open, item]);
 
   // ESC closes — small ergonomic touch users expect from any modal.
+  // iter-100.4 also wires up R = Replace plate, A = Add to current
+  // plate. Letters are intentionally non-modifier so they feel like
+  // "press to choose"; we suppress them while the dialog is loading
+  // or in error state because the visual CTAs are disabled in those
+  // states too — keystrokes shouldn't bypass that gate.
   useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    if (!open || !item) return undefined;
+    const onKey = (e) => {
+      // Ignore shortcuts when the user is typing somewhere (defence
+      // in depth — the dialog has no inputs today, but it's cheap
+      // to be correct in case one's added later).
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape") { onClose(); return; }
+      if (loading || error) return;
+      if (e.key === "r" || e.key === "R") { e.preventDefault(); handleReplace(); }
+      else if (e.key === "a" || e.key === "A") { e.preventDefault(); handleAddToPlate(); }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, item, onClose, loading, error]);
 
   if (!open || !item) return null;
 
@@ -313,19 +329,21 @@ export default function GalleryPreviewDialog({ item, open, onClose }) {
               data-testid="gallery-preview-add-to-plate"
               onClick={handleAddToPlate}
               disabled={loading || !!error}
-              title="Add this design to your existing build plate without losing your current work"
+              title="Add this design to your existing build plate without losing your current work (A)"
               className="h-9 px-3 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded inline-flex items-center gap-1.5 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Layers size={13} /> Add to current plate
+              <kbd className="ml-1 px-1 py-px text-[9px] font-mono rounded border border-slate-600 bg-slate-900/80 text-slate-400" aria-hidden="true">A</kbd>
             </button>
             <button
               data-testid="gallery-preview-replace-plate"
               onClick={handleReplace}
               disabled={loading || !!error}
-              title="Wipe the current build plate and load this design (Remix)"
+              title="Wipe the current build plate and load this design (R)"
               className="h-9 px-3 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <GitFork size={13} /> Replace plate
+              <kbd className="ml-1 px-1 py-px text-[9px] font-mono rounded border border-orange-300/40 bg-orange-600/70 text-orange-50" aria-hidden="true">R</kbd>
             </button>
           </div>
         </div>
