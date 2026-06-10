@@ -73,6 +73,14 @@ export const galleryApi = {
     if (mine) params.mine = true;
     return fetchHeavyList(`${API}/gallery`, { params });
   },
+  // Full record incl. the embedded project JSON (`data`) used by the
+  // preview dialog and the workspace remix loader. Kept separate from
+  // `list` because the project JSON is heavy and the listing endpoint
+  // strips it for bandwidth.
+  get: async (id) => {
+    const { data } = await axios.get(`${API}/gallery/${id}`);
+    return data;
+  },
   create: async (payload) => {
     const { data } = await axios.post(`${API}/gallery`, payload);
     return data;

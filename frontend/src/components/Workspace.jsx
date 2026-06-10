@@ -728,7 +728,9 @@ export default function Workspace() {
       }
       setImportBanner({
         kind: "ok",
-        message: `Added "${payload.name}" (${payload.modifier || "positive"}) to scene${added > 0 ? ` — ${added} object${added === 1 ? "" : "s"}` : ""}.`,
+        message: payload.kind === "design"
+          ? `Added design "${payload.name}" to scene${added > 0 ? ` — ${added} object${added === 1 ? "" : "s"}` : ""}.`
+          : `Added "${payload.name}" (${payload.modifier || "positive"}) to scene${added > 0 ? ` — ${added} object${added === 1 ? "" : "s"}` : ""}.`,
       });
       setTimeout(() => setImportBanner(null), 4500);
       setSearchParams({}, { replace: true });

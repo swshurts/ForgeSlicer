@@ -12,6 +12,7 @@ import {
 import { getLicense } from "../lib/licenses";
 import { MATERIALS, getMaterial } from "../lib/materials";
 import { useScene } from "../lib/store";
+import GalleryPreviewDialog from "./dialogs/GalleryPreviewDialog";
 
 const PLACEHOLDERS = [
   "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
@@ -120,7 +121,7 @@ function LicenseBadge({ license, testid, className = "" }) {
   );
 }
 
-function GalleryCard({ item, idx, onDelete }) {
+function GalleryCard({ item, idx, onDelete, onPreview }) {
   const thumb = item.thumbnail_base64
     ? `data:image/png;base64,${item.thumbnail_base64}`
     : PLACEHOLDERS[idx % PLACEHOLDERS.length];
@@ -134,7 +135,20 @@ function GalleryCard({ item, idx, onDelete }) {
     : null;  // null = unknown — don't show the chip
   return (
     <div className="group bg-slate-900 border border-slate-800 rounded-lg overflow-hidden hover:border-orange-500/60 transition-all" data-testid={`gallery-card-${item.id}`}>
-      <div className="aspect-square bg-slate-950 overflow-hidden relative">
+      {/* iter-100.3 — clicking anywhere on the thumbnail (but not on
+          the floating badges/chips) opens the gallery preview viewer
+          so users can rotate/zoom before deciding whether to replace
+          their current plate or merge onto it. */}
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid={`gallery-preview-trigger-${item.id}`}
+        onClick={() => onPreview && onPreview(item)}
+        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && onPreview) { e.preventDefault(); onPreview(item); } }}
+        title="Preview in 3D viewer"
+        aria-label={`Preview ${item.name}`}
+        className="aspect-square bg-slate-950 overflow-hidden relative cursor-zoom-in"
+      >
         <img src={thumb} alt={item.name} className="w-full h-full object-cover" />
         <div className="absolute top-2 right-2 bg-black/70 backdrop-blur text-[10px] font-mono text-orange-400 px-1.5 py-0.5 rounded">
           {item.triangle_count.toLocaleString()} △
@@ -228,20 +242,31 @@ function GalleryCard({ item, idx, onDelete }) {
           <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">{item.description}</p>
         )}
         <div className="mt-3 flex items-center gap-2">
-          <Link
-            to={fitsBed === false ? `/workspace?remix=${item.id}&fit=1` : `/workspace?remix=${item.id}`}
-            data-testid={fitsBed === false ? `gallery-remix-fit-${item.id}` : `gallery-remix-${item.id}`}
-            title={fitsBed === false
-              ? "Remix and auto-resize to fit your current printer bed"
-              : "Open this design in the workspace for editing"}
-            className={`flex-1 h-8 text-white text-xs font-semibold rounded flex items-center justify-center gap-1 ${
-              fitsBed === false
-                ? "bg-amber-600 hover:bg-amber-700"
-                : "bg-orange-500 hover:bg-orange-600"
-            }`}
-          >
-            <GitFork size={12} /> {fitsBed === false ? "Remix · fit bed" : "Remix"}
-          </Link>
+          {/* iter-100.3 — Remix now opens the preview dialog so the
+              user picks "Replace plate" vs "Add to current plate" at
+              IMPORT time. The fit-to-bed remix path keeps its own
+              direct link because that workflow already implies a
+              full plate swap (resize wouldn't survive a merge). */}
+          {fitsBed === false ? (
+            <Link
+              to={`/workspace?remix=${item.id}&fit=1`}
+              data-testid={`gallery-remix-fit-${item.id}`}
+              title="Remix and auto-resize to fit your current printer bed"
+              className="flex-1 h-8 text-white text-xs font-semibold rounded flex items-center justify-center gap-1 bg-amber-600 hover:bg-amber-700"
+            >
+              <GitFork size={12} /> Remix · fit bed
+            </Link>
+          ) : (
+            <button
+              type="button"
+              data-testid={`gallery-remix-${item.id}`}
+              onClick={() => onPreview && onPreview(item)}
+              title="Open preview — pick whether to replace your plate or add to it"
+              className="flex-1 h-8 text-white text-xs font-semibold rounded flex items-center justify-center gap-1 bg-orange-500 hover:bg-orange-600"
+            >
+              <GitFork size={12} /> Remix
+            </button>
+          )}
           <a
             data-testid={`gallery-download-${item.id}`}
             href={galleryApi.downloadUrl(item.id)}
@@ -407,6 +432,9 @@ function DesignsTab() {
   const [error, setError] = useState("");
   const [material, setMaterial] = useState("all");
   const [source, setSource] = useState("public"); // "public" | "mine"
+  // iter-100.3 — selected design for the 3D preview modal. `null` =
+  // closed; setting it opens the dialog.
+  const [previewItem, setPreviewItem] = useState(null);
 
   // If the user signs out, force back to public so we don't show a stale
   // empty state with a hidden "Mine" filter the user can't see.
@@ -481,8 +509,13 @@ function DesignsTab() {
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" data-testid="gallery-grid">
-        {items.map((it, i) => (<GalleryCard key={it.id} item={it} idx={i} onDelete={handleDelete} />))}
+        {items.map((it, i) => (<GalleryCard key={it.id} item={it} idx={i} onDelete={handleDelete} onPreview={setPreviewItem} />))}
       </div>
+      <GalleryPreviewDialog
+        item={previewItem}
+        open={!!previewItem}
+        onClose={() => setPreviewItem(null)}
+      />
     </>
   );
 }

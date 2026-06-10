@@ -2457,3 +2457,54 @@ those CORS-failed `OPTIONS lithoforge.net/sso-bridge` rows will
 stop appearing in the network panel — the source code that fired
 them no longer exists. The redirect flow continues to work
 unchanged.
+
+---
+
+## Iter-100.3 — Gallery 3D preview + import-choice dialog (2026-02-10)
+
+**Why**: User asked two things:
+  (a) Clicking a gallery image should open a 3D viewer that feels
+      like the design-mode viewport, so they can rotate/zoom before
+      committing to anything.
+  (b) When importing, present the choice between **replace plate**
+      (existing Remix behaviour — wipes the current scene) and
+      **add to current plate** (NEW — merges the design into the
+      live workspace without losing the user's in-progress work).
+
+**Changes**:
+- `frontend/src/components/dialogs/GalleryPreviewDialog.jsx` — new
+  lightweight three.js modal. Uses `@react-three/fiber` + drei
+  `OrbitControls` + `Grid` to mirror the design viewport's look
+  (orange `#F97316` material, slate-950 bed background, build-plate
+  grid) without dragging in the full scene store / measure tool /
+  cut-plane infra that lives on Viewport.jsx. Footer shows bbox +
+  material chips and two CTAs: **Add to current plate** (slate
+  secondary) and **Replace plate** (orange primary).
+- `frontend/src/lib/api.js` — `galleryApi.get(id)` returns the full
+  record incl. embedded `data` (project JSON). The listing endpoint
+  strips that for bandwidth.
+- `frontend/src/components/Gallery.jsx`:
+  • `GalleryCard` thumbnail container is now a `role="button"`
+    `tabIndex={0}` div that fires the preview on click / Enter /
+    Space.
+  • Remix button on each card now opens the preview dialog so the
+    import-mode choice is presented every time. The fit-to-bed
+    variant keeps its direct nav because that workflow IMPLIES a
+    full plate swap (auto-resize wouldn't survive a merge).
+  • `DesignsTab` holds the selected-item state and renders
+    `<GalleryPreviewDialog />`.
+- `frontend/src/components/Workspace.jsx` — import banner now
+  reads "Added design X — N objects" when the handoff payload's
+  `kind === "design"`, vs the existing "Added component X
+  (positive)" wording for components. Same underlying merge code
+  path — only the banner copy diverges.
+
+**Verified end-to-end (Playwright)**:
+- Card image click → dialog opens, STL renders with bbox chip.
+- Remix button on a fits-bed card → opens dialog (no direct nav).
+- "Replace plate" → `/workspace?remix=<id>`, project renamed
+  "Remix of Pitman Arm", scene contains the 5-piece assembly.
+- "Add to current plate" → workspace gains the Pitman Arm 5
+  objects ON TOP OF the existing cube; banner shows "Added design
+  \"Pitman Arm\" to scene — 5 objects."
+- Fit-to-bed remix link still navigates directly (unchanged).
