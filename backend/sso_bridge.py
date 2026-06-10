@@ -1,70 +1,61 @@
-"""Forge Suite SSO bridge — iter-99.
+"""Forge Suite SSO bridge — iter-100 (redirect flow).
 
 Lets a user signed into ANY peer app in the Forge Suite (LithoForge
 ↔ ForgeSlicer today, future siblings later) land on the OTHER apps
 already signed in. No extra Google round-trip, no "click sign in again"
 on the second app.
 
-How it works
-------------
+How it works (redirect flow)
+----------------------------
 
-After every successful login on app A:
+The original iter-99 design fanned out cross-site POSTs from the
+source app to every peer's `/api/auth/sso-bridge` so the peer could
+set its own cookie. That worked great on browsers that allow cross-
+site cookies — but Firefox Total Cookie Protection, Brave Shields,
+Safari ITP, and Chrome's third-party-cookie phaseout all partition
+those cookies into per-top-site jars, so when the user later visited
+the peer directly the cookie was invisible. Replaced in iter-99.2:
 
-    1. App A mints a short-lived (60 s) HS256 JWT with the user's email
-       in the `sub` claim and app A's name in `iss`.
-    2. App A's frontend fan-outs a `fetch()` POST to each peer's
-       `/api/auth/sso-bridge` carrying the JWT in the `X-Forge-Suite-Token`
-       header. `credentials: "include"` so the response's `Set-Cookie`
-       lands on the peer's domain. `mode: "no-cors"` so we don't choke
-       on the response we can't read.
-    3. Peer app B validates the JWT (signature + exp + iss-allowed),
-       upserts the user by email, mints its OWN session_token, and
-       returns it as a Set-Cookie. Browser stores the cookie under
-       `forgeslicer.com` (or whoever B is). User visits B → cookie
-       comes back → instant sign-in.
+    1. User clicks an explicit "Open in <peer>" button on the source.
+    2. Source app GETs `/api/auth/sso-bridge/mint` — a short-lived
+       (60 s) HS256 JWT with the user's email in `sub` and the
+       source app's name in `iss`.
+    3. Source app redirects the user (new tab) to:
+            https://<peer>/auth/sso-accept?token=<JWT>&return=<path>
+    4. The user's browser is now ON the peer's origin. The peer's
+       `/auth/sso-accept` page POSTs the JWT SAME-ORIGIN to its own
+       `/api/auth/sso-bridge`. Set-Cookie lands as a first-party
+       cookie — no partitioning, no browser blocks.
+    5. The accept page strips `?token=` via history.replaceState and
+       routes the user to the `return` path. Signed in.
 
 Security model
 --------------
 
-- The JWT is shared-secret HS256, NOT cross-domain OAuth. Every app in
-  the suite has the same `FORGE_SUITE_SECRET` in its env. Compromise
-  of any app's `.env` compromises the bridge for the whole suite, so
-  the secret MUST be rotated on every app simultaneously if exposed.
-- 60-second `exp` means a leaked JWT can't be replayed long.
+- Shared-secret HS256, NOT cross-domain OAuth. Every app in the suite
+  has the same `FORGE_SUITE_SECRET` in its env. Compromise of any
+  app's `.env` compromises the bridge for the whole suite, so the
+  secret MUST be rotated on every app simultaneously if exposed.
+- 60-second `exp` means a leaked JWT can't be replayed long. The
+  token briefly appears in the URL (referer, history) — the short
+  TTL is the primary defence against that exposure.
 - `iss` claim is checked against `FORGE_SUITE_PEERS` (configured per
   app). Receiving an `iss` that isn't on the allowlist → 403.
-- We never trust `aud` from the JWT for ROUTING — the receiving app
-  always treats incoming bridges as targeting itself.
 - The mint endpoint requires an active session: only an already
   signed-in user can mint a token to bridge themselves. No anonymous
   identity bootstrapping.
-- The peer-call doesn't include any user-data beyond `email`/`name`/
-  `picture`. The peer is authoritative for its own user record after
-  upsert.
+- The peer-call carries only `email`/`name`/`picture`. The peer is
+  authoritative for its own user record after upsert.
 
-Frontend integration
---------------------
+Frontend integration (source side)
+----------------------------------
 
-```js
-// After login success on ForgeSlicer, ping each peer:
-fetch("/api/auth/sso-bridge/mint", { credentials: "include" })
-  .then((r) => r.json())
-  .then((j) => {
-    if (!j.token) return;
-    for (const peer of j.peers) {
-      // no-cors so the Set-Cookie still lands even though we can't read.
-      fetch(`${peer}/api/auth/sso-bridge`, {
-        method: "POST",
-        mode: "no-cors",
-        credentials: "include",
-        headers: { "X-Forge-Suite-Token": j.token },
-      }).catch(() => {});
-    }
-  });
-```
+See `frontend/src/lib/ssoHandoff.js` — `openInPeer(peerOrigin)` does
+the mint + redirect dance. Buttons that invoke it live in the
+Landing header and the workspace toolbar.
 
 LithoForge does the exact mirror — same module, same env-var names,
-same flow.
+same flow — via its own `/auth/sso-accept` route.
 """
 from __future__ import annotations
 
@@ -149,10 +140,15 @@ def get_router(
 
     @router.get("/sso-bridge/mint", response_model=MintTokenResponse)
     async def mint_token(user=Depends(get_current_user_optional)):
-        """Mint a short-lived JWT for the currently-signed-in user so
-        the frontend can fan-out to peer apps' `/sso-bridge` endpoints.
-        Anonymous → 401 so the frontend doesn't try to bridge an empty
-        session (which would 401 the peer in turn)."""
+        """Mint a short-lived JWT for the currently-signed-in user.
+
+        The frontend's `openInPeer(...)` calls this then redirects the
+        user to `<peer>/auth/sso-accept?token=<JWT>`. Anonymous → 401
+        so the frontend falls back to opening the peer's home page
+        without trying to bridge an empty session. `peers` is returned
+        for legacy callers but the canonical redirect flow only uses
+        `token` — the destination peer is picked by the button click,
+        not by iterating the response."""
         if not user:
             raise HTTPException(401, detail="Sign in first.")
         secret = _get_secret()
@@ -184,10 +180,11 @@ def get_router(
         session cookie (the previous session is still valid until its
         independent TTL).
 
-        Returns 200 + a small payload describing the resulting user so
-        the (rare) caller that wants the body can confirm. Most
-        callers use `mode: "no-cors"` and don't read the response;
-        they only need the `Set-Cookie` side-effect.
+        Called SAME-ORIGIN from this app's `/auth/sso-accept` page
+        (see `frontend/src/components/SsoAccept.jsx`) after the user
+        was redirected here by a peer's "Open in <us>" button. The
+        Set-Cookie response thus lands as a first-party cookie on
+        our own domain — the whole point of the redirect flow.
         """
         token = request.headers.get("X-Forge-Suite-Token")
         if not token:

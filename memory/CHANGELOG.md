@@ -2418,3 +2418,42 @@ regardless of which page the user is on.
 **Verified**: Playwright screenshot confirms the button renders
 between "Gallery" and "Share" in the workspace toolbar. No layout
 regressions on the existing controls.
+
+---
+
+## Iter-100.2 — Retire legacy silent-SSO fan-out (2026-02-10)
+
+**Why**: User's production network panel showed `OPTIONS sso-bridge`
+preflights to `lithoforge.net` / `www.lithoforge.net` failing with
+"CORS Missing Allow Origin". Those originated from the iter-99
+silent fan-out (`lib/ssoBridge.js::fanOutSsoBridge`) which iter-99.2
+already replaced with the redirect flow but left exported, with the
+backend docs still recommending it as the canonical pattern.
+
+**Changes**:
+- `frontend/src/lib/ssoBridge.js` — **deleted**. No remaining callers
+  in the codebase (verified by grep). The redirect flow lives in
+  `lib/ssoHandoff.js::openInPeer` and is wired to both the Landing
+  header and the workspace toolbar.
+- `frontend/src/contexts/AuthContext.jsx` — trimmed the historical
+  comment that pointed at the now-deleted helper.
+- `backend/sso_bridge.py` — rewrote the module docstring and the
+  per-endpoint docstrings (`mint_token`, `accept_bridge`) so they
+  describe the redirect flow as the canonical path. The old "fan-out
+  → no-cors → Set-Cookie cross-site" recipe is gone from the docs;
+  it produced false confidence in browsers that partition third-
+  party cookies (Firefox TCP, Brave, Safari ITP, modern Chrome).
+- `MintTokenResponse.peers` is **kept** for backward-compatibility
+  with any older LithoForge build that still reads it.
+
+**Verified**:
+- `pytest backend/tests/test_sso_bridge.py` — 8/8 pass.
+- Anonymous mint → 401, authed mint → 200 + valid JWT (curl).
+- Frontend lint clean for touched files (pre-existing warnings in
+  unrelated files unchanged).
+
+**Production impact**: After the next deploy of forgeslicer.com,
+those CORS-failed `OPTIONS lithoforge.net/sso-bridge` rows will
+stop appearing in the network panel — the source code that fired
+them no longer exists. The redirect flow continues to work
+unchanged.

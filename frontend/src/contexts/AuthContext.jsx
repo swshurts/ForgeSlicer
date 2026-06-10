@@ -81,18 +81,14 @@ export function AuthProvider({ children }) {
   // Wrap setUser so callers (e.g. AuthCallback after a fresh sign-in, or
   // Profile after pulling contributor-status) trigger the celebration check.
   //
-  // Iter-99 originally also called `fanOutSsoBridge()` here to push a
-  // cookie to every peer in the Forge Suite. Iter-99.2 retired that
-  // approach because modern browsers (Firefox TCP, Brave Shields,
-  // Safari ITP) partition the cookies it set into per-top-site jars,
-  // so the user never appeared signed-in when they later visited the
-  // peer directly. Replaced by the redirect-based handoff in
-  // `lib/ssoHandoff.js` — explicit user-clicked "Open in [peer]"
-  // buttons that round-trip the JWT through a peer URL and set a
-  // first-party cookie on arrival. The silent fan-out helper is kept
-  // around (still exported by `ssoBridge.js`) for any environment
-  // that does permit cross-site cookies, but we no longer invoke it
-  // from the default login path because it provides false confidence.
+  // Iter-100 — Forge-Suite SSO is now exclusively the redirect flow in
+  // `lib/ssoHandoff.js` (user-clicked "Open in [peer]" buttons that
+  // round-trip a 60 s JWT through the peer's `/auth/sso-accept` route
+  // and land a first-party cookie). The earlier silent fan-out helper
+  // was removed because modern browser cookie partitioning made the
+  // cross-site `Set-Cookie` it relied on invisible to the user when
+  // they later visited the peer directly — false confidence with
+  // ongoing CORS-preflight noise as the only visible artefact.
   const setUserAndCelebrate = useCallback((u) => {
     setUser(u);
     maybeCelebrate(u);
