@@ -24,6 +24,8 @@ import HelpMegaMenu from "./HelpMegaMenu";
 import VoiceCommandPalette from "../VoiceCommandPalette";
 import UserMenu from "../UserMenu";
 import ThemeSwitcher from "./ThemeSwitcher";
+import { openInPeer } from "../../lib/ssoHandoff";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function SystemRow({
   busyMsg,
@@ -45,6 +47,20 @@ export default function SystemRow({
   // per-print without changing their default.
   const preferred = getPreferredSlicer();
   const userSlicers = getAllSlicers();
+  const { user } = useAuth();
+  // Iter-100 — Workspace gets the same LithoForge launch path the
+  // Landing header has. Signed-in users (workspace is auth-gated, so
+  // this is the common case) get the SSO redirect via `openInPeer`
+  // so they land already logged into LithoForge; otherwise plain
+  // window.open. Keeps the cross-app jump one click away without
+  // forcing the user back to Landing.
+  const openLithoForge = () => {
+    if (user) {
+      openInPeer("https://lithoforge.net", "/");
+    } else {
+      window.open("https://lithoforge.net", "_blank", "noopener");
+    }
+  };
   // Build the merged option list, de-duping by id. Order:
   //   1. Preferred slicer (if any) — first so the primary button hits it
   //   2. Printer-recommended slicers
@@ -137,6 +153,19 @@ export default function SystemRow({
       >
         <Globe size={14} /> Gallery
       </Link>
+      {/* iter-100: cross-app launcher — sister tool LithoForge.
+          Signed-in users get an SSO handoff so they land already
+          authed. Hidden on small screens to keep the toolbar
+          breathing room. */}
+      <button
+        type="button"
+        onClick={openLithoForge}
+        data-testid="open-lithoforge-btn"
+        title={user ? "Open LithoForge (auto sign-in)" : "Open LithoForge — sister tool for lithophanes & multi-color prints"}
+        className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded hidden lg:flex items-center gap-1.5 border border-slate-700"
+      >
+        <Sparkles size={13} className="text-orange-400" /> LithoForge
+      </button>
       <button
         data-testid="share-design-btn"
         onClick={onShare}

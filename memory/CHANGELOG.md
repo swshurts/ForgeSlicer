@@ -2396,3 +2396,25 @@ mark the round milestone.
 **Verified**: Screenshot via Playwright confirms the tag renders
 ("iter-100" visible, slate-500, monospace) on the live preview.
 No regressions to the existing header layout.
+
+---
+
+## Iter-100.1 — LithoForge launch button in Workspace toolbar (2026-02-10)
+
+**Why**: User reported the only ForgeSlicer→LithoForge entry point was
+the Landing page header. Once in the workspace, users had to navigate
+back to `/` to jump apps. Cross-app traffic should be one click
+regardless of which page the user is on.
+
+**Changes**:
+- `frontend/src/components/toolbar/SystemRow.jsx` — added a
+  `LithoForge` button (orange Sparkles icon) immediately right of
+  the Gallery link in the workspace top toolbar. Uses the same
+  `openInPeer` SSO handoff as the Landing link, so signed-in users
+  (the common case for the workspace) land authed on LithoForge.
+  Hidden below `lg` breakpoint to keep the toolbar uncluttered on
+  smaller screens. Tagged `data-testid="open-lithoforge-btn"`.
+
+**Verified**: Playwright screenshot confirms the button renders
+between "Gallery" and "Share" in the workspace toolbar. No layout
+regressions on the existing controls.
