@@ -2377,3 +2377,22 @@ the filename is plenty to paste into a file-manager search.
     counter; admins review. No auto-takedown.
 
 **Total tests this iteration**: 37 backend pytest pass (9 new).
+
+---
+
+## Iter-100 — Landing-page iteration tag (2026-02-10)
+
+**Why**: User asked to "sneak the iteration ID on the landing page —
+next to the little logo in the upper left." Bumped to `iter-100` to
+mark the round milestone.
+
+**Changes**:
+- `frontend/src/components/Landing.jsx` — added a small monospace
+  `iter-100` badge inside the header `<Link to="/">`, immediately
+  right of the "CAD + Slice" wordmark. Styled `text-[10px]
+  font-mono text-slate-500` so it reads as metadata, not chrome.
+  Tagged `data-testid="landing-iter-id"` for the testing agent.
+
+**Verified**: Screenshot via Playwright confirms the tag renders
+("iter-100" visible, slate-500, monospace) on the live preview.
+No regressions to the existing header layout.

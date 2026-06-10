@@ -77,6 +77,17 @@ export default function Landing() {
             <div className="text-[14px] font-bold tracking-tight">ForgeSlicer</div>
             <div className="text-[9px] uppercase tracking-widest text-orange-400 -mt-0.5">CAD + Slice</div>
           </div>
+          {/* iter-100: tiny build/iter tag tucked next to the wordmark.
+              Muted slate-500 monospace so it reads as metadata rather
+              than UI chrome — visible to power users without competing
+              with the logo. */}
+          <span
+            data-testid="landing-iter-id"
+            className="ml-2 text-[10px] font-mono text-slate-500 tracking-tight select-text"
+            title="ForgeSlicer iteration"
+          >
+            iter-100
+          </span>
         </Link>
         <div className="flex-1" />
         {/* iter-89: cross-link to the sister tool. The user owns
