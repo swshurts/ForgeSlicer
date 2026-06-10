@@ -101,7 +101,7 @@ def _peers_from_env() -> list[str]:
         return []
     # Comma-separated, whitespace-tolerant. Strip trailing slashes so
     # peer comparisons don't depend on whether the operator typed
-    # `https://lithoforge.com` or `https://lithoforge.com/`.
+    # `https://lithoforge.net` or `https://lithoforge.net/`.
     return [p.strip().rstrip("/") for p in raw.split(",") if p.strip()]
 
 
@@ -114,7 +114,7 @@ def _allowed_iss_set() -> set[str]:
     for peer in _peers_from_env():
         # Full origin form.
         out.add(peer)
-        # Short hostname form (e.g. "lithoforge.com").
+        # Short hostname form (e.g. "lithoforge.net").
         try:
             host = peer.split("//", 1)[1].split("/", 1)[0]
             out.add(host)

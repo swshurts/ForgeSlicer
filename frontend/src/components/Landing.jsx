@@ -67,7 +67,7 @@ export default function Landing() {
             External link → opens in a new tab so users keep their
             ForgeSlicer session intact. */}
         <a
-          href="https://lithoforge.com"
+          href="https://lithoforge.net"
           target="_blank"
           rel="noopener noreferrer"
           data-testid="landing-lithoforge-link"
@@ -193,7 +193,7 @@ export default function Landing() {
         <div>ForgeSlicer · A unified 3D-modeling + slicing playground. Mesh by your fingertips.</div>
         <div className="text-[10px] text-slate-600">
           Part of the Forge Suite ·{" "}
-          <a href="https://lithoforge.com" target="_blank" rel="noopener noreferrer" className="text-orange-400/80 hover:text-orange-300">
+          <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" className="text-orange-400/80 hover:text-orange-300">
             LithoForge
           </a>{" "}for lithophanes &amp; multi-color prints
         </div>

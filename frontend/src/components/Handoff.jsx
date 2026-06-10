@@ -33,7 +33,7 @@
 //     filename: "my-lithophane.3mf",
 //     data: modelArrayBuffer,          // OR `dataUrl: "data:application/sla;base64,..."`
 //     sourceLabel: "LithoForge",       // shown as attribution chip
-//     sourceUrl: "https://lithoforge.com/projects/abc123",
+//     sourceUrl: "https://lithoforge.net/projects/abc123",
 //   }, "https://forgeslicer.com");
 //   window.addEventListener("message", (e) => {
 //     if (e.origin !== "https://forgeslicer.com") return;
@@ -50,8 +50,8 @@ import { setPendingImport } from "../lib/pendingImport";
 // reviewable; we compare against `event.origin` (which is the full
 // `scheme://host[:port]` triple).
 const ALLOWED_ORIGINS = [
-  "https://lithoforge.com",
-  "https://www.lithoforge.com",
+  "https://lithoforge.net",
+  "https://www.lithoforge.net",
   "https://lithoforge.preview.emergentagent.com",
   // LithoForge's current preview/staging URL (pre-domain-cutover).
   "https://color-match-slicer.preview.emergentagent.com",

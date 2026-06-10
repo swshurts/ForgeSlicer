@@ -245,12 +245,12 @@ Set-Cookie: session_token=...; HttpOnly; Secure; SameSite=None; Path=/
 After LithoForge ships the bridge:
 
 1. Sign into ForgeSlicer at https://forgeslicer.com
-2. Open DevTools → Application → Cookies → look at `lithoforge.com` — you should see a fresh `session_token` cookie
-3. In a new tab, hit https://lithoforge.com — should land signed in
+2. Open DevTools → Application → Cookies → look at `lithoforge.net` — you should see a fresh `session_token` cookie
+3. In a new tab, hit https://lithoforge.net — should land signed in
 4. Reverse the test (sign into LithoForge first, then visit ForgeSlicer)
 
 If step 2 fails:
-- DevTools → Network → filter `sso-bridge` — the cross-origin request to lithoforge.com/api/auth/sso-bridge should return 200 (opaque) with `Set-Cookie` in the response headers
+- DevTools → Network → filter `sso-bridge` — the cross-origin request to lithoforge.net/api/auth/sso-bridge should return 200 (opaque) with `Set-Cookie` in the response headers
 - If 401, the secret doesn't match. Recheck `FORGE_SUITE_SECRET` on both `.env` files
 - If 403, the `iss` mismatch. ForgeSlicer mints with `iss=forgeslicer`; LithoForge must have `https://forgeslicer.com` (or `forgeslicer`) in its `FORGE_SUITE_PEERS`
 - If the cookie isn't set but the response is 200, the cookie attributes on LithoForge's `Set-Cookie` are wrong (probably missing `SameSite=None; Secure`)
