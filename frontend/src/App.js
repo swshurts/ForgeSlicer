@@ -15,6 +15,7 @@ import AuthorProfile from "@/components/AuthorProfile";
 import AdminPage from "@/components/AdminPage";
 import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
+import SsoAccept from "@/components/SsoAccept";
 import Handoff from "@/components/Handoff";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -62,6 +63,7 @@ function AppRouter() {
         }
       />
       <Route path="/handoff" element={<Handoff />} />
+      <Route path="/auth/sso-accept" element={<SsoAccept />} />
       <Route
         path="/profile"
         element={

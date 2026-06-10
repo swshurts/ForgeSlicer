@@ -2,6 +2,8 @@ import React, { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
+import { openInPeer } from "../lib/ssoHandoff";
+import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 
@@ -21,6 +23,21 @@ export default function Landing() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [importError, setImportError] = useState("");
+  const { user } = useAuth();
+
+  // Iter-99.2 — When the visitor is signed into ForgeSlicer, route the
+  // LithoForge link through `openInPeer` so they land on LithoForge
+  // already signed in (first-party cookie set by LithoForge after the
+  // /auth/sso-accept exchange). Anonymous visitors get the plain
+  // external link — no JWT to mint, no SSO benefit, just a fresh tab.
+  const openLithoForge = (e) => {
+    e.preventDefault();
+    if (user) {
+      openInPeer("https://lithoforge.net", "/");
+    } else {
+      window.open("https://lithoforge.net", "_blank", "noopener");
+    }
+  };
 
   const handlePickFile = () => {
     setImportError("");
@@ -70,9 +87,10 @@ export default function Landing() {
           href="https://lithoforge.net"
           target="_blank"
           rel="noopener noreferrer"
+          onClick={openLithoForge}
           data-testid="landing-lithoforge-link"
           className="h-8 px-3 text-xs text-slate-400 hover:text-orange-300 hidden sm:flex items-center gap-1.5 transition-colors"
-          title="Open LithoForge — our sister tool for lithophanes &amp; multi-color prints"
+          title={user ? "Open LithoForge (auto sign-in)" : "Open LithoForge — our sister tool for lithophanes & multi-color prints"}
         >
           <Sparkles size={13} className="text-orange-400" /> LithoForge
         </a>
@@ -100,7 +118,7 @@ export default function Landing() {
               Print.
             </h1>
             <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl">
-              CAD for people who wish they could do CAD, but don't know how — 3D modeler with positive &amp; negative parts, real boolean operations, and integrated production slicing. Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own with a single click — or export STL / 3MF directly. All in your browser tab.
+              CAD for people who wish they could do CAD, but don&apos;t know how — 3D modeler with positive &amp; negative parts, real boolean operations, and integrated production slicing. Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own with a single click — or export STL / 3MF directly. All in your browser tab.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/workspace" data-testid="hero-cta-workspace" className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2">
@@ -193,7 +211,7 @@ export default function Landing() {
         <div>ForgeSlicer · A unified 3D-modeling + slicing playground. Mesh by your fingertips.</div>
         <div className="text-[10px] text-slate-600">
           Part of the Forge Suite ·{" "}
-          <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" className="text-orange-400/80 hover:text-orange-300">
+          <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" onClick={openLithoForge} className="text-orange-400/80 hover:text-orange-300">
             LithoForge
           </a>{" "}for lithophanes &amp; multi-color prints
         </div>
