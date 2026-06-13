@@ -2541,3 +2541,44 @@ fits the existing two-CTA pattern.
 - Pressing `A` navigates to `/workspace?addComponent=1` with the
   design payload staged.
 - Pressing `Esc` removes the dialog from the DOM.
+
+---
+
+## Iter-100.5 — FLSUN delta printers in dropdown (2026-02-10)
+
+**Why**: User reported FLSUN was missing from the workspace printer
+selector. FLSUN's delta machines (Q5, SR, V400, T1 Pro, S1) are
+prominent in the speed-printing community and not all of them ship
+in OrcaSlicer's bundled set, so we add them as first-class built-ins
+on top of the upstream sync.
+
+**Changes**:
+- `frontend/src/lib/presets.js` — added 5 FLSUN models (Q5, SR,
+  V400, T1 Pro, S1) to the `PRINTERS` array. `buildVolume.x/y`
+  uses the BOUNDING BOX of the circular bed (diameter × diameter)
+  because the workspace "fits on plate" check is axis-aligned.
+  Specs cross-checked against flsun3d.com product pages and the
+  bundled OrcaSlicer profiles.
+- `frontend/src/lib/orcaProfiles.js`:
+  • New `_deltaPoly(radius, n=16)` helper — generates the 16-vertex
+    polygon approximating a circular delta bed (centred on origin,
+    negative coords welcome — both backend and frontend bbox
+    consumers handle them).
+  • Added matching FLSUN entries (`flsun_q5`, `flsun_sr`,
+    `flsun_v400`, `flsun_t1_pro`, `flsun_s1`) with `_deltaPoly(...)`
+    `printable_area`. `printer_model` uses OrcaSlicer's "FLSun ..."
+    capitalisation so upstream-sync resolves to the bundled
+    profiles when available.
+
+**Verified end-to-end (Playwright)**:
+- `PRINT` tab → printer `<select>` has 36 options across 11
+  optgroups, including the new "FLSUN" group with all 5 models in
+  the expected order.
+- Selecting `flsun-v400` updates the right panel to
+  `Volume 300×300×410 mm`, max hotend 300°C.
+
+**Backlog**: A future iter could swap the bbox approximation for a
+polygon-accurate bed renderer in the workspace viewport so delta
+users see a round build plate. Today's UI paints a square plate;
+the math is correct for "fits on plate" but the visual reads as
+cartesian. Left as P2.

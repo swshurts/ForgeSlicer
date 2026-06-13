@@ -307,6 +307,63 @@ export const PRINTERS = [
     defaultNozzle: 0.4,
     defaultPrintSpeed: 200,
   },
+  // FLSUN — delta-style kinematics. `buildVolume.x/y` here is the
+  // BOUNDING BOX of the circular bed (i.e., diameter × diameter)
+  // because ForgeSlicer's "fits on plate" check uses an axis-
+  // aligned bbox. The polygon-accurate circle lives in
+  // `lib/orcaProfiles.js` for OrcaSlicer-profile staging.
+  // Specs cross-checked against flsun3d.com product pages and
+  // OrcaSlicer's bundled FLSun profiles.
+  {
+    id: "flsun-q5",
+    brand: "FLSUN",
+    name: "Q5 (delta)",
+    buildVolume: { x: 200, y: 200, z: 200 },
+    maxNozzleTemp: 260,
+    maxBedTemp: 100,
+    defaultNozzle: 0.4,
+    defaultPrintSpeed: 100,
+  },
+  {
+    id: "flsun-sr",
+    brand: "FLSUN",
+    name: "Super Racer (SR)",
+    buildVolume: { x: 260, y: 260, z: 330 },
+    maxNozzleTemp: 260,
+    maxBedTemp: 110,
+    defaultNozzle: 0.4,
+    defaultPrintSpeed: 200,
+  },
+  {
+    id: "flsun-v400",
+    brand: "FLSUN",
+    name: "V400",
+    buildVolume: { x: 300, y: 300, z: 410 },
+    maxNozzleTemp: 300,
+    maxBedTemp: 110,
+    defaultNozzle: 0.4,
+    defaultPrintSpeed: 400,
+  },
+  {
+    id: "flsun-t1-pro",
+    brand: "FLSUN",
+    name: "T1 Pro",
+    buildVolume: { x: 260, y: 260, z: 330 },
+    maxNozzleTemp: 300,
+    maxBedTemp: 110,
+    defaultNozzle: 0.4,
+    defaultPrintSpeed: 600,
+  },
+  {
+    id: "flsun-s1",
+    brand: "FLSUN",
+    name: "S1 (Pro)",
+    buildVolume: { x: 260, y: 260, z: 330 },
+    maxNozzleTemp: 350,
+    maxBedTemp: 110,
+    defaultNozzle: 0.4,
+    defaultPrintSpeed: 1200,
+  },
 ];
 
 export const FILAMENTS = [

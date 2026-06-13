@@ -23,6 +23,19 @@
 // "Import OrcaSlicer profile" feature can drop a user-supplied JSON
 // straight in without any field renaming.
 
+// Delta-bed polygon helper. OrcaSlicer represents a circular delta
+// bed as an N-vertex polygon centred on origin. 16 vertices is plenty
+// for the bounding-box math the downstream consumer needs while
+// staying visually round for any UI that paints the polygon.
+function _deltaPoly(radius, n = 16) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n;
+    out.push(`${(radius * Math.cos(a)).toFixed(2)}x${(radius * Math.sin(a)).toFixed(2)}`);
+  }
+  return out;
+}
+
 export const PRINTER_PROFILES = {
   bambu_a1: {
     id: "bambu_a1", label: "Bambu Lab A1", category: "Bambu Lab",
@@ -172,6 +185,68 @@ export const PRINTER_PROFILES = {
       printable_height: 345, gcode_flavor: "klipper",
       machine_max_speed_x: [700], machine_max_speed_y: [700],
       retraction_length: [0.6], retraction_speed: [40],
+    },
+  },
+  // FLSUN — delta kinematics. `printable_area` is a 16-vertex polygon
+  // approximating the circular bed (radius derived from spec sheets).
+  // The downstream bbox calc treats it as a square bounding box for
+  // "fits on plate" UI, while OrcaSlicer itself respects the actual
+  // polygon when staging. Naming matches OrcaSlicer's bundled
+  // FLSun profiles ("FLSun ..." capitalisation, NOT "FLSUN") so
+  // upstream-sync hits a bundled profile cleanly.
+  flsun_q5: {
+    id: "flsun_q5", label: "FLSUN Q5 (delta)", category: "FLSUN",
+    profile: {
+      printer_model: "FLSun Q5", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: _deltaPoly(100),
+      printable_height: 200, gcode_flavor: "marlin2",
+      machine_max_speed_x: [200], machine_max_speed_y: [200],
+      retraction_length: [4.0], retraction_speed: [60],
+    },
+  },
+  flsun_sr: {
+    id: "flsun_sr", label: "FLSUN Super Racer (SR)", category: "FLSUN",
+    profile: {
+      printer_model: "FLSun SR", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: _deltaPoly(130),
+      printable_height: 330, gcode_flavor: "klipper",
+      machine_max_speed_x: [300], machine_max_speed_y: [300],
+      retraction_length: [4.0], retraction_speed: [60],
+    },
+  },
+  flsun_v400: {
+    id: "flsun_v400", label: "FLSUN V400", category: "FLSUN",
+    profile: {
+      printer_model: "FLSun V400", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: _deltaPoly(150),
+      printable_height: 410, gcode_flavor: "klipper",
+      machine_max_speed_x: [500], machine_max_speed_y: [500],
+      retraction_length: [2.5], retraction_speed: [60],
+    },
+  },
+  flsun_t1_pro: {
+    id: "flsun_t1_pro", label: "FLSUN T1 Pro", category: "FLSUN",
+    profile: {
+      printer_model: "FLSun T1 Pro", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: _deltaPoly(130),
+      printable_height: 330, gcode_flavor: "klipper",
+      machine_max_speed_x: [800], machine_max_speed_y: [800],
+      retraction_length: [1.5], retraction_speed: [60],
+    },
+  },
+  flsun_s1: {
+    id: "flsun_s1", label: "FLSUN S1 (Pro)", category: "FLSUN",
+    profile: {
+      printer_model: "FLSun S1", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: _deltaPoly(130),
+      printable_height: 330, gcode_flavor: "klipper",
+      machine_max_speed_x: [1200], machine_max_speed_y: [1200],
+      retraction_length: [1.0], retraction_speed: [60],
     },
   },
   // Sanity-check fallback — still the most-owned hobbyist machine.
