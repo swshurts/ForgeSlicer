@@ -310,14 +310,17 @@ export const PRINTERS = [
   // FLSUN — delta-style kinematics. `buildVolume.x/y` here is the
   // BOUNDING BOX of the circular bed (i.e., diameter × diameter)
   // because ForgeSlicer's "fits on plate" check uses an axis-
-  // aligned bbox. The polygon-accurate circle lives in
-  // `lib/orcaProfiles.js` for OrcaSlicer-profile staging.
+  // aligned bbox. The `kinematics: "delta"` flag drives the
+  // viewport's round build-plate render (iter-100.6). The polygon-
+  // accurate circle for OrcaSlicer staging lives in
+  // `lib/orcaProfiles.js`.
   // Specs cross-checked against flsun3d.com product pages and
   // OrcaSlicer's bundled FLSun profiles.
   {
     id: "flsun-q5",
     brand: "FLSUN",
     name: "Q5 (delta)",
+    kinematics: "delta",
     buildVolume: { x: 200, y: 200, z: 200 },
     maxNozzleTemp: 260,
     maxBedTemp: 100,
@@ -328,6 +331,7 @@ export const PRINTERS = [
     id: "flsun-sr",
     brand: "FLSUN",
     name: "Super Racer (SR)",
+    kinematics: "delta",
     buildVolume: { x: 260, y: 260, z: 330 },
     maxNozzleTemp: 260,
     maxBedTemp: 110,
@@ -338,6 +342,7 @@ export const PRINTERS = [
     id: "flsun-v400",
     brand: "FLSUN",
     name: "V400",
+    kinematics: "delta",
     buildVolume: { x: 300, y: 300, z: 410 },
     maxNozzleTemp: 300,
     maxBedTemp: 110,
@@ -348,6 +353,7 @@ export const PRINTERS = [
     id: "flsun-t1-pro",
     brand: "FLSUN",
     name: "T1 Pro",
+    kinematics: "delta",
     buildVolume: { x: 260, y: 260, z: 330 },
     maxNozzleTemp: 300,
     maxBedTemp: 110,
@@ -358,6 +364,7 @@ export const PRINTERS = [
     id: "flsun-s1",
     brand: "FLSUN",
     name: "S1 (Pro)",
+    kinematics: "delta",
     buildVolume: { x: 260, y: 260, z: 330 },
     maxNozzleTemp: 350,
     maxBedTemp: 110,

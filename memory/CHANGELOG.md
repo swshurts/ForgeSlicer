@@ -2582,3 +2582,41 @@ polygon-accurate bed renderer in the workspace viewport so delta
 users see a round build plate. Today's UI paints a square plate;
 the math is correct for "fits on plate" but the visual reads as
 cartesian. Left as P2.
+
+---
+
+## Iter-100.6 — Round build plate for delta printers (2026-02-10)
+
+**Why**: User pointed out the build plate stayed square even when an
+FLSUN delta printer was selected — visually misleading because
+delta machines have a CIRCULAR bed. The bbox math already worked
+for "fits on plate" checks; only the render was wrong.
+
+**Changes**:
+- `frontend/src/lib/presets.js` — added `kinematics: "delta"` to
+  all 5 FLSUN entries (Q5 / SR / V400 / T1 Pro / S1). Cartesian
+  printers don't carry the field; treated as default.
+- `frontend/src/lib/profileActions.js::setPrinter` — copies the
+  preset's `kinematics` onto the in-store `buildVolume` so the
+  viewport can read it without having to re-resolve the printer
+  record.
+- `frontend/src/lib/store.js` — initial `buildVolume` also carries
+  `kinematics` so the very first render at app load is correct
+  even if the default printer ever becomes a delta.
+- `frontend/src/components/Viewport.jsx::BuildPlate` — branches on
+  `buildVolume.kinematics === "delta"`:
+  • Solid disk via `circleGeometry` (radius = `x/2`, 64 segments).
+  • Orange perimeter ring via drei `<Line>` (64-vertex polyline).
+  • When grid visible: concentric guide rings every 50 mm + 8
+    radial spokes at 45° increments meeting at centre. Slate
+    colour matches the cartesian grid's minor lines so the two
+    plate styles read as the same visual language.
+  • Cartesian path unchanged.
+
+**Verified end-to-end (Playwright)**:
+- Selecting `flsun-v400` renders a 300 mm-diameter circular plate
+  with the radial guides; status bar `BUILD: 300×300×410`.
+- Selecting `flsun-q5` renders a 200 mm-diameter circle; status
+  bar `BUILD: 200×200×200`.
+- Selecting `bambu-a1` flips back to a 256 mm square plate with
+  the original rectangular Grid — no regression for cartesian.

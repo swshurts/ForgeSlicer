@@ -57,7 +57,7 @@ export const useScene = create((set, get) => ({
   snapRotate: 15,
   snapScale: 0.1,
   gridVisible: true,
-  buildVolume: getPrinter(defaultPrinterId).buildVolume,
+  buildVolume: { ...getPrinter(defaultPrinterId).buildVolume, kinematics: getPrinter(defaultPrinterId).kinematics || null },
   projectName: "Untitled Project",
   remixOf: null,  // gallery item id this project is remixing
 

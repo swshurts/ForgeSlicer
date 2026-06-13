@@ -399,7 +399,87 @@ function SelectedTransform() {
 function BuildPlate() {
   const buildVolume = useScene((s) => s.buildVolume);
   const gridVisible = useScene((s) => s.gridVisible);
-  const { x, y } = buildVolume;
+  const { x, y, kinematics } = buildVolume;
+
+  // Delta machines have a circular bed. The bbox-style `x`/`y` we
+  // carry on `buildVolume` are equal (diameter × diameter), so the
+  // radius is whichever-axis-divided-by-two.
+  if (kinematics === "delta") {
+    const radius = Math.max(x, y) / 2;
+    // Concentric ring + radial spoke generator. 64-segment ring keeps
+    // the perimeter visually smooth; spokes every 45° give the user
+    // an unambiguous "this is round, not a cropped square" cue
+    // without competing with the meshes they're editing.
+    const ringPoints = [];
+    const N = 64;
+    for (let i = 0; i <= N; i++) {
+      const a = (2 * Math.PI * i) / N;
+      ringPoints.push(new THREE.Vector3(radius * Math.cos(a), 0, radius * Math.sin(a)));
+    }
+    // Concentric guides every 50 mm so users can size-check by eye.
+    const innerRingRadii = [];
+    for (let r = 50; r < radius; r += 50) innerRingRadii.push(r);
+    const innerRings = innerRingRadii.map((r) => {
+      const pts = [];
+      for (let i = 0; i <= N; i++) {
+        const a = (2 * Math.PI * i) / N;
+        pts.push(new THREE.Vector3(r * Math.cos(a), 0, r * Math.sin(a)));
+      }
+      return { r, pts };
+    });
+    // 8 radial spokes at 45° increments.
+    const spokes = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i;
+      spokes.push([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(radius * Math.cos(a), 0, radius * Math.sin(a)),
+      ]);
+    }
+    return (
+      <group>
+        {/* Solid dark disk, sat just below Y=0 like the cartesian plate so
+            the orange grid we draw on top isn't z-fighting. */}
+        <mesh receiveShadow position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[radius, 64]} />
+          <meshStandardMaterial color="#0F172A" roughness={0.9} />
+        </mesh>
+        {/* Perimeter ring — orange, matches the cartesian plate's outer
+            section colour so the visual language stays consistent. */}
+        <Line
+          points={ringPoints}
+          color="#F97316"
+          lineWidth={2}
+          depthTest
+          transparent={false}
+        />
+        {gridVisible && (
+          <>
+            {innerRings.map(({ r, pts }) => (
+              <Line
+                key={`ring-${r}`}
+                points={pts}
+                color="#334155"
+                lineWidth={1}
+                depthTest
+              />
+            ))}
+            {spokes.map((pts, i) => (
+              <Line
+                key={`spoke-${i}`}
+                points={pts}
+                color="#334155"
+                lineWidth={1}
+                depthTest
+              />
+            ))}
+          </>
+        )}
+      </group>
+    );
+  }
+
+  // Cartesian (default) — square/rectangular bed with drei's Grid.
   return (
     <group>
       <mesh receiveShadow position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>

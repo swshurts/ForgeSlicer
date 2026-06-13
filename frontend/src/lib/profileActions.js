@@ -48,7 +48,16 @@ export function createProfileActions({ get, set, deps }) {
         }
       }
       if (!p) p = getPrinter(defaultPrinterId);
-      set({ printerId: p.id, buildVolume: { ...p.buildVolume } });
+      // iter-100.6 — carry the `kinematics` tag onto buildVolume so the
+      // viewport's BuildPlate can branch to a round disk + radial grid
+      // for delta machines (FLSUN family today; any future Anycubic
+      // Kossel / Tronxy delta inherits the same path just by setting
+      // the flag on its preset).
+      const kin = p.kinematics || null;
+      set({
+        printerId: p.id,
+        buildVolume: { ...p.buildVolume, kinematics: kin },
+      });
     },
     setFilament: (id) => set({ filamentId: id }),
 
