@@ -2899,3 +2899,35 @@ edges of … each corner") tripped the VAD.
   unioned first, then negatives subtracted).
 - `pytest backend/tests/test_voice_templates.py` — 14/14 green
   (assertions updated to the corrected dim convention).
+
+---
+
+## Iter-101 — Voice-plan dim convention + landing bump (2026-02-10)
+
+**Why**: User noticed the Landing iter-id was stuck at `iter-100`
+despite five sub-iterations of work. Also asked for the LLM-emitted
+ad-hoc plans (the Tier 1 path that doesn't go through a template) to
+honour the same dim convention the templates use, so future
+"clearance holes / brackets / cutouts" voice utterances bake in the
+right "Z is UP" math at request time.
+
+**Changes**:
+- `frontend/src/components/Landing.jsx` — iter badge bumped
+  `iter-100 → iter-101`.
+- `backend/server.py::VOICE_SYSTEM_PROMPT` — appended a CRITICAL
+  DIM CONVENTION section that:
+    • spells out the cube/wedge dim axis mapping (`dims.x = X width,
+      dims.y = Z depth, dims.z = Y height — UP`);
+    • tells the LLM cylinders default to world-Y axis so a
+      through-plate hole needs NO rotation (preempts the iter-100.9
+      LLM-emitted `rotation:[90,0,0]` that laid holes on their side);
+    • gives the "hole at each corner of the selected item" recipe:
+      read scene.selection.bbox, inset in X/Z, set
+      `world_y = (min.y + max.y) / 2`, `h = (max.y - min.y) + 2`.
+
+**Verified**:
+- Live LLM call with the user's exact "6 mm clearance hole 5 mm from
+  each corner" transcript + a mock scene bbox `[-50,0,-30]..[50,5,30]`
+  now emits 4 cylinders at `pos={x:±45, y:2.5, z:±25}, dims={r:3, h:7}`
+  with NO rotation. Mathematically correct: centred in the plate's Y
+  range, hole 2 mm longer than the plate so it pokes through cleanly.

@@ -86,7 +86,7 @@ export default function Landing() {
             className="ml-2 text-[10px] font-mono text-slate-500 tracking-tight select-text"
             title="ForgeSlicer iteration"
           >
-            iter-100
+            iter-101
           </span>
         </Link>
         <div className="flex-1" />

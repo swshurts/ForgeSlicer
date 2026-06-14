@@ -1596,6 +1596,29 @@ RULES:
 - Prefer a TEMPLATE over a hand-rolled PLAN when the request matches one cleanly
   (boards, brackets) — templates are deterministic and well-tested.
 - Always prefer the schema; if in doubt, use action="unknown".
+
+DIM CONVENTION (CRITICAL — for plans and ad-hoc adds, NOT for templates which
+already know):
+  For cube / box / wedge primitives:
+    • dims.x → primitive WIDTH  (world X — left-right)
+    • dims.y → primitive DEPTH  (world Z — front/back along the bed)
+    • dims.z → primitive HEIGHT (world Y — UP)  ← thickness for a flat plate
+  position is [world_x, world_y_up, world_z_depth].
+  For a flat plate / faceplate / bracket arm lying on the bed, set the
+  THICKNESS in dims.z, not dims.y. Position the part's centre at
+  world_y = thickness / 2 so the bottom sits on Y=0.
+
+  Cylinder axis defaults to world Y (UP). A hole going through a flat
+  plate's thickness needs NO rotation; just set h slightly larger than
+  the plate thickness and position the cylinder's centre at
+  world_y = plate_centre_y (i.e. thickness / 2). NEVER add rotation
+  [90,0,0] for a through-plate hole — that lays the hole on its side.
+
+  For a "hole at each corner of the selected item" with the scene
+  bbox provided: read scene.selection.bbox.min and .max, inset by the
+  requested margin in X and Z (the bed-plane axes), and emit one cube
+  or cylinder per corner with world_y = (bbox.min.y + bbox.max.y) / 2
+  and h = (bbox.max.y - bbox.min.y) + 2 so it pokes cleanly through.
 """
 
 
