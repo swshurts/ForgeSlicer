@@ -169,8 +169,12 @@ META = {
     "id": "board_faceplate",
     "label": "Board faceplate",
     "description": (
-        "Flat plate sized to a known PCB with cutouts for the major "
-        "connectors and clearance holes for the mount pillars."
+        "Flat front panel sized to a known PCB with cutouts for the "
+        "connectors on the user-specified face(s). Defaults to a MINIMAL "
+        "faceplate — just the long edge connectors. Set "
+        "`include_mount_holes:true` and/or `faces` to include other "
+        "edges or the M2.5/M3 mount-pillar pattern for a full mounting "
+        "tray."
     ),
     "params": {
         "board": {
@@ -183,28 +187,30 @@ META = {
             ),
         },
         "thickness_mm": {
-            "type": "number",
-            "default": 3.0,
-            "min": 1.0,
-            "max": 12.0,
+            "type": "number", "default": 3.0, "min": 1.0, "max": 12.0,
             "describe": "Faceplate plate thickness (mm).",
         },
         "border_mm": {
-            "type": "number",
-            "default": 5.0,
-            "min": 0.0,
-            "max": 25.0,
+            "type": "number", "default": 5.0, "min": 0.0, "max": 25.0,
             "describe": "Border added around the board outline (mm).",
         },
         "include_mount_holes": {
-            "type": "boolean",
-            "default": True,
-            "describe": "Whether to add the board's M2.5/M3 mount-hole pattern.",
+            "type": "boolean", "default": False,
+            "describe": "OFF by default — set true ONLY when the user says "
+                        "'mounting tray', 'with mount holes', 'full plate', or "
+                        "explicitly asks for the mount-pillar pattern.",
         },
-        "include_connector_cutouts": {
-            "type": "boolean",
-            "default": True,
-            "describe": "Whether to subtract the per-board connector cutouts.",
+        "faces": {
+            "type": "array",
+            "default": ["+y"],
+            "describe": "Which board face(s) to include cutouts for. "
+                        "Default ['+y'] = the LONG-edge connectors only (USB / "
+                        "ethernet on most SBCs). Pass ['+y','-x'] for both "
+                        "long+short edges. Pass ['-x'] for just the short edge "
+                        "(USB-C / HDMI / audio on most Pis). The LLM should "
+                        "only expand beyond ['+y'] when the user explicitly "
+                        "names other connectors (HDMI, USB-C, audio, etc.) or "
+                        "asks for a full enclosure plate.",
         },
     },
 }
@@ -239,8 +245,18 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     L, W = b["size"]                                                       # mm
     thickness = float(params.get("thickness_mm", 3.0))
     border = float(params.get("border_mm", 5.0))
-    inc_mount = bool(params.get("include_mount_holes", True))
-    inc_conn = bool(params.get("include_connector_cutouts", True))
+    inc_mount = bool(params.get("include_mount_holes", False))
+    # `faces` filter scopes the cutout set. Default ['+y'] gives the
+    # canonical "front panel" — just the long-edge connectors. Empty
+    # list means "no cutouts" (intentional). Use `is None` so the empty
+    # list doesn't get steamrolled by `or`-default.
+    faces_param = params.get("faces")
+    if faces_param is None:
+        faces_filter = {"+y"}
+    elif isinstance(faces_param, str):
+        faces_filter = {faces_param}
+    else:
+        faces_filter = set(faces_param)
 
     plate_L = L + 2 * border       # world X span
     plate_W = W + 2 * border       # world Z span
@@ -284,9 +300,12 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     # half a slot in the border and look "inset"). For long-edge
     # connectors we shift along world Z; for short-edge connectors we
     # shift along world X.
-    if inc_conn:
+    if inc_conn := True:
         for c in b["connectors"]:
             face = c.get("face", "+y")
+            # iter-101.3 — skip connectors on faces the user didn't ask for.
+            if face not in faces_filter:
+                continue
             cw, ch = c["w"], c["h"]
             if face in ("+y", "-y"):
                 # Connector lives on a LONG edge.

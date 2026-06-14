@@ -1575,6 +1575,15 @@ ALLOWED ACTIONS and their schemas:
       • "Create a faceplate for a Raspberry Pi 4" →
         {"action":"template","template_id":"board_faceplate",
          "params":{"board":"raspberry_pi_4b"}}
+        (defaults: just the +y long-edge connectors, NO mount holes —
+         a minimal front panel, NOT a full mounting tray)
+      • "Create a Pi 4 mounting tray with the mount holes" →
+        {"action":"template","template_id":"board_faceplate",
+         "params":{"board":"raspberry_pi_4b", "include_mount_holes":true,
+                   "faces":["+y","-x"]}}
+      • "Create a Pi 4 faceplate with the HDMI and USB-C cutouts" →
+        {"action":"template","template_id":"board_faceplate",
+         "params":{"board":"raspberry_pi_4b", "faces":["-x"]}}
       • "Make a 90-degree bracket for a 6 inch deep shelf that's
          1 inch thick and supports 30 pounds" →
         {"action":"template","template_id":"right_angle_bracket",

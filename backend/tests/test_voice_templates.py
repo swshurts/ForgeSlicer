@@ -43,17 +43,34 @@ def test_prompt_descriptions_includes_every_template():
 # ---------------- board faceplate ----------------
 
 def test_board_faceplate_pi4_expands_to_plate_holes_cutouts_and_subtract():
-    steps = expand("board_faceplate", {"board": "raspberry_pi_4b"})
-    # Plate + 4 mount holes + N connector cutouts + 1 boolean + 1 group.
+    # iter-101.3 — defaults now produce a MINIMAL faceplate: only the
+    # +y long-edge connectors, NO mount holes. To get the full mounting
+    # tray pass include_mount_holes:true and faces ['+y','-x'].
+    steps = expand("board_faceplate", {
+        "board": "raspberry_pi_4b",
+        "include_mount_holes": True,
+        "faces": ["+y", "-x"],
+    })
     actions = [s["action"] for s in steps]
     assert actions[0] == "add"
     assert steps[0]["tag"] == "plate"
-    # Last two steps are boolean + group.
     assert actions[-2] == "boolean"
     assert actions[-1] == "group"
-    # At least 4 mount holes + several connector cutouts.
     negatives = [s for s in steps if s.get("action") == "add" and s.get("modifier") == "negative"]
-    assert len(negatives) >= 4 + 5  # mount holes + key Pi 4 connectors
+    assert len(negatives) >= 4 + 5  # mount holes + Pi 4 key connectors
+
+
+def test_board_faceplate_default_is_minimal_front_panel():
+    """iter-101.3 — bare 'create a faceplate for a Pi 4' returns a
+    minimal front panel: plate + 3 long-edge cutouts + boolean + group.
+    No mount holes, no short-edge cutouts."""
+    steps = expand("board_faceplate", {"board": "raspberry_pi_4b"})
+    negatives = [s for s in steps if s.get("action") == "add" and s.get("modifier") == "negative"]
+    # Pi 4's +y face has USB 3.0 stack + USB 2.0 stack + GbE = 3 cutouts.
+    assert len(negatives) == 3
+    notes = " ".join(n.get("note", "") for n in negatives)
+    assert "GbE" in notes
+    assert "USB" in notes
 
 
 def test_board_faceplate_unknown_board_raises():
@@ -62,12 +79,12 @@ def test_board_faceplate_unknown_board_raises():
 
 
 def test_board_faceplate_can_disable_mount_holes_and_cutouts():
+    # iter-101.3 — empty faces filter + no mount holes = bare plate only.
     steps = expand("board_faceplate", {
         "board": "raspberry_pi_4b",
         "include_mount_holes": False,
-        "include_connector_cutouts": False,
+        "faces": [],
     })
-    # Plate + boolean + group only (no negatives).
     negatives = [s for s in steps if s.get("action") == "add" and s.get("modifier") == "negative"]
     assert negatives == []
 
