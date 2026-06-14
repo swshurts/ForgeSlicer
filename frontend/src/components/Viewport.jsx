@@ -406,40 +406,20 @@ function BuildPlate() {
   // radius is whichever-axis-divided-by-two.
   if (kinematics === "delta") {
     const radius = Math.max(x, y) / 2;
-    // Concentric ring + radial spoke generator. 64-segment ring keeps
-    // the perimeter visually smooth; spokes every 45° give the user
-    // an unambiguous "this is round, not a cropped square" cue
-    // without competing with the meshes they're editing.
+    // 64-segment perimeter ring keeps the circle visually smooth at
+    // typical orbit distances. No interior spokes or concentric guides
+    // per user request — they read as noise on the empty plate; the
+    // diameter label below carries the size information instead.
     const ringPoints = [];
     const N = 64;
     for (let i = 0; i <= N; i++) {
       const a = (2 * Math.PI * i) / N;
       ringPoints.push(new THREE.Vector3(radius * Math.cos(a), 0, radius * Math.sin(a)));
     }
-    // Concentric guides every 50 mm so users can size-check by eye.
-    const innerRingRadii = [];
-    for (let r = 50; r < radius; r += 50) innerRingRadii.push(r);
-    const innerRings = innerRingRadii.map((r) => {
-      const pts = [];
-      for (let i = 0; i <= N; i++) {
-        const a = (2 * Math.PI * i) / N;
-        pts.push(new THREE.Vector3(r * Math.cos(a), 0, r * Math.sin(a)));
-      }
-      return { r, pts };
-    });
-    // 8 radial spokes at 45° increments.
-    const spokes = [];
-    for (let i = 0; i < 8; i++) {
-      const a = (Math.PI / 4) * i;
-      spokes.push([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(radius * Math.cos(a), 0, radius * Math.sin(a)),
-      ]);
-    }
     return (
       <group>
         {/* Solid dark disk, sat just below Y=0 like the cartesian plate so
-            the orange grid we draw on top isn't z-fighting. */}
+            the orange ring we draw on top isn't z-fighting. */}
         <mesh receiveShadow position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <circleGeometry args={[radius, 64]} />
           <meshStandardMaterial color="#0F172A" roughness={0.9} />
@@ -453,27 +433,25 @@ function BuildPlate() {
           depthTest
           transparent={false}
         />
+        {/* Diameter callout — DOM-rendered via drei's <Html> so the text
+            stays crisp at every zoom level. Anchored just outside the
+            ring at the front edge (positive Z) so the label reads
+            naturally for the default orbit angle. */}
         {gridVisible && (
-          <>
-            {innerRings.map(({ r, pts }) => (
-              <Line
-                key={`ring-${r}`}
-                points={pts}
-                color="#334155"
-                lineWidth={1}
-                depthTest
-              />
-            ))}
-            {spokes.map((pts, i) => (
-              <Line
-                key={`spoke-${i}`}
-                points={pts}
-                color="#334155"
-                lineWidth={1}
-                depthTest
-              />
-            ))}
-          </>
+          <Html
+            position={[0, 0.1, radius + 6]}
+            center
+            zIndexRange={[20, 0]}
+            sprite={false}
+          >
+            <div
+              data-testid="delta-plate-diameter-label"
+              className="px-2 py-0.5 rounded bg-slate-950/85 border border-orange-500/60 text-orange-300 text-[11px] font-mono tracking-tight shadow-md whitespace-nowrap select-none"
+              style={{ pointerEvents: "none" }}
+            >
+              Build diameter: {Math.round(radius * 2)}&nbsp;mm
+            </div>
+          </Html>
         )}
       </group>
     );

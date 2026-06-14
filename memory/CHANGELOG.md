@@ -2620,3 +2620,30 @@ for "fits on plate" checks; only the render was wrong.
   bar `BUILD: 200×200×200`.
 - Selecting `bambu-a1` flips back to a 256 mm square plate with
   the original rectangular Grid — no regression for cartesian.
+
+---
+
+## Iter-100.7 — Delta plate: drop interior graphics, add diameter chip (2026-02-10)
+
+**Why**: User found the interior spokes + concentric guide rings
+read as visual noise on an empty plate. The size information was
+better expressed as a single textual callout on the perimeter.
+
+**Changes**:
+- `frontend/src/components/Viewport.jsx::BuildPlate` (delta branch):
+  • Removed the 8 radial spokes and the inner concentric guide rings.
+  • Kept the solid dark disk + orange perimeter ring.
+  • Added a `<Html>`-rendered DOM chip just outside the ring at the
+    front edge of the plate, reading `Build diameter: NNN mm`
+    (rounded). Slate-950/85 bg, orange-500 border, mono font — same
+    visual vocabulary the workspace already uses for measurement
+    chips. Tagged `data-testid="delta-plate-diameter-label"`.
+  • The chip renders only when `gridVisible` is true so the user's
+    existing Hide-Grid toggle also hides the callout.
+
+**Verified end-to-end (Playwright)**:
+- FLSUN Q5 → `Build diameter: 200 mm`.
+- FLSUN V400 → `Build diameter: 300 mm`.
+- FLSUN S1 → `Build diameter: 260 mm`.
+- Bambu A1 (cartesian) → label count 0 (no regression on the
+  square plate / rectangular grid).
