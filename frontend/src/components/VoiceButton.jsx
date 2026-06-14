@@ -7,7 +7,8 @@ import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation
 //
 // ── "Single" (default) — one command at a time, with read-back ──
 //   1. Click Voice once.
-//   2. Speak. Recording auto-stops after ~0.9 s of silence.
+//   2. Speak. Recording auto-stops after ~5 s of silence (iter-100.10:
+//      raised from 0.9 s so compound utterances aren't cut mid-clause).
 //   3. Whisper transcribes (~1 s).
 //   4. Brief 0.6 s pause so you can glance at the transcript.
 //   5. A "Say RUN to execute" mic re-opens for ≤4 s.
@@ -25,14 +26,29 @@ import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation
 // Manual controls (Stop / Cancel / Edit transcript / Run) remain available
 // at every stage as escape hatches in single mode.
 //
-// Latency target post-fix (single-mode, mic → result): ~6-7 s typical.
-// Latency target (go-mode, mic → result): ~3 s typical.
+// Latency target post-fix (single-mode, mic → result): ~10-12 s typical
+// (rises slightly with the 5 s silence tail, deliberately).
+// Latency target (go-mode, mic → result): ~7 s typical.
 
-const SILENCE_TAIL_MS = 900;        // primary recording auto-stop trigger
-const COMMAND_MAX_MS  = 12000;      // hard cap so VAD-stall never hangs the user
+const SILENCE_TAIL_MS = 5000;       // primary recording auto-stop trigger
+                                    // iter-100.10 — bumped 900 → 5000 ms.
+                                    // Users were getting cut off mid-clause
+                                    // on compound utterances ("add a 6 mm
+                                    // clearance hole 5 mm from each corner
+                                    // of the selected item"). 5 s lets a
+                                    // user pause to think mid-sentence
+                                    // without losing the recording.
+const COMMAND_MAX_MS  = 30000;      // hard cap. Lifted in lock-step with
+                                    // the silence-tail bump — at 5 s
+                                    // silence, a 30 s command floor
+                                    // accommodates ~25 s of speech with a
+                                    // final 5 s think-pause before the
+                                    // VAD takes over.
 const CONFIRM_GRACE_MS = 600;       // brief pause so user can read transcript
 const CONFIRM_WINDOW_MS = 4000;     // max length of the confirmation listen
-const CONFIRM_SILENCE_MS = 700;
+const CONFIRM_SILENCE_MS = 700;     // confirmation "yes/no" — kept short on
+                                    // purpose; the confirm utterance is
+                                    // typically one word.
 // Go-mode: how long to show the success feedback before re-recording.
 // Short enough to feel continuous, long enough to read "Added cube".
 const GO_FEEDBACK_GAP_MS = 700;

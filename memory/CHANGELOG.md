@@ -2818,3 +2818,33 @@ emit deterministic plans without knowing live scene ids.
 pull, enclosure, gusset, vise jaw, anything) is exactly two file
 changes — drop a module with `META` + `build()`, add ONE line to
 `__init__.py`. Voice prompt + endpoint automatically include it.
+
+---
+
+## Iter-100.10 — Voice: 5s silence tail (2026-02-10)
+
+**Why**: User reported the recorder cut them off mid-clause on
+compound utterances — even continuous speech wasn't long enough at
+the old 0.9 s silence threshold because micro-pauses ("the … vertical
+edges of … each corner") tripped the VAD.
+
+**Changes** (`frontend/src/components/VoiceButton.jsx`):
+- `SILENCE_TAIL_MS`: 900 → **5000 ms** — primary command recording's
+  auto-stop trigger (used by single-mode AND go-mode active commands;
+  the post-utterance "say RUN" confirmation listen and the go-mode
+  keyword listen keep their existing shorter values because they
+  serve different purposes).
+- `COMMAND_MAX_MS`: 12000 → **30000 ms** — hard cap raised in
+  lock-step so the 5 s silence tail has room to operate inside the
+  total recording window. Accommodates ~25 s of speech with a final
+  5 s think-pause before VAD takes over.
+- Updated the inline UX comments at the top of the file to reflect
+  the new latency profile (~10-12 s typical end-to-end in single mode,
+  ~7 s in go mode).
+
+**Not touched** (different contexts, different reasonable defaults):
+- `CONFIRM_SILENCE_MS` (700 ms) — yes/no after seeing transcript.
+- `GO_PAUSE_SILENCE_MS` (1500 ms) — keyword listen between Go-mode
+  commands.
+
+**Hot-reload pickup verified** by grep on the running file.
