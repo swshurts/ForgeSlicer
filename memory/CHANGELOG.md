@@ -2647,3 +2647,56 @@ better expressed as a single textual callout on the perimeter.
 - FLSUN S1 → `Build diameter: 260 mm`.
 - Bambu A1 (cartesian) → label count 0 (no regression on the
   square plate / rectangular grid).
+
+---
+
+## Iter-100.8 — Camera fits the plate + accordion printer picker (2026-02-10)
+
+**Why**: Two complaints rolled in once the round delta plate was
+live:
+  1. Picking an FLSUN V400 (300 mm × 410 mm) left the camera so
+     close that only the lower half of the round plate showed.
+  2. The native `<select>` with `<optgroup>` couldn't be collapsed
+     and didn't sort brands alphabetically. User asked for +/-
+     accordion behaviour grouped by manufacturer A→Z.
+
+**Changes**:
+- `frontend/src/components/Viewport.jsx`:
+  • New `CameraFitOnPrinterChange` helper mounted inside the
+    Canvas — listens on `printerId` + `buildVolume.{x,y,z}` and
+    repositions the camera + OrbitControls target so the entire
+    new plate is in view. Distance derived from
+    `hypot(plate, z*0.6)` so tall deltas (V400 410 mm) back off
+    further than short cartesians. Preserves the user's current
+    orbit DIRECTION — only the distance is recomputed, so the
+    "feel" of where the camera sits is consistent across switches.
+
+- `frontend/src/components/RightPanel.jsx`:
+  • New `PrinterPicker` component — Popover (shadcn/Radix) + per-
+    brand accordion rows toggled by `+` / `−` icons (lucide). Each
+    brand row shows the brand name + item count; the currently-
+    selected printer's brand is auto-expanded on every open and
+    its row is highlighted with an orange tint + check icon.
+  • Brand sort: `Custom` pinned first, `Community` pinned last,
+    everything else alphabetical (locale-aware
+    case-insensitive compare). Final order today:
+    Custom → Anycubic → Bambu Lab → Creality → Elegoo → FlashForge
+    → FLSUN → Prusa → Sovol → Voron → Community.
+  • Trigger keeps the same `data-testid="printer-select"` so
+    existing tests / scripts that drive it continue to work; the
+    inner brand rows + option buttons get their own testids
+    (`printer-brand-<slug>`, `printer-option-<id>`).
+  • Native `<select>` removed — single source of truth for the
+    selection is now the Popover.
+
+**Verified end-to-end (Playwright)**:
+- After picking FLSUN V400, the whole 300 mm round plate + 300 mm
+  diameter callout are visible in the canvas. No more clipping.
+- After picking Bambu A1, the camera reframes to fit the 256 mm
+  square plate — no regression.
+- Brand order in the popover: Custom, Anycubic, Bambu Lab,
+  Creality, Elegoo, FlashForge, FLSUN, Prusa, Sovol, Voron,
+  Community.
+- Expanding FLSUN reveals all 5 models with `−` icon. Collapsing
+  hides them and restores the `+` icon. The selected printer's
+  brand auto-opens on each popover open.

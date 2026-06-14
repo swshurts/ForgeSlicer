@@ -9,7 +9,115 @@ import { printersApi } from "../lib/api";
 import SplineInspectorBlock from "./SplineInspectorBlock";
 import SweepInspectorBlock from "./SweepInspectorBlock";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+
+// iter-100.8 — Alphabetical, accordion-grouped printer picker. Replaces
+// the native <select>+<optgroup> with a Popover-driven UI so each brand
+// can be expanded/collapsed independently via +/- icons. Brands sort
+// A→Z by default, EXCEPT:
+//   • "Custom" — always pinned at the very top (it's the user's
+//     "I'll paste my own JSON" escape hatch).
+//   • "Community" — always pinned at the very bottom (community
+//     submissions are best-effort and shouldn't out-rank vetted
+//     built-ins like Bambu/Prusa).
+// Open state per brand is held LOCALLY on the picker. The brand of the
+// currently-selected printer is auto-expanded on every open so users
+// see their choice in context without having to click.
+function PrinterPicker({ groups, value, onChange, currentLabel, testid = "printer-select" }) {
+  const [open, setOpen] = useState(false);
+  // Which brands are expanded inside the popover. Default: only the
+  // brand of the active printer. Reset every time the popover opens
+  // so users don't carry stale "all expanded" state across uses.
+  const initialExpanded = () => {
+    for (const [brand, items] of Object.entries(groups)) {
+      if (items.some((p) => p.id === value)) return { [brand]: true };
+    }
+    return {};
+  };
+  const [expanded, setExpanded] = useState(initialExpanded);
+  // Re-seed expanded whenever the popover transitions closed→open.
+  useEffect(() => { if (open) setExpanded(initialExpanded()); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Brands sorted with Custom-first / Community-last pinning.
+  const sortedBrands = useMemo(() => {
+    const all = Object.keys(groups);
+    const head = all.includes("Custom") ? ["Custom"] : [];
+    const tail = all.includes("Community") ? ["Community"] : [];
+    const mid = all
+      .filter((b) => b !== "Custom" && b !== "Community")
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    return [...head, ...mid, ...tail];
+  }, [groups]);
+
+  const toggle = (brand) => setExpanded((s) => ({ ...s, [brand]: !s[brand] }));
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          data-testid={testid}
+          type="button"
+          className="h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 flex items-center justify-between gap-2 focus:border-orange-500 outline-none hover:border-slate-600"
+        >
+          <span className="truncate text-left">{currentLabel || "Choose a printer…"}</span>
+          <ChevronDown size={14} className="text-slate-400 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[--radix-popover-trigger-width] max-h-[420px] overflow-y-auto p-1 bg-slate-950 border-slate-700"
+        data-testid="printer-select-popover"
+      >
+        {sortedBrands.map((brand) => {
+          const items = groups[brand];
+          const isOpen = !!expanded[brand];
+          const hasSelected = items.some((p) => p.id === value);
+          return (
+            <div key={brand} className="mb-0.5">
+              <button
+                type="button"
+                onClick={() => toggle(brand)}
+                data-testid={`printer-brand-${brand.replace(/\s+/g, "-").toLowerCase()}`}
+                className={`w-full flex items-center gap-1.5 px-2 py-1 text-[11px] uppercase tracking-wider rounded hover:bg-slate-800 ${hasSelected ? "text-orange-400" : "text-slate-300"}`}
+              >
+                {isOpen
+                  ? <Minus size={11} className="text-slate-400 shrink-0" />
+                  : <Plus size={11} className="text-slate-400 shrink-0" />}
+                <span className="font-semibold tracking-wider">{brand}</span>
+                <span className="ml-auto text-[10px] text-slate-500 normal-case tracking-normal">
+                  {items.length}
+                </span>
+              </button>
+              {isOpen && (
+                <div className="pl-5 pr-1 py-0.5 flex flex-col gap-0.5">
+                  {items.map((p) => {
+                    const selected = p.id === value;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        data-testid={`printer-option-${p.id}`}
+                        onClick={() => { onChange(p.id); setOpen(false); }}
+                        className={`flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-slate-800 ${selected ? "bg-orange-500/10 text-orange-300" : "text-slate-200"}`}
+                      >
+                        {selected
+                          ? <Check size={11} className="text-orange-400 shrink-0" />
+                          : <span className="w-[11px] shrink-0" />}
+                        <span className="truncate text-left">{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
@@ -219,20 +327,13 @@ function ProfileSection({ onSavePrinter }) {
             </button>
           </span>
         </span>
-        <select
-          data-testid="printer-select"
+        <PrinterPicker
+          groups={groups}
           value={printerId}
-          onChange={(e) => handlePrinter(e.target.value)}
-          className="h-8 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
-        >
-          {Object.keys(groups).map((brand) => (
-            <optgroup key={brand} label={brand}>
-              {groups[brand].map((p) => (
-                <option key={p.id} value={p.id}>{p.label}</option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+          onChange={handlePrinter}
+          currentLabel={`${printer.brand} ${printer.name}`}
+          testid="printer-select"
+        />
       </label>
       <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-[10px] font-mono bg-slate-950/60 border border-slate-800 rounded p-2">
         <span className="text-slate-500">Volume</span>

@@ -821,6 +821,53 @@ function FrameBboxListener() {
   return null;
 }
 
+// Iter-100.8 — reframe the camera whenever the user picks a different
+// printer (and thus a different build-volume). Without this, switching
+// from a Bambu A1 (256 mm cube) to an FLSUN V400 (300 mm × 410 mm) left
+// the camera so close it only showed the lower half of the plate. We
+// listen on `printerId` (not `buildVolume`) so that programmatic
+// buildVolume tweaks elsewhere don't yank the user's view.
+function CameraFitOnPrinterChange() {
+  const { camera, controls } = useThree();
+  const printerId = useScene((s) => s.printerId);
+  const buildVolume = useScene((s) => s.buildVolume);
+  useEffect(() => {
+    if (!camera || !controls) return;
+    const { x = 220, y = 220, z = 250 } = buildVolume || {};
+    // Largest XZ extent + a generous fraction of Z. Delta beds are
+    // square-bbox so x≈y; tall cartesians like V400 (410 mm Z) need
+    // extra pull-back so the print volume top doesn't get clipped.
+    const plate = Math.max(x, y);
+    const fov = (camera.fov || 45) * (Math.PI / 180);
+    // Distance derived from the diagonal of plate + half-height, so a
+    // 200 mm plate frames close and a 410 mm tall delta backs off
+    // enough to show the whole printable cylinder.
+    const span = Math.hypot(plate, z * 0.6);
+    const dist = (span / (2 * Math.tan(fov / 2))) * 1.25 + 30;
+    // Preserve the user's current orbit direction if they've moved.
+    let dir = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+    if (dir.lengthSq() < 1e-6) dir.set(0.0, 0.55, 1).normalize();
+    // Aim slightly above the plate's centre — looks more natural than
+    // staring at Y=0 with an empty scene, and matches the framing the
+    // default camera position used for the original 220 mm plate.
+    const targetY = Math.min(z * 0.2, plate * 0.15);
+    controls.target.set(0, targetY, 0);
+    camera.position.set(
+      dir.x * dist,
+      Math.max(dir.y * dist, plate * 0.35),
+      dir.z * dist,
+    );
+    camera.updateProjectionMatrix();
+    controls.update();
+    // We intentionally depend on printerId (the user's intent) AND
+    // buildVolume.x/y/z (covers community-printer hot-swaps that keep
+    // the id but mutate the volume). camera/controls are stable from
+    // the same `useThree()` instance, eslint-deps would push for them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printerId, buildVolume?.x, buildVolume?.y, buildVolume?.z]);
+  return null;
+}
+
 
 export default function Viewport() {
   const objects = useScene((s) => s.objects);
@@ -1021,6 +1068,7 @@ export default function Viewport() {
         <directionalLight position={[-100, 120, -100]} intensity={0.35} />
 
         <BuildPlate />
+        <CameraFitOnPrinterChange />
 
         {objects.map((o) => (
           <SceneObject
