@@ -619,7 +619,27 @@ export function parseOrcaPrinterJson(input) {
       const by = Math.round(Math.max(...ys) - Math.min(...ys));
       if (bx >= 10 && bx <= 1000) fields.build_x_mm = bx;
       if (by >= 10 && by <= 1000) fields.build_y_mm = by;
-      if (doc.printable_area.length !== 4) {
+      // iter-101.2 — auto-detect a CIRCULAR bed and tag the printer as
+      // a delta. Heuristic: the polygon has ≥ 8 points, the radii from
+      // the centroid are tightly clustered (max/min < 1.10), and the
+      // bbox is roughly square (bx/by ratio within 5 %). Hand-coded
+      // 4-corner cartesian rectangles fall straight through.
+      if (doc.printable_area.length >= 8) {
+        const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+        const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+        const radii = xs.map((x, i) => Math.hypot(x - cx, ys[i] - cy));
+        const rmax = Math.max(...radii);
+        const rmin = Math.min(...radii);
+        const squareish = bx > 0 && Math.abs(bx - by) / Math.max(bx, by) < 0.05;
+        if (rmin > 0 && rmax / rmin < 1.10 && squareish) {
+          fields.kinematics = "delta";
+          warnings.push(
+            `printable_area looks circular (${doc.printable_area.length} verts, ` +
+            `Ø ${Math.round(rmax * 2)} mm) — tagged as delta for the round build-plate render.`,
+          );
+        }
+      }
+      if (doc.printable_area.length !== 4 && fields.kinematics !== "delta") {
         warnings.push(
           `printable_area has ${doc.printable_area.length} corners (non-rectangular bed?) — ` +
           `approximated to the X/Y bounding box.`,

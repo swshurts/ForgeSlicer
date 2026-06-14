@@ -19,12 +19,16 @@ from typing import Any, Dict, List
 
 from . import boards as _boards
 from . import bracket as _bracket
+from . import drawer_pull as _drawer_pull
+from . import tool_holder as _tool_holder
 
 
 # Each template module contributes one entry.
 _TEMPLATE_MODULES = [
     _boards,
     _bracket,
+    _drawer_pull,
+    _tool_holder,
 ]
 
 # Built once at import time.

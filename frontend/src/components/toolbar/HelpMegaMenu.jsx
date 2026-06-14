@@ -15,7 +15,9 @@
 // as the first item so the keyboard ? shortcut still has somewhere
 // to land.
 import React, { useEffect, useRef, useState } from "react";
-import { CircleHelp, BookOpen, MessageCircle, ChevronRight, FileText, ExternalLink } from "lucide-react";
+import { CircleHelp, BookOpen, MessageCircle, ChevronRight, FileText, ExternalLink, Mic, Sparkles } from "lucide-react";
+import axios from "axios";
+import { API } from "../../lib/api";
 
 // Tutorial catalog — single source of truth for the dropdown.
 // Order is intentional: Getting Started first (broadest), then by topic to
@@ -67,7 +69,19 @@ export const TUTORIALS = [
 
 export default function HelpMegaMenu({ onOpenInApp }) {
   const [open, setOpen] = useState(false);
+  // iter-101.3 — fetch the live voice-template catalogue when the menu
+  // opens (lazily so the help button doesn't trigger a request on
+  // every page load). Cached for the lifetime of the component.
+  const [voiceTemplates, setVoiceTemplates] = useState(null);
   const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open || voiceTemplates !== null) return;
+    let cancelled = false;
+    axios.get(`${API}/voice/templates`).then((r) => {
+      if (!cancelled) setVoiceTemplates(r.data?.templates || []);
+    }).catch(() => { if (!cancelled) setVoiceTemplates([]); });
+    return () => { cancelled = true; };
+  }, [open, voiceTemplates]);
 
   // Click-outside + Escape behaviour — bound only while the menu is
   // open so we don't intercept events globally.
@@ -102,10 +116,52 @@ export default function HelpMegaMenu({ onOpenInApp }) {
         <div
           role="menu"
           data-testid="help-mega-menu"
-          className="absolute right-0 top-9 z-50 w-80 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
+          className="absolute right-0 top-9 z-50 w-96 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto"
         >
+          {/* Voice templates catalogue */}
+          <div className="px-4 py-2 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-950 border-b border-slate-800 flex items-center gap-1.5">
+            <Mic size={11} className="text-orange-400" />
+            What voice can build
+            <span className="ml-auto text-[9px] text-slate-600 normal-case tracking-normal">
+              hold space → speak
+            </span>
+          </div>
+          {voiceTemplates === null && (
+            <div className="px-4 py-3 text-[11px] text-slate-500">Loading catalogue…</div>
+          )}
+          {voiceTemplates && voiceTemplates.length === 0 && (
+            <div className="px-4 py-3 text-[11px] text-slate-500">No templates registered.</div>
+          )}
+          {voiceTemplates && voiceTemplates.map((t) => (
+            <div
+              key={t.id}
+              data-testid={`help-voice-template-${t.id}`}
+              className="px-4 py-2.5 border-b border-slate-800/60"
+            >
+              <div className="flex items-start gap-2">
+                <Sparkles size={13} className="text-orange-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] font-semibold text-slate-200">{t.label}</div>
+                  <div className="text-[10px] text-slate-500 leading-snug mt-0.5">{t.description}</div>
+                  {t.boards && (
+                    <div className="text-[9.5px] text-slate-600 mt-1 font-mono leading-snug">
+                      Boards: {t.boards.map((b) => b.label).join(" · ")}
+                    </div>
+                  )}
+                  <div className="text-[9.5px] text-slate-600 mt-1">
+                    Params:&nbsp;
+                    <span className="font-mono text-slate-500">
+                      {Object.keys(t.params || {}).slice(0, 6).join(", ")}
+                      {Object.keys(t.params || {}).length > 6 ? ", …" : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+
           {/* In-app help section */}
-          <div className="px-4 py-2 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-950 border-b border-slate-800">
+          <div className="px-4 py-2 text-[10px] uppercase tracking-wider text-slate-500 bg-slate-950 border-y border-slate-800">
             In-app help
           </div>
           <button

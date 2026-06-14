@@ -2970,3 +2970,51 @@ in print-flat pose viewed from above.
   inside angle. Single manifold positive, "Lay Flat" in one
   click before printing.
 - `pytest backend/tests/test_voice_templates.py` — 14/14 green.
+
+---
+
+## Iter-101.2 — Backlog batch: delta auto-detect, new templates, voice discoverability (2026-02-10)
+
+**Three backlog items knocked out in one pass.**
+
+### 1. Auto-detect delta polygons in pasted OrcaSlicer JSON
+- `frontend/src/lib/orcaProfiles.js::parseOrcaProfileJson` —
+  heuristic added at the printable-area parse step: if the polygon
+  has ≥ 8 vertices, the centroid-radii are tightly clustered
+  (rmax/rmin < 1.10), AND the bbox is square-ish (≤ 5 % aspect
+  diff), the parsed printer is tagged `kinematics: "delta"`. A
+  friendly warning explains what was auto-detected. Hand-coded 4-
+  corner cartesian rectangles fall straight through.
+
+### 2. Second-wave templates
+- `backend/voice_templates/drawer_pull.py` — flat-printed cabinet
+  handle with two feet, a grip bar (oriented along world X via a
+  90° Z rotation), hemispherical end caps, and screw clearance
+  holes. Accepts imperial OR metric.
+- `backend/voice_templates/tool_holder.py` — wall-mount rack with
+  N evenly-spaced tool holes + 2 wall-mount screw holes. Tool
+  diameter and count are the primary voice-extractable params.
+- `backend/voice_templates/__init__.py` — both modules added to
+  the `_TEMPLATE_MODULES` list (the only file that changes when
+  registering a new template).
+- Voice catalogue now: `board_faceplate`, `right_angle_bracket`,
+  `drawer_pull`, `tool_holder` — 4 deterministic builders, all
+  voice-triggerable.
+
+### 3. Voice discoverability in HelpMegaMenu
+- `frontend/src/components/toolbar/HelpMegaMenu.jsx` — new top
+  section "WHAT VOICE CAN BUILD". Lazily fetches
+  `/api/voice/templates` on first menu open, renders each
+  template as a row with name, description, board catalogue (for
+  the faceplate), and the first 6 param keys. Includes the
+  "hold space → speak" hint inline. Tagged
+  `data-testid="help-voice-template-<id>"`.
+
+**Verified end-to-end**:
+- `pytest backend/tests/test_voice_templates.py` — 14/14 green.
+- `expand("drawer_pull", {length_mm:128, screw_spacing_mm:96})` →
+  10 well-formed steps; `expand("tool_holder", {count:6,
+  tool_diameter_mm:8})` → 11 well-formed steps.
+- Playwright screenshot of HelpMegaMenu shows all 4 templates
+  surfaced with their param hints; the faceplate row lists the
+  10 supported boards.
