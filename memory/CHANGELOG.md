@@ -2848,3 +2848,54 @@ edges of … each corner") tripped the VAD.
   commands.
 
 **Hot-reload pickup verified** by grep on the running file.
+
+---
+
+## Iter-100.11 — Voice templates: coordinate fix + boolean ordering (2026-02-10)
+
+**Why**: User screenshots showed:
+  • Pi 4 faceplate rendered STANDING UP at 95 × 3 × 66 mm with the
+    66 mm side going vertical instead of lying flat on the bed.
+  • Right-angle bracket collapsed to `4.5 × 2.0 × 4.5 mm` — a single
+    cylinder remnant, not an L-bracket.
+
+**Two distinct bugs**:
+
+1. **Wrong axis convention in templates.** ForgeSlicer's primitive
+   dim mapping (cube/wedge in `lib/geometry.js`) is
+   `dims.x → world X, dims.y → world Z (depth into bed), dims.z →
+   world Y (UP)`. My iter-100.9 templates assumed dims.y was the
+   up axis. Result: every plate emitted with its thickness in the
+   wrong dimension. Fixed in `voice_templates/boards.py` and
+   `voice_templates/bracket.py` — all dim/position math redone
+   so the part lies flat on the bed with `dims.z` as thickness.
+   The board faceplate's cylinder mount holes also no longer need
+   a rotation (default cylinder axis is world-Y = UP).
+
+2. **Boolean fold order broke after intermediate union.** In
+   `lib/voicePlanExecutor.js::executeStep` (boolean branch), when
+   a union consumed `accum + b` and produced a merged id, the
+   merged id was APPENDED to `state.addedIds` (end of the list).
+   The next subtract step's `all-current` then iterated negatives
+   FIRST, so the fold-left did `cyl − cyl − cyl − cyl − merged_pos`
+   instead of `merged_pos − cyl − cyl − cyl − cyl`. The bracket
+   collapsed to a tiny scrap. Fixed by splicing the merged id back
+   into the position where the first input lived, preserving the
+   ordinal.
+
+3. **Bracket gusset switched from wedge → cube** corner block.
+   Wedge's ramp-along-Y geometry would need rotating into the
+   bracket's bed-flat frame; a corner cube does the bracing job,
+   is guaranteed-manifold, and prints fine.
+
+**Verified end-to-end (Playwright)**:
+- Pi 4 faceplate → `95.0 × 3.0 × 66.0 mm` flat plate with visible
+  USB / GbE / HDMI / audio cutouts and 4 mount holes pierced
+  through. Sits flat on the bed with thickness UP.
+- Right-angle bracket (6" / 1" / 30 lb) → `152.4 × 7.6 × 152.4 mm`
+  L-bracket, gusset corner block at the inside angle, 4 screw
+  holes correctly placed clear of the gusset. CSG order in the
+  result name: `Cube ∪ Cube ∪ Cube \ Cylinder × 4` (positives
+  unioned first, then negatives subtracted).
+- `pytest backend/tests/test_voice_templates.py` — 14/14 green
+  (assertions updated to the corrected dim convention).

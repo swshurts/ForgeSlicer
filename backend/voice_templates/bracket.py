@@ -171,104 +171,115 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     plate_t = _plate_thickness(load_kg, depth, mat_factor)
     gusset = _gusset_width(load_kg, depth)
 
-    # The L-bracket sits with its corner at the origin. Wall arm goes
-    # along +Y (up), shelf arm goes along +X (away from wall). Z is
-    # the bracket's WIDTH axis (also the shelf's "depth" the user
-    # wouldn't normally see). Picture:
+    # ForgeSlicer coordinate convention:
+    #   • dims.x → world X (left-right)
+    #   • dims.y → world Z (front-back, INTO bed)
+    #   • dims.z → world Y (UP)
     #
-    #       ┌──── plate_t
-    #       │
-    #       │
-    #       │  ◄── WALL arm (extends +Y)
-    #       │
-    #       │
-    #       └────────────── ◄── SHELF arm (extends +X)
+    # The bracket lies FLAT on the bed for printing (its `plate_t`
+    # thickness goes UP). Viewed from above the L sits like this:
     #
-    # We build the WALL arm first, then the SHELF arm so the second
-    # can overlap the first at the corner (union resolves the overlap).
-    wall_height = depth                # mirror the depth so the bracket looks proportional
+    #         Z (depth, into screen)
+    #         ↑
+    #    +────╫───────────────────
+    #    │ wall arm (along Z)
+    #    │ ╫
+    #    │ ╫            ┌──────── shelf arm ────────┐
+    #    │ ╫────────────│                            │
+    #    └─────────────────────────────────────────→  X (right)
+    #     │
+    #    (0,0) = corner of the L (inside)
+    #
+    # Wall arm extends along +Z, shelf arm along +X. Both lie in the
+    # X-Z plane on the bed, with `plate_t` of vertical (Y) thickness.
+
+    wall_length = depth
     shelf_length = depth
 
     steps: List[Dict[str, Any]] = []
 
-    # Step 1 — wall arm. A vertical plate.
+    # Step 1 — wall arm. Spans X: 0..width, Y: 0..plate_t, Z: 0..wall_length.
     steps.append(step_add(
         "cube",
-        dims={"x": plate_t, "y": wall_height, "z": width},
-        position=[plate_t / 2.0, wall_height / 2.0, 0.0],
+        dims={"x": width, "y": wall_length, "z": plate_t},
+        position=[width / 2.0, plate_t / 2.0, wall_length / 2.0],
         tag="wall_arm",
-        note=f"Wall arm  {plate_t:.1f} × {wall_height:.0f} × {width:.0f} mm  "
+        note=f"Wall arm  {width:.0f} × {wall_length:.0f} × {plate_t:.1f} mm  "
              f"(thickness from {material} @ {load_kg:.1f} kg over {depth:.0f} mm)",
     ))
 
-    # Step 2 — shelf arm. A horizontal plate at the corner.
+    # Step 2 — shelf arm. Spans X: 0..shelf_length, Y: 0..plate_t,
+    # Z: 0..width. Overlaps the wall arm in the (0..width, 0..width)
+    # square at the corner — the union resolves the overlap cleanly.
     steps.append(step_add(
         "cube",
-        dims={"x": shelf_length, "y": plate_t, "z": width},
-        position=[shelf_length / 2.0, plate_t / 2.0, 0.0],
+        dims={"x": shelf_length, "y": width, "z": plate_t},
+        position=[shelf_length / 2.0, plate_t / 2.0, width / 2.0],
         tag="shelf_arm",
-        note=f"Shelf arm  {shelf_length:.0f} × {plate_t:.1f} × {width:.0f} mm",
+        note=f"Shelf arm  {shelf_length:.0f} × {width:.0f} × {plate_t:.1f} mm",
     ))
 
-    # Step 3 — triangular gusset that braces the corner. We approximate
-    # the triangle with a thin wedge (a wedge primitive would be ideal
-    # but cubes + booleans give us a guaranteed-manifold result).
-    # The wedge is a CUBE rotated −45° around Z so its hypotenuse runs
-    # from (gusset, 0) to (0, gusset). Then we subtract the half we
-    # don't want.
-    #
-    # Simpler approach used here: use the `wedge` primitive (already
-    # registered in the workspace) — params {x: gusset, y: gusset,
-    # z: gusset_thickness}. The default wedge tapers along +X→+Y.
-    gusset_thickness = max(3.2, plate_t * 0.8)        # at least 4-line wall worth
+    # Step 3 — gusset corner block. Instead of a wedge (whose ramp axis
+    # would need rotating into the bracket's frame), we use a chunky
+    # cube sat in the inside corner — same job (braces the join),
+    # guaranteed manifold, prints fine.
+    #   • Footprint: gusset × gusset, sitting from the corner outward
+    #     along +X and +Z (overlapping both arms at the corner).
+    #   • Height: a tiny bit taller than plate_t so the union picks it
+    #     up cleanly without z-fighting.
+    g_h = plate_t + 0.4
     steps.append(step_add(
-        "wedge",
-        dims={"x": gusset, "y": gusset, "z": gusset_thickness},
-        position=[plate_t, plate_t, (width - gusset_thickness) / 2.0],
+        "cube",
+        dims={"x": gusset, "y": gusset, "z": g_h},
+        position=[gusset / 2.0, g_h / 2.0, gusset / 2.0],
         tag="gusset",
-        note=f"Gusset  {gusset:.0f} × {gusset:.0f} × {gusset_thickness:.1f} mm "
-             f"(braces the corner against {load_kg:.1f} kg load)",
+        note=f"Gusset corner block  {gusset:.0f} × {gusset:.0f} × {g_h:.1f} mm "
+             f"(braces against {load_kg:.1f} kg load)",
     ))
 
-    # Steps 4–N — screw holes.
-    # WALL side: two clearance holes along the vertical arm, 30% and
-    # 70% of the way up so a stud-finder-spaced pair lands somewhere
-    # useful.
-    wall_hole_zs = [width / 2.0]                         # one column, centred
-    for i, hy in enumerate([wall_height * 0.30, wall_height * 0.70]):
-        for j, hz in enumerate(wall_hole_zs):
+    # Steps 4-N — screw holes.
+    # Cylinders default to world-Y axis (UP), so a hole through the
+    # plate's thickness needs NO rotation. The hole's `h` must exceed
+    # plate_t so it pokes through both faces — we use plate_t + 2 mm.
+    # Wall arm: 2 holes, ~30 % and ~70 % along its Z axis, centred at
+    # X = width / 2. Keep them clear of the gusset block which spans
+    # 0..gusset in Z.
+    safe_z_start = gusset + 8.0
+    safe_z_end = wall_length - 8.0
+    if safe_z_end > safe_z_start:
+        for i, hz in enumerate([
+            safe_z_start + (safe_z_end - safe_z_start) * 0.25,
+            safe_z_start + (safe_z_end - safe_z_start) * 0.75,
+        ]):
             steps.append(step_add(
                 "cylinder",
                 modifier="negative",
                 dims={"r": screw_r, "h": plate_t + 2.0},
-                position=[plate_t / 2.0, hy, hz],
-                rotation=[0.0, 0.0, 90.0],                # axis along X
-                tag=f"wall_hole_{i}_{j}",
+                position=[width / 2.0, plate_t / 2.0, hz],
+                tag=f"wall_hole_{i}",
                 note=f"Wall screw hole  ⌀{screw_d:.1f} mm",
             ))
 
-    # SHELF side: 2 holes along the horizontal arm, located ~25% and
-    # ~75% of the depth so they don't crash the gusset on the way in.
-    safe_x_start = max(plate_t + 8.0, gusset * 0.5 + 6.0)
+    # Shelf arm: 2 holes along its +X axis, also clear of the gusset.
+    safe_x_start = gusset + 8.0
     safe_x_end = shelf_length - 8.0
-    for i, hx in enumerate([
-        safe_x_start + (safe_x_end - safe_x_start) * 0.25,
-        safe_x_start + (safe_x_end - safe_x_start) * 0.75,
-    ]):
-        steps.append(step_add(
-            "cylinder",
-            modifier="negative",
-            dims={"r": screw_r, "h": plate_t + 2.0},
-            position=[hx, plate_t / 2.0, width / 2.0],
-            rotation=[90.0, 0.0, 0.0],                    # axis along Y
-            tag=f"shelf_hole_{i}",
-            note=f"Shelf screw hole  ⌀{screw_d:.1f} mm",
-        ))
+    if safe_x_end > safe_x_start:
+        for i, hx in enumerate([
+            safe_x_start + (safe_x_end - safe_x_start) * 0.25,
+            safe_x_start + (safe_x_end - safe_x_start) * 0.75,
+        ]):
+            steps.append(step_add(
+                "cylinder",
+                modifier="negative",
+                dims={"r": screw_r, "h": plate_t + 2.0},
+                position=[hx, plate_t / 2.0, width / 2.0],
+                tag=f"shelf_hole_{i}",
+                note=f"Shelf screw hole  ⌀{screw_d:.1f} mm",
+            ))
 
-    # Step boolean — union the 3 positive arms/gusset, then subtract
-    # the 4 screw holes. Two steps so the CSG sequence matches intent
-    # (a single fold-left subtract over mixed-modifier targets would
-    # incorrectly subtract the shelf arm and gusset from the wall arm).
+    # Boolean: union the 3 positives, then subtract the screw holes.
+    # Two separate steps because a fold-left subtract over mixed-
+    # modifier targets would treat the shelf arm as a negative.
     steps.append(step_boolean("union", targets=["all-positives"],
                               note="Fuse the wall arm, shelf arm and gusset"))
     steps.append(step_boolean("subtract", targets=["all-current"],

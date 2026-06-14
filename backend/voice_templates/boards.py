@@ -218,11 +218,19 @@ def list_boards() -> List[Dict[str, Any]]:
 def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate the ordered step list for a board faceplate.
 
-    The plate is laid flat in the XZ plane (Y is "up" in the
-    workspace), centred on the origin, sitting on Y=0. Connectors
-    on a +y face protrude through the +Z side of the plate; -x face
-    connectors come out of the -X side. This matches the visual
-    orientation OrcaSlicer expects.
+    ForgeSlicer coordinate convention (CRITICAL):
+      • `dims.x`  → primitive width  (world X axis)
+      • `dims.y`  → primitive DEPTH  (world Z axis — front/back on bed)
+      • `dims.z`  → primitive HEIGHT (world Y axis — UP)
+      • `position` is [world_x, world_y (up), world_z (depth)].
+      • Default cylinder axis is world-Y (up), so no rotation is needed
+        for a hole going straight DOWN through a flat plate.
+
+    The plate lies flat on the bed in the world X-Z plane, with its
+    thickness going up along Y. The board's local 2D layout (the
+    rectangle the connectors live on) maps:
+      • board's long axis  →  world X
+      • board's short axis →  world Z
     """
     board_id = params.get("board")
     if board_id not in BOARDS:
@@ -234,80 +242,72 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     inc_mount = bool(params.get("include_mount_holes", True))
     inc_conn = bool(params.get("include_connector_cutouts", True))
 
-    plate_L = L + 2 * border
-    plate_W = W + 2 * border
+    plate_L = L + 2 * border       # world X span
+    plate_W = W + 2 * border       # world Z span
 
     steps: List[Dict[str, Any]] = []
 
-    # Step 1: the base plate, sized board + 2× border, sat on Y=0.
-    # We use `cube` with x=length, y=thickness, z=width so the plate
-    # lies flat (Y is the thin axis). The cube's centre is at half-
-    # thickness above Y=0 so the bottom rests on the bed.
+    # Step 1: the base plate. `dims.z` is the THICKNESS (up axis).
+    # Position Y = thickness / 2 places the bottom on the bed.
     steps.append(step_add(
         "cube",
-        dims={"x": plate_L, "y": thickness, "z": plate_W},
+        dims={"x": plate_L, "y": plate_W, "z": thickness},
         position=[0.0, thickness / 2.0, 0.0],
         tag="plate",
         note=f"Base plate {plate_L:.1f} × {plate_W:.1f} × {thickness:.1f} mm "
              f"({b['label']} + {border:.1f} mm border)",
     ))
 
-    # All subsequent geometry is positioned RELATIVE to the plate's
-    # centre. The board origin (its 0,0 corner) lives at plate-local
-    # (-L/2, -W/2). We convert board-local (bx, bz) to plate-local
-    # (px, pz) via:  px = bx - L/2 ; pz = bz - W/2.
+    # Board-local (mx, mz) corner is at world (-L/2, -W/2) on the plate.
     bx0 = -L / 2.0
     bz0 = -W / 2.0
 
-    # Step group 2: mount holes (negative cylinders punched through).
+    # Step group 2: mount holes (negative cylinders piercing through Y).
+    # Default cylinder axis is world Y, so no rotation. Height = plate +
+    # 2 mm so the hole pokes cleanly through.
     if inc_mount and b["mount_holes"] and b["mount_hole_diameter"] > 0:
         r = b["mount_hole_diameter"] / 2.0
         for i, (mx, mz) in enumerate(b["mount_holes"]):
             steps.append(step_add(
                 "cylinder",
                 modifier="negative",
-                dims={"r": r, "h": thickness + 2.0},     # +2 so the hole pokes through
+                dims={"r": r, "h": thickness + 2.0},
                 position=[bx0 + mx, thickness / 2.0, bz0 + mz],
-                rotation=[90.0, 0.0, 0.0],               # axis along Y
                 tag=f"mount_{i}",
                 note=f"Mount hole #{i+1}  ⌀{b['mount_hole_diameter']:.1f} mm",
             ))
 
-    # Step group 3: connector cutouts (negative cubes).
-    # A connector on the +y face means the cable exits along +Z of
-    # the board's local frame; for our faceplate that translates to
-    # cutouts running through the plate along the Y axis (its thin
-    # axis), centred at the connector's xz position offset by half
-    # the cutout dimensions outward. We just stamp a cube straight
-    # through the plate at the connector centre.
+    # Step group 3: connector cutouts (negative cubes piercing through Y).
+    # Each cutout's footprint on the plate's top face is (cw × ch) mapped
+    # to the board's (long × short) axes → (world X × world Z). The
+    # cutout's vertical extent through the plate is (thickness + 2 mm).
     if inc_conn:
         for c in b["connectors"]:
-            # Connector centre in board-local coords. The "face" field
-            # tells us whether to measure from x or z, but since we're
-            # punching THROUGH the plate at the connector's centre,
-            # we only need the centre's x/z.
             face = c.get("face", "+y")
+            # Map board-local connector centre → board-local (x, z_layout)
+            # in the same coords as mount holes.
             if face in ("+y", "-y"):
-                cx, cz = c["x"], 0.0 if face == "+y" else W
-            else:                                                     # "+x" / "-x"
-                cz = c.get("x", 0.0)
+                # Connector on a long edge: cx is along board long axis,
+                # connector sits at z=0 (top edge) or z=W (bottom edge).
+                cx, cz_b = c["x"], 0.0 if face == "+y" else W
+            else:
+                # Connector on a SHORT edge: stored "x" is along the
+                # board's SHORT axis.
+                cz_b = c.get("x", 0.0)
                 cx = 0.0 if face == "-x" else L
             cw, ch = c["w"], c["h"]
-            # If the connector sits on a long edge of the board, the
-            # cutout's footprint in the plate's XZ plane is (w × <plate
-            # thickness reach>) — we extrude the cutout fully through
-            # the plate (Y axis).
             steps.append(step_add(
                 "cube",
                 modifier="negative",
-                dims={"x": cw, "y": thickness + 2.0, "z": ch},
-                position=[bx0 + cx, thickness / 2.0, bz0 + cz],
+                dims={"x": cw, "y": ch, "z": thickness + 2.0},
+                position=[bx0 + cx, thickness / 2.0, bz0 + cz_b],
                 tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
                 note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} × {ch:.1f} mm)",
             ))
 
-    # Step final: boolean-subtract all negatives from the plate, then
-    # group the result so the user gets a single tidy assembly.
+    # Step final: boolean-subtract all negatives from the plate (one
+    # positive + many negatives means a single fold-left subtract is
+    # exactly right), then group the result.
     steps.append(step_boolean(
         "subtract",
         targets=["all-current"],

@@ -79,10 +79,12 @@ def test_board_faceplate_thickness_and_border_affect_plate_dims():
         "border_mm": 8.0,
     })
     plate = steps[0]
-    assert math.isclose(plate["dims"]["y"], 4.0)
+    # iter-100.11 — corrected coordinate convention: dims.z is the UP axis
+    # (thickness), dims.x is width (board long), dims.y is depth (board short).
+    assert math.isclose(plate["dims"]["z"], 4.0)
     # Pi 4B is 85 × 56; +2 × 8 = 101 × 72 plate.
     assert math.isclose(plate["dims"]["x"], 101.0)
-    assert math.isclose(plate["dims"]["z"], 72.0)
+    assert math.isclose(plate["dims"]["y"], 72.0)
 
 
 # ---------------- right-angle bracket ----------------
@@ -95,14 +97,15 @@ def test_bracket_imperial_inputs_convert_to_mm():
         "shelf_thickness_in": 1,
         "load_lb": 30,
     })
-    # depth is 6 in = 152.4 mm — wall arm height + shelf arm length
-    # should both reflect that.
+    # depth is 6 in = 152.4 mm. Wall arm's length axis is dims.y;
+    # shelf arm's length axis is dims.x. Both should equal 152.4.
     wall = next(s for s in steps if s.get("tag") == "wall_arm")
     shelf = next(s for s in steps if s.get("tag") == "shelf_arm")
     assert math.isclose(wall["dims"]["y"], 152.4, rel_tol=1e-3)
     assert math.isclose(shelf["dims"]["x"], 152.4, rel_tol=1e-3)
-    # Plate thickness should land in the 5–10 mm band for this load.
-    plate_t = wall["dims"]["x"]
+    # Plate thickness lives in dims.z (UP). 13.6 kg load over 152 mm
+    # depth → 7-ish mm of PLA per the linear formula.
+    plate_t = wall["dims"]["z"]
     assert 4.5 <= plate_t <= 10.0, f"plate_t={plate_t}"
 
 
@@ -114,43 +117,34 @@ def test_bracket_includes_gusset_and_screw_holes():
     })
     tags = {s.get("tag") for s in steps if s.get("tag")}
     assert "gusset" in tags
-    # Two wall-side + two shelf-side screw holes minimum.
     wall_holes = [t for t in tags if t.startswith("wall_hole_")]
     shelf_holes = [t for t in tags if t.startswith("shelf_hole_")]
     assert len(wall_holes) >= 2
     assert len(shelf_holes) >= 2
-    # Boolean(s) + group end the list.
     actions = [s["action"] for s in steps]
-    # Bracket template emits TWO booleans (union positives, subtract negs)
-    # to get the CSG sequence right with mixed modifiers.
     assert actions[-1] == "group"
     assert "boolean" in actions[-3:]
 
 
 def test_bracket_plate_thickness_scales_with_load_and_depth():
-    """Heavier load + longer shelf must produce a thicker plate."""
     light = expand("right_angle_bracket", {"shelf_depth_mm": 100, "load_kg": 5})
     heavy = expand("right_angle_bracket", {"shelf_depth_mm": 250, "load_kg": 50})
-    light_t = next(s for s in light if s.get("tag") == "wall_arm")["dims"]["x"]
-    heavy_t = next(s for s in heavy if s.get("tag") == "wall_arm")["dims"]["x"]
+    light_t = next(s for s in light if s.get("tag") == "wall_arm")["dims"]["z"]
+    heavy_t = next(s for s in heavy if s.get("tag") == "wall_arm")["dims"]["z"]
     assert heavy_t > light_t + 2.0
 
 
 def test_bracket_material_petg_is_thinner_than_abs():
-    """PETG factor < ABS factor — same load should give a slightly
-    thinner PETG plate than ABS at the same depth."""
     petg = expand("right_angle_bracket", {"shelf_depth_mm": 200, "load_kg": 20, "material": "PETG"})
     abs_ = expand("right_angle_bracket", {"shelf_depth_mm": 200, "load_kg": 20, "material": "ABS"})
-    petg_t = next(s for s in petg if s.get("tag") == "wall_arm")["dims"]["x"]
-    abs_t = next(s for s in abs_ if s.get("tag") == "wall_arm")["dims"]["x"]
+    petg_t = next(s for s in petg if s.get("tag") == "wall_arm")["dims"]["z"]
+    abs_t = next(s for s in abs_ if s.get("tag") == "wall_arm")["dims"]["z"]
     assert abs_t >= petg_t
 
 
 def test_bracket_default_load_when_omitted():
-    """If the user doesn't state a load, build should still succeed
-    with a sensible default."""
     steps = expand("right_angle_bracket", {"shelf_depth_mm": 100})
-    assert steps  # non-empty
+    assert steps
     wall = next(s for s in steps if s.get("tag") == "wall_arm")
-    # Default load 5 kg + depth 100 mm → plate_t around 5 mm.
-    assert 3.5 <= wall["dims"]["x"] <= 7.0
+    # 5 kg + 100 mm → ~4.8 mm plate (in dims.z, the UP axis).
+    assert 3.5 <= wall["dims"]["z"] <= 7.0

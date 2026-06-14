@@ -75,6 +75,13 @@ export async function executeStep(step, state) {
       const b = objMap(ids[i]);
       if (!accum || !b) return { ok: false, reason: "Lost target mid-bool" };
       const merged = await combineTwoAsync(accum, b, step.op || "subtract");
+      // Remember where the OLD accum sat in addedIds so we can put
+      // the merged result back in that ORDER slot. Without this, the
+      // merged id gets appended to the END of state.addedIds and
+      // subsequent steps that target "all-current" iterate negatives
+      // BEFORE the running positive → fold-left gives nonsense
+      // (cyl − cyl − cyl − positive instead of positive − cyl − cyl).
+      const insertAt = state.addedIds.indexOf(accum.id);
       useScene.getState().removeObject(accum.id);
       useScene.getState().removeObject(b.id);
       const newObj = {
@@ -85,7 +92,11 @@ export async function executeStep(step, state) {
       };
       const newId = useScene.getState().addRawObject(newObj);
       state.addedIds = state.addedIds.filter((x) => x !== accum.id && x !== b.id);
-      state.addedIds.push(newId);
+      if (insertAt >= 0 && insertAt <= state.addedIds.length) {
+        state.addedIds.splice(insertAt, 0, newId);
+      } else {
+        state.addedIds.push(newId);
+      }
       // Rewire any tags pointing at consumed inputs.
       for (const [t, v] of Object.entries(state.tagToId)) {
         if (v === accum.id || v === b.id) state.tagToId[t] = newId;
