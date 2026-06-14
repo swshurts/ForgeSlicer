@@ -171,46 +171,35 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     plate_t = _plate_thickness(load_kg, depth, mat_factor)
     gusset = _gusset_width(load_kg, depth)
 
-    # ForgeSlicer coordinate convention:
+    # iter-101.1 — Bracket built in FUNCTIONAL orientation:
+    #   • Wall arm STANDS UP along +Y (mounts against a vertical wall).
+    #   • Shelf arm extends along +X at floor level (the shelf rests on it).
+    # The two meet at the corner (origin). For printing the user just
+    # hits "Lay Flat" to drop the bracket onto its broad face.
+    #
+    # ForgeSlicer dim convention:
     #   • dims.x → world X (left-right)
-    #   • dims.y → world Z (front-back, INTO bed)
+    #   • dims.y → world Z (depth into bed)
     #   • dims.z → world Y (UP)
     #
-    # The bracket lies FLAT on the bed for printing (its `plate_t`
-    # thickness goes UP). Viewed from above the L sits like this:
-    #
-    #         Z (depth, into screen)
-    #         ↑
-    #    +────╫───────────────────
-    #    │ wall arm (along Z)
-    #    │ ╫
-    #    │ ╫            ┌──────── shelf arm ────────┐
-    #    │ ╫────────────│                            │
-    #    └─────────────────────────────────────────→  X (right)
-    #     │
-    #    (0,0) = corner of the L (inside)
-    #
-    # Wall arm extends along +Z, shelf arm along +X. Both lie in the
-    # X-Z plane on the bed, with `plate_t` of vertical (Y) thickness.
-
-    wall_length = depth
+    # Wall arm — thin plate standing up at the X=0 plane. Thickness in X,
+    # height in Y (the standing-up dimension = dims.z), width in Z.
+    wall_height = depth
     shelf_length = depth
 
     steps: List[Dict[str, Any]] = []
 
-    # Step 1 — wall arm. Spans X: 0..width, Y: 0..plate_t, Z: 0..wall_length.
     steps.append(step_add(
         "cube",
-        dims={"x": width, "y": wall_length, "z": plate_t},
-        position=[width / 2.0, plate_t / 2.0, wall_length / 2.0],
+        dims={"x": plate_t, "y": width, "z": wall_height},
+        position=[plate_t / 2.0, wall_height / 2.0, width / 2.0],
         tag="wall_arm",
-        note=f"Wall arm  {width:.0f} × {wall_length:.0f} × {plate_t:.1f} mm  "
-             f"(thickness from {material} @ {load_kg:.1f} kg over {depth:.0f} mm)",
+        note=f"Wall arm  {plate_t:.1f} × {wall_height:.0f} × {width:.0f} mm  "
+             f"(stands vertically; thickness from {material} @ {load_kg:.1f} kg over {depth:.0f} mm)",
     ))
 
-    # Step 2 — shelf arm. Spans X: 0..shelf_length, Y: 0..plate_t,
-    # Z: 0..width. Overlaps the wall arm in the (0..width, 0..width)
-    # square at the corner — the union resolves the overlap cleanly.
+    # Shelf arm — horizontal plate at floor level. Length in X, depth
+    # (width along the wall) in Z, thickness in Y (= dims.z = UP).
     steps.append(step_add(
         "cube",
         dims={"x": shelf_length, "y": width, "z": plate_t},
@@ -219,48 +208,41 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         note=f"Shelf arm  {shelf_length:.0f} × {width:.0f} × {plate_t:.1f} mm",
     ))
 
-    # Step 3 — gusset corner block. Instead of a wedge (whose ramp axis
-    # would need rotating into the bracket's frame), we use a chunky
-    # cube sat in the inside corner — same job (braces the join),
-    # guaranteed manifold, prints fine.
-    #   • Footprint: gusset × gusset, sitting from the corner outward
-    #     along +X and +Z (overlapping both arms at the corner).
-    #   • Height: a tiny bit taller than plate_t so the union picks it
-    #     up cleanly without z-fighting.
-    g_h = plate_t + 0.4
+    # Gusset — a chunky cube block bracing the inside corner in the XY
+    # plane (wall-arm + shelf-arm plane). Spans 0..gusset in X and Y,
+    # centred in Z so it's flush with the bracket's mid-width.
+    g_z_pad = max(plate_t * 0.8, 4.0)               # how far the gusset extends in the Z (width) direction
     steps.append(step_add(
         "cube",
-        dims={"x": gusset, "y": gusset, "z": g_h},
-        position=[gusset / 2.0, g_h / 2.0, gusset / 2.0],
+        dims={"x": gusset, "y": gusset, "z": g_z_pad},
+        position=[gusset / 2.0, gusset / 2.0, width / 2.0],
         tag="gusset",
-        note=f"Gusset corner block  {gusset:.0f} × {gusset:.0f} × {g_h:.1f} mm "
+        note=f"Gusset corner block  {gusset:.0f} × {gusset:.0f} × {g_z_pad:.1f} mm "
              f"(braces against {load_kg:.1f} kg load)",
     ))
 
-    # Steps 4-N — screw holes.
-    # Cylinders default to world-Y axis (UP), so a hole through the
-    # plate's thickness needs NO rotation. The hole's `h` must exceed
-    # plate_t so it pokes through both faces — we use plate_t + 2 mm.
-    # Wall arm: 2 holes, ~30 % and ~70 % along its Z axis, centred at
-    # X = width / 2. Keep them clear of the gusset block which spans
-    # 0..gusset in Z.
-    safe_z_start = gusset + 8.0
-    safe_z_end = wall_length - 8.0
-    if safe_z_end > safe_z_start:
-        for i, hz in enumerate([
-            safe_z_start + (safe_z_end - safe_z_start) * 0.25,
-            safe_z_start + (safe_z_end - safe_z_start) * 0.75,
+    # Wall screw holes — cylinders piercing the wall arm HORIZONTALLY
+    # along the world X axis. Default cylinder axis is world Y, so we
+    # rotate 90° around Z to lay the axis along X.
+    safe_y_start = gusset + 8.0
+    safe_y_end = wall_height - 8.0
+    if safe_y_end > safe_y_start:
+        for i, hy in enumerate([
+            safe_y_start + (safe_y_end - safe_y_start) * 0.25,
+            safe_y_start + (safe_y_end - safe_y_start) * 0.75,
         ]):
             steps.append(step_add(
                 "cylinder",
                 modifier="negative",
                 dims={"r": screw_r, "h": plate_t + 2.0},
-                position=[width / 2.0, plate_t / 2.0, hz],
+                position=[plate_t / 2.0, hy, width / 2.0],
+                rotation=[0.0, 0.0, 90.0],
                 tag=f"wall_hole_{i}",
                 note=f"Wall screw hole  ⌀{screw_d:.1f} mm",
             ))
 
-    # Shelf arm: 2 holes along its +X axis, also clear of the gusset.
+    # Shelf screw holes — cylinders piercing the shelf arm VERTICALLY
+    # (default cylinder axis = world Y = UP). No rotation needed.
     safe_x_start = gusset + 8.0
     safe_x_end = shelf_length - 8.0
     if safe_x_end > safe_x_start:

@@ -278,29 +278,36 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             ))
 
     # Step group 3: connector cutouts (negative cubes piercing through Y).
-    # Each cutout's footprint on the plate's top face is (cw × ch) mapped
-    # to the board's (long × short) axes → (world X × world Z). The
-    # cutout's vertical extent through the plate is (thickness + 2 mm).
+    # The cutout is positioned at the BOARD EDGE the connector exits
+    # from, then shifted OUTWARD by half its own dim so it sits flush
+    # with the PLATE's outer edge (a centred-on-edge cutout would leave
+    # half a slot in the border and look "inset"). For long-edge
+    # connectors we shift along world Z; for short-edge connectors we
+    # shift along world X.
     if inc_conn:
         for c in b["connectors"]:
             face = c.get("face", "+y")
-            # Map board-local connector centre → board-local (x, z_layout)
-            # in the same coords as mount holes.
-            if face in ("+y", "-y"):
-                # Connector on a long edge: cx is along board long axis,
-                # connector sits at z=0 (top edge) or z=W (bottom edge).
-                cx, cz_b = c["x"], 0.0 if face == "+y" else W
-            else:
-                # Connector on a SHORT edge: stored "x" is along the
-                # board's SHORT axis.
-                cz_b = c.get("x", 0.0)
-                cx = 0.0 if face == "-x" else L
             cw, ch = c["w"], c["h"]
+            if face in ("+y", "-y"):
+                # Connector lives on a LONG edge.
+                cx = c["x"]                                          # along board long axis
+                cz_b = 0.0 if face == "+y" else W                    # at top or bottom of W
+                # Shift along world Z so cutout is flush with plate edge.
+                shift_z = -ch / 2.0 if face == "+y" else ch / 2.0
+                wx = bx0 + cx
+                wz = bz0 + cz_b + shift_z
+            else:
+                # Connector on a SHORT edge.
+                cz_b = c.get("x", 0.0)                               # along board short axis
+                cx = 0.0 if face == "-x" else L
+                shift_x = -cw / 2.0 if face == "-x" else cw / 2.0
+                wx = bx0 + cx + shift_x
+                wz = bz0 + cz_b
             steps.append(step_add(
                 "cube",
                 modifier="negative",
                 dims={"x": cw, "y": ch, "z": thickness + 2.0},
-                position=[bx0 + cx, thickness / 2.0, bz0 + cz_b],
+                position=[wx, thickness / 2.0, wz],
                 tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
                 note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} × {ch:.1f} mm)",
             ))

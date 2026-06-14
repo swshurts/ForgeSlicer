@@ -2931,3 +2931,42 @@ right "Z is UP" math at request time.
   now emits 4 cylinders at `pos={x:±45, y:2.5, z:±25}, dims={r:3, h:7}`
   with NO rotation. Mathematically correct: centred in the plate's Y
   range, hole 2 mm longer than the plate so it pokes through cleanly.
+
+---
+
+## Iter-101.1 — Visual fidelity pass (2026-02-10)
+
+**Why**: User reported the Pi 4 faceplate's cutouts read as inset
+(centred ON the board edge → half each slot lived in the border)
+and the bracket "looked like a B-2 bomber" because it was rendered
+in print-flat pose viewed from above.
+
+**Changes**:
+- `voice_templates/boards.py` — cutout positions now shift OUTWARD
+  by half the cutout's relevant dimension so the slot sits flush
+  with the PLATE's outer edge (not the board's). Long-edge
+  connectors shift in world Z; short-edge connectors shift in
+  world X.
+- `voice_templates/bracket.py` — bracket rebuilt in FUNCTIONAL
+  pose (wall arm stands up along +Y, shelf arm lies flat extending
+  along +X, gusset cube braces the inside corner). Visually reads
+  as an L-bracket the moment it appears. Wall screw holes now
+  cylinders rotated 90° around Z so their axes run horizontally
+  through the wall arm. Shelf holes stay unrotated (cylinder
+  default axis = world Y = vertical = through the shelf top).
+  Users hit the existing **Lay Flat** button before slicing.
+- `tests/test_voice_templates.py` — wall_arm dim assertions
+  updated for the standing pose (`dims.z` is now wall height,
+  `dims.x` is the plate thickness).
+
+**Verified end-to-end (Playwright)**:
+- Pi 4 → `95.0 × 3.0 × 66.0 mm` flat plate with cutouts FLUSH to
+  the plate's outer perimeter (USB stack + GbE on the long edge,
+  USB-C + dual µHDMI + audio on the short edge), four mount holes
+  pierced cleanly at the corners.
+- Bracket (6" / 1" / 30 lb) → `152.4 × 152.4 × 96.0 mm` in
+  standing pose: wall arm rises vertically, shelf arm extends
+  horizontally with 2 visible screw holes, gusset block at the
+  inside angle. Single manifold positive, "Lay Flat" in one
+  click before printing.
+- `pytest backend/tests/test_voice_templates.py` — 14/14 green.

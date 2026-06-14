@@ -97,15 +97,16 @@ def test_bracket_imperial_inputs_convert_to_mm():
         "shelf_thickness_in": 1,
         "load_lb": 30,
     })
-    # depth is 6 in = 152.4 mm. Wall arm's length axis is dims.y;
-    # shelf arm's length axis is dims.x. Both should equal 152.4.
+    # depth is 6 in = 152.4 mm. iter-101.1 — wall arm now stands vertically:
+    # its height lives in dims.z (the UP axis). Shelf arm's length is dims.x.
     wall = next(s for s in steps if s.get("tag") == "wall_arm")
     shelf = next(s for s in steps if s.get("tag") == "shelf_arm")
-    assert math.isclose(wall["dims"]["y"], 152.4, rel_tol=1e-3)
+    assert math.isclose(wall["dims"]["z"], 152.4, rel_tol=1e-3)
     assert math.isclose(shelf["dims"]["x"], 152.4, rel_tol=1e-3)
-    # Plate thickness lives in dims.z (UP). 13.6 kg load over 152 mm
-    # depth → 7-ish mm of PLA per the linear formula.
-    plate_t = wall["dims"]["z"]
+    # Plate thickness lives in dims.x for the wall arm (thin dimension
+    # is now horizontal since the arm stands up). 13.6 kg over 152 mm
+    # depth → 7-ish mm of PLA.
+    plate_t = wall["dims"]["x"]
     assert 4.5 <= plate_t <= 10.0, f"plate_t={plate_t}"
 
 
@@ -129,16 +130,18 @@ def test_bracket_includes_gusset_and_screw_holes():
 def test_bracket_plate_thickness_scales_with_load_and_depth():
     light = expand("right_angle_bracket", {"shelf_depth_mm": 100, "load_kg": 5})
     heavy = expand("right_angle_bracket", {"shelf_depth_mm": 250, "load_kg": 50})
-    light_t = next(s for s in light if s.get("tag") == "wall_arm")["dims"]["z"]
-    heavy_t = next(s for s in heavy if s.get("tag") == "wall_arm")["dims"]["z"]
+    # Wall arm's thin dimension is dims.x (it stands vertically with
+    # thickness horizontal).
+    light_t = next(s for s in light if s.get("tag") == "wall_arm")["dims"]["x"]
+    heavy_t = next(s for s in heavy if s.get("tag") == "wall_arm")["dims"]["x"]
     assert heavy_t > light_t + 2.0
 
 
 def test_bracket_material_petg_is_thinner_than_abs():
     petg = expand("right_angle_bracket", {"shelf_depth_mm": 200, "load_kg": 20, "material": "PETG"})
     abs_ = expand("right_angle_bracket", {"shelf_depth_mm": 200, "load_kg": 20, "material": "ABS"})
-    petg_t = next(s for s in petg if s.get("tag") == "wall_arm")["dims"]["z"]
-    abs_t = next(s for s in abs_ if s.get("tag") == "wall_arm")["dims"]["z"]
+    petg_t = next(s for s in petg if s.get("tag") == "wall_arm")["dims"]["x"]
+    abs_t = next(s for s in abs_ if s.get("tag") == "wall_arm")["dims"]["x"]
     assert abs_t >= petg_t
 
 
@@ -146,5 +149,4 @@ def test_bracket_default_load_when_omitted():
     steps = expand("right_angle_bracket", {"shelf_depth_mm": 100})
     assert steps
     wall = next(s for s in steps if s.get("tag") == "wall_arm")
-    # 5 kg + 100 mm → ~4.8 mm plate (in dims.z, the UP axis).
-    assert 3.5 <= wall["dims"]["z"] <= 7.0
+    assert 3.5 <= wall["dims"]["x"] <= 7.0
