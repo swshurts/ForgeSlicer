@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Loader2, Sparkles, X, Send, ChevronDown, Zap, Pause } from "lucide-react";
+import { Mic, MicOff, Loader2, Sparkles, X, Send, ChevronDown, Zap, Pause, Keyboard } from "lucide-react";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
 import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation } from "../lib/whisperStt";
 
@@ -125,6 +125,13 @@ export default function VoiceButton() {
   // Mode picker. Persisted so the user's choice survives a refresh.
   const [mode, setMode] = useState(readMode);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Typed-command popup state — accessibility fallback for noisy
+  // rooms or muted mics. Submits through the same runCommand() pipe
+  // as Voice, so the PlanPreviewDialog handles multi-step output the
+  // same way.
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [typedText, setTypedText] = useState("");
+  const typedInputRef = useRef(null);
   // When the user is actively in Go mode AND the mic loop is running. We
   // use this as a separate flag from `mode` so flipping the dropdown to
   // "single" while a Go session is mid-cycle doesn't tear it down — the
@@ -171,6 +178,31 @@ export default function VoiceButton() {
       editInputRef.current.select();
     }
   }, [stage]);
+
+  // Auto-focus the typed-command textarea when the popup opens, and
+  // wire global Escape to close it (so users don't have to mouse to
+  // the X button mid-typing).
+  useEffect(() => {
+    if (!typeOpen) return;
+    // Focus on next tick so the element is mounted.
+    const t = setTimeout(() => typedInputRef.current?.focus(), 30);
+    const onKey = (e) => {
+      if (e.key === "Escape") { setTypeOpen(false); setTypedText(""); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { clearTimeout(t); window.removeEventListener("keydown", onKey); };
+  }, [typeOpen]);
+
+  const submitTyped = () => {
+    const text = typedText.trim();
+    if (!text) return;
+    setTypeOpen(false);
+    setTypedText("");
+    // Same pipeline as voice: parseTranscript → executeCommand →
+    // PlanPreviewDialog for multi-step commands.
+    setPendingTranscript(text);
+    runCommand(text);
+  };
 
   // ---------- Primary recording (user's command) ----------
   const beginCommandRecording = async () => {
@@ -599,6 +631,25 @@ export default function VoiceButton() {
         <ChevronDown size={12} />
       </button>
 
+      {/* Typed-command popup trigger — sits flush to the right of the
+          voice pill. Separate from the Voice button because cramming an
+          inline input next to the mic compresses both. Clicking opens a
+          centered modal with a textarea. */}
+      <button
+        data-testid="voice-type-btn"
+        onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setTypeOpen((v) => !v); }}
+        disabled={busy || stage === "recording" || stage === "confirming"}
+        aria-label="Type command instead of speaking"
+        aria-haspopup="dialog"
+        aria-expanded={typeOpen}
+        title="Type a command (when you can't speak)"
+        className={`h-8 w-8 ml-1.5 rounded border text-[11px] flex items-center justify-center transition-colors bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 ${
+          typeOpen ? "ring-1 ring-orange-400/60 text-orange-300" : ""
+        } ${(busy || stage === "recording" || stage === "confirming") ? "opacity-50 cursor-not-allowed" : ""}`}
+      >
+        <Keyboard size={14} />
+      </button>
+
       {menuOpen && (
         <div
           data-testid="voice-mode-menu"
@@ -636,6 +687,61 @@ export default function VoiceButton() {
               Speak commands back-to-back, no confirmation. Say <span className="text-orange-300">"stop"</span>, <span className="text-orange-300">"done"</span>, or click Voice to end.
             </div>
           </button>
+        </div>
+      )}
+
+      {typeOpen && (
+        <div
+          data-testid="voice-type-popup"
+          role="dialog"
+          aria-label="Type a command"
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-[210] w-[min(560px,92vw)] bg-slate-950/95 backdrop-blur-sm border border-orange-500/50 rounded-md shadow-2xl p-4"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Keyboard size={14} className="text-orange-400" />
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">
+              Type a command
+            </div>
+            <button
+              data-testid="voice-type-close"
+              onClick={() => { setTypeOpen(false); setTypedText(""); }}
+              className="ml-auto h-6 w-6 rounded text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center"
+              aria-label="Close"
+              title="Close (Esc)"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <textarea
+            ref={typedInputRef}
+            data-testid="voice-type-input"
+            value={typedText}
+            onChange={(e) => setTypedText(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter submits; Shift+Enter inserts a newline so users
+              // can paste multi-line plans without firing prematurely.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submitTyped();
+              }
+            }}
+            placeholder="e.g. create a faceplate for raspberry pi 4"
+            rows={3}
+            className="w-full bg-slate-900 border border-slate-700 rounded text-sm text-white px-3 py-2 font-mono focus:outline-none focus:border-orange-400 resize-y"
+          />
+          <div className="flex items-center justify-between mt-2 gap-2">
+            <div className="text-[10px] text-slate-500">
+              <span className="text-slate-400">Enter</span> to send · <span className="text-slate-400">Shift+Enter</span> for newline · <span className="text-slate-400">Esc</span> to close
+            </div>
+            <button
+              data-testid="voice-type-submit"
+              onClick={submitTyped}
+              disabled={!typedText.trim()}
+              className="h-7 px-3 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[11px] font-semibold rounded flex items-center gap-1.5 uppercase tracking-wider"
+            >
+              <Send size={11} /> Run
+            </button>
+          </div>
         </div>
       )}
 

@@ -28,10 +28,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-06-04)
+## Current Open Items (as of 2026-06-14)
 
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
+
+### Recently completed (iter-101)
+- iter-101.5 (2026-06-14) — Typed-command popup beside Voice button (`Keyboard` icon → centered modal with textarea, Enter to submit, Esc to close). Accessibility / silent-room fallback that reuses the same `runCommand()` pipeline as Voice (PlanPreviewDialog included). Added `data-testid` hooks: `voice-type-btn`, `voice-type-popup`, `voice-type-input`, `voice-type-submit`, `voice-type-close`.
+- iter-101.4 (2026-06-13) — Board faceplate template defaults simplified: `include_mount_holes=False`, `faces=["+y"]`. Pi 4 default now produces a flat 95×66×3 mm plate with the 3 long-edge cutouts (USB 3.0 / USB 2.0 / GbE) — no mount-pillar tray and no short-edge HDMI/USB-C/audio cutouts unless explicitly requested.
 
 ### Backlog (P2/P3)
 - Multi-user CRDT collaborative editing (Yjs) — **deferred until post-beta**; user wants to price as a premium feature.
