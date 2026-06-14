@@ -2700,3 +2700,121 @@ live:
 - Expanding FLSUN reveals all 5 models with `−` icon. Collapsing
   hides them and restores the `+` icon. The selected printer's
   brand auto-opens on each popover open.
+
+---
+
+## Iter-100.9 — Smart voice (Tier 1 + Tier 2) (2026-02-10)
+
+**Why**: User asked how smart the voice interface can get; agreed on
+Tier 1 (multi-step plans + scene context) + Tier 2 (parametric
+templates). The directive was "don't paint yourself into a corner" —
+templates must be open-ended so brackets, gussets, enclosures, etc.
+plug into the same registry without touching the voice path.
+
+**Architecture** (the corner-avoiding bit):
+
+  Voice transcript + scene snapshot
+     ↓
+  GPT-5.2 → one of:
+     • atomic action  (existing)
+     • {action:"plan",     steps:[...]}                    (NEW)
+     • {action:"template", template_id, params}            (NEW)
+     ↓
+  Frontend Plan Preview dialog (always shown — user clicks Run).
+  Templates resolve to step lists via /api/voice/expand-template.
+
+A "step" is one atomic CAD operation (add / boolean / group /
+translate / rotate). Selectors ("all-current", "all-positives",
+"selected", "tag:<t>", "step:<i>", "all-since:<t>") let templates
+emit deterministic plans without knowing live scene ids.
+
+**Backend changes**:
+- New package `backend/voice_templates/`:
+  • `base.py` — `step_add` / `step_boolean` / `step_group` builders
+    + `to_mm` / `kg_from` unit-conversion helpers (inches, feet, lbs,
+    grams, ounces).
+  • `boards.py` — `board_faceplate` template with a 10-board
+    catalogue (Raspberry Pi 4B / 5 / Zero 2 W / 3B+, Arduino
+    Uno R3 / Mega 2560, ESP32 DevKit V1, Pi Pico, BTT SKR Mini E3
+    V3, BTT Octopus Pro). Each entry has mechanical dims + mount
+    hole pattern + per-connector cutout positions. Parameters:
+    `board`, `thickness_mm`, `border_mm`, `include_mount_holes`,
+    `include_connector_cutouts`.
+  • `bracket.py` — `right_angle_bracket` template. Linear
+    thickness curve calibrated against printable hobby loads
+    (5 kg @ 100 mm → 4.8 mm, 30 kg @ 200 mm → 9.6 mm, 50 kg @ 250 mm
+    → 12.4 mm), scaled by material factor (PLA 1.0 / PETG 0.9 /
+    ABS 1.1). Emits wall arm + shelf arm + gusset + 4 screw holes
+    + union + subtract + group. Accepts imperial (`shelf_depth_in`,
+    `load_lb`) or metric inputs interchangeably.
+  • `__init__.py` — registry / dispatch. To register a new
+    template, drop a module and add ONE line. The system prompt
+    catalogue + `/api/voice/expand-template` endpoint pick it up
+    automatically — that's the "no corner" promise.
+- `backend/server.py`:
+  • Voice system prompt extended with `plan` + `template`
+    schemas, dynamic template catalogue injection
+    (`%TEMPLATE_CATALOG%`), and scene-context grounding rules.
+  • `VoiceCommandRequest` accepts optional `scene` snapshot.
+  • New endpoints: `POST /api/voice/expand-template` (template id
+    + params → ordered step list) and `GET /api/voice/templates`
+    (debug / docs catalogue).
+- `backend/tests/test_voice_templates.py` — 14 pytest cases
+  covering unit conversion, registry, board faceplate behaviour,
+  bracket thickness calibration, material factor monotonicity,
+  imperial→metric conversion, default load handling.
+
+**Frontend changes**:
+- `lib/voicePlanExecutor.js` — new module.
+  • `executePlan(steps)` runs a step list sequentially as a single
+    undo group; tolerates `pos:{x,y,z}` or `position:[x,y,z]`,
+    same for rotation.
+  • `executeStep` dispatches one step against the live store.
+  • `resolveTargets([...])` selector grammar resolver — supports
+    `all-current` / `all-positives` / `selected` / `tag:<t>` /
+    `step:<i>` / `all-since:<t>`. `selected` returns the user's
+    selection captured at plan start so "subtract these holes
+    from the selected item" works.
+  • `expandTemplate(id, params)` → backend round trip.
+  • `getSceneSnapshot()` — selection bbox + build volume + count
+    + mode. Tiny payload; rounded to 2 decimal places.
+- `lib/voiceCommands.js` — `parseTranscript` now sends the scene
+  snapshot. `executeCommand` recognises `plan` + `template`
+  actions and dispatches `forgeslicer:open-plan-preview`.
+- `components/PlanPreviewDialog.jsx` — new modal.
+  • Lists steps with action chip + note + per-step status (idle /
+    running / ok / fail). Cancel / Run buttons. Run executes the
+    plan via `executePlan` with live progress callbacks; on
+    success the dialog auto-closes after a brief all-green flash.
+  • For `template:` payloads, fetches the step list via
+    `expandTemplate` once mounted.
+  • Mounted in `Workspace.jsx`.
+
+**Verified end-to-end (Playwright)**:
+- **Example #1 — "Create a faceplate for a Raspberry Pi 4 with
+  the appropriate cutouts for the ethernet and USB connectors"**
+  → LLM picks `board_faceplate / raspberry_pi_4b`. Dialog shows
+  14 steps. Run produces a `95.0 × 66.0 × 3.0 mm` plate with all
+  mount holes + 7 connector cutouts subtracted, fused into ONE
+  manifold positive.
+- **Example user's bracket — "Create a 90° bracket … 6 inches
+  deep, 1 inch thick, 30 pound load"** → LLM picks
+  `right_angle_bracket` with `shelf_depth_in:6,
+  shelf_thickness_in:1, load_lb:30`. Dialog shows 9 steps
+  ("Wall arm 7.2 × 152 × 25 mm (thickness from PLA @ 13.6 kg
+  over 152 mm)" etc.). Run produces an L-bracket of the right
+  dimensions with gusset + 4 screw holes.
+- **Example #2 — "Add a 6mm clearance hole 5mm from each
+  corner of the selected item"** with scene context
+  `{selection:{count:1, bbox:[-50,0,-30..50,5,30]}}` → LLM
+  emits a 5-step plan: 4 self-contained `add` cylinder steps at
+  the inset corner positions + a closing `boolean subtract`. The
+  executor's `selected` selector picks up the user's bbox so
+  the trailing boolean correctly subtracts the holes from the
+  existing part.
+- `pytest backend/tests/test_voice_templates.py` — 14/14 green.
+
+**Not painted into a corner**: registering a 6th template (drawer
+pull, enclosure, gusset, vise jaw, anything) is exactly two file
+changes — drop a module with `META` + `build()`, add ONE line to
+`__init__.py`. Voice prompt + endpoint automatically include it.

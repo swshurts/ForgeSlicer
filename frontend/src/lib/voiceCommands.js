@@ -10,6 +10,7 @@ import { API } from "./api";
 import { useScene } from "./store";
 import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "./workerClient";
 import { downloadBlob, saveProjectJSON } from "./exporters";
+import { getSceneSnapshot } from "./voicePlanExecutor";
 
 // Look up the SpeechRecognition constructor — vendor-prefixed on some browsers.
 export function getSpeechRecognition() {
@@ -22,8 +23,12 @@ export function isVoiceSupported() {
 }
 
 // Parse a transcript through the backend LLM into a structured command.
+// Sends a compact scene snapshot alongside so the LLM can ground
+// references like "the selected item" or "each corner".
 export async function parseTranscript(transcript) {
-  const { data } = await axios.post(`${API}/voice/command`, { transcript });
+  let scene;
+  try { scene = getSceneSnapshot(); } catch { scene = undefined; }
+  const { data } = await axios.post(`${API}/voice/command`, { transcript, scene });
   return data; // { action, raw, transcript }
 }
 
@@ -198,6 +203,27 @@ export async function executeCommand(cmd) {
       return raw.auto
         ? `Generating: "${promptText}" — credit will be used`
         : `Pre-filled AI generator with: "${promptText}"`;
+    }
+    case "plan": {
+      // Multi-step plan. Hand it to the Plan Preview dialog so the
+      // user can review the steps before anything mutates the scene
+      // (per the "always-preview" UX commitment).
+      const planSteps = Array.isArray(raw.steps) ? raw.steps : [];
+      if (planSteps.length === 0) return "Plan was empty — nothing to do";
+      window.dispatchEvent(new CustomEvent("forgeslicer:open-plan-preview", {
+        detail: { plan: { steps: planSteps, summary: raw.summary } },
+      }));
+      return `Plan ready — ${planSteps.length} step${planSteps.length === 1 ? "" : "s"} (review and Run)`;
+    }
+    case "template": {
+      // Parametric template — Plan Preview fetches the deterministic
+      // step list from /api/voice/expand-template once it mounts.
+      const tid = raw.template_id;
+      if (!tid) return "Template request missing template_id";
+      window.dispatchEvent(new CustomEvent("forgeslicer:open-plan-preview", {
+        detail: { template: { template_id: tid, params: raw.params || {} } },
+      }));
+      return `Building "${tid}" — review and Run`;
     }
     case "unknown":
     default:

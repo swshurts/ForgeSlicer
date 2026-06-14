@@ -9,7 +9,7 @@ import asyncio
 import base64
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -1538,12 +1538,63 @@ ALLOWED ACTIONS and their schemas:
    - If the user only asks to OPEN the AI dialog (no subject yet), use
      action="open" with dialog="ai_generate" and OMIT the prompt.
 
+9. Multi-step plan (NEW — for compound requests):
+   {"action":"plan", "steps":[ <step>, <step>, ... ]}
+   where each <step> is one of the atomic actions above (typically
+   "add" / "boolean" / "group" / "translate" / "rotate"). Use this when
+   the user asks for something that needs more than one atomic action,
+   e.g. "add a cube and rotate it 30 degrees on Z", "add 4 holes inset
+   5mm from each corner of the selection". Number of steps should be
+   minimal but complete. Each step may carry an optional "note" string
+   explaining what it does — surface it to the user via the preview.
+
+   PLAN AUTHORING RULES:
+   - PREFER self-contained "add" steps with the final `position` and
+     `rotation` baked in. For "4 holes at the corners", emit FOUR
+     separate `add` cylinder steps each with its own `position`, NOT
+     one `add` followed by `duplicate`/`position` chains. This makes
+     the preview readable and avoids cross-step selection tracking.
+   - For "boolean" steps, set `targets` to one of: "all-current"
+     (everything this plan added so far), "all-positives", "all-since:<tag>",
+     "tag:<tag>", or "step:<index>". DO NOT assume the user's existing
+     selection survives the plan.
+   - Tag intermediate steps you'll reference later with `tag: "..."`.
+   - End the plan with `boolean subtract` (or whatever the user wants)
+     and optionally a `group` step so the user gets a tidy assembly.
+
+10. Parametric template (NEW — for catalogued parts):
+    {"action":"template", "template_id":"...", "params":{...}}
+    Use this when the request maps to a CATALOGUED template (listed
+    below). Extract param values from the transcript; omit ones the user
+    didn't mention (the backend has defaults). Available templates and
+    their parameter shapes:
+
+%TEMPLATE_CATALOG%
+
+    Examples:
+      • "Create a faceplate for a Raspberry Pi 4" →
+        {"action":"template","template_id":"board_faceplate",
+         "params":{"board":"raspberry_pi_4b"}}
+      • "Make a 90-degree bracket for a 6 inch deep shelf that's
+         1 inch thick and supports 30 pounds" →
+        {"action":"template","template_id":"right_angle_bracket",
+         "params":{"shelf_depth_in":6,"shelf_thickness_in":1,"load_lb":30}}
+
+SCENE CONTEXT (NEW): the request body may include a "scene" field with
+{selection:{bbox:{min:[x,y,z],max:[x,y,z]},count}, build_volume:{x,y,z},
+object_count, mode}. Use it to ground references like "the selected
+item", "each corner", "the cube I just added". If the user references
+"the selection" but `scene.selection.count == 0`, return action="unknown"
+with speech echoing the transcript — we'd rather fail than guess.
+
 RULES:
 - Output MUST be valid JSON, no markdown.
 - Omit keys you cannot determine instead of guessing.
 - Default modifier is "positive" unless the user says "hole", "cutout", "subtract", "negative".
 - If the user gives X×Y×Z but says "cylinder" infer cylinder with r = max(x,y)/2 and h = z.
 - "make it 50mm wide" => resize with x=50 (when current selection exists).
+- Prefer a TEMPLATE over a hand-rolled PLAN when the request matches one cleanly
+  (boards, brackets) — templates are deterministic and well-tested.
 - Always prefer the schema; if in doubt, use action="unknown".
 """
 
@@ -1551,6 +1602,11 @@ RULES:
 class VoiceCommandRequest(BaseModel):
     transcript: str
     model: Optional[str] = "gpt-5.2"
+    # iter-100.9 — optional scene snapshot lets the LLM ground references
+    # like "the selected item" or "each corner" in actual geometry. The
+    # frontend collects this via store.getSceneSnapshot(). Shape:
+    #   {selection: {bbox: {min:[x,y,z], max:[x,y,z]}, count}, ...}
+    scene: Optional[Dict[str, Any]] = None
 
 
 class VoiceCommandResponse(BaseModel):
@@ -1568,13 +1624,34 @@ async def parse_voice_command(req: VoiceCommandRequest):
     text = (req.transcript or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Empty transcript")
+    # Lazy import so the templates package only loads when voice is hit
+    # (kept the cold-start cost off every other API call).
+    from voice_templates import prompt_descriptions
+    system_prompt = VOICE_SYSTEM_PROMPT.replace(
+        "%TEMPLATE_CATALOG%", prompt_descriptions()
+    )
+    # Compose the user message — transcript plus optional compact scene
+    # snapshot so the LLM can reason about the current plate.
+    user_text = text
+    if req.scene:
+        # Keep scene payload small — JSON-dump only the keys that
+        # actually inform planning. Avoid sending object geometry
+        # (worker only needs counts + bbox).
+        scene_snip = {
+            k: v for k, v in (req.scene or {}).items()
+            if k in ("selection", "build_volume", "object_count", "mode")
+        }
+        user_text = (
+            f"USER: {text}\n\n"
+            f"SCENE: {_json.dumps(scene_snip, separators=(',',':'))}"
+        )
     try:
         chat = LlmChat(
             api_key=key,
             session_id=f"voice-{uuid.uuid4().hex[:8]}",
-            system_message=VOICE_SYSTEM_PROMPT,
+            system_message=system_prompt,
         ).with_model("openai", req.model or "gpt-5.2")
-        response = await chat.send_message(UserMessage(text=text))
+        response = await chat.send_message(UserMessage(text=user_text))
         # Strip any accidental code fences
         body = (response or "").strip()
         if body.startswith("```"):
@@ -1663,6 +1740,55 @@ async def transcribe_audio(file: UploadFile = File(...)):
             os.unlink(tmp.name)
         except Exception:
             pass
+
+
+# Voice template expansion. Frontend calls this with the {template_id,
+# params} the LLM returned; we run the deterministic builder and return
+# the step list. Kept separate from /voice/command so the LLM cost only
+# happens once per utterance and the (cheap, pure-Python) expansion can
+# be retried / replayed without re-asking the model.
+class TemplateExpandRequest(BaseModel):
+    template_id: str
+    params: Optional[Dict[str, Any]] = None
+
+
+class TemplateExpandResponse(BaseModel):
+    template_id: str
+    steps: List[Dict[str, Any]]
+    summary: str
+
+
+@api_router.post("/voice/expand-template", response_model=TemplateExpandResponse)
+async def expand_voice_template(req: TemplateExpandRequest):
+    """Run a registered template's deterministic builder. Returns the
+    ordered step list the frontend Plan Preview will display + execute."""
+    from voice_templates import expand, TEMPLATES
+    tid = (req.template_id or "").strip()
+    if tid not in TEMPLATES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown template_id={tid!r}; known: {sorted(TEMPLATES.keys())}",
+        )
+    try:
+        steps = expand(tid, req.params or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Template expansion failed")
+        raise HTTPException(status_code=500, detail=f"Template build error: {e}")
+    label = TEMPLATES[tid].META.get("label", tid)
+    return TemplateExpandResponse(
+        template_id=tid,
+        steps=steps,
+        summary=f"{label} — {len(steps)} step{'s' if len(steps) != 1 else ''}",
+    )
+
+
+@api_router.get("/voice/templates")
+async def list_voice_templates():
+    """Public catalogue of voice templates — handy for docs / debug UI."""
+    from voice_templates import list_templates
+    return {"templates": list_templates()}
 
 
 app.include_router(api_router)

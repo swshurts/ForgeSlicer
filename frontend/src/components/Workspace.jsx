@@ -25,6 +25,7 @@ import { saveProjectJSON } from "../lib/exporters";
 import { pickNextUnseen, markSeen, tipProgress } from "../lib/tipsLibrary";
 import { reportSceneOversize } from "../lib/oversizeCheck";
 import SubdivideDialog from "./dialogs/SubdivideDialog";
+import PlanPreviewDialog from "./PlanPreviewDialog";
 import WorkspaceDropZone from "./WorkspaceDropZone";
 
 export default function Workspace() {
@@ -799,6 +800,7 @@ export default function Workspace() {
         objectId={subdivideTargetId}
         onClose={() => setSubdivideTargetId(null)}
       />
+      <PlanPreviewDialog />
       {importBanner && (
         <div
           data-testid="import-banner"
