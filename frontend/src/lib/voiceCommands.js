@@ -47,7 +47,34 @@ export async function executeCommand(cmd) {
       if (raw.dims && Object.keys(raw.dims).length) {
         s.updateDims(id, raw.dims);
       }
-      return `Added ${modifier} ${type}${raw.dims ? ` (${Object.entries(raw.dims).map(([k,v]) => `${k}=${v}`).join(", ")})` : ""}`;
+      // Honour optional position / rotation — the LLM now emits these
+      // when the user mentions coordinates, corner anchors, or angles
+      // alongside the primitive itself. Previously these were silently
+      // dropped (the executor only handled dims), so "add a negative
+      // cube … with the upper-left corner at (-35, -14)" produced a
+      // cube at the world origin and confused the user.
+      const pos = raw.position || raw.pos;
+      if (pos && (pos.x != null || pos.y != null || pos.z != null)) {
+        const obj = useScene.getState().objects.find((o) => o.id === id);
+        const np = [
+          pos.x ?? obj?.position?.[0] ?? 0,
+          pos.y ?? obj?.position?.[1] ?? 0,
+          pos.z ?? obj?.position?.[2] ?? 0,
+        ];
+        s.setTransformWithHistory(id, "position", np);
+      }
+      const rot = raw.rotation || raw.rot;
+      if (rot && (rot.x != null || rot.y != null || rot.z != null)) {
+        const obj = useScene.getState().objects.find((o) => o.id === id);
+        const nr = [
+          rot.x ?? obj?.rotation?.[0] ?? 0,
+          rot.y ?? obj?.rotation?.[1] ?? 0,
+          rot.z ?? obj?.rotation?.[2] ?? 0,
+        ];
+        s.setTransformWithHistory(id, "rotation", nr);
+      }
+      const posDesc = pos ? ` @ (${pos.x ?? 0}, ${pos.y ?? 0}, ${pos.z ?? 0})` : "";
+      return `Added ${modifier} ${type}${raw.dims ? ` (${Object.entries(raw.dims).map(([k,v]) => `${k}=${v}`).join(", ")})` : ""}${posDesc}`;
     }
     case "translate": {
       const d = raw.delta || {};

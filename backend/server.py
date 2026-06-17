@@ -1482,7 +1482,9 @@ ALLOWED ACTIONS and their schemas:
 1. Add a primitive:
    {"action":"add","type":"cube"|"sphere"|"cylinder"|"cone"|"torus"|"circle"|"square2d"|"triangle"|"polygon",
     "modifier":"positive"|"negative",
-    "dims":{ ... see per-type below ... }}
+    "dims":{ ... see per-type below ... },
+    "position":{x,y,z}?,        # optional — places the CENTRE of the part at (x,y,z) mm.
+    "rotation":{x,y,z}?}        # optional — Euler degrees applied at creation.
    dims by type (all values in millimetres unless noted):
      cube     : {x,y,z}
      sphere   : {r}
@@ -1493,6 +1495,25 @@ ALLOWED ACTIONS and their schemas:
      square2d : {side,h}
      triangle : {r,h}
      polygon  : {r,sides,h}
+
+   POSITION RULES (critical — when the user mentions ANY coordinate or
+   anchor, you MUST include `position`. Never drop coordinates silently;
+   if you can't be confident, return action="unknown" instead):
+   - "at (X, Y, Z)" / "position X Y Z" / "centred at X Y Z" — treat as
+     centre coordinates. Convert directly to `{x: X, y: Y, z: Z}`.
+   - "upper-left corner at (X, Y)" — the user is specifying where ONE
+     CORNER sits. Compute the centre yourself:
+       cube w×d at corner C:
+         "upper-left at (X, Y)"  → centre = (X + w/2, Y - d/2)
+         "lower-left at (X, Y)"  → centre = (X + w/2, Y + d/2)
+         "upper-right at (X, Y)" → centre = (X - w/2, Y - d/2)
+         "lower-right at (X, Y)" → centre = (X - w/2, Y + d/2)
+     "Upper" / "lower" refer to the +Y / -Y bed axis (top-down sketch view).
+   - Two-coordinate placement "at (X, Y)" implies Z defaults to half the
+     part's height so the bottom sits on the bed (Y=0 in world). E.g. a
+     cube 10×10×5 placed "at (-35, -14)" → centre (-35, -14, 2.5).
+   - If the user gives BOTH a position and a uniform `bottom on bed` ask,
+     respect the position they typed.
 
 2. Transform the current selection:
    {"action":"translate","delta":{x,y,z}}      # mm, additive
@@ -1584,10 +1605,54 @@ ALLOWED ACTIONS and their schemas:
       • "Create a Pi 4 faceplate with the HDMI and USB-C cutouts" →
         {"action":"template","template_id":"board_faceplate",
          "params":{"board":"raspberry_pi_4b", "faces":["-x"]}}
+      • "Add the three cutouts for the USB and Ethernet connectors of an RPI4" →
+        {"action":"template","template_id":"board_faceplate",
+         "params":{"board":"raspberry_pi_4b", "faces":["+y"], "skip_plate":true}}
+        (DESCRIBING the long-edge connectors of a board → faceplate
+         template with faces=["+y"]; "the three cutouts" / "USB +
+         Ethernet" / "the connectors on the side" all map to the +y face.
+         Use skip_plate:true when the user clearly wants ONLY the cutout
+         negatives — not a plate around them — so the template returns
+         floating negative pockets the user can drop onto their own plate.)
+      • "Add USB, HDMI, and audio cutouts for a Pi 4" →
+        {"action":"template","template_id":"board_faceplate",
+         "params":{"board":"raspberry_pi_4b","faces":["+y","-x"],"skip_plate":true}}
+        (USB+Ethernet → "+y"; HDMI/USB-C/audio jack → "-x".)
       • "Make a 90-degree bracket for a 6 inch deep shelf that's
          1 inch thick and supports 30 pounds" →
         {"action":"template","template_id":"right_angle_bracket",
          "params":{"shelf_depth_in":6,"shelf_thickness_in":1,"load_lb":30}}
+
+    DESCRIPTIVE → TEMPLATE MAPPING (CRITICAL — do NOT return "unknown" when
+    the user describes a known PART by its FUNCTION instead of by name):
+    - "cutouts for [board] connectors" / "openings for the ports of [board]"
+      / "the holes for the [USB/HDMI/Ethernet] on [board]" →
+      `board_faceplate` template. Identify the board from any mentioned
+      model name (Pi 4, Pi 5, Arduino Mega, etc) and the connector list
+      from any face hints (USB+Ethernet → +y, HDMI/USB-C → -x).
+    - "mounting plate / tray / front panel for [board]" → `board_faceplate`.
+    - "shelf bracket / corner brace / L-bracket / angle iron" →
+      `right_angle_bracket`.
+    - "cabinet handle / drawer handle / pull / knob" → `drawer_pull`.
+    - "screwdriver / wrench / pen / brush holder" → `tool_holder`.
+
+    If the user gives a POSITION for the WHOLE generated template (e.g.
+    "with the lower-left corner at (X, Y)" or "centred at (X, Y, Z)"),
+    emit a TWO-step PLAN: the template followed by a TRANSLATE applied
+    to everything the template just produced. Use `translate` with delta
+    (not `position` with absolute coords) because templates emit many
+    parts and a translate shifts them all coherently:
+       {"action":"plan","steps":[
+         {"action":"template","template_id":"board_faceplate","params":{...}},
+         {"action":"translate","targets":["all-current"],
+          "delta":{"x":X_offset,"y":0,"z":Y_offset}}
+       ]}
+    The 2D coords the user types map to world (X → world X, Y → world Z).
+    For "centred at (X, Y)" use delta = (X, 0, Y). For "lower-left at
+    (X, Y)" the user wants the assembly's MIN corner at those coords; if
+    you know the template's L×W (e.g. Pi 4 = 85×56 mm), shift the centre
+    to (X+L/2, 0, Y+W/2). When unsure of L×W, use delta = (X, 0, Y) and
+    note "approximate — adjust if needed" in the step's `note` field.
 
 SCENE CONTEXT (NEW): the request body may include a "scene" field with
 {selection:{bbox:{min:[x,y,z],max:[x,y,z]},count}, build_volume:{x,y,z},

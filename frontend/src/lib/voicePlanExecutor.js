@@ -137,6 +137,60 @@ export async function executeStep(step, state) {
     return { ok: true };
   }
 
+  if (step.action === "template") {
+    // Nested template step inside a plan. Fetch the deterministic
+    // sub-steps from the backend and execute them inline so the parent
+    // plan can reference the result via the parent step's `tag`. Without
+    // this, a LLM-emitted plan like
+    //   [{action:"template", tag:"X"}, {action:"translate", targets:["tag:X"]}]
+    // would fail at the template step with "Unknown step action".
+    const tid = step.template_id;
+    if (!tid) return { ok: false, reason: "Template step missing template_id" };
+    let expansion;
+    try {
+      expansion = await expandTemplate(tid, step.params || {});
+    } catch (err) {
+      return { ok: false, reason: `Template expansion failed: ${err?.response?.data?.detail || err.message || err}` };
+    }
+    const beforeCount = state.addedIds.length;
+    for (const sub of (expansion.steps || [])) {
+      const sr = await executeStep(sub, state);
+      if (!sr.ok) return { ok: false, reason: `Sub-step failed: ${sr.reason || "unknown"}` };
+    }
+    // Bind the parent's tag (if any) to ALL ids the template produced —
+    // so subsequent steps can `targets:["tag:<parentTag>"]` and act on
+    // the whole template output as a unit.
+    if (step.tag) {
+      state.tagToIds[step.tag] = state.addedIds.slice(beforeCount);
+    }
+    state.lastAction = "template";
+    return { ok: true };
+  }
+
+  if (step.action === "position") {
+    // ("make a faceplate with its lower-left corner at X,Y"). Resolves
+    // the target via the same tag / step selector grammar as boolean
+    // and falls back to "all-current" so a plain `{"action":"position",
+    // "pos":{...}}` step right after an add lands on the just-added part.
+    const p = step.pos || step.position || {};
+    const targetSel = step.target ? [step.target] : (step.targets || ["all-current"]);
+    const ids = resolveTargets(targetSel, state);
+    if (ids.length === 0) return { ok: false, reason: "Position target empty" };
+    const setT = useScene.getState().setTransformWithHistory;
+    for (const id of ids) {
+      const o = useScene.getState().objects.find((x) => x.id === id);
+      if (!o) continue;
+      const np = [
+        p.x ?? o.position[0],
+        p.y ?? o.position[1],
+        p.z ?? o.position[2],
+      ];
+      setT(id, "position", np);
+    }
+    state.lastAction = "position";
+    return { ok: true };
+  }
+
   return { ok: false, reason: `Unknown step action: ${step.action}` };
 }
 
@@ -171,7 +225,14 @@ function resolveTargets(targets, state) {
       // Selection captured at plan start — survives intervening adds.
       state.originalSelection.forEach(push);
     } else if (t.startsWith("tag:")) {
-      push(state.tagToId[t.slice(4)]);
+      const name = t.slice(4);
+      // Single-id tag (set by an `add` step) → push the one id.
+      // Multi-id tag (set by a `template` step) → push every id.
+      if (state.tagToIds && state.tagToIds[name]) {
+        state.tagToIds[name].forEach(push);
+      } else {
+        push(state.tagToId[name]);
+      }
     } else if (t.startsWith("step:")) {
       const idx = parseInt(t.slice(5), 10);
       if (Number.isFinite(idx)) push(state.addedIds[idx]);
@@ -198,6 +259,11 @@ export async function executePlan(steps, { onProgress } = {}) {
   const state = {
     addedIds: [],
     tagToId: {},
+    // Multi-id tag resolution — used when a TEMPLATE step at plan level
+    // gets tagged. The template expands to many sub-steps, so the parent
+    // tag refers to "all the objects the template added". `resolveTargets`
+    // checks this map AFTER tagToId for `tag:<name>` lookups.
+    tagToIds: {},
     lastAction: null,
     originalSelection,
   };

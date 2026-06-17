@@ -212,6 +212,16 @@ META = {
                         "names other connectors (HDMI, USB-C, audio, etc.) or "
                         "asks for a full enclosure plate.",
         },
+        "skip_plate": {
+            "type": "boolean", "default": False,
+            "describe": "Set true when the user wants ONLY the connector "
+                        "cutouts as floating NEGATIVE pockets — no plate, "
+                        "no boolean step. Triggered by phrasing like 'add "
+                        "the cutouts for the USB and ethernet of a Pi 4' "
+                        "(they have their own plate and just want negatives "
+                        "to drop onto it). Default false = build a full "
+                        "faceplate.",
+        },
     },
 }
 
@@ -257,6 +267,12 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         faces_filter = {faces_param}
     else:
         faces_filter = set(faces_param)
+    # iter-102.4 — `skip_plate` lets the LLM emit JUST the cutouts as
+    # floating negative pockets (no surrounding plate, no boolean step).
+    # Used when the user describes "the cutouts for the USB/Ethernet
+    # connectors of a Pi 4" — they want to drop those onto an EXISTING
+    # plate of their own, not generate a new one.
+    skip_plate = bool(params.get("skip_plate", False))
 
     plate_L = L + 2 * border       # world X span
     plate_W = W + 2 * border       # world Z span
@@ -264,15 +280,18 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps: List[Dict[str, Any]] = []
 
     # Step 1: the base plate. `dims.z` is the THICKNESS (up axis).
-    # Position Y = thickness / 2 places the bottom on the bed.
-    steps.append(step_add(
-        "cube",
-        dims={"x": plate_L, "y": plate_W, "z": thickness},
-        position=[0.0, thickness / 2.0, 0.0],
-        tag="plate",
-        note=f"Base plate {plate_L:.1f} × {plate_W:.1f} × {thickness:.1f} mm "
-             f"({b['label']} + {border:.1f} mm border)",
-    ))
+    # Position Y = thickness / 2 places the bottom on the bed. Skipped
+    # entirely when `skip_plate` is set — the user wants raw negatives
+    # to apply to their own scene geometry.
+    if not skip_plate:
+        steps.append(step_add(
+            "cube",
+            dims={"x": plate_L, "y": plate_W, "z": thickness},
+            position=[0.0, thickness / 2.0, 0.0],
+            tag="plate",
+            note=f"Base plate {plate_L:.1f} × {plate_W:.1f} × {thickness:.1f} mm "
+                 f"({b['label']} + {border:.1f} mm border)",
+        ))
 
     # Board-local (mx, mz) corner is at world (-L/2, -W/2) on the plate.
     bx0 = -L / 2.0
@@ -333,15 +352,17 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # Step final: boolean-subtract all negatives from the plate (one
     # positive + many negatives means a single fold-left subtract is
-    # exactly right), then group the result.
-    steps.append(step_boolean(
-        "subtract",
-        targets=["all-current"],
-        note="Subtract cutouts & mount holes from the plate",
-    ))
-    steps.append(step_group(
-        f"{b['label']} faceplate",
-        targets=["all-current"],
-        note="Group the finished faceplate",
-    ))
+    # exactly right), then group the result. Skipped when there's no
+    # plate to subtract from.
+    if not skip_plate:
+        steps.append(step_boolean(
+            "subtract",
+            targets=["all-current"],
+            note="Subtract cutouts & mount holes from the plate",
+        ))
+        steps.append(step_group(
+            f"{b['label']} faceplate",
+            targets=["all-current"],
+            note="Group the finished faceplate",
+        ))
     return steps
