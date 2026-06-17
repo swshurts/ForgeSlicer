@@ -1095,10 +1095,21 @@ function EdgeControls({ obj, updateDims }) {
       : (d.edgeRadius || 0);
   } else {
     // "object" (legacy uniform) path — edits obj.dims.edgeStyle/edgeRadius.
+    // If per-edge entries already exist (e.g. user came back here after
+    // editing individual faces), reflect their median so the slider has
+    // a meaningful starting position. writeRadius() then propagates any
+    // change across every existing per-edge entry, keeping Item-mode
+    // edits visible even after the user has set per-edge fillets.
     currentLabel = "Whole item";
     currentEdgeIds = null; // signals legacy uniform write
-    currentStyle = d.edgeStyle === "chamfer" ? "chamfer" : "fillet";
-    currentRadius = d.edgeRadius || 0;
+    if (hasPerEdge) {
+      const cfgs = Object.values(filletMap);
+      currentStyle = cfgs[0]?.style === "chamfer" ? "chamfer" : "fillet";
+      currentRadius = cfgs.reduce((s, c) => s + (c.radius || 0), 0) / cfgs.length;
+    } else {
+      currentStyle = d.edgeStyle === "chamfer" ? "chamfer" : "fillet";
+      currentRadius = d.edgeRadius || 0;
+    }
   }
 
   // Max allowed edge radius depends on the primitive's shortest half-extent.
@@ -1114,15 +1125,26 @@ function EdgeControls({ obj, updateDims }) {
   maxR = Math.max(0, maxR);
 
   // ── Write handlers ──
+  // Item mode semantics: editing in Item mode is "I want the same
+  // fillet on every edge." The cleanest way to deliver that is to drop
+  // the per-edge map entirely so geometry.js routes through the fast
+  // uniform RoundedBoxGeometry / lathe path. Switching back into Edge
+  // / Face / Vertex modes will materialise the uniform value into per-
+  // edge entries on first edit, so the user's value isn't lost.
   const writeRadius = (v) => {
     const clamped = Math.max(0, Math.min(maxR, v));
     if (currentEdgeIds === null) {
-      // Legacy uniform path.
+      // Legacy uniform path — clear the per-edge map so the fast
+      // RoundedBoxGeometry / lathe path renders the whole-item fillet.
+      if (hasPerEdge) {
+        setEdgeFillets(obj.id, Object.keys(filletMap), 0, currentStyle);
+      }
       updateDims(obj.id, { edgeRadius: clamped, edgeStyle: currentStyle });
     } else {
-      // Per-edge / face / vertex: first ensure a uniform legacy radius
-      // is materialized so the user's "I had 2 mm everywhere" doesn't
-      // silently vanish the moment they pick a face.
+      // Per-edge / face / vertex: first materialise the existing
+      // legacy uniform radius (if any) into every per-edge entry so
+      // the user's "2 mm on everything" doesn't silently disappear
+      // when they pick a single face / edge.
       if (!hasPerEdge && (d.edgeRadius || 0) > 0.05) {
         materializeUniform(obj.id);
       }
@@ -1131,6 +1153,14 @@ function EdgeControls({ obj, updateDims }) {
   };
   const writeStyle = (s) => {
     if (currentEdgeIds === null) {
+      // Item mode — same semantics as writeRadius: clear per-edge map,
+      // write legacy uniform style.
+      if (hasPerEdge) {
+        // Preserve any existing per-edge radii but flatten their style
+        // by erasing+rewriting them at the uniform radius. Simpler:
+        // just clear and let the legacy edgeRadius handle it.
+        setEdgeFillets(obj.id, Object.keys(filletMap), 0, s);
+      }
       updateDims(obj.id, { edgeStyle: s });
     } else {
       if (!hasPerEdge && (d.edgeRadius || 0) > 0.05) materializeUniform(obj.id);

@@ -28,12 +28,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-06-14)
+## Current Open Items (as of 2026-06-17)
 
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
-### Recently completed (iter-101)
+### Recently completed (iter-102)
+- iter-102 (2026-06-17) — **Per-element fillet / chamfer (TinkerCAD/Fusion-style).** New Inspector mode picker (Item · Face · Edge · Vertex) plus viewport hit-zone overlay let users target individual sub-elements of cubes (12 edges, 6 faces, 8 vertices), cylinders (top/bottom edges, 3 faces), and cones (base edge, 2 faces). Picking an edge fillets just that edge; picking a face fillets all abutting edges; picking a vertex applies to the whole item. Item mode keeps the fast `RoundedBoxGeometry` / lathe path for whole-item uniform edits. New files: `lib/edgeFaceMeta.js` (canonical IDs + label tables), `lib/partialFillet.js` (Manifold-3D CSG for partial cube fillets, extended lathe for cyl/cone). Per-edge fillets stored in `obj.edgeFillets`; legacy `obj.dims.edgeStyle/edgeRadius` retained for the Item path. Editing seamlessly transitions in both directions — Item ↔ Per-edge — without losing the user's prior radius.
+- iter-102 (2026-06-17) — **Measurement label offset (TinkerCAD-style).** Distance labels no longer cover the picked points. Labels float perpendicular to the segment (biased toward +Y), scaled with segment length (clamped 6-18 mm), with a dashed leader line connecting the chip back to the segment midpoint. Endpoints visible at all camera angles. File: `components/viewport/MeasurementsOverlay.jsx`.
 - iter-101.5 (2026-06-14) — Typed-command popup beside Voice button (`Keyboard` icon → centered modal with textarea, Enter to submit, Esc to close). Accessibility / silent-room fallback that reuses the same `runCommand()` pipeline as Voice (PlanPreviewDialog included). Added `data-testid` hooks: `voice-type-btn`, `voice-type-popup`, `voice-type-input`, `voice-type-submit`, `voice-type-close`.
 - iter-101.4 (2026-06-13) — Board faceplate template defaults simplified: `include_mount_holes=False`, `faces=["+y"]`. Pi 4 default now produces a flat 95×66×3 mm plate with the 3 long-edge cutouts (USB 3.0 / USB 2.0 / GbE) — no mount-pillar tray and no short-edge HDMI/USB-C/audio cutouts unless explicitly requested.
 
