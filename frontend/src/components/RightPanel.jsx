@@ -1271,6 +1271,38 @@ function EdgeControls({ obj, updateDims }) {
         )}
       </div>
 
+      {/* Inline "other-edges default" indicator. Visible in Edge / Face /
+          Vertex modes when a global uniform radius exists on the cube.
+          Tells the user "the edges you DON'T explicitly edit are still
+          chamfered at 2 mm" so the layered (uniform + per-edge) model
+          isn't a surprise. Clicking Clear empties the legacy field so
+          the unedited edges go back to sharp without touching any
+          per-edge entries the user has built up. */}
+      {subSelectMode !== "object" && (d.edgeRadius || 0) > 0.05 && (
+        <div
+          data-testid="edge-uniform-default-indicator"
+          className="flex items-center justify-between gap-2 text-[10px] bg-slate-900/60 border border-slate-700 rounded px-2 py-1"
+        >
+          <span className="text-slate-400">
+            Other edges:
+            <span className="text-slate-200 font-medium ml-1">
+              {(d.edgeRadius || 0).toFixed(2)} mm {d.edgeStyle === "chamfer" ? "chamfer" : "fillet"}
+            </span>
+          </span>
+          <button
+            data-testid="edge-uniform-default-clear"
+            onClick={() => {
+              if (hasNonUnitScale) bakeScaleIntoDims(obj.id);
+              updateDims(obj.id, { edgeRadius: 0 });
+            }}
+            className="px-2 h-5 rounded text-[10px] text-slate-400 hover:text-orange-300 hover:bg-slate-800"
+            title="Make every edge that isn't individually filleted sharp again"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className={`flex gap-1 ${subSelectMode !== "object" && !subSelection ? "opacity-40 pointer-events-none" : ""}`}>
         <button
           data-testid="edge-style-fillet"
