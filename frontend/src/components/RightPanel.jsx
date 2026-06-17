@@ -1050,7 +1050,6 @@ function EdgeControls({ obj, updateDims }) {
   const subSelection = useScene((s) => s.subSelection);
   const setSubSelection = useScene((s) => s.setSubSelection);
   const setEdgeFillets = useScene((s) => s.setEdgeFillets);
-  const materializeUniform = useScene((s) => s.materializeUniformFilletsAsPerEdge);
   const bakeScaleIntoDims = useScene((s) => s.bakeScaleIntoDims);
 
   // If the object is carrying a non-unit mesh scale, the next fillet/
@@ -1165,13 +1164,11 @@ function EdgeControls({ obj, updateDims }) {
       }
       updateDims(obj.id, { edgeRadius: clamped, edgeStyle: currentStyle });
     } else {
-      // Per-edge / face / vertex: first materialise the existing
-      // legacy uniform radius (if any) into every per-edge entry so
-      // the user's "2 mm on everything" doesn't silently disappear
-      // when they pick a single face / edge.
-      if (!hasPerEdge && (d.edgeRadius || 0) > 0.05) {
-        materializeUniform(obj.id);
-      }
+      // Per-edge / face / vertex: write ONLY the picked edges. Other
+      // edges keep whatever they had (per-edge entries already set OR
+      // the global d.edgeRadius default applied in partialFillet.js).
+      // No "materialise uniform across all 12" — that surprised users
+      // by making a single-edge edit cascade to every other edge.
       setEdgeFillets(obj.id, currentEdgeIds, clamped, currentStyle);
     }
   };
@@ -1188,7 +1185,6 @@ function EdgeControls({ obj, updateDims }) {
       }
       updateDims(obj.id, { edgeStyle: s });
     } else {
-      if (!hasPerEdge && (d.edgeRadius || 0) > 0.05) materializeUniform(obj.id);
       // Re-write the current edges with the new style at the same radius.
       // If no radius set yet, default to 2 mm so the change is visible.
       const r = currentRadius > 0.05 ? currentRadius : Math.min(2, maxR);

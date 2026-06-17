@@ -200,8 +200,18 @@ function buildEdgePieces(wasm, edge, dimsLocal, r, style, segments) {
 
 /**
  * Build a THREE.BufferGeometry for a cube with per-edge fillets / chamfers.
- * Returns null on any failure — the caller falls back to the sharp cube
- * (or RoundedBoxGeometry if a legacy uniform edgeStyle is also set).
+ *
+ * Per-edge map (`obj.edgeFillets`) ALWAYS wins for the edges it lists. For
+ * any edge NOT explicitly in the map, this honours the legacy "Item mode"
+ * uniform radius (`obj.dims.edgeRadius` + `obj.dims.edgeStyle`) as the
+ * default — so a cube with a prior uniform 2 mm chamfer + a single 5 mm
+ * fillet on the bottom-right edge keeps the 2 mm on the other 11 edges.
+ * Without this, going to Edge mode after Item mode would silently make
+ * the other 11 edges sharp.
+ *
+ * Returns null on any failure or when no edge ends up active — the caller
+ * falls back to the sharp cube (or RoundedBoxGeometry for the pure uniform
+ * fast path).
  */
 export async function buildCubeGeometryWithFillets(obj) {
   const dims = obj.dims || {};
@@ -211,13 +221,28 @@ export async function buildCubeGeometryWithFillets(obj) {
   const dimsLocal = { x: w, y: h, z: dep };
 
   const fillets = obj.edgeFillets || {};
-  // Filter to entries with meaningful radius. Empty? Bail — caller
-  // will use the synchronous default cube path.
-  const activeEdges = CUBE_EDGES.filter((e) => {
-    const cfg = fillets[e.id];
-    return cfg && cfg.radius && cfg.radius > 0.05;
-  });
-  if (activeEdges.length === 0) return null;
+  const uniformR = Math.max(0, dims.edgeRadius || 0);
+  const uniformStyle = dims.edgeStyle === "chamfer" ? "chamfer" : "fillet";
+
+  // Walk every cube edge; for each, pick the explicit per-edge config if
+  // present, otherwise fall back to the uniform Item-mode values.
+  const planned = CUBE_EDGES
+    .map((e) => {
+      const cfg = fillets[e.id];
+      if (cfg && cfg.radius > 0.05) {
+        return { edge: e, r: cfg.radius, style: cfg.style === "chamfer" ? "chamfer" : "fillet" };
+      }
+      // Explicit zero in the per-edge map means "force this edge sharp"
+      // even if uniform is set — useful for "fillet everything except
+      // this one edge" workflows.
+      if (cfg && cfg.radius != null && cfg.radius <= 0.05) return null;
+      if (uniformR > 0.05) {
+        return { edge: e, r: uniformR, style: uniformStyle };
+      }
+      return null;
+    })
+    .filter(Boolean);
+  if (planned.length === 0) return null;
 
   const wasm = await getManifold();
   let cube = wasm.Manifold.cube([w, h, dep], true);
@@ -228,13 +253,11 @@ export async function buildCubeGeometryWithFillets(obj) {
 
   const owned = [cube];
   try {
-    for (const edge of activeEdges) {
-      const cfg = fillets[edge.id];
-      const r = clampEdgeRadius(edge, dimsLocal, cfg.radius);
+    for (const p of planned) {
+      const r = clampEdgeRadius(p.edge, dimsLocal, p.r);
       if (r <= 0.05) continue;
-      const style = cfg.style === "chamfer" ? "chamfer" : "fillet";
       const { block, replacement } = buildEdgePieces(
-        wasm, edge, dimsLocal, r, style, segs,
+        wasm, p.edge, dimsLocal, r, p.style, segs,
       );
       owned.push(block, replacement);
 
