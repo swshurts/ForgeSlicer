@@ -118,6 +118,56 @@ export const useScene = create((set, get) => ({
   measurements: [], // [{id, a:[x,y,z], b:[x,y,z], objIdA, objIdB}]
   pendingMeasurePoint: null,
 
+  // Bake a non-uniform mesh scale back into the primitive's dimensions
+  // so any further geometry generation (fillet/chamfer, CSG booleans)
+  // works in WORLD-SPACE millimetres rather than base-space. This is
+  // the CAD-correct behavior — TinkerCAD / Fusion 360 both treat
+  // dimensional edits as destructive and never carry a non-unit scale
+  // forward into fillet ops.
+  //
+  // Coordinate mapping (matches `geometry.js`):
+  //   • THREE local X = world X → cube dims.x, cylinder/cone radial
+  //   • THREE local Y = world Y (UP / height) → cube dims.z, cyl/cone dims.h
+  //   • THREE local Z = world Z (depth) → cube dims.y, cyl/cone radial
+  //
+  // For cylinder/cone the radial axis is shared by THREE's X and Z, so
+  // if the user applied a non-uniform X/Z scale we collapse them via
+  // geometric mean — preserving the apparent radius while admitting the
+  // primitive can't represent an ellipse natively.
+  //
+  // No-ops if scale is already [1,1,1] (within float tolerance).
+  bakeScaleIntoDims: (objId) => {
+    set((s) => ({
+      objects: s.objects.map((o) => {
+        if (o.id !== objId) return o;
+        const sc = o.scale || [1, 1, 1];
+        const isUnit = Math.abs(sc[0] - 1) < 1e-4 && Math.abs(sc[1] - 1) < 1e-4 && Math.abs(sc[2] - 1) < 1e-4;
+        if (isUnit) return o;
+        const d = { ...(o.dims || {}) };
+        if (o.type === "cube") {
+          d.x = (d.x || 20) * sc[0];
+          d.z = (d.z || 20) * sc[1];
+          d.y = (d.y || 20) * sc[2];
+        } else if (o.type === "cylinder" || o.type === "cone") {
+          const radialFactor = Math.sqrt(Math.max(0, sc[0]) * Math.max(0, sc[2])) || 1;
+          d.r = (d.r || 10) * radialFactor;
+          d.h = (d.h || 20) * sc[1];
+          if (d.r1 != null) d.r1 *= radialFactor;
+          if (d.r2 != null) d.r2 *= radialFactor;
+        } else if (o.type === "sphere") {
+          // Sphere is uniformly scalable — collapse all 3 into radius via cube root.
+          const f = Math.cbrt(Math.max(0, sc[0] * sc[1] * sc[2])) || 1;
+          d.r = (d.r || 10) * f;
+        } else {
+          // Unknown primitive — leave dims untouched and only reset the
+          // scale field. This is the conservative choice (no data loss).
+          return { ...o, scale: [1, 1, 1] };
+        }
+        return { ...o, dims: d, scale: [1, 1, 1] };
+      }),
+    }));
+  },
+
   // ---- sub-element selection (face / edge / vertex for fillet work) ----
   //
   // `subSelectMode` controls the picker overlay:

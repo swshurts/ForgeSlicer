@@ -1051,6 +1051,18 @@ function EdgeControls({ obj, updateDims }) {
   const setSubSelection = useScene((s) => s.setSubSelection);
   const setEdgeFillets = useScene((s) => s.setEdgeFillets);
   const materializeUniform = useScene((s) => s.materializeUniformFilletsAsPerEdge);
+  const bakeScaleIntoDims = useScene((s) => s.bakeScaleIntoDims);
+
+  // If the object is carrying a non-unit mesh scale, the next fillet/
+  // chamfer write would compute the radius in BASE-space mm — i.e. it
+  // would silently get sheared by the scale. CAD-correct behaviour
+  // (TinkerCAD / Fusion 360) is to bake the scale into dims first so
+  // the fillet radius is honoured in WORLD-space mm regardless of how
+  // the user shaped the primitive. We bake lazily inside the write
+  // handlers below so the user's first fillet edit also normalises
+  // the scale; subsequent edits are no-ops.
+  const sc = obj.scale || [1, 1, 1];
+  const hasNonUnitScale = Math.abs(sc[0] - 1) > 1e-4 || Math.abs(sc[1] - 1) > 1e-4 || Math.abs(sc[2] - 1) > 1e-4;
 
   // Lazy-imported metadata so this file doesn't grow a hard dep chain
   // across the whole component tree. The module is tiny.
@@ -1112,13 +1124,22 @@ function EdgeControls({ obj, updateDims }) {
     }
   }
 
-  // Max allowed edge radius depends on the primitive's shortest half-extent.
+  // Max allowed edge radius depends on the primitive's shortest half-
+  // extent — IN WORLD SPACE, since a non-unit mesh scale is about to be
+  // baked into dims on the next edit. Computing in base space would
+  // either over- or under-cap the slider relative to what the user
+  // sees in the viewport.
+  const effX = (d.x || 20) * sc[0];
+  const effY = (d.z || 20) * sc[1];  // world Y / height
+  const effZ = (d.y || 20) * sc[2];  // world Z / depth
   if (obj.type === "cube") {
-    maxR = Math.min(d.x || 20, d.y || 20, d.z || 20) / 2 - 0.001;
+    maxR = Math.min(effX, effZ, effY) / 2 - 0.001;
   } else if (obj.type === "cylinder") {
-    maxR = Math.min(d.r || 10, (d.h || 20) / 2) - 0.001;
+    const effR = (d.r || 10) * Math.sqrt(Math.max(0, sc[0]) * Math.max(0, sc[2]));
+    maxR = Math.min(effR, effY / 2) - 0.001;
   } else if (obj.type === "cone") {
-    maxR = Math.min(d.r || 10, d.h || 20) - 0.001;
+    const effR = (d.r || 10) * Math.sqrt(Math.max(0, sc[0]) * Math.max(0, sc[2]));
+    maxR = Math.min(effR, effY) - 0.001;
   } else {
     maxR = 10;
   }
@@ -1133,6 +1154,9 @@ function EdgeControls({ obj, updateDims }) {
   // edge entries on first edit, so the user's value isn't lost.
   const writeRadius = (v) => {
     const clamped = Math.max(0, Math.min(maxR, v));
+    // Normalise mesh scale into dims so the chamfer/fillet radius
+    // is honoured in world-space mm. No-op if scale is already unit.
+    if (hasNonUnitScale) bakeScaleIntoDims(obj.id);
     if (currentEdgeIds === null) {
       // Legacy uniform path — clear the per-edge map so the fast
       // RoundedBoxGeometry / lathe path renders the whole-item fillet.
@@ -1152,6 +1176,7 @@ function EdgeControls({ obj, updateDims }) {
     }
   };
   const writeStyle = (s) => {
+    if (hasNonUnitScale) bakeScaleIntoDims(obj.id);
     if (currentEdgeIds === null) {
       // Item mode — same semantics as writeRadius: clear per-edge map,
       // write legacy uniform style.
