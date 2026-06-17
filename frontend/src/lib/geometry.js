@@ -3,6 +3,11 @@ import { mergeVertices, mergeGeometries } from "three/examples/jsm/utils/BufferG
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { buildSweepGeometry } from "./sweepGeometry";
 import { buildTextureGeometry } from "./textureGeometry";
+import {
+  buildCylinderGeometryWithFillets,
+  buildConeGeometryWithFillets,
+  hasActiveEdgeFillets,
+} from "./partialFillet";
 
 /**
  * Merge a small list of buffer geometries into one. Three.js's bundled
@@ -180,6 +185,13 @@ export function buildGeometry(obj, scene = null) {
 
   if (t === "cube") {
     const w = d.x || 20, h = d.z || 20, dep = d.y || 20;
+    // Partial per-edge fillet path is async (Manifold-3D); Viewport
+    // builds it via buildCubeGeometryWithFillets() and overrides this
+    // synchronous result. Here we just return the SHARP cube so the
+    // user sees something correct until the async result lands.
+    if (hasActiveEdgeFillets(obj)) {
+      return new THREE.BoxGeometry(w, h, dep);
+    }
     const er = Math.max(0, d.edgeRadius || 0);
     if (er > 0.001) {
       // segments=1 → chamfered (single bevel); 4 → fillet (smooth round).
@@ -195,6 +207,11 @@ export function buildGeometry(obj, scene = null) {
   }
   if (t === "cylinder") {
     const r = d.r || 10, h = d.h || 20, segs = d.segments || 64;
+    // Per-edge fillet path runs through lathe (independent top/bottom).
+    if (hasActiveEdgeFillets(obj)) {
+      const g = buildCylinderGeometryWithFillets(obj);
+      if (g) return g;
+    }
     const er = Math.max(0, d.edgeRadius || 0);
     if (er > 0.001) {
       return buildLatheCylinder(r, h, er, segs, d.edgeStyle === "chamfer" ? "chamfer" : "fillet");
@@ -203,6 +220,10 @@ export function buildGeometry(obj, scene = null) {
   }
   if (t === "cone") {
     const r = d.r || 10, h = d.h || 20, segs = d.segments || 64;
+    if (hasActiveEdgeFillets(obj)) {
+      const g = buildConeGeometryWithFillets(obj);
+      if (g) return g;
+    }
     const er = Math.max(0, d.edgeRadius || 0);
     if (er > 0.001) {
       return buildLatheCone(r, h, er, segs, d.edgeStyle === "chamfer" ? "chamfer" : "fillet");

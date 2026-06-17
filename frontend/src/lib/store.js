@@ -118,6 +118,96 @@ export const useScene = create((set, get) => ({
   measurements: [], // [{id, a:[x,y,z], b:[x,y,z], objIdA, objIdB}]
   pendingMeasurePoint: null,
 
+  // ---- sub-element selection (face / edge / vertex for fillet work) ----
+  //
+  // `subSelectMode` controls the picker overlay:
+  //   "object" — default; nothing drawn. Inspector "Edge fillet" panel
+  //              edits the legacy whole-item uniform radius.
+  //   "face"   — hover/click on cube faces, cylinder caps/side, cone base/side.
+  //   "edge"   — hover/click on individual edges (12 per cube, 2 per cyl, 1 per cone).
+  //   "vertex" — hover/click on corners; selecting one applies the radius
+  //              to ALL edges of the item (equivalent to whole-item mode
+  //              but reachable from the 3D picker).
+  //
+  // `subSelection` stores the currently-highlighted sub-element. It is
+  // transient — cleared on object change or mode change.
+  subSelectMode: "object",
+  subSelection: null, // { kind: "face"|"edge"|"vertex", id: string } | null
+  setSubSelectMode: (m) => set((s) => ({
+    subSelectMode: m,
+    // Switching out of "object" clears any prior pick so we don't keep
+    // a stale highlight; switching back to "object" also clears it.
+    subSelection: m === s.subSelectMode ? s.subSelection : null,
+  })),
+  setSubSelection: (sub) => set({ subSelection: sub }),
+  clearSubSelection: () => set({ subSelection: null }),
+
+  // Apply a fillet/chamfer to the resolved set of edges for the current
+  // primary selection. `edgeIds` is a list of canonical edge IDs (from
+  // edgeFaceMeta.js); `radius` and `style` are the new values. Passing
+  // `radius=0` deletes those edges from the per-edge map, returning
+  // them to "sharp" (or to the legacy uniform radius if one is set).
+  setEdgeFillets: (objId, edgeIds, radius, style) => {
+    get().pushHistory();
+    set((s) => ({
+      objects: s.objects.map((o) => {
+        if (o.id !== objId) return o;
+        const next = { ...(o.edgeFillets || {}) };
+        for (const eid of edgeIds) {
+          if (!radius || radius <= 0.05) {
+            delete next[eid];
+          } else {
+            next[eid] = { style: style === "chamfer" ? "chamfer" : "fillet", radius };
+          }
+        }
+        const out = { ...o, edgeFillets: next };
+        // If the per-edge map became empty, drop the field so the legacy
+        // uniform path can take over cleanly.
+        if (Object.keys(next).length === 0) delete out.edgeFillets;
+        return out;
+      }),
+    }));
+  },
+
+  // Convenience: take the legacy uniform edgeStyle/edgeRadius and
+  // materialise it across every edge of the primitive's per-edge map.
+  // Used when the user switches from "Item" mode into "Edge" mode and
+  // we want their existing uniform radius to be the starting point.
+  materializeUniformFilletsAsPerEdge: (objId) => {
+    set((s) => ({
+      objects: s.objects.map((o) => {
+        if (o.id !== objId) return o;
+        if (o.edgeFillets && Object.keys(o.edgeFillets).length) return o; // already per-edge
+        const r = o.dims?.edgeRadius || 0;
+        if (r <= 0.05) return o;
+        const style = o.dims?.edgeStyle === "chamfer" ? "chamfer" : "fillet";
+        // Use the edge IDs appropriate to the primitive type. The list
+        // comes from edgeFaceMeta — import here would create a cycle so
+        // we do a literal list inline. Keep this in sync with CUBE_EDGES
+        // / CYLINDER_EDGES / CONE_EDGES.
+        let ids = [];
+        if (o.type === "cube") {
+          ids = [
+            "e_X_minY_minZ","e_X_minY_maxZ","e_X_maxY_minZ","e_X_maxY_maxZ",
+            "e_Y_minX_minZ","e_Y_minX_maxZ","e_Y_maxX_minZ","e_Y_maxX_maxZ",
+            "e_Z_minX_minY","e_Z_minX_maxY","e_Z_maxX_minY","e_Z_maxX_maxY",
+          ];
+        } else if (o.type === "cylinder") {
+          ids = ["e_top", "e_bottom"];
+        } else if (o.type === "cone") {
+          ids = ["e_base"];
+        }
+        const next = {};
+        for (const eid of ids) next[eid] = { style, radius: r };
+        // Clear the legacy fields so they don't double-apply.
+        const dims = { ...o.dims };
+        delete dims.edgeRadius;
+        delete dims.edgeStyle;
+        return { ...o, dims, edgeFillets: next };
+      }),
+    }));
+  },
+
   // ---- component-pair dimensions (Blender-style) ----
   // Persistent annotations tying two scene objects together — the world
   // points are recomputed live from the objects' bboxes, so the chip
@@ -1001,17 +1091,24 @@ export const useScene = create((set, get) => ({
   //   - mode='exact'  (programmatic)  : exactly select [id] without group expansion.
   selectObject: (id, mode = null) => {
     set((s) => {
-      if (id === null) return { selectedId: null, selectedIds: [] };
+      // Sub-element selections are only meaningful for the currently
+      // primary-selected object. When primary selection changes, drop
+      // any stale sub-pick so the inspector / overlay don't stay
+      // anchored to an object the user is no longer looking at.
+      const subPatch = (id === null || id !== s.selectedId)
+        ? { subSelection: null, subSelectMode: "object" }
+        : {};
+      if (id === null) return { selectedId: null, selectedIds: [], ...subPatch };
       if (!mode) {
         const target = s.objects.find((o) => o.id === id);
         if (target && target.groupId) {
           const groupMembers = s.objects.filter((o) => o.groupId === target.groupId).map((o) => o.id);
-          return { selectedId: id, selectedIds: groupMembers };
+          return { selectedId: id, selectedIds: groupMembers, ...subPatch };
         }
-        return { selectedId: id, selectedIds: [id] };
+        return { selectedId: id, selectedIds: [id], ...subPatch };
       }
       if (mode === "exact") {
-        return { selectedId: id, selectedIds: [id] };
+        return { selectedId: id, selectedIds: [id], ...subPatch };
       }
       const current = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
       const has = current.includes(id);
@@ -1024,10 +1121,11 @@ export const useScene = create((set, get) => ({
       return {
         selectedIds: next,
         selectedId: next.length ? (has && mode === "toggle" ? next[next.length - 1] || null : id) : null,
+        ...subPatch,
       };
     });
   },
-  clearSelection: () => set({ selectedId: null, selectedIds: [] }),
+  clearSelection: () => set({ selectedId: null, selectedIds: [], subSelection: null, subSelectMode: "object" }),
 
   // Duplicate every currently-selected object. Optionally mirror each copy
   // along a world axis (x/y/z) by negating that scale component and reflecting

@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from "react";
+import React, { useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edges, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
@@ -6,6 +6,8 @@ import { X, Pin } from "lucide-react";
 import { useScene } from "../lib/store";
 import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
+import { buildCubeGeometryWithFillets, hasActiveEdgeFillets } from "../lib/partialFillet";
+import { cubeEdgeEndpoints, cubeFaceQuads, cubeVertexPositions } from "../lib/edgeFaceMeta";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { nearestSnapPoint, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
 import ContextMenu from "./ContextMenu";
@@ -56,11 +58,35 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
   const geom = useMemo(
     () => buildGeometry(obj, scene),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [obj.type, JSON.stringify(obj.dims), refSig]
+    [obj.type, JSON.stringify(obj.dims), refSig, JSON.stringify(obj.edgeFillets || null)]
   );
+  // Async override: if this is a cube with per-edge fillets, the sync
+  // path returned a SHARP cube as a placeholder. Kick off a Manifold-
+  // based partial-fillet build and swap the geometry in when ready.
+  // Signature includes obj.edgeFillets so any edit retriggers a rebuild.
+  const [asyncGeom, setAsyncGeom] = useState(null);
+  const filletSig = obj.type === "cube" ? JSON.stringify(obj.edgeFillets || null) : null;
+  useEffect(() => {
+    if (obj.type !== "cube" || !hasActiveEdgeFillets(obj)) {
+      setAsyncGeom(null);
+      return;
+    }
+    let cancelled = false;
+    buildCubeGeometryWithFillets(obj)
+      .then((g) => { if (!cancelled && g) setAsyncGeom(g); })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn("partial-fillet build failed; falling back to sharp cube:", err);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obj.type, filletSig, JSON.stringify(obj.dims)]);
+
+  const liveGeom = asyncGeom || geom;
   const color = colorForObject(obj);
 
   useEffect(() => () => geom.dispose(), [geom]);
+  useEffect(() => () => { if (asyncGeom) asyncGeom.dispose(); }, [asyncGeom]);
   if (!obj.visible) return null;
 
   return (
@@ -73,7 +99,7 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
         THREE.MathUtils.degToRad(obj.rotation[2]),
       ]}
       scale={obj.scale}
-      geometry={geom}
+      geometry={liveGeom}
       onClick={(e) => {
         e.stopPropagation();
         if (measureMode) {
@@ -105,6 +131,294 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
       {isSelected && <Edges threshold={20} color="#FFFFFF" scale={1.001} />}
     </mesh>
   );
+}
+
+// ---------- Sub-element pick overlay (face / edge / vertex) ----------
+// Renders hover/clickable widgets over a cube, cylinder, or cone to let
+// the user pick a face / edge / corner for the EdgeControls panel. The
+// overlay is positioned so it shares the same transform as the host
+// object (its `position`, `rotation`, `scale`), then sits in object-
+// local space — keeping the edge IDs stable under any rotation.
+function SubElementPickOverlay({ obj }) {
+  const subSelectMode = useScene((s) => s.subSelectMode);
+  const subSelection = useScene((s) => s.subSelection);
+  const setSubSelection = useScene((s) => s.setSubSelection);
+  const measureMode = useScene((s) => s.measureMode);
+  const rulerMode = useScene((s) => s.rulerMode);
+  const cutMode = useScene((s) => s.cutMode);
+  const filletMap = obj.edgeFillets || {};
+  const [hoverId, setHoverId] = useState(null);
+
+  if (subSelectMode === "object") return null;
+  // Other interactive modes own the pointer — hide our picker so clicks
+  // don't get swallowed before they reach the measure / ruler / cut
+  // pointer handlers on the underlying SceneObject mesh.
+  if (measureMode || rulerMode || cutMode) return null;
+  if (!["cube", "cylinder", "cone"].includes(obj.type)) return null;
+
+  const onPick = (kind, id) => (e) => {
+    e.stopPropagation();
+    setSubSelection({ kind, id });
+  };
+
+  const baseProps = {
+    position: obj.position,
+    rotation: [
+      THREE.MathUtils.degToRad(obj.rotation[0]),
+      THREE.MathUtils.degToRad(obj.rotation[1]),
+      THREE.MathUtils.degToRad(obj.rotation[2]),
+    ],
+    scale: obj.scale,
+  };
+
+  // ── Cube: 12 edges, 6 faces, 8 vertices ──
+  if (obj.type === "cube") {
+    const dims = obj.dims || {};
+    if (subSelectMode === "edge") {
+      const edges = cubeEdgeEndpoints(dims);
+      return (
+        <group {...baseProps}>
+          {edges.map((e) => {
+            const isPicked = subSelection?.kind === "edge" && subSelection.id === e.id;
+            const isHover = hoverId === e.id;
+            const hasFillet = !!filletMap[e.id];
+            const color = isPicked ? "#F97316" : isHover ? "#FB923C" : hasFillet ? "#22C55E" : "#94A3B8";
+            // Centerpoint + axis length for the hit cylinder.
+            const mid = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2, (e.a[2] + e.b[2]) / 2];
+            const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], dz = e.b[2] - e.a[2];
+            const len = Math.hypot(dx, dy, dz);
+            const dir = new THREE.Vector3(dx, dy, dz).normalize();
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+            const r = (isPicked || isHover) ? 0.9 : 0.4;
+            // Unpicked default — subtle, gets stronger on hover / pick so
+            // the overlay reads as "here are the edges you CAN click",
+            // not "your cube is now striped".
+            const opacity = isPicked ? 1 : isHover ? 0.85 : hasFillet ? 0.7 : 0.35;
+            return (
+              <mesh
+                key={e.id}
+                position={mid}
+                quaternion={q}
+                onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(e.id); }}
+                onPointerOut={() => setHoverId((h) => h === e.id ? null : h)}
+                onClick={onPick("edge", e.id)}
+                renderOrder={2000}
+              >
+                <cylinderGeometry args={[r, r, len, 12]} />
+                <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
+              </mesh>
+            );
+          })}
+        </group>
+      );
+    }
+    if (subSelectMode === "face") {
+      const quads = cubeFaceQuads(dims);
+      return (
+        <group {...baseProps}>
+          {quads.map((f) => {
+            const isPicked = subSelection?.kind === "face" && subSelection.id === f.id;
+            const isHover = hoverId === f.id;
+            const color = isPicked ? "#F97316" : isHover ? "#FB923C" : "#0EA5E9";
+            // Build a quad oriented along the face normal. Use a Plane
+            // geometry whose +Z normal we rotate to match `f.normal`.
+            const n = new THREE.Vector3(...f.normal);
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+            return (
+              <mesh
+                key={f.id}
+                position={f.center}
+                quaternion={q}
+                onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(f.id); }}
+                onPointerOut={() => setHoverId((h) => h === f.id ? null : h)}
+                onClick={onPick("face", f.id)}
+                renderOrder={1990}
+              >
+                <planeGeometry args={[f.half[0] * 2 * 0.96, f.half[1] * 2 * 0.96]} />
+                <meshBasicMaterial
+                  color={color}
+                  transparent
+                  opacity={isPicked ? 0.45 : isHover ? 0.35 : 0.18}
+                  depthTest={false}
+                  side={THREE.DoubleSide}
+                />
+              </mesh>
+            );
+          })}
+        </group>
+      );
+    }
+    if (subSelectMode === "vertex") {
+      const verts = cubeVertexPositions(dims);
+      return (
+        <group {...baseProps}>
+          {verts.map((v) => {
+            const isPicked = subSelection?.kind === "vertex" && subSelection.id === v.id;
+            const isHover = hoverId === v.id;
+            const color = isPicked ? "#F97316" : isHover ? "#FB923C" : "#EAB308";
+            const r = (isPicked || isHover) ? 1.4 : 1.0;
+            return (
+              <mesh
+                key={v.id}
+                position={v.p}
+                onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(v.id); }}
+                onPointerOut={() => setHoverId((h) => h === v.id ? null : h)}
+                onClick={onPick("vertex", v.id)}
+                renderOrder={2010}
+              >
+                <sphereGeometry args={[r, 16, 16]} />
+                <meshBasicMaterial color={color} transparent opacity={isPicked ? 1 : 0.9} depthTest={false} />
+              </mesh>
+            );
+          })}
+        </group>
+      );
+    }
+  }
+
+  // ── Cylinder: 2 edges (torus rings), 3 faces (caps + side) ──
+  if (obj.type === "cylinder") {
+    const r = obj.dims?.r || 10;
+    const h = obj.dims?.h || 20;
+    const half = h / 2;
+    if (subSelectMode === "edge") {
+      // Render two thin torus rings at y=±half.
+      const ringR = Math.max(0.5, Math.min(1.0, r * 0.05));
+      return (
+        <group {...baseProps}>
+          {["e_top", "e_bottom"].map((id) => {
+            const y = id === "e_top" ? half : -half;
+            const isPicked = subSelection?.kind === "edge" && subSelection.id === id;
+            const isHover = hoverId === id;
+            const hasFillet = !!filletMap[id];
+            const color = isPicked ? "#F97316" : isHover ? "#FB923C" : hasFillet ? "#22C55E" : "#94A3B8";
+            return (
+              <mesh
+                key={id}
+                position={[0, y, 0]}
+                rotation={[Math.PI / 2, 0, 0]}
+                onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
+                onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
+                onClick={onPick("edge", id)}
+                renderOrder={2000}
+              >
+                <torusGeometry args={[r, ringR, 8, 48]} />
+                <meshBasicMaterial color={color} transparent opacity={isPicked ? 1 : 0.85} depthTest={false} />
+              </mesh>
+            );
+          })}
+        </group>
+      );
+    }
+    if (subSelectMode === "face") {
+      return (
+        <group {...baseProps}>
+          {/* Top cap */}
+          {["f_top", "f_bottom"].map((id) => {
+            const y = id === "f_top" ? half : -half;
+            const isPicked = subSelection?.kind === "face" && subSelection.id === id;
+            const isHover = hoverId === id;
+            const color = isPicked ? "#F97316" : isHover ? "#FB923C" : "#0EA5E9";
+            return (
+              <mesh
+                key={id}
+                position={[0, y, 0]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
+                onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
+                onClick={onPick("face", id)}
+                renderOrder={1990}
+              >
+                <circleGeometry args={[r * 0.97, 48]} />
+                <meshBasicMaterial color={color} transparent opacity={isPicked ? 0.45 : isHover ? 0.35 : 0.18} depthTest={false} side={THREE.DoubleSide} />
+              </mesh>
+            );
+          })}
+          {/* Side */}
+          {(() => {
+            const id = "f_side";
+            const isPicked = subSelection?.kind === "face" && subSelection.id === id;
+            const isHover = hoverId === id;
+            const color = isPicked ? "#F97316" : isHover ? "#FB923C" : "#0EA5E9";
+            return (
+              <mesh
+                key={id}
+                onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
+                onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
+                onClick={onPick("face", id)}
+                renderOrder={1985}
+              >
+                <cylinderGeometry args={[r * 1.005, r * 1.005, h * 0.98, 48, 1, true]} />
+                <meshBasicMaterial color={color} transparent opacity={isPicked ? 0.4 : isHover ? 0.3 : 0.15} depthTest={false} side={THREE.DoubleSide} />
+              </mesh>
+            );
+          })()}
+        </group>
+      );
+    }
+  }
+
+  // ── Cone: 1 edge (base ring), 2 faces (base + side) ──
+  if (obj.type === "cone") {
+    const r = obj.dims?.r || 10;
+    const h = obj.dims?.h || 20;
+    const half = h / 2;
+    if (subSelectMode === "edge") {
+      const ringR = Math.max(0.5, Math.min(1.0, r * 0.05));
+      const id = "e_base";
+      const isPicked = subSelection?.kind === "edge" && subSelection.id === id;
+      const isHover = hoverId === id;
+      const hasFillet = !!filletMap[id];
+      const color = isPicked ? "#F97316" : isHover ? "#FB923C" : hasFillet ? "#22C55E" : "#94A3B8";
+      return (
+        <group {...baseProps}>
+          <mesh
+            position={[0, -half, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
+            onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
+            onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
+            onClick={onPick("edge", id)}
+            renderOrder={2000}
+          >
+            <torusGeometry args={[r, ringR, 8, 48]} />
+            <meshBasicMaterial color={color} transparent opacity={isPicked ? 1 : 0.85} depthTest={false} />
+          </mesh>
+        </group>
+      );
+    }
+    if (subSelectMode === "face") {
+      const baseId = "f_base", sideId = "f_side";
+      const baseIsPicked = subSelection?.kind === "face" && subSelection.id === baseId;
+      const sideIsPicked = subSelection?.kind === "face" && subSelection.id === sideId;
+      const baseHover = hoverId === baseId, sideHover = hoverId === sideId;
+      return (
+        <group {...baseProps}>
+          <mesh
+            position={[0, -half, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(baseId); }}
+            onPointerOut={() => setHoverId((hh) => hh === baseId ? null : hh)}
+            onClick={onPick("face", baseId)}
+            renderOrder={1990}
+          >
+            <circleGeometry args={[r * 0.97, 48]} />
+            <meshBasicMaterial color={baseIsPicked ? "#F97316" : baseHover ? "#FB923C" : "#0EA5E9"} transparent opacity={baseIsPicked ? 0.45 : baseHover ? 0.35 : 0.18} depthTest={false} side={THREE.DoubleSide} />
+          </mesh>
+          <mesh
+            onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(sideId); }}
+            onPointerOut={() => setHoverId((hh) => hh === sideId ? null : hh)}
+            onClick={onPick("face", sideId)}
+            renderOrder={1985}
+          >
+            <coneGeometry args={[r * 1.005, h * 0.98, 48, 1, true]} />
+            <meshBasicMaterial color={sideIsPicked ? "#F97316" : sideHover ? "#FB923C" : "#0EA5E9"} transparent opacity={sideIsPicked ? 0.4 : sideHover ? 0.3 : 0.15} depthTest={false} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      );
+    }
+  }
+
+  return null;
 }
 
 // ---------- Cut Plane Gizmo ----------
@@ -1114,6 +1428,15 @@ export default function Viewport() {
         ))}
 
         {!measureMode && !rulerMode && <SelectedTransform />}
+        {/* Sub-element pick overlay: rendered ONLY for the currently-
+            primary-selected object, and only when subSelectMode != "object".
+            The overlay attaches its own click handlers so sub-pick clicks
+            don't fall through to the underlying SceneObject mesh. */}
+        {(() => {
+          const sel = objects.find((o) => o.id === selectedId);
+          if (!sel) return null;
+          return <SubElementPickOverlay obj={sel} />;
+        })()}
         <MeasurementsLayer />
         <ComponentDimensionsLayer />
         <RulerAnchorLayer />

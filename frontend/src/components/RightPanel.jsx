@@ -11,6 +11,7 @@ import SweepInspectorBlock from "./SweepInspectorBlock";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 
 // iter-100.8 — Alphabetical, accordion-grouped printer picker. Replaces
 // the native <select>+<optgroup> with a Popover-driven UI so each brand
@@ -1039,12 +1040,68 @@ function Inspector() {
 }
 
 // ---------- Edge controls: chamfer / fillet for cube + cylinder ----------
+// Now supports sub-element selection (Item / Face / Edge / Vertex). The
+// "Item" mode is the legacy uniform path that writes to obj.dims
+// {edgeStyle, edgeRadius}; the other modes write per-edge entries into
+// obj.edgeFillets, consumed by the partial-fillet engine.
 function EdgeControls({ obj, updateDims }) {
+  const subSelectMode = useScene((s) => s.subSelectMode);
+  const setSubSelectMode = useScene((s) => s.setSubSelectMode);
+  const subSelection = useScene((s) => s.subSelection);
+  const setSubSelection = useScene((s) => s.setSubSelection);
+  const setEdgeFillets = useScene((s) => s.setEdgeFillets);
+  const materializeUniform = useScene((s) => s.materializeUniformFilletsAsPerEdge);
+
+  // Lazy-imported metadata so this file doesn't grow a hard dep chain
+  // across the whole component tree. The module is tiny.
+  const meta = edgeFaceMeta;
+  const edges = meta.getEdgesForType(obj.type);
+  const faces = meta.getFacesForType(obj.type);
+
   const d = obj.dims || {};
-  const style = d.edgeStyle === "chamfer" ? "chamfer" : "fillet";
-  const er = Math.max(0, d.edgeRadius || 0);
+  const filletMap = obj.edgeFillets || {};
+  const hasPerEdge = Object.keys(filletMap).length > 0;
+
+  // ── Resolve "what's currently being edited" based on subSelectMode ──
+  // The radius/style controls below read & write through this resolver
+  // so a single set of inputs serves every mode.
+  let currentLabel, currentEdgeIds, currentStyle, currentRadius, maxR;
+  if (subSelectMode === "edge" && subSelection?.kind === "edge") {
+    currentLabel = edges.find((e) => e.id === subSelection.id)?.label || subSelection.id;
+    currentEdgeIds = [subSelection.id];
+    const cfg = filletMap[subSelection.id];
+    currentStyle = cfg?.style === "chamfer" ? "chamfer" : "fillet";
+    currentRadius = cfg?.radius || 0;
+  } else if (subSelectMode === "face" && subSelection?.kind === "face") {
+    const f = faces.find((x) => x.id === subSelection.id);
+    currentLabel = f?.label || subSelection.id;
+    currentEdgeIds = f ? [...f.edges] : [];
+    // Style + radius shared across all 4 edges; use the first edge's
+    // value as the displayed default so re-opening shows the existing
+    // state. If they diverge (e.g. user edited individual edges later)
+    // the display falls back to the median.
+    const cfgs = currentEdgeIds.map((eid) => filletMap[eid]).filter(Boolean);
+    currentStyle = cfgs[0]?.style === "chamfer" ? "chamfer" : "fillet";
+    currentRadius = cfgs.length ? (cfgs.reduce((s, c) => s + (c.radius || 0), 0) / cfgs.length) : 0;
+  } else if (subSelectMode === "vertex" && subSelection?.kind === "vertex") {
+    currentLabel = "Whole item";
+    currentEdgeIds = edges.map((e) => e.id);
+    // Use legacy uniform values as defaults when no per-edge yet exists.
+    currentStyle = hasPerEdge
+      ? (Object.values(filletMap)[0]?.style === "chamfer" ? "chamfer" : "fillet")
+      : (d.edgeStyle === "chamfer" ? "chamfer" : "fillet");
+    currentRadius = hasPerEdge
+      ? (Object.values(filletMap).reduce((s, c) => s + (c.radius || 0), 0) / Math.max(1, Object.values(filletMap).length))
+      : (d.edgeRadius || 0);
+  } else {
+    // "object" (legacy uniform) path — edits obj.dims.edgeStyle/edgeRadius.
+    currentLabel = "Whole item";
+    currentEdgeIds = null; // signals legacy uniform write
+    currentStyle = d.edgeStyle === "chamfer" ? "chamfer" : "fillet";
+    currentRadius = d.edgeRadius || 0;
+  }
+
   // Max allowed edge radius depends on the primitive's shortest half-extent.
-  let maxR;
   if (obj.type === "cube") {
     maxR = Math.min(d.x || 20, d.y || 20, d.z || 20) / 2 - 0.001;
   } else if (obj.type === "cylinder") {
@@ -1055,21 +1112,120 @@ function EdgeControls({ obj, updateDims }) {
     maxR = 10;
   }
   maxR = Math.max(0, maxR);
-  const setRadius = (v) => updateDims(obj.id, { edgeRadius: Math.max(0, Math.min(maxR, v)) });
-  const setStyle = (s) => updateDims(obj.id, { edgeStyle: s });
-  const off = er <= 0.001;
+
+  // ── Write handlers ──
+  const writeRadius = (v) => {
+    const clamped = Math.max(0, Math.min(maxR, v));
+    if (currentEdgeIds === null) {
+      // Legacy uniform path.
+      updateDims(obj.id, { edgeRadius: clamped, edgeStyle: currentStyle });
+    } else {
+      // Per-edge / face / vertex: first ensure a uniform legacy radius
+      // is materialized so the user's "I had 2 mm everywhere" doesn't
+      // silently vanish the moment they pick a face.
+      if (!hasPerEdge && (d.edgeRadius || 0) > 0.05) {
+        materializeUniform(obj.id);
+      }
+      setEdgeFillets(obj.id, currentEdgeIds, clamped, currentStyle);
+    }
+  };
+  const writeStyle = (s) => {
+    if (currentEdgeIds === null) {
+      updateDims(obj.id, { edgeStyle: s });
+    } else {
+      if (!hasPerEdge && (d.edgeRadius || 0) > 0.05) materializeUniform(obj.id);
+      // Re-write the current edges with the new style at the same radius.
+      // If no radius set yet, default to 2 mm so the change is visible.
+      const r = currentRadius > 0.05 ? currentRadius : Math.min(2, maxR);
+      setEdgeFillets(obj.id, currentEdgeIds, r, s);
+    }
+  };
+
+  const off = currentRadius <= 0.05;
+  const showSubPicker = (obj.type === "cube" || obj.type === "cylinder" || obj.type === "cone");
+  const modes = obj.type === "cube"
+    ? ["object", "face", "edge", "vertex"]
+    : ["object", "face", "edge"]; // cyl/cone: vertex doesn't make sense as a real pick
+
   return (
     <div className="mt-3 bg-slate-950/60 border border-orange-500/30 rounded p-2 space-y-2" data-testid="edge-controls">
       <div className="text-[10px] uppercase tracking-wider text-orange-300 font-semibold flex items-center justify-between">
-        <span>Edge {style}</span>
-        <span className="text-[9px] normal-case text-slate-500">{off ? "sharp" : `${er.toFixed(2)} mm`}</span>
+        <span>Edge {currentStyle}</span>
+        <span className="text-[9px] normal-case text-slate-500">{off ? "sharp" : `${currentRadius.toFixed(2)} mm`}</span>
       </div>
-      <div className="flex gap-1">
+
+      {/* Sub-element selection mode picker. "Object" = legacy whole-item.
+          Face / Edge / Vertex enter pick mode in the viewport. */}
+      {showSubPicker && (
+        <div className="flex gap-0.5 bg-slate-900/60 border border-slate-700 rounded p-0.5" data-testid="edge-mode-picker">
+          {modes.map((m) => {
+            const labels = { object: "Item", face: "Face", edge: "Edge", vertex: "Vertex" };
+            const active = subSelectMode === m;
+            return (
+              <button
+                key={m}
+                data-testid={`edge-mode-${m}`}
+                onClick={() => setSubSelectMode(m)}
+                className={`flex-1 h-6 rounded text-[10px] font-semibold transition-colors ${
+                  active
+                    ? "bg-orange-500/20 text-orange-300 ring-1 ring-orange-500/60"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+                title={
+                  m === "object" ? "Edit uniform fillet for the whole item (fastest, classic)" :
+                  m === "face"   ? "Click a face in the viewport — fillet abutting edges" :
+                  m === "edge"   ? "Click an individual edge in the viewport" :
+                                   "Click a corner — applies to all 12 edges"
+                }
+              >
+                {labels[m]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Sub-element dropdown — quick keyboard / no-3D-picker access.
+          Lets the user pick from the canonical list even when the
+          viewport overlay isn't convenient. */}
+      {showSubPicker && subSelectMode !== "object" && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">
+            {subSelectMode === "face" ? "Face" : subSelectMode === "edge" ? "Edge" : "Corner"}:
+          </span>
+          <select
+            data-testid="edge-subelement-picker"
+            value={subSelection?.id || ""}
+            onChange={(e) => {
+              const id = e.target.value || null;
+              setSubSelection(id ? { kind: subSelectMode, id } : null);
+            }}
+            className="flex-1 h-6 bg-slate-900 border border-slate-700 rounded text-[10px] text-slate-200 px-1.5"
+          >
+            <option value="">— pick {subSelectMode} —</option>
+            {(subSelectMode === "face" ? faces
+              : subSelectMode === "edge" ? edges
+              : meta.getVerticesForType(obj.type)
+            ).map((x) => (
+              <option key={x.id} value={x.id}>{x.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="text-[10px] text-slate-500" data-testid="edge-current-target">
+        Editing: <span className="text-slate-300 font-medium">{currentLabel}</span>
+        {subSelectMode !== "object" && !subSelection && (
+          <span className="text-orange-400/70 ml-1"> (pick one in the viewport)</span>
+        )}
+      </div>
+
+      <div className={`flex gap-1 ${subSelectMode !== "object" && !subSelection ? "opacity-40 pointer-events-none" : ""}`}>
         <button
           data-testid="edge-style-fillet"
-          onClick={() => setStyle("fillet")}
+          onClick={() => writeStyle("fillet")}
           className={`flex-1 h-7 rounded text-[10px] font-semibold border ${
-            style === "fillet"
+            currentStyle === "fillet"
               ? "bg-orange-500/20 border-orange-500 text-orange-300"
               : "bg-slate-900 border-slate-700 text-slate-400 hover:border-orange-500/50"
           }`}
@@ -1079,9 +1235,9 @@ function EdgeControls({ obj, updateDims }) {
         </button>
         <button
           data-testid="edge-style-chamfer"
-          onClick={() => setStyle("chamfer")}
+          onClick={() => writeStyle("chamfer")}
           className={`flex-1 h-7 rounded text-[10px] font-semibold border ${
-            style === "chamfer"
+            currentStyle === "chamfer"
               ? "bg-orange-500/20 border-orange-500 text-orange-300"
               : "bg-slate-900 border-slate-700 text-slate-400 hover:border-orange-500/50"
           }`}
@@ -1090,11 +1246,11 @@ function EdgeControls({ obj, updateDims }) {
           ◢ Chamfer
         </button>
       </div>
-      <div>
+      <div className={`${subSelectMode !== "object" && !subSelection ? "opacity-40 pointer-events-none" : ""}`}>
         <div className="flex items-center justify-between mb-1">
           <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Radius</span>
           <span data-testid="edge-radius-readout" className="text-[10px] font-mono text-orange-400">
-            {er.toFixed(2)} / {maxR.toFixed(1)} mm
+            {currentRadius.toFixed(2)} / {maxR.toFixed(1)} mm
           </span>
         </div>
         <input
@@ -1103,19 +1259,19 @@ function EdgeControls({ obj, updateDims }) {
           min={0}
           max={Math.max(0.1, maxR)}
           step={Math.max(0.05, maxR / 200)}
-          value={Math.min(er, maxR)}
-          onChange={(e) => setRadius(parseFloat(e.target.value))}
+          value={Math.min(currentRadius, maxR)}
+          onChange={(e) => writeRadius(parseFloat(e.target.value))}
           className="w-full accent-orange-500"
         />
         <div className="mt-1 grid grid-cols-4 gap-1">
           {[0, 1, 2, 5].map((preset) => {
             const v = Math.min(preset, maxR);
-            const active = Math.abs(er - v) < 0.05;
+            const active = Math.abs(currentRadius - v) < 0.05;
             return (
               <button
                 key={preset}
                 data-testid={`edge-radius-preset-${preset}`}
-                onClick={() => setRadius(v)}
+                onClick={() => writeRadius(v)}
                 className={`h-6 text-[10px] font-mono rounded border ${
                   active
                     ? "border-orange-500 bg-orange-500/15 text-orange-300"
