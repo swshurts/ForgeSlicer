@@ -3,9 +3,18 @@
 // from `../voiceLexicon` and the shared typography helpers from
 // `../typography`.
 import React, { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Anchor, Ruler, Shapes, MousePointerClick, Eye, MousePointer } from "lucide-react";
 import { H, P, Code, Kbd, Step } from "../typography";
-import { VOICE_LEXICON } from "../voiceLexicon";
+import { VOICE_LEXICON, VOICE_TIPS } from "../voiceLexicon";
+
+const TIP_ICONS = {
+  anchor: Anchor,
+  ruler: Ruler,
+  shapes: Shapes,
+  selection: MousePointerClick,
+  preview: Eye,
+  mouse: MousePointer,
+};
 
 export default function VoiceCommands({ onTry }) {
   const [filter, setFilter] = useState("");
@@ -39,6 +48,27 @@ export default function VoiceCommands({ onTry }) {
         <Step n="2">Pause for ~2 seconds. Your transcript appears on screen.</Step>
         <Step n="3">Say <strong className="text-orange-300">"Run"</strong> to execute, or just speak again to replace the transcript.</Step>
       </ol>
+
+      {/* Tips block — pre-flight heuristics that dramatically improve hit
+          rate, especially for the newer parametric templates. Surfaced
+          above the lexicon so users see HOW to phrase before they scan
+          WHAT to say. */}
+      <H>Phrasing tips</H>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4" data-testid="voice-tips-grid">
+        {VOICE_TIPS.map((tip) => {
+          const Icon = TIP_ICONS[tip.icon] || Anchor;
+          return (
+            <div key={tip.title} className="flex items-start gap-2 bg-slate-950/60 border border-slate-800 rounded p-2.5" data-testid={`voice-tip-${tip.icon}`}>
+              <Icon size={14} className="text-orange-400 mt-0.5 flex-shrink-0" />
+              <div className="text-xs">
+                <div className="text-slate-200 font-semibold mb-0.5">{tip.title}</div>
+                <div className="text-slate-400 leading-snug">{tip.body}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <H>Lexicon</H>
       <P>Every example below is a real command that will execute — the LLM understands synonyms and natural phrasing, so feel free to deviate from these exact words.</P>
       <div className="relative mb-3">
