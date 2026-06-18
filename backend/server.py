@@ -27,6 +27,7 @@ import orca_upstream
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
+from routes.realtime import router as realtime_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1896,6 +1897,11 @@ app.include_router(billing_api_router)
 app.include_router(billing_webhook_router)
 app.include_router(braintree_api_router)
 app.include_router(sso_bridge_router)
+# OpenAI Realtime API (live voice transcription) — mounted under
+# /api/v1 to match the integration playbook's documented prefix so the
+# frontend WebRTC client can call /api/v1/realtime/session and
+# /api/v1/realtime/negotiate without us hand-rolling the paths.
+app.include_router(realtime_router, prefix="/api/v1")
 
 app.add_middleware(
     CORSMiddleware,

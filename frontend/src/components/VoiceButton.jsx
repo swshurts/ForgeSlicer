@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Loader2, Sparkles, X, Send, ChevronDown, Zap, Pause, Keyboard } from "lucide-react";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
+import { startRealtimeVoice, checkRealtimeAvailable } from "../lib/realtimeVoice";
 import { isWhisperSupported, startRecorder, transcribeBlob, classifyConfirmation } from "../lib/whisperStt";
 
 // Two voice flows — picked from the small chevron menu beside the button:
@@ -120,6 +121,22 @@ export default function VoiceButton() {
   //     ↓ (mode==="go")     parsing → idle (and auto-loops while in go)
   const [stage, setStage] = useState("idle");
   const [pendingTranscript, setPendingTranscript] = useState("");
+  // Realtime API state. `realtimeAvail` is null until the mount-time
+  // probe finishes; once set, we either route Voice through Realtime
+  // (live transcription) or fall back to the legacy MediaRecorder →
+  // Whisper flow. `partialTranscript` shows the streaming text in the
+  // feedback banner so the user gets sub-second visual confirmation.
+  const [realtimeAvail, setRealtimeAvail] = useState(null);
+  const [partialTranscript, setPartialTranscript] = useState("");
+  const realtimeRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkRealtimeAvailable().then((res) => {
+      if (!cancelled) setRealtimeAvail(res?.available === true);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const [feedback, setFeedback] = useState(null); // { kind, text, heard }
   const [confirmHeard, setConfirmHeard] = useState("");
   // Mode picker. Persisted so the user's choice survives a refresh.
@@ -210,6 +227,92 @@ export default function VoiceButton() {
     setFeedback(null);
     setPendingTranscript("");
     setConfirmHeard("");
+    setPartialTranscript("");
+
+    // ── Realtime path (preferred when OPENAI_API_KEY is configured) ──
+    // Live partial transcripts stream into the feedback banner; when
+    // OpenAI's VAD detects a pause, the final transcript is committed
+    // and fed through the SAME parseTranscript pipeline as the legacy
+    // Whisper path. The handoff is transparent to downstream code.
+    if (realtimeAvail) {
+      try {
+        setStage("recording");
+        let finalText = "";
+        const session = await startRealtimeVoice({
+          onPartial: (delta) => {
+            setPartialTranscript((p) => p + delta);
+          },
+          onFinal: async (text) => {
+            // Stop the session as soon as we have the committed text —
+            // VAD has already detected the user paused, no need to keep
+            // billing audio while we parse the command.
+            finalText = (text || "").trim();
+            try { session.stop(); } catch (_) { /* noop */ }
+            realtimeRef.current = null;
+            if (!finalText) {
+              await handleEmptyOrShort("No speech detected. Check that your microphone is unmuted and try again.");
+              return;
+            }
+            setPendingTranscript(finalText);
+            setPartialTranscript("");
+            // Same downstream as the Whisper path — single mode goes
+            // through the confirm-listening flow, Go mode runs straight.
+            if (mode === "go" && goRunningRef.current) {
+              if (isGoExitPhrase(finalText)) { exitGoMode(finalText); return; }
+              if (isGoPausePhrase(finalText)) { enterGoPause(finalText); return; }
+              goLastUsefulAt.current = performance.now();
+              await runCommand(finalText);
+            } else {
+              setStage("grace");
+              graceTimer.current = setTimeout(() => {
+                graceTimer.current = null;
+                beginConfirmListening(finalText);
+              }, CONFIRM_GRACE_MS);
+            }
+          },
+          onError: (msg) => {
+            setFeedback({ kind: "err", text: `Realtime voice failed: ${msg}` });
+            setTimeout(() => setFeedback(null), 6000);
+            realtimeRef.current = null;
+            setStage("idle");
+            setPartialTranscript("");
+          },
+          onStateChange: (_st) => { /* could surface in UI; banner already shows stage */ },
+        });
+        realtimeRef.current = session;
+        // Safety cap — if Realtime never commits a final (e.g. user
+        // keeps talking past the max command length), force-stop and
+        // commit whatever partials we have.
+        realtimeRef.current.__autoCap = setTimeout(() => {
+          if (realtimeRef.current) {
+            const partial = partialTranscript.trim();
+            try { realtimeRef.current.stop(); } catch (_) { /* noop */ }
+            realtimeRef.current = null;
+            if (partial) {
+              setPendingTranscript(partial);
+              setStage("grace");
+              graceTimer.current = setTimeout(() => {
+                graceTimer.current = null;
+                beginConfirmListening(partial);
+              }, CONFIRM_GRACE_MS);
+            } else {
+              setStage("idle");
+            }
+          }
+        }, COMMAND_MAX_MS);
+        return;
+      } catch (e) {
+        // Realtime failed during setup — fall through to the legacy
+        // MediaRecorder + Whisper path so the user isn't left without
+        // any voice ability when their OpenAI quota / project tier hits
+        // an issue mid-session.
+        setFeedback({ kind: "warn", text: `Realtime voice unavailable — falling back to Whisper. (${e.message || e})` });
+        setTimeout(() => setFeedback(null), 5000);
+        setStage("idle");
+      }
+    }
+
+    // ── Legacy MediaRecorder → Whisper path ──
     try {
       recRef.current = await startRecorder({
         silenceMs: SILENCE_TAIL_MS,
@@ -497,9 +600,17 @@ export default function VoiceButton() {
       try { recRef.current.cancel(); } catch { /* already stopped */ }
       recRef.current = null;
     }
+    if (realtimeRef.current) {
+      if (realtimeRef.current.__autoCap) {
+        clearTimeout(realtimeRef.current.__autoCap);
+      }
+      try { realtimeRef.current.stop(); } catch { /* already stopped */ }
+      realtimeRef.current = null;
+    }
     setStage("idle");
     setPendingTranscript("");
     setConfirmHeard("");
+    setPartialTranscript("");
   };
 
   // ---------- Render ----------
@@ -532,7 +643,15 @@ export default function VoiceButton() {
       }
       beginCommandRecording();
     }
-    else if (stage === "recording") finishCommandRecording();
+    else if (stage === "recording") {
+      // Realtime path: stop the session manually — onFinal handler will
+      // pick up whatever was committed. Legacy path: finishCommandRecording.
+      if (realtimeRef.current) {
+        try { realtimeRef.current.stop(); } catch (_) { /* ignore */ }
+      } else {
+        finishCommandRecording();
+      }
+    }
     else if (stage === "go-paused") {
       // While paused, clicking the Voice button is a manual resume —
       // gives users an escape hatch when the room is too noisy for the
@@ -806,9 +925,20 @@ export default function VoiceButton() {
                 <div className="font-mono text-red-300">
                   {goActive ? "Listening (Go mode)… speak a command." : "Listening… speak now. (Pauses when you stop.)"}
                 </div>
+                {/* Live streaming partial — appears character-by-character
+                    via the Realtime API. Replaces the old wait-then-poof
+                    delay with sub-second visual feedback. */}
+                {partialTranscript && (
+                  <div
+                    data-testid="voice-partial-transcript"
+                    className="mt-1 px-2 py-1 bg-slate-950/70 border border-red-500/30 rounded text-[12px] text-slate-100 font-mono"
+                  >
+                    <span className="text-red-300 mr-1">▌</span>{partialTranscript}
+                  </div>
+                )}
                 {goActive && (
                   <div className="text-[10px] text-slate-400 mt-1">
-                    Say <span className="text-orange-300">"stop"</span> or click Voice to end Go mode.
+                    Say <span className="text-orange-300">&ldquo;stop&rdquo;</span> or click Voice to end Go mode.
                   </div>
                 )}
               </>
