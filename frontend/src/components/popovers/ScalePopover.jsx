@@ -4,7 +4,7 @@
 // the lock surprises people by silently updating Y/Z when X changes.
 // The lock pref persists to localStorage so an opt-in survives reloads.
 import React, { useState } from "react";
-import { Scale3D, Lock, Unlock } from "lucide-react";
+import { Scale3D, Lock, Unlock, MapPin } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { getBaseSize } from "../../lib/geometry";
 import { PopoverShell, NumberField, EmptyMsg } from "./PopoverShell";
@@ -39,6 +39,7 @@ export function ScalePopover({ anchor, onClose }) {
   const objects = useScene((s) => s.objects);
   const setTransformWithHistory = useScene((s) => s.setTransformWithHistory);
   const scaleSelectedMul = useScene((s) => s.scaleSelectedMul);
+  const centerOnBed = useScene((s) => s.centerOnBed);
   const obj = objects.find((o) => o.id === selectedId);
   const multi = selectedIds && selectedIds.length > 1;
   const [locked, setLockedState] = useState(readLockPref);
@@ -159,6 +160,26 @@ export function ScalePopover({ anchor, onClose }) {
           <div className="text-[10px] text-slate-500 leading-snug font-mono">
             base size {baseArr[0].toFixed(2)} × {baseArr[1].toFixed(2)} × {baseArr[2].toFixed(2)} mm
           </div>
+          {/* iter-103.3 — Centre on bed.
+              After a voice-template / Combine boolean the merged
+              object's pivot can drift off-centre relative to where
+              the user wants it; this re-anchors X/Z to the origin
+              and drops the bottom face to Y=0 in one click. Walks
+              the world-space bbox so it works for any rotation, not
+              just axis-aligned cubes. */}
+          <button
+            type="button"
+            data-testid="scale-center-on-bed-btn"
+            onClick={() => {
+              const ids = selectedIds && selectedIds.length ? selectedIds : (selectedId ? [selectedId] : []);
+              for (const id of ids) centerOnBed(id);
+            }}
+            disabled={!obj}
+            title="Recentre on the build-plate origin and drop the bottom to Y=0"
+            className="mt-1 h-7 w-full rounded text-[11px] font-medium border border-slate-700 bg-slate-900 hover:bg-slate-800 hover:border-orange-500/60 hover:text-orange-300 disabled:opacity-40 disabled:cursor-not-allowed text-slate-200 flex items-center justify-center gap-1.5"
+          >
+            <MapPin size={11} /> Centre on bed
+          </button>
         </>
       )}
     </PopoverShell>

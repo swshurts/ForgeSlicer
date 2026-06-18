@@ -21,8 +21,11 @@ from . import boards as _boards
 from . import bracket as _bracket
 from . import cable_comb as _cable_comb
 from . import drawer_pull as _drawer_pull
+from . import hose_adapter as _hose_adapter
+from . import project_enclosure as _project_enclosure
 from . import spool_spacer as _spool_spacer
 from . import tool_holder as _tool_holder
+from . import vise_jaws as _vise_jaws
 
 
 # Each template module contributes one entry.
@@ -31,8 +34,11 @@ _TEMPLATE_MODULES = [
     _bracket,
     _cable_comb,
     _drawer_pull,
+    _hose_adapter,
+    _project_enclosure,
     _spool_spacer,
     _tool_holder,
+    _vise_jaws,
 ]
 
 # Built once at import time.

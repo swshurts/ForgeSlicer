@@ -744,6 +744,49 @@ export const useScene = create((set, get) => ({
     }
   },
 
+  // iter-103.3 — Center an object's footprint on the build-plate origin
+  // AND drop its bottom to Y=0 in a single pass. Use case: after a
+  // voice-template boolean (faceplate, bracket, …) the merged object's
+  // pivot can drift off-centre because the CSG operands didn't share
+  // the same world position. A one-click "Centre on bed" re-anchors
+  // the result so future moves use a sensible origin.
+  //
+  // Computes the WORLD-space bbox (including the object's current
+  // rotation via `computeRotatedBBox`) and translates by:
+  //   dx = -bb.centre.x       (X centred on origin)
+  //   dz = -bb.centre.z       (Z centred on origin)
+  //   dy = -bb.min.y          (bottom face on Y=0)
+  // …on top of the object's current position so we don't blow away
+  // any other transform the user applied.
+  centerOnBed: (id, withHistory = true) => {
+    const s = get();
+    const obj = s.objects.find((o) => o.id === id);
+    if (!obj) return;
+    try {
+      const bb = computeRotatedBBox(obj);
+      const centreX = (bb.min.x + bb.max.x) / 2.0;
+      const centreZ = (bb.min.z + bb.max.z) / 2.0;
+      const [px, py, pz] = obj.position;
+      const nx = px - centreX;
+      const nz = pz - centreZ;
+      const ny = py - bb.min.y;
+      if (
+        Math.abs(nx - px) < 1e-4 &&
+        Math.abs(ny - py) < 1e-4 &&
+        Math.abs(nz - pz) < 1e-4
+      ) return;
+      if (withHistory) s.pushHistory();
+      set((st) => ({
+        objects: st.objects.map((o) =>
+          o.id === id ? { ...o, position: [nx, ny, nz] } : o
+        ),
+      }));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("centerOnBed: bbox failed", err);
+    }
+  },
+
   // Drop the WHOLE selection to the bed as a single rigid unit.
   // Finds the lowest world-Y across every selected object (after its
   // current rotation has been applied to its bbox) and translates all

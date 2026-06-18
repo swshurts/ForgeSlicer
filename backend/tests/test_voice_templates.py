@@ -46,8 +46,11 @@ def test_board_faceplate_pi4_expands_to_plate_holes_cutouts_and_subtract():
     # iter-101.3 — defaults now produce a MINIMAL faceplate: only the
     # +y long-edge connectors, NO mount holes. To get the full mounting
     # tray pass include_mount_holes:true and faces ['+y','-x'].
+    # iter-103.1 — default orientation changed to "wall"; this test
+    # exercises the legacy multi-face tray path, so it pins orientation.
     steps = expand("board_faceplate", {
         "board": "raspberry_pi_4b",
+        "orientation": "tray",
         "include_mount_holes": True,
         "faces": ["+y", "-x"],
     })
@@ -80,8 +83,11 @@ def test_board_faceplate_unknown_board_raises():
 
 def test_board_faceplate_can_disable_mount_holes_and_cutouts():
     # iter-101.3 — empty faces filter + no mount holes = bare plate only.
+    # iter-103.1 — exercise the tray path explicitly (wall mode forces
+    # the first face in `faces`, so empty list there is a no-op).
     steps = expand("board_faceplate", {
         "board": "raspberry_pi_4b",
+        "orientation": "tray",
         "include_mount_holes": False,
         "faces": [],
     })
@@ -90,8 +96,12 @@ def test_board_faceplate_can_disable_mount_holes_and_cutouts():
 
 
 def test_board_faceplate_thickness_and_border_affect_plate_dims():
+    # iter-103.1 — tray mode preserves the LxW-on-bed plate dim
+    # convention. Wall mode rearranges them; cover that separately
+    # in test_voice_templates_boards.py.
     steps = expand("board_faceplate", {
         "board": "raspberry_pi_4b",
+        "orientation": "tray",
         "thickness_mm": 4.0,
         "border_mm": 8.0,
     })

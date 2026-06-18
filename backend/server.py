@@ -1597,12 +1597,21 @@ ALLOWED ACTIONS and their schemas:
       • "Create a faceplate for a Raspberry Pi 4" →
         {"action":"template","template_id":"board_faceplate",
          "params":{"board":"raspberry_pi_4b"}}
-        (defaults: just the +y long-edge connectors, NO mount holes —
-         a minimal front panel, NOT a full mounting tray)
+        (defaults: a VERTICAL wall faceplate for the +y long-edge
+         connectors. NOT a flat tray and NOT a full mounting plate.)
+      • "Add a matching backplate for the Pi 4" / "Make a backplate
+         for the Pi 4 with the USB-C and HDMI cutouts" →
+        {"action":"template","template_id":"board_faceplate",
+         "params":{"board":"raspberry_pi_4b", "faces":["-x"]}}
+        (Same template, just with `faces:['-x']` — wall-orientation
+         honours the FIRST face in the list, so passing -x produces
+         a vertical wall sized to the SHORT edge with USB-C / HDMI /
+         audio cutouts. Pair it with the default +y faceplate to get
+         a front+back set ready to glue into an enclosure.)
       • "Create a Pi 4 mounting tray with the mount holes" →
         {"action":"template","template_id":"board_faceplate",
          "params":{"board":"raspberry_pi_4b", "include_mount_holes":true,
-                   "faces":["+y","-x"]}}
+                   "orientation":"tray", "faces":["+y","-x"]}}
       • "Create a Pi 4 faceplate with the HDMI and USB-C cutouts" →
         {"action":"template","template_id":"board_faceplate",
          "params":{"board":"raspberry_pi_4b", "faces":["-x"]}}
@@ -1632,10 +1641,22 @@ ALLOWED ACTIONS and their schemas:
       model name (Pi 4, Pi 5, Arduino Mega, etc) and the connector list
       from any face hints (USB+Ethernet → +y, HDMI/USB-C → -x).
     - "mounting plate / tray / front panel for [board]" → `board_faceplate`.
+    - "matching backplate / back panel / back wall for [board]" →
+      `board_faceplate` with `faces:['-x']` — the short-edge wall that
+      pairs with the default +y faceplate to form an enclosure F+B.
     - "shelf bracket / corner brace / L-bracket / angle iron" →
       `right_angle_bracket`.
     - "cabinet handle / drawer handle / pull / knob" → `drawer_pull`.
     - "screwdriver / wrench / pen / brush holder" → `tool_holder`.
+    - "cable comb / cable organiser / desk-edge cable manager" → `cable_comb`.
+    - "spool spacer / spool adapter / hub adapter for filament" →
+      `spool_spacer`.
+    - "soft jaws / vise jaws / bench-vise inserts / V-block jaws" →
+      `vise_jaws`.
+    - "project enclosure / project box / electronics box / parts box" →
+      `project_enclosure`.
+    - "hose adapter / hose reducer / barbed fitting / fitting between
+       two hoses" → `hose_adapter`.
 
     If the user gives a POSITION for the WHOLE generated template (e.g.
     "with the lower-left corner at (X, Y)" or "centred at (X, Y, Z)"),

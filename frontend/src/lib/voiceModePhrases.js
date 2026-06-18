@@ -1,0 +1,74 @@
+// Voice mode phrase helpers — iter-103.3.
+//
+// Extracted from VoiceButton.jsx during the iter-103 refactor pass.
+// These five helpers + their timing constants are completely pure (no
+// React, no store, no DOM). Keeping them here makes VoiceButton.jsx
+// readable AND lets future tests exercise the phrase regex matrix
+// without booting the full voice pipeline.
+//
+// What's in here
+//   • Constants                — go-mode window/silence/auto-exit timings
+//   • isGoExitPhrase(text)     — "stop", "done", "exit voice" → leave go-mode
+//   • isGoPausePhrase(text)    — "wait", "pause", "hold on" → pause go-mode
+//   • isResumePhrase(text)     — "resume", "continue", "ready" → unpause
+//   • readMode() / writeMode() — localStorage persistence for the mode chip
+//
+// Conservative regexes throughout — we DON'T want "cancel my last
+// operation" or "stop the slicer" to be interpreted as an exit. Match
+// only when the phrase is the WHOLE utterance (plus optional trailing
+// punctuation / "voice" / "listening" suffix).
+
+// ── Timing knobs ────────────────────────────────────────────────────
+// Go-mode pause: each listen-for-keyword cycle's max length and tail
+// silence. Longer silence than active recording so brief ambient
+// sounds (paper rustle, sniff) don't constantly retrigger transcription.
+export const GO_PAUSE_WINDOW_MS = 4500;
+export const GO_PAUSE_SILENCE_MS = 1500;
+
+// Go-mode pause: hard cap on time in the paused state. After this we
+// auto-exit Go mode entirely so a user who walked away with the tab
+// open isn't recording ambient audio forever. Two minutes covers
+// "let me grab a measurement" without running for a full meeting.
+export const GO_PAUSE_MAX_MS = 120000;
+
+// ── Phrase classification ───────────────────────────────────────────
+export function isGoExitPhrase(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
+  return /^(stop(?:\s+(?:voice|listening|go(?:\s+mode)?))?|exit(?:\s+(?:voice|go(?:\s+mode)?))?|done|i'?m\s+done|cancel|quit|end\s+voice|stop\s+listening)$/i
+    .test(norm);
+}
+
+export function isGoPausePhrase(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
+  return /^(wait(?:\s+(?:a\s+)?(?:sec|second|moment|minute|bit))?|pause(?:\s+voice)?|hold\s+on|one\s+(?:moment|sec|second|minute)|give\s+me\s+(?:a\s+)?(?:sec|second|moment|minute)|hang\s+on)$/i
+    .test(norm);
+}
+
+export function isResumePhrase(text) {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
+  return /^(resume|continue|ready|i'?m\s+back|go\s+again|let'?s\s+(?:continue|go)|okay\s+(?:continue|go)|go\s+ahead|start\s+(?:again|over))$/i
+    .test(norm);
+}
+
+// ── Mode persistence (localStorage) ────────────────────────────────
+export const GO_MODE_KEY = "forgeslicer.voice.mode";
+
+export function readMode() {
+  try {
+    const v = window.localStorage.getItem(GO_MODE_KEY);
+    return v === "go" ? "go" : "single";
+  } catch {
+    return "single";
+  }
+}
+
+export function writeMode(v) {
+  try {
+    window.localStorage.setItem(GO_MODE_KEY, v);
+  } catch {
+    /* noop — private-mode browsers etc. */
+  }
+}

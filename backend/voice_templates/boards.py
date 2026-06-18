@@ -170,11 +170,13 @@ META = {
     "label": "Board faceplate",
     "description": (
         "Flat front panel sized to a known PCB with cutouts for the "
-        "connectors on the user-specified face(s). Defaults to a MINIMAL "
-        "faceplate — just the long edge connectors. Set "
-        "`include_mount_holes:true` and/or `faces` to include other "
-        "edges or the M2.5/M3 mount-pillar pattern for a full mounting "
-        "tray."
+        "connectors on the user-specified face(s). Defaults to a "
+        "VERTICAL FACEPLATE for the +y (long-edge) connectors. Pass "
+        "`faces: ['-x']` for a BACKPLATE covering the short-edge "
+        "connectors (USB-C / HDMI / audio on most Pis). "
+        "Pass `orientation: 'tray'` for the legacy flat mounting "
+        "tray. Set `include_mount_holes: true` in tray mode for "
+        "the M2.5 / M3 mount-pillar pattern."
     ),
     "params": {
         "board": {

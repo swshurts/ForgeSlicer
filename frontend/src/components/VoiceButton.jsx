@@ -57,60 +57,22 @@ const GO_FEEDBACK_GAP_MS = 700;
 // no-speech-detected rounds, exit Go mode automatically so the mic
 // indicator doesn't pulse forever.
 const GO_IDLE_EXIT_MS = 20000;
-// Go-mode pause: each listen-for-keyword cycle's max length and tail
-// silence. We use a longer silence window than the active recording so
-// brief ambient sounds (paper rustle, sniff) don't constantly retrigger
-// transcription.
-const GO_PAUSE_WINDOW_MS = 4500;
-const GO_PAUSE_SILENCE_MS = 1500;
-// Go-mode pause: hard cap on time in the paused state. After this, we
-// auto-exit Go mode entirely so a user who walked away with the tab
-// open isn't recording ambient audio forever. Two minutes is enough for
-// "let me grab a measurement" but won't run for a full meeting.
-const GO_PAUSE_MAX_MS = 120000;
-const GO_MODE_KEY = "forgeslicer.voice.mode";
 
-// Phrases that exit Go mode when spoken as the entire command. Conservative
-// — we don't want "cancel my last operation" or "stop the slicer" to be
-// caught as an exit. Match only when the phrase IS the whole utterance
-// (plus optional trailing punctuation / "voice"/"listening" suffix).
-function isGoExitPhrase(text) {
-  if (!text) return false;
-  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
-  return /^(stop(?:\s+(?:voice|listening|go(?:\s+mode)?))?|exit(?:\s+(?:voice|go(?:\s+mode)?))?|done|i'?m\s+done|cancel|quit|end\s+voice|stop\s+listening)$/i
-    .test(norm);
-}
-
-// Pause phrases — said as the WHOLE utterance, these enter the paused
-// state (mic stays open in keyword-listen mode, no command runs). The
-// user's typical situations: holding a ruler, looking something up,
-// taking a phone call.
-function isGoPausePhrase(text) {
-  if (!text) return false;
-  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
-  return /^(wait(?:\s+(?:a\s+)?(?:sec|second|moment|minute|bit))?|pause(?:\s+voice)?|hold\s+on|one\s+(?:moment|sec|second|minute)|give\s+me\s+(?:a\s+)?(?:sec|second|moment|minute)|hang\s+on)$/i
-    .test(norm);
-}
-
-// Resume phrases — recognised only inside the paused state. Restarts
-// the Go-mode loop. Conservative: most phrases require an explicit
-// verb so casual chatter doesn't accidentally re-engage the mic.
-function isResumePhrase(text) {
-  if (!text) return false;
-  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
-  return /^(resume|continue|ready|i'?m\s+back|go\s+again|let'?s\s+(?:continue|go)|okay\s+(?:continue|go)|go\s+ahead|start\s+(?:again|over))$/i
-    .test(norm);
-}
-
-function readMode() {
-  try {
-    const v = window.localStorage.getItem(GO_MODE_KEY);
-    return v === "go" ? "go" : "single";
-  } catch { return "single"; }
-}
-function writeMode(v) {
-  try { window.localStorage.setItem(GO_MODE_KEY, v); } catch { /* noop */ }
-}
+// iter-103.3 refactor — phrase classifiers, timing knobs, and the
+// localStorage mode-pref helpers used to live inline here (~80 lines
+// of regex + helpers). They moved to lib/voiceModePhrases.js so the
+// main component reads as orchestration logic rather than as
+// "regex appendix + orchestration".
+import {
+  GO_PAUSE_WINDOW_MS,
+  GO_PAUSE_SILENCE_MS,
+  GO_PAUSE_MAX_MS,
+  isGoExitPhrase,
+  isGoPausePhrase,
+  isResumePhrase,
+  readMode,
+  writeMode,
+} from "../lib/voiceModePhrases";
 
 export default function VoiceButton() {
   const supported = isWhisperSupported();
