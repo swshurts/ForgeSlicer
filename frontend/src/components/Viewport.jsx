@@ -510,6 +510,7 @@ function SelectedTransform() {
   const snapEnabled = useScene((s) => s.snapEnabled);
   const snapTranslate = useScene((s) => s.snapTranslate);
   const snapRotate = useScene((s) => s.snapRotate);
+  const snapScale = useScene((s) => s.snapScale);
   const setTransform = useScene((s) => s.setTransform);
   const beginTransform = useScene((s) => s.beginTransform);
   const dropToBed = useScene((s) => s.dropToBed);
@@ -672,7 +673,7 @@ function SelectedTransform() {
       mode={transformMode}
       translationSnap={snapEnabled ? snapTranslate : null}
       rotationSnap={snapEnabled ? THREE.MathUtils.degToRad(snapRotate) : null}
-      scaleSnap={snapEnabled ? 0.1 : null}
+      scaleSnap={snapEnabled ? snapScale : null}
       onObjectChange={handleChange}
       onMouseDown={() => { beginTransform(); captureDragStart(); }}
       onChange={(e) => {
@@ -707,6 +708,111 @@ function SelectedTransform() {
       }}
       size={0.9}
     />
+  );
+}
+
+// Iter-103 — "Faux" design plate.
+//
+// A user-defined modelling envelope (defaults 1 m × 1 m × 1 m, can go to a
+// few meters per axis) rendered UNDER the real printer plate as a
+// translucent dashed outline + secondary grid. Drawn so the printer
+// plate stays the visually dominant surface (sharper colour, higher
+// in the layer stack), but you can immediately see the boundary of
+// "the big thing you're designing".
+//
+// Footprint is X (width) × Y (depth on the bed) and the height label
+// (designPlate.z) is drawn floating above the back-left corner so users
+// can confirm their modelling envelope without an extra dimension HUD.
+function DesignPlate() {
+  const designPlate = useScene((s) => s.designPlate);
+  const gridVisible = useScene((s) => s.gridVisible);
+  if (!designPlate || !designPlate.enabled) return null;
+  const dx = Math.max(50, designPlate.x);
+  const dy = Math.max(50, designPlate.y);
+  const dz = Math.max(50, designPlate.z);
+
+  // Slightly below the printer plate so the orange perimeter isn't
+  // z-fighting and the design plate reads as a separate, lower layer.
+  const baseY = -0.15;
+
+  // Dashed outline rectangle — drawn as a single Line loop. Five
+  // vertices (closed). Drei's <Line> doesn't natively dash, so we
+  // model the four sides as repeated short segments via two Line
+  // instances (a/b stripes) which is good enough at any zoom.
+  const halfX = dx / 2, halfZ = dy / 2;
+  const cornerYBack = halfZ;     // +Z = back of bed
+  const cornerYFront = -halfZ;
+  const outline = [
+    new THREE.Vector3(-halfX, baseY, cornerYBack),
+    new THREE.Vector3(+halfX, baseY, cornerYBack),
+    new THREE.Vector3(+halfX, baseY, cornerYFront),
+    new THREE.Vector3(-halfX, baseY, cornerYFront),
+    new THREE.Vector3(-halfX, baseY, cornerYBack),
+  ];
+
+  // Vertical "envelope" wireframe to communicate the modelling
+  // height (designPlate.z). 4 verticals + a top rectangle.
+  const top = baseY + dz;
+  const verticals = [
+    [new THREE.Vector3(-halfX, baseY, cornerYBack), new THREE.Vector3(-halfX, top, cornerYBack)],
+    [new THREE.Vector3(+halfX, baseY, cornerYBack), new THREE.Vector3(+halfX, top, cornerYBack)],
+    [new THREE.Vector3(+halfX, baseY, cornerYFront), new THREE.Vector3(+halfX, top, cornerYFront)],
+    [new THREE.Vector3(-halfX, baseY, cornerYFront), new THREE.Vector3(-halfX, top, cornerYFront)],
+  ];
+  const topRect = [
+    new THREE.Vector3(-halfX, top, cornerYBack),
+    new THREE.Vector3(+halfX, top, cornerYBack),
+    new THREE.Vector3(+halfX, top, cornerYFront),
+    new THREE.Vector3(-halfX, top, cornerYFront),
+    new THREE.Vector3(-halfX, top, cornerYBack),
+  ];
+
+  return (
+    <group data-testid="design-plate">
+      {/* Translucent floor — dark slate with very low opacity so the
+          printer plate above retains contrast but the boundary of the
+          design envelope is still legible at orbit angles. */}
+      <mesh position={[0, baseY, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow={false}>
+        <planeGeometry args={[dx, dy]} />
+        <meshBasicMaterial color="#1E293B" transparent opacity={0.35} depthWrite={false} />
+      </mesh>
+      {/* Secondary grid at 50 mm sections — coarser than the printer
+          plate's 5 mm cell grid so they don't fight visually. */}
+      {gridVisible && (
+        <Grid
+          args={[dx, dy]}
+          position={[0, baseY + 0.01, 0]}
+          cellSize={50}
+          cellThickness={0.5}
+          cellColor="#475569"
+          sectionSize={500}
+          sectionThickness={1}
+          sectionColor="#22D3EE"
+          fadeDistance={Math.max(dx, dy) * 2}
+          infiniteGrid={false}
+        />
+      )}
+      {/* Cyan dashed perimeter + envelope wireframe. Cyan is reserved
+          across the app as the "design / sketch" colour (Sketch tool,
+          ruler ticks), so users already associate it with "non-print
+          guides". */}
+      <Line points={outline} color="#22D3EE" lineWidth={1.5} dashed dashSize={6} gapSize={4} transparent opacity={0.85} />
+      {verticals.map((seg, i) => (
+        <Line key={`v-${i}`} points={seg} color="#22D3EE" lineWidth={1} dashed dashSize={6} gapSize={4} transparent opacity={0.55} />
+      ))}
+      <Line points={topRect} color="#22D3EE" lineWidth={1} dashed dashSize={6} gapSize={4} transparent opacity={0.55} />
+      {gridVisible && (
+        <Html position={[-halfX, baseY + 4, -halfZ - 8]} center={false} zIndexRange={[18, 0]} sprite={false}>
+          <div
+            data-testid="design-plate-label"
+            className="px-2 py-0.5 rounded bg-slate-950/85 border border-cyan-500/60 text-cyan-300 text-[11px] font-mono tracking-tight shadow-md whitespace-nowrap select-none"
+            style={{ pointerEvents: "none" }}
+          >
+            {designPlate.name || "Design plate"}: {Math.round(dx)} × {Math.round(dy)} × {Math.round(dz)} mm
+          </div>
+        </Html>
+      )}
+    </group>
   );
 }
 
@@ -1381,6 +1487,7 @@ export default function Viewport() {
         />
         <directionalLight position={[-100, 120, -100]} intensity={0.35} />
 
+        <DesignPlate />
         <BuildPlate />
         <CameraFitOnPrinterChange />
 

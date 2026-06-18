@@ -7,3 +7,4 @@ export { ScalePopover } from "./ScalePopover";
 export { DuplicatePopover } from "./DuplicatePopover";
 export { MirrorPopover } from "./MirrorPopover";
 export { SlicerPopover } from "./SlicerPopover";
+export { default as SnapAndPlatePopover } from "./SnapAndPlatePopover";

@@ -19,7 +19,9 @@ from typing import Any, Dict, List
 
 from . import boards as _boards
 from . import bracket as _bracket
+from . import cable_comb as _cable_comb
 from . import drawer_pull as _drawer_pull
+from . import spool_spacer as _spool_spacer
 from . import tool_holder as _tool_holder
 
 
@@ -27,7 +29,9 @@ from . import tool_holder as _tool_holder
 _TEMPLATE_MODULES = [
     _boards,
     _bracket,
+    _cable_comb,
     _drawer_pull,
+    _spool_spacer,
     _tool_holder,
 ]
 

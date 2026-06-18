@@ -13,6 +13,7 @@ import {
   PlusSquare, MinusSquare, Combine, Move3D, RotateCw, Scale3D,
   Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor,
   MapPin, Maximize, Copy, FlipHorizontal2, Scissors, Sliders,
+  Settings2,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { IconBtn, Divider, TabPillButton } from "./ToolbarUI";
@@ -109,6 +110,22 @@ export default function EditRow({
       <IconBtn active={gridVisible} testid="toggle-grid-btn" onClick={() => setGridVisible(!gridVisible)} title="Toggle grid">
         <Grid3x3 size={16} />
       </IconBtn>
+      {/* Iter-103 — Settings cog next to snap/grid. Opens the
+          Snap & Design-plate popover (configurable snap step values
+          and the user-defined oversized modelling envelope). */}
+      <button
+        ref={popoverRefs.snp}
+        data-testid="snap-plate-settings-btn"
+        onClick={() => togglePopover("snap")}
+        title="Snap step & design plate settings"
+        className={`h-7 w-7 rounded flex items-center justify-center transition-colors ${
+          openPopover === "snap"
+            ? "bg-slate-800 text-orange-300"
+            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+        }`}
+      >
+        <Settings2 size={13} />
+      </button>
 
       <Divider />
 

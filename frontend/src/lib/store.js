@@ -57,6 +57,22 @@ export const useScene = create((set, get) => ({
   snapRotate: 15,
   snapScale: 0.1,
   gridVisible: true,
+  // Iter-103 — "Faux" design plate. A user-configurable secondary build
+  // volume drawn UNDER the printer plate when enabled. Lets users
+  // sketch parts larger than any single printer — the design plate
+  // shows the full envelope (e.g. a 1.5 m thing) while the printer
+  // plate stays anchored at origin so they can see what one batch of
+  // slicing covers. Bounds-checking still uses the printer plate; the
+  // design plate is purely a visual modelling aid. Slicing big parts
+  // into printer-sized chunks is delegated to the existing Subdivide
+  // dialog (or to a desktop slicer's "split" feature) for now.
+  designPlate: {
+    enabled: false,
+    x: 1000,           // mm
+    y: 1000,           // mm
+    z: 1000,           // mm — modelling-envelope height (visual only)
+    name: "Design plate",
+  },
   buildVolume: { ...getPrinter(defaultPrinterId).buildVolume, kinematics: getPrinter(defaultPrinterId).kinematics || null },
   projectName: "Untitled Project",
   remixOf: null,  // gallery item id this project is remixing
@@ -1200,9 +1216,14 @@ export const useScene = create((set, get) => ({
 
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapEnabled: (v) => set({ snapEnabled: v }),
-  setSnapTranslate: (v) => set({ snapTranslate: v }),
+  setSnapTranslate: (v) => set({ snapTranslate: Math.max(0.001, Number(v) || 0) }),
+  setSnapRotate: (v) => set({ snapRotate: Math.max(0.1, Number(v) || 0) }),
+  setSnapScale: (v) => set({ snapScale: Math.max(0.001, Number(v) || 0) }),
   setGridVisible: (v) => set({ gridVisible: v }),
   setBuildVolume: (v) => set({ buildVolume: v }),
+  setDesignPlate: (patch) => set((st) => ({
+    designPlate: { ...st.designPlate, ...patch },
+  })),
 
   setCutMode: (v) => set({ cutMode: !!v }),
   setCutPlane: (patch) => set((st) => ({ cutPlane: { ...st.cutPlane, ...patch } })),

@@ -21,7 +21,7 @@ import React, { useState, useRef } from "react";
 import { useScene } from "../lib/store";
 import {
   PositionPopover, RotationPopover, ScalePopover,
-  SlicerPopover, DuplicatePopover, MirrorPopover,
+  SlicerPopover, DuplicatePopover, MirrorPopover, SnapAndPlatePopover,
 } from "./popovers";
 import STLPreviewDialog from "./STLPreviewDialog";
 import SystemRow from "./toolbar/SystemRow";
@@ -54,6 +54,7 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
     mir: useRef(null),
     cut: useRef(null),
     slc: useRef(null),
+    snp: useRef(null),
   };
 
   const togglePopover = (id) => setOpenPopover((cur) => (cur === id ? null : id));
@@ -111,6 +112,9 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
       )}
       {openPopover === "mirror" && (
         <MirrorPopover anchor={popoverRefs.mir.current} onClose={() => setOpenPopover(null)} />
+      )}
+      {openPopover === "snap" && (
+        <SnapAndPlatePopover anchor={popoverRefs.snp.current} onClose={() => setOpenPopover(null)} />
       )}
       <STLPreviewDialog open={stlPreviewOpen} onClose={() => setStlPreviewOpen(false)} />
     </div>
