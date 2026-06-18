@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
+import { ITER_LABEL } from "../lib/iterLabel";
 import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
@@ -80,13 +81,14 @@ export default function Landing() {
           {/* iter-100: tiny build/iter tag tucked next to the wordmark.
               Muted slate-500 monospace so it reads as metadata rather
               than UI chrome — visible to power users without competing
-              with the logo. */}
+              with the logo. Pulls from /lib/iterLabel.js so bumping
+              the version stays a one-line edit (iter-102.8). */}
           <span
             data-testid="landing-iter-id"
             className="ml-2 text-[10px] font-mono text-slate-500 tracking-tight select-text"
             title="ForgeSlicer iteration"
           >
-            iter-101
+            {ITER_LABEL}
           </span>
         </Link>
         <div className="flex-1" />
