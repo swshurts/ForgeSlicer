@@ -591,7 +591,7 @@ export default function VoiceButton() {
             ? "Go mode — speak commands continuously. Say 'stop' or click to end."
             : "Click and speak. Recording stops when you pause; say 'Run' to execute."
         }
-        className={`h-8 pl-2.5 pr-2 rounded-l text-[11px] font-semibold uppercase tracking-wider border-y border-l flex items-center gap-1.5 transition-colors ${
+        className={`h-8 pl-2.5 pr-2 rounded text-[11px] font-semibold uppercase tracking-wider border flex items-center gap-1.5 transition-colors ${
           stage === "recording" || stage === "confirming"
             ? "bg-red-500/20 border-red-500/70 text-red-300 animate-pulse"
             : isPaused
@@ -615,80 +615,34 @@ export default function VoiceButton() {
           </span>
         )}
       </button>
-      <button
-        data-testid="voice-mode-menu-btn"
-        onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
-        disabled={busy || stage === "recording" || stage === "confirming"}
-        title="Pick voice mode"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        className={`h-8 w-5 rounded-r border-y border-r text-[11px] flex items-center justify-center transition-colors ${
-          goActive
-            ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
-            : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800"
-        } ${(busy || stage === "recording" || stage === "confirming") ? "opacity-50 cursor-not-allowed" : ""}`}
-      >
-        <ChevronDown size={12} />
-      </button>
+      {/* Mode chevron used to live HERE on the toolbar — moved into the
+          Commands popup footer so the toolbar pill stays compact. The
+          mode menu opens from inside the popup now (see {menuOpen && …}
+          block, anchored to a footer trigger). */}
 
-      {/* Typed-command popup trigger — sits flush to the right of the
+      {/* Commands popup trigger — sits flush to the right of the
           voice pill. Separate from the Voice button because cramming an
           inline input next to the mic compresses both. Clicking opens a
-          centered modal with a textarea. */}
+          centered modal with a textarea AND the voice-mode picker. */}
       <button
         data-testid="voice-type-btn"
         onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setTypeOpen((v) => !v); }}
         disabled={busy || stage === "recording" || stage === "confirming"}
-        aria-label="Type command instead of speaking"
+        aria-label="Open commands (type or pick voice mode)"
         aria-haspopup="dialog"
         aria-expanded={typeOpen}
-        title="Type a command (when you can't speak)"
-        className={`h-8 w-8 ml-1.5 rounded border text-[11px] flex items-center justify-center transition-colors bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 ${
+        title="Type a command or pick voice mode"
+        className={`h-8 ml-1.5 px-2.5 rounded border text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5 transition-colors bg-slate-900 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 ${
           typeOpen ? "ring-1 ring-orange-400/60 text-orange-300" : ""
         } ${(busy || stage === "recording" || stage === "confirming") ? "opacity-50 cursor-not-allowed" : ""}`}
       >
         <Keyboard size={14} />
+        <span>Commands</span>
       </button>
 
-      {menuOpen && (
-        <div
-          data-testid="voice-mode-menu"
-          role="menu"
-          className="absolute top-full mt-1 left-0 z-[150] w-64 bg-slate-900 border border-slate-700 rounded shadow-xl overflow-hidden"
-        >
-          <button
-            data-testid="voice-mode-single"
-            role="menuitem"
-            onClick={() => setModeAndPersist("single")}
-            className={`w-full text-left px-3 py-2 hover:bg-slate-800 transition-colors ${mode === "single" ? "bg-slate-800/60" : ""}`}
-          >
-            <div className="flex items-center gap-1.5">
-              <Sparkles size={12} className={mode === "single" ? "text-orange-300" : "text-slate-500"} />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Single command</span>
-              {mode === "single" && <span className="ml-auto text-[9px] text-orange-300">●</span>}
-            </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
-              Speak → confirm with "Run" → executes. Confirmation step protects against misheard commands.
-            </div>
-          </button>
-          <div className="border-t border-slate-800" />
-          <button
-            data-testid="voice-mode-go"
-            role="menuitem"
-            onClick={() => setModeAndPersist("go")}
-            className={`w-full text-left px-3 py-2 hover:bg-slate-800 transition-colors ${mode === "go" ? "bg-slate-800/60" : ""}`}
-          >
-            <div className="flex items-center gap-1.5">
-              <Zap size={12} className={mode === "go" ? "text-orange-300" : "text-slate-500"} />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Go mode (continuous)</span>
-              {mode === "go" && <span className="ml-auto text-[9px] text-orange-300">●</span>}
-            </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
-              Speak commands back-to-back, no confirmation. Say <span className="text-orange-300">"stop"</span>, <span className="text-orange-300">"done"</span>, or click Voice to end.
-            </div>
-          </button>
-        </div>
-      )}
+      {/* Toolbar-anchored mode menu DELETED — moved inside the Commands
+          popup footer so the popup is the single hub for command-issuing
+          decisions. See the popup section below for the new menu. */}
 
       {typeOpen && (
         <div
@@ -733,14 +687,85 @@ export default function VoiceButton() {
             <div className="text-[10px] text-slate-500">
               <span className="text-slate-400">Enter</span> to send · <span className="text-slate-400">Shift+Enter</span> for newline · <span className="text-slate-400">Esc</span> to close
             </div>
-            <button
-              data-testid="voice-type-submit"
-              onClick={submitTyped}
-              disabled={!typedText.trim()}
-              className="h-7 px-3 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[11px] font-semibold rounded flex items-center gap-1.5 uppercase tracking-wider"
-            >
-              <Send size={11} /> Run
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Voice mode picker — moved here from the toolbar so the
+                  Commands popup is the single hub for "how do I issue a
+                  command" decisions (type, voice once, or voice continuous).
+                  Dropdown opens UPWARD because the popup is already near
+                  the top of the screen and there's room below the trigger. */}
+              <div className="relative" data-testid="voice-mode-menu-wrap">
+                <button
+                  data-testid="voice-mode-menu-btn"
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+                  title="Pick voice mode (single command or continuous Go mode)"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className={`h-7 px-2 rounded border text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${
+                    mode === "go"
+                      ? "bg-orange-500/15 border-orange-500/50 text-orange-300"
+                      : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  {mode === "go" ? <Zap size={11} /> : <Sparkles size={11} />}
+                  <span>Voice</span>
+                  <span className={`px-1 py-0 text-[9px] leading-none rounded-sm border ${
+                    mode === "go"
+                      ? "border-orange-500/40 text-orange-300 bg-orange-500/15"
+                      : "border-slate-600 text-slate-400"
+                  }`}>
+                    {mode === "go" ? "GO" : "ONE"}
+                  </span>
+                  <ChevronDown size={11} />
+                </button>
+                {menuOpen && (
+                  <div
+                    data-testid="voice-mode-menu"
+                    role="menu"
+                    className="absolute bottom-full mb-1 right-0 z-[260] w-64 bg-slate-900 border border-slate-700 rounded shadow-xl overflow-hidden"
+                  >
+                    <button
+                      data-testid="voice-mode-single"
+                      role="menuitem"
+                      onClick={() => setModeAndPersist("single")}
+                      className={`w-full text-left px-3 py-2 hover:bg-slate-800 transition-colors ${mode === "single" ? "bg-slate-800/60" : ""}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles size={12} className={mode === "single" ? "text-orange-300" : "text-slate-500"} />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Single command</span>
+                        {mode === "single" && <span className="ml-auto text-[9px] text-orange-300">●</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                        Speak → confirm with &ldquo;Run&rdquo; → executes. Confirmation step protects against misheard commands.
+                      </div>
+                    </button>
+                    <div className="border-t border-slate-800" />
+                    <button
+                      data-testid="voice-mode-go"
+                      role="menuitem"
+                      onClick={() => setModeAndPersist("go")}
+                      className={`w-full text-left px-3 py-2 hover:bg-slate-800 transition-colors ${mode === "go" ? "bg-slate-800/60" : ""}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Zap size={12} className={mode === "go" ? "text-orange-300" : "text-slate-500"} />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Go mode (continuous)</span>
+                        {mode === "go" && <span className="ml-auto text-[9px] text-orange-300">●</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                        Speak commands back-to-back, no confirmation. Say <span className="text-orange-300">&ldquo;stop&rdquo;</span>, <span className="text-orange-300">&ldquo;done&rdquo;</span>, or click Voice to end.
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                data-testid="voice-type-submit"
+                onClick={submitTyped}
+                disabled={!typedText.trim()}
+                className="h-7 px-3 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[11px] font-semibold rounded flex items-center gap-1.5 uppercase tracking-wider"
+              >
+                <Send size={11} /> Run
+              </button>
+            </div>
           </div>
         </div>
       )}
