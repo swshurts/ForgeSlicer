@@ -75,6 +75,34 @@ export async function executeStep(step, state) {
       const b = objMap(ids[i]);
       if (!accum || !b) return { ok: false, reason: "Lost target mid-bool" };
       const merged = await combineTwoAsync(accum, b, step.op || "subtract");
+      // Compute the merged geometry's bbox so the inspector's Scale /
+      // Real-Size popover can show real dimensions instead of the
+      // 1×1×1 fallback. `merged` is the raw {vertices, indices} shape
+      // returned by the worker (Float32Array of XYZ triples) — not a
+      // THREE.BufferGeometry — so we walk the vertex array directly
+      // rather than calling computeBoundingBox(). Reported 2026-02-19
+      // after "create a faceplate for a RPI4" showed base size
+      // 1.00 × 1.00 × 1.00 mm in the Size popover.
+      let originalBbox = null;
+      try {
+        const verts = merged?.vertices;
+        if (verts && verts.length >= 3) {
+          let minX = Infinity, minY = Infinity, minZ = Infinity;
+          let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          for (let i = 0; i < verts.length; i += 3) {
+            const x = verts[i], y = verts[i + 1], z = verts[i + 2];
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+          }
+          if (isFinite(minX)) {
+            originalBbox = { x: maxX - minX, y: maxY - minY, z: maxZ - minZ };
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("voicePlanExecutor: merged bbox calc failed:", err);
+      }
       // Remember where the OLD accum sat in addedIds so we can put
       // the merged result back in that ORDER slot. Without this, the
       // merged id gets appended to the END of state.addedIds and
@@ -89,6 +117,7 @@ export async function executeStep(step, state) {
         type: "imported", modifier: "positive", visible: true, locked: false,
         position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], dims: {},
         geometry: merged,
+        originalBbox,
       };
       const newId = useScene.getState().addRawObject(newObj);
       state.addedIds = state.addedIds.filter((x) => x !== accum.id && x !== b.id);

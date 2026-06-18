@@ -16,7 +16,7 @@
 // fetch it at runtime, and adding a build script to extract it adds
 // CRA-eject-level complexity for one line of text. A constant is the
 // pragmatic answer.
-export const ITER_LABEL = "iter-103.1";
+export const ITER_LABEL = "iter-103.2";
 
 // Iter-103 — last few iterations summarised for the in-app "What's
 // new" popover anchored to the iter label on Landing. Keep entries
@@ -25,6 +25,12 @@ export const ITER_LABEL = "iter-103.1";
 //
 // Bump when you bump ITER_LABEL — same edit, two adjacent lines.
 export const RECENT_ITERATIONS = [
+  {
+    id: "iter-103.2",
+    date: "2026-02-19",
+    title: "Voice-template merged objects show real dimensions",
+    summary: "The Inspector's Size popover used to show 1×1×1 mm for any object that came out of a voice-plan boolean (faceplate, bracket, drawer pull, …). The merged geometry's bbox is now captured into originalBbox so the popover reads real dimensions. Same fix applied to the manual Combine toolbar.",
+  },
   {
     id: "iter-103.1",
     date: "2026-02-19",
@@ -36,12 +42,6 @@ export const RECENT_ITERATIONS = [
     date: "2026-02-19",
     title: "Snap step controls · Faux design plate",
     summary: "Configurable snap step values (move / rotate / scale) in a new toolbar Settings popover, plus a user-defined oversized 'design plate' (up to ~2 m³) that draws under the printer plate so you can model assemblies bigger than any single bed.",
-  },
-  {
-    id: "iter-102.8",
-    date: "2026-02-18",
-    title: "STL export keeps chamfered edges",
-    summary: "Exported STL / 3MF now include per-edge cube chamfers and fillets instead of falling back to a sharp box. Bug was in the manifold pipeline, not the viewport.",
   },
 ];
 

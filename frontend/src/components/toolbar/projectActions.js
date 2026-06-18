@@ -71,6 +71,31 @@ export function makeProjectActions({ store, setBusyMsg }) {
       setBusyMsg("Computing...");
       try {
         const merged = await combineTwoAsync(a, b, op);
+        // Compute the merged geometry bbox so the Inspector's Scale /
+        // Real-Size popover shows real dimensions instead of the
+        // 1×1×1 fallback. Same fix as voicePlanExecutor — every
+        // imported-from-boolean result needs an `originalBbox` or
+        // getBaseSize() can't tell the popover what 100% means.
+        // `merged` is the raw {vertices, indices} payload from the
+        // worker, not a THREE.BufferGeometry — so walk the vertex
+        // array directly rather than calling computeBoundingBox().
+        let originalBbox = null;
+        try {
+          const verts = merged?.vertices;
+          if (verts && verts.length >= 3) {
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+            for (let i = 0; i < verts.length; i += 3) {
+              const x = verts[i], y = verts[i + 1], z = verts[i + 2];
+              if (x < minX) minX = x; if (x > maxX) maxX = x;
+              if (y < minY) minY = y; if (y > maxY) maxY = y;
+              if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+            }
+            if (isFinite(minX)) {
+              originalBbox = { x: maxX - minX, y: maxY - minY, z: maxZ - minZ };
+            }
+          }
+        } catch (_) { /* fall through with null */ }
         replaceObjects([a.id, b.id], [{
           name: `${a.name} ${op === "union" ? "∪" : op === "subtract" ? "∖" : "∩"} ${b.name}`,
           type: "imported",
@@ -82,6 +107,7 @@ export function makeProjectActions({ store, setBusyMsg }) {
           scale: [1, 1, 1],
           dims: {},
           geometry: merged,
+          originalBbox,
           // Skip auto-drop: the merged geometry is already in world
           // space; we do NOT want to translate it back to the bed
           // (that would offset all the carved features).
