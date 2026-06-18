@@ -139,7 +139,9 @@ function buildEdgePieces(wasm, edge, dimsLocal, r, style, segments) {
     //   v0 = INNER corner of block (the corner that's opposite the cube edge)
     //   v1 = corner adjacent to v0 along perpA (toward the cube edge along A)
     //   v2 = corner adjacent to v0 along perpB (toward the cube edge along B)
-    // Extruded along the edge axis by L+slack.
+    // Extruded along the edge axis by exactly L (no slack — the prism
+    // must stay flush with the cube's end faces, otherwise the union
+    // produces small protrusions just past the cube boundary).
     //
     // We build the triangle in local 2D coords centred at the block's
     // centre, then translate the extruded prism to the block centre.
@@ -157,6 +159,19 @@ function buildEdgePieces(wasm, edge, dimsLocal, r, style, segments) {
       [towardEdgeA,   innerB],
       [innerA,        towardEdgeB],
     ];
+    // Manifold's CrossSection treats CW polygons as holes — so we MUST
+    // hand it a CCW-wound triangle, otherwise the extrude returns an
+    // empty solid and the subsequent `carved.add(prism)` produces an
+    // invalid manifold that collapses the entire cube to nothing.
+    // The triangle above is CCW iff signA * signB > 0; when the two
+    // perpendicular axes pick opposite "min"/"max" sides (e.g. front-
+    // right vertical edge with xPos=max, zPos=min), the area flips
+    // sign. Swap v1 and v2 to restore CCW order in that case.
+    if (signA * signB < 0) {
+      const tmp = triangle2D[1];
+      triangle2D[1] = triangle2D[2];
+      triangle2D[2] = tmp;
+    }
     // Manifold extrude expects an array of polygons (each polygon =
     // array of [x, y] points). Single triangle here.
     let prism;
@@ -173,7 +188,13 @@ function buildEdgePieces(wasm, edge, dimsLocal, r, style, segments) {
       } else {
         throw new Error("manifold-3d build does not expose CrossSection");
       }
-      prism = cs.extrude(lenAxis + SLACK, 0, 0, [1, 1], true);
+      // The block uses `lenAxis + SLACK` so the CSG carve sees clean
+      // intersections at the cube's ends. The PRISM, on the other hand,
+      // is unioned back into the cube — if it overshoots `lenAxis` it
+      // adds tiny protrusions just above the cube's top/bottom faces.
+      // Use exactly `lenAxis` here so the prism's ends are flush with
+      // the cube faces.
+      prism = cs.extrude(lenAxis, 0, 0, [1, 1], true);
       cs.delete();
     } catch (err) {
       // Surface the failure rather than silently producing a sharp cube.

@@ -692,66 +692,23 @@ export default function VoiceButton() {
 
   return (
     <div className="relative inline-flex items-center" data-testid="voice-mode-menu-wrap">
-      <button
-        data-testid="voice-btn"
-        onClick={onMainClick}
-        disabled={busy}
-        aria-label={mode === "go" ? "Voice command (Go mode)" : "Voice command"}
-        aria-pressed={stage === "recording" || stage === "confirming" || goRunningRef.current}
-        aria-busy={busy}
-        title={
-          stage === "recording" ? "Listening… stops automatically when you pause." :
-          stage === "grace" ? "Reviewing transcript — say 'Run' or 'Cancel' in a moment." :
-          stage === "confirming" ? "Listening for 'Run' or 'Cancel'…" :
-          stage === "manual" ? "Voice didn't catch a Run/Cancel — finish by click." :
-          stage === "go-paused" || stage === "go-pause-transcribing"
-            ? "Go mode paused — click to resume, or say 'resume' / 'continue'." :
-          mode === "go"
-            ? "Go mode — speak commands continuously. Say 'stop' or click to end."
-            : "Click and speak. Recording stops when you pause; say 'Run' to execute."
-        }
-        className={`h-8 pl-2.5 pr-2 rounded text-[11px] font-semibold uppercase tracking-wider border flex items-center gap-1.5 transition-colors ${
-          stage === "recording" || stage === "confirming"
-            ? "bg-red-500/20 border-red-500/70 text-red-300 animate-pulse"
-            : isPaused
-              ? "bg-yellow-500/20 border-yellow-500/60 text-yellow-300"
-              : busy
-                ? "bg-slate-800 border-slate-700 text-slate-400"
-                : goActive
-                  ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
-                  : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
-        }`}
-      >
-        {busy ? <Loader2 size={12} className="animate-spin" />
-         : stage === "recording" || stage === "confirming" ? <Mic size={12} />
-         : isPaused ? <Pause size={12} className="text-yellow-300" />
-         : goActive ? <Zap size={12} className="text-orange-300" />
-         : <Sparkles size={12} className="text-orange-400" />}
-        {buttonLabel}
-        {showGoBadge && (
-          <span className="ml-1 px-1 py-0 text-[8px] leading-none uppercase tracking-wider rounded-sm bg-orange-500/20 text-orange-300 border border-orange-500/40">
-            Go
-          </span>
-        )}
-      </button>
-      {/* Mode chevron used to live HERE on the toolbar — moved into the
-          Commands popup footer so the toolbar pill stays compact. The
-          mode menu opens from inside the popup now (see {menuOpen && …}
-          block, anchored to a footer trigger). */}
+      {/* Toolbar Voice button removed — voice recording is now triggered
+          from inside the Commands popup. The popup's footer hosts both
+          the Voice trigger AND the mode picker, so the toolbar stays
+          compact and the user has a single discoverable entry point. */}
 
-      {/* Commands popup trigger — sits flush to the right of the
-          voice pill. Separate from the Voice button because cramming an
-          inline input next to the mic compresses both. Clicking opens a
-          centered modal with a textarea AND the voice-mode picker. */}
+      {/* Commands popup trigger — the ONLY voice/command entry in the
+          toolbar now. Clicking opens a centered modal with a textarea,
+          a VOICE trigger button, and the voice-mode picker. */}
       <button
         data-testid="voice-type-btn"
         onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setTypeOpen((v) => !v); }}
         disabled={busy || stage === "recording" || stage === "confirming"}
-        aria-label="Open commands (type or pick voice mode)"
+        aria-label="Open commands (type, voice, or pick voice mode)"
         aria-haspopup="dialog"
         aria-expanded={typeOpen}
-        title="Type a command or pick voice mode"
-        className={`h-8 ml-1.5 px-2.5 rounded border text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5 transition-colors bg-slate-900 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 ${
+        title="Open Commands — type or use voice"
+        className={`h-8 px-2.5 rounded border text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1.5 transition-colors bg-slate-900 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 ${
           typeOpen ? "ring-1 ring-orange-400/60 text-orange-300" : ""
         } ${(busy || stage === "recording" || stage === "confirming") ? "opacity-50 cursor-not-allowed" : ""}`}
       >
@@ -807,34 +764,62 @@ export default function VoiceButton() {
               <span className="text-slate-400">Enter</span> to send · <span className="text-slate-400">Shift+Enter</span> for newline · <span className="text-slate-400">Esc</span> to close
             </div>
             <div className="flex items-center gap-2">
-              {/* Voice mode picker — moved here from the toolbar so the
-                  Commands popup is the single hub for "how do I issue a
-                  command" decisions (type, voice once, or voice continuous).
-                  Dropdown opens UPWARD because the popup is already near
-                  the top of the screen and there's room below the trigger. */}
-              <div className="relative" data-testid="voice-mode-menu-wrap">
+              {/* Voice trigger — actually starts/stops recording. Mirrors
+                  the old toolbar Voice button behaviour (Realtime path
+                  when available, MediaRecorder+Whisper fallback). Closes
+                  the popup on click so the user can watch the listening
+                  banner without the popup obscuring the viewport. */}
+              <button
+                data-testid="voice-btn"
+                onClick={() => {
+                  setTypeOpen(false);
+                  setMenuOpen(false);
+                  // Defer one tick so the popup unmount doesn't race the
+                  // recorder setup (mic permission prompt etc.).
+                  setTimeout(() => onMainClick(), 30);
+                }}
+                disabled={busy}
+                aria-label={mode === "go" ? "Voice command (Go mode)" : "Voice command"}
+                aria-pressed={stage === "recording" || stage === "confirming" || goRunningRef.current}
+                title={
+                  stage === "recording" ? "Listening… stops automatically when you pause." :
+                  mode === "go"
+                    ? "Go mode — speak commands continuously. Say 'stop' or click to end."
+                    : "Click and speak. Recording stops when you pause; say 'Run' to execute."
+                }
+                className={`h-7 px-2.5 rounded text-[10px] font-semibold uppercase tracking-wider border flex items-center gap-1.5 transition-colors ${
+                  stage === "recording" || stage === "confirming"
+                    ? "bg-red-500/20 border-red-500/70 text-red-300 animate-pulse"
+                    : goActive
+                      ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+                      : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {busy ? <Loader2 size={11} className="animate-spin" />
+                 : stage === "recording" || stage === "confirming" ? <Mic size={11} />
+                 : goActive ? <Zap size={11} className="text-orange-300" />
+                 : <Mic size={11} className="text-orange-400" />}
+                Voice
+              </button>
+
+              {/* Mode chip — opens the Single/Go dropdown. Separate from
+                  the Voice trigger so clicking the mic doesn't toggle a
+                  menu the user didn't ask for. */}
+              <div className="relative" data-testid="voice-mode-menu-wrap-popup">
                 <button
                   data-testid="voice-mode-menu-btn"
                   onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
                   title="Pick voice mode (single command or continuous Go mode)"
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
-                  className={`h-7 px-2 rounded border text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${
+                  className={`h-7 px-1.5 rounded border text-[9px] font-semibold uppercase tracking-wider flex items-center gap-1 transition-colors ${
                     mode === "go"
                       ? "bg-orange-500/15 border-orange-500/50 text-orange-300"
-                      : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800"
+                      : "bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800"
                   }`}
                 >
-                  {mode === "go" ? <Zap size={11} /> : <Sparkles size={11} />}
-                  <span>Voice</span>
-                  <span className={`px-1 py-0 text-[9px] leading-none rounded-sm border ${
-                    mode === "go"
-                      ? "border-orange-500/40 text-orange-300 bg-orange-500/15"
-                      : "border-slate-600 text-slate-400"
-                  }`}>
-                    {mode === "go" ? "GO" : "ONE"}
-                  </span>
-                  <ChevronDown size={11} />
+                  {mode === "go" ? "Go" : "One"}
+                  <ChevronDown size={10} />
                 </button>
                 {menuOpen && (
                   <div
