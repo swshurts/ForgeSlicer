@@ -207,10 +207,32 @@ META = {
                         "Default ['+y'] = the LONG-edge connectors only (USB / "
                         "ethernet on most SBCs). Pass ['+y','-x'] for both "
                         "long+short edges. Pass ['-x'] for just the short edge "
-                        "(USB-C / HDMI / audio on most Pis). The LLM should "
+                        "(USB-C / HDMI / audio on most Pis). In `orientation:\"wall\"` "
+                        "mode (the default for 'faceplate'), ONLY THE FIRST face "
+                        "in the list is used — a wall only ever covers ONE edge "
+                        "of the board. Pass `orientation:\"tray\"` to enable the "
+                        "multi-face flat-tray behaviour. The LLM should "
                         "only expand beyond ['+y'] when the user explicitly "
                         "names other connectors (HDMI, USB-C, audio, etc.) or "
                         "asks for a full enclosure plate.",
+        },
+        "orientation": {
+            "type": "enum",
+            "values": ["wall", "tray"],
+            "default": "wall",
+            "describe": "Geometry style. 'wall' = a VERTICAL front panel "
+                        "standing on the bed, with connector-shaped HOLES "
+                        "punched through its thin face — what most makers "
+                        "mean by 'faceplate'. 'tray' = a FLAT plate lying "
+                        "on the bed, with mount-hole pillars and notches "
+                        "for connectors along the edges — what most makers "
+                        "mean by 'mounting tray' or 'base plate'.",
+        },
+        "wall_margin_mm": {
+            "type": "number", "default": 4.0, "min": 0.0, "max": 25.0,
+            "describe": "Extra height/width around the connector cluster on a "
+                        "wall-orientation faceplate (mm). Only used when "
+                        "orientation='wall'.",
         },
         "skip_plate": {
             "type": "boolean", "default": False,
@@ -242,11 +264,21 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
       • Default cylinder axis is world-Y (up), so no rotation is needed
         for a hole going straight DOWN through a flat plate.
 
-    The plate lies flat on the bed in the world X-Z plane, with its
-    thickness going up along Y. The board's local 2D layout (the
-    rectangle the connectors live on) maps:
-      • board's long axis  →  world X
-      • board's short axis →  world Z
+    Two orientation modes:
+      • orientation='wall' (default) — a VERTICAL faceplate standing
+        on the bed. Width matches the board's long edge, thickness goes
+        through world Z (front-back), height goes up world Y. Connector
+        cutouts are HOLES piercing through the wall's Z thickness, at
+        their natural X (along board long axis) and Y (above bed)
+        position. Only the FIRST face in `faces` is honoured — a wall
+        only ever covers one edge of the board.
+      • orientation='tray' (legacy) — a FLAT plate lying on the bed.
+        The board's local 2D layout maps directly:
+          • board's long axis  →  world X
+          • board's short axis →  world Z
+        Connector cutouts become edge-notches (intended for mounting
+        the board ON the plate and routing cables out through the
+        plate edge).
     """
     board_id = params.get("board")
     if board_id not in BOARDS:
@@ -256,17 +288,21 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     thickness = float(params.get("thickness_mm", 3.0))
     border = float(params.get("border_mm", 5.0))
     inc_mount = bool(params.get("include_mount_holes", False))
+    orientation = str(params.get("orientation", "wall") or "wall").lower()
+    if orientation not in ("wall", "tray"):
+        orientation = "wall"
+    wall_margin = float(params.get("wall_margin_mm", 4.0) or 0.0)
     # `faces` filter scopes the cutout set. Default ['+y'] gives the
     # canonical "front panel" — just the long-edge connectors. Empty
     # list means "no cutouts" (intentional). Use `is None` so the empty
     # list doesn't get steamrolled by `or`-default.
     faces_param = params.get("faces")
     if faces_param is None:
-        faces_filter = {"+y"}
+        faces_filter = ["+y"]
     elif isinstance(faces_param, str):
-        faces_filter = {faces_param}
+        faces_filter = [faces_param]
     else:
-        faces_filter = set(faces_param)
+        faces_filter = list(faces_param)
     # iter-102.4 — `skip_plate` lets the LLM emit JUST the cutouts as
     # floating negative pockets (no surrounding plate, no boolean step).
     # Used when the user describes "the cutouts for the USB/Ethernet
@@ -274,15 +310,105 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     # plate of their own, not generate a new one.
     skip_plate = bool(params.get("skip_plate", False))
 
+    if orientation == "wall":
+        return _build_wall(b, L, W, thickness, border, inc_mount,
+                           faces_filter, wall_margin, skip_plate)
+    return _build_tray(b, L, W, thickness, border, inc_mount,
+                       set(faces_filter), skip_plate)
+
+
+def _connectors_on_face(b: Dict[str, Any], face: str) -> List[Dict[str, Any]]:
+    return [c for c in b["connectors"] if c.get("face", "+y") == face]
+
+
+def _build_wall(b, L, W, thickness, border, inc_mount,
+                faces_filter, wall_margin, skip_plate):
+    """Vertical faceplate — a thin wall standing on the bed with
+    connector-shaped HOLES through it.
+
+    Only one face is supported per wall (the FIRST in `faces_filter`).
+    Width along world X matches the board edge that connectors live on
+    (L for '+y'/'-y', W for '+x'/'-x') plus 2× border. Height along
+    world Y is the tallest connector + 2× wall_margin. Thickness goes
+    through world Z (front-back).
+    """
+    face = faces_filter[0] if faces_filter else "+y"
+    if face not in ("+y", "-y", "+x", "-x"):
+        face = "+y"
+    connectors = _connectors_on_face(b, face)
+
+    # Wall width spans the board's edge that this face is on.
+    edge_len = L if face in ("+y", "-y") else W
+    plate_W_x = edge_len + 2 * border    # world X span
+    # Wall height: max connector height + margin (top + bottom).
+    max_ch = max((c["h"] for c in connectors), default=20.0)
+    plate_H_y = max_ch + 2 * wall_margin
+    plate_T_z = thickness                # world Z span (thin)
+
+    steps: List[Dict[str, Any]] = []
+
+    if not skip_plate:
+        steps.append(step_add(
+            "cube",
+            dims={"x": plate_W_x, "y": plate_T_z, "z": plate_H_y},
+            position=[0.0, plate_H_y / 2.0, 0.0],
+            tag="plate",
+            note=f"Wall plate {plate_W_x:.1f} (W) × {plate_H_y:.1f} (H) × "
+                 f"{plate_T_z:.1f} (T) mm — {b['label']} {face} face",
+        ))
+
+    # Each connector becomes a hole piercing world Z. Width along world X,
+    # height along world Y (UP), depth along world Z (through the wall +
+    # 2 mm so it cleanly subtracts at both faces).
+    edge_origin_x = -edge_len / 2.0      # leftmost edge in world X
+    for c in connectors:
+        cw, ch = c["w"], c["h"]
+        # Connector's centre along the wall's X = its position along the
+        # board edge.
+        cx_world = edge_origin_x + c["x"] + cw / 2.0
+        # Connector's centre along world Y (UP). Datasheet "x" gives the
+        # X position; height is c["h"]. We sit the connector against the
+        # BOTTOM of the wall margin (so cables exit near the PCB level
+        # of the board, which is what real-world faceplates do).
+        cy_world = wall_margin + ch / 2.0
+        steps.append(step_add(
+            "cube",
+            modifier="negative",
+            dims={"x": cw, "y": plate_T_z + 2.0, "z": ch},
+            position=[cx_world, cy_world, 0.0],
+            tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
+            note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} W × {ch:.1f} H mm)",
+        ))
+
+    if inc_mount and b["mount_holes"] and b["mount_hole_diameter"] > 0:
+        # In wall mode, mount holes don't apply — the wall doesn't sit
+        # under the PCB. Skip rather than emit confusing geometry.
+        pass
+
+    if not skip_plate:
+        steps.append(step_boolean(
+            "subtract",
+            targets=["all-current"],
+            note="Subtract cutouts from the wall plate",
+        ))
+        steps.append(step_group(
+            f"{b['label']} faceplate ({face})",
+            targets=["all-current"],
+            note="Group the finished faceplate",
+        ))
+    return steps
+
+
+def _build_tray(b, L, W, thickness, border, inc_mount, faces_filter, skip_plate):
+    """Original flat-tray behaviour — kept for users who really wanted
+    a base plate to mount the board ONTO with cable notches at the
+    edges. Reachable via `orientation='tray'`.
+    """
     plate_L = L + 2 * border       # world X span
     plate_W = W + 2 * border       # world Z span
 
     steps: List[Dict[str, Any]] = []
 
-    # Step 1: the base plate. `dims.z` is the THICKNESS (up axis).
-    # Position Y = thickness / 2 places the bottom on the bed. Skipped
-    # entirely when `skip_plate` is set — the user wants raw negatives
-    # to apply to their own scene geometry.
     if not skip_plate:
         steps.append(step_add(
             "cube",
@@ -293,13 +419,9 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
                  f"({b['label']} + {border:.1f} mm border)",
         ))
 
-    # Board-local (mx, mz) corner is at world (-L/2, -W/2) on the plate.
     bx0 = -L / 2.0
     bz0 = -W / 2.0
 
-    # Step group 2: mount holes (negative cylinders piercing through Y).
-    # Default cylinder axis is world Y, so no rotation. Height = plate +
-    # 2 mm so the hole pokes cleanly through.
     if inc_mount and b["mount_holes"] and b["mount_hole_diameter"] > 0:
         r = b["mount_hole_diameter"] / 2.0
         for i, (mx, mz) in enumerate(b["mount_holes"]):
@@ -312,48 +434,32 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
                 note=f"Mount hole #{i+1}  ⌀{b['mount_hole_diameter']:.1f} mm",
             ))
 
-    # Step group 3: connector cutouts (negative cubes piercing through Y).
-    # The cutout is positioned at the BOARD EDGE the connector exits
-    # from, then shifted OUTWARD by half its own dim so it sits flush
-    # with the PLATE's outer edge (a centred-on-edge cutout would leave
-    # half a slot in the border and look "inset"). For long-edge
-    # connectors we shift along world Z; for short-edge connectors we
-    # shift along world X.
-    if inc_conn := True:
-        for c in b["connectors"]:
-            face = c.get("face", "+y")
-            # iter-101.3 — skip connectors on faces the user didn't ask for.
-            if face not in faces_filter:
-                continue
-            cw, ch = c["w"], c["h"]
-            if face in ("+y", "-y"):
-                # Connector lives on a LONG edge.
-                cx = c["x"]                                          # along board long axis
-                cz_b = 0.0 if face == "+y" else W                    # at top or bottom of W
-                # Shift along world Z so cutout is flush with plate edge.
-                shift_z = -ch / 2.0 if face == "+y" else ch / 2.0
-                wx = bx0 + cx
-                wz = bz0 + cz_b + shift_z
-            else:
-                # Connector on a SHORT edge.
-                cz_b = c.get("x", 0.0)                               # along board short axis
-                cx = 0.0 if face == "-x" else L
-                shift_x = -cw / 2.0 if face == "-x" else cw / 2.0
-                wx = bx0 + cx + shift_x
-                wz = bz0 + cz_b
-            steps.append(step_add(
-                "cube",
-                modifier="negative",
-                dims={"x": cw, "y": ch, "z": thickness + 2.0},
-                position=[wx, thickness / 2.0, wz],
-                tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
-                note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} × {ch:.1f} mm)",
-            ))
+    for c in b["connectors"]:
+        face = c.get("face", "+y")
+        if face not in faces_filter:
+            continue
+        cw, ch = c["w"], c["h"]
+        if face in ("+y", "-y"):
+            cx = c["x"]
+            cz_b = 0.0 if face == "+y" else W
+            shift_z = -ch / 2.0 if face == "+y" else ch / 2.0
+            wx = bx0 + cx
+            wz = bz0 + cz_b + shift_z
+        else:
+            cz_b = c.get("x", 0.0)
+            cx = 0.0 if face == "-x" else L
+            shift_x = -cw / 2.0 if face == "-x" else cw / 2.0
+            wx = bx0 + cx + shift_x
+            wz = bz0 + cz_b
+        steps.append(step_add(
+            "cube",
+            modifier="negative",
+            dims={"x": cw, "y": ch, "z": thickness + 2.0},
+            position=[wx, thickness / 2.0, wz],
+            tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
+            note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} × {ch:.1f} mm)",
+        ))
 
-    # Step final: boolean-subtract all negatives from the plate (one
-    # positive + many negatives means a single fold-left subtract is
-    # exactly right), then group the result. Skipped when there's no
-    # plate to subtract from.
     if not skip_plate:
         steps.append(step_boolean(
             "subtract",
@@ -361,8 +467,8 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             note="Subtract cutouts & mount holes from the plate",
         ))
         steps.append(step_group(
-            f"{b['label']} faceplate",
+            f"{b['label']} mounting tray",
             targets=["all-current"],
-            note="Group the finished faceplate",
+            note="Group the finished tray",
         ))
     return steps
