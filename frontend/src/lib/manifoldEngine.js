@@ -22,6 +22,7 @@
 
 import * as THREE from "three";
 import { buildGeometry } from "./geometry";
+import { buildCubeManifoldWithFilletsSync, hasActiveEdgeFillets } from "./partialFillet";
 
 let _modulePromise = null;
 
@@ -240,6 +241,24 @@ function manifoldToGeometry(manifold) {
  * work — pre-baking is faster and more numerically stable.
  */
 function buildObjectManifold(wasm, obj, scene = null) {
+  // FAST PATH: cube with per-edge fillets / chamfers (or Item-mode fillets
+  // applied through the edgeFillets pipeline). The synchronous
+  // `buildGeometry` returns a SHARP `BoxGeometry` placeholder for these
+  // cubes — the viewport later swaps in the real chamfered mesh via the
+  // async `buildCubeGeometryWithFillets` path. Without this branch, every
+  // STL / 3MF / Manifold-based export silently dropped the chamfer.
+  //
+  // We build the manifold directly via the partial-fillet engine, then
+  // apply the object's transform (scale/rotation/translation) on top.
+  if (obj.type === "cube" && hasActiveEdgeFillets(obj)) {
+    const filleted = buildCubeManifoldWithFilletsSync(wasm, obj);
+    if (filleted) {
+      return _applyObjTransformToManifold(wasm, filleted, obj);
+    }
+    // Falls through to the geometry path if the partial-fillet build
+    // returned null (e.g. all radii ended up too small after clamping).
+  }
+
   let geom = buildGeometry(obj, scene);
   const sx = obj.scale[0], sy = obj.scale[1], sz = obj.scale[2];
   const negCount = (sx < 0 ? 1 : 0) + (sy < 0 ? 1 : 0) + (sz < 0 ? 1 : 0);
@@ -272,9 +291,18 @@ function buildObjectManifold(wasm, obj, scene = null) {
   }
 
   let m = geometryToManifold(wasm, geom);
+  // Apply scale → rotate → translate via the shared helper.
+  return _applyTransformAfterGeom(wasm, m, obj, posScale);
+}
 
-  // Apply scale → rotate → translate. Manifold's rotate takes degrees;
-  // our store already keeps rotations in degrees so we pass them through.
+/**
+ * Apply the object's scale → rotate → translate transform to a freshly
+ * built manifold. Negative scale flips are NOT pre-baked (Manifold's own
+ * .scale() handles them, just less efficiently); callers that already
+ * pre-bake negatives (the BufferGeometry path) should pass the pre-baked
+ * `posScale` so we don't double-apply.
+ */
+function _applyTransformAfterGeom(wasm, m, obj, posScale) {
   if (posScale[0] !== 1 || posScale[1] !== 1 || posScale[2] !== 1) {
     const next = m.scale(posScale);
     m.delete();
@@ -284,25 +312,6 @@ function buildObjectManifold(wasm, obj, scene = null) {
   const ry = obj.rotation[1] || 0;
   const rz = obj.rotation[2] || 0;
   if (rx !== 0 || ry !== 0 || rz !== 0) {
-    // ❌ Previous bug: `m.rotate([rx, ry, rz])` applies rotations in
-    // *global X → Y → Z* order (per manifold-3d docs: "From the
-    // global reference frame, a model will be rotated in x-y-z
-    // order"). Three.js' default `Euler('XYZ')` — which the viewport
-    // and every other renderer uses — applies the matrix Rx·Ry·Rz
-    // RIGHT-to-LEFT to vectors, i.e. global *Z → Y → X*. The two
-    // orders produce DIFFERENT final orientations the moment a part
-    // has non-trivial rotations on more than one axis. After the
-    // rigid-body group fix, every child gets a multi-axis Euler
-    // when the assembly is rotated — so the STL preview / export
-    // ended up showing parts in visibly different positions than
-    // the live viewport. Visual symptom: "disjointed parts" in the
-    // eyeball preview even though the viewport looked correct.
-    //
-    // ✓ Fix: bake the rotation via the same THREE.Euler('XYZ') the
-    // viewport uses, then feed the resulting column-major Mat4 to
-    // `m.transform()`. Manifold's `transform` is order-agnostic
-    // (just multiplies vertices by the matrix), so the bake-order
-    // mismatch is eliminated by construction.
     const rotEuler = new THREE.Euler(
       THREE.MathUtils.degToRad(rx),
       THREE.MathUtils.degToRad(ry),
@@ -310,9 +319,6 @@ function buildObjectManifold(wasm, obj, scene = null) {
       "XYZ",
     );
     const rotMat = new THREE.Matrix4().makeRotationFromEuler(rotEuler);
-    // THREE.Matrix4.elements is already column-major, exactly what
-    // manifold-3d's Mat4 type expects. Pass the 16-element array
-    // directly; manifold ignores the last row.
     const next = m.transform(Array.from(rotMat.elements));
     m.delete();
     m = next;
@@ -324,6 +330,17 @@ function buildObjectManifold(wasm, obj, scene = null) {
     m = next;
   }
   return m;
+}
+
+/**
+ * Wrapper for the cube/edge-fillet fast path. The partial-fillet pipeline
+ * builds the manifold with positive dimensions and no pre-baked scale
+ * flips; here we apply the object's full scale (including any negative
+ * components) through Manifold's native .scale().
+ */
+function _applyObjTransformToManifold(wasm, m, obj) {
+  const sx = obj.scale[0], sy = obj.scale[1], sz = obj.scale[2];
+  return _applyTransformAfterGeom(wasm, m, obj, [sx, sy, sz]);
 }
 
 // Safe disposal helper — `.delete()` throws if called twice.

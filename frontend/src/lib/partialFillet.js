@@ -220,42 +220,36 @@ function buildEdgePieces(wasm, edge, dimsLocal, r, style, segments) {
 }
 
 /**
- * Build a THREE.BufferGeometry for a cube with per-edge fillets / chamfers.
+ * Build a Manifold for a cube with per-edge fillets / chamfers.
  *
  * Per-edge map (`obj.edgeFillets`) ALWAYS wins for the edges it lists. For
  * any edge NOT explicitly in the map, this honours the legacy "Item mode"
  * uniform radius (`obj.dims.edgeRadius` + `obj.dims.edgeStyle`) as the
  * default — so a cube with a prior uniform 2 mm chamfer + a single 5 mm
  * fillet on the bottom-right edge keeps the 2 mm on the other 11 edges.
- * Without this, going to Edge mode after Item mode would silently make
- * the other 11 edges sharp.
  *
- * Returns null on any failure or when no edge ends up active — the caller
- * falls back to the sharp cube (or RoundedBoxGeometry for the pure uniform
- * fast path).
+ * Returns null when no edge ends up active. The caller OWNS the returned
+ * Manifold and must `.delete()` it once finished. All intermediate
+ * Manifolds are disposed by this function. `wasm` must already be the
+ * initialised manifold-3d module (caller is responsible for `getManifold()`).
  */
-export async function buildCubeGeometryWithFillets(obj) {
+export function buildCubeManifoldWithFilletsSync(wasm, obj) {
   const dims = obj.dims || {};
-  const w = dims.x || 20;     // local X (world X)
-  const dep = dims.y || 20;   // local Z (world Z depth)
-  const h = dims.z || 20;     // local Y (world Y height)
+  const w = dims.x || 20;
+  const dep = dims.y || 20;
+  const h = dims.z || 20;
   const dimsLocal = { x: w, y: h, z: dep };
 
   const fillets = obj.edgeFillets || {};
   const uniformR = Math.max(0, dims.edgeRadius || 0);
   const uniformStyle = dims.edgeStyle === "chamfer" ? "chamfer" : "fillet";
 
-  // Walk every cube edge; for each, pick the explicit per-edge config if
-  // present, otherwise fall back to the uniform Item-mode values.
   const planned = CUBE_EDGES
     .map((e) => {
       const cfg = fillets[e.id];
       if (cfg && cfg.radius > 0.05) {
         return { edge: e, r: cfg.radius, style: cfg.style === "chamfer" ? "chamfer" : "fillet" };
       }
-      // Explicit zero in the per-edge map means "force this edge sharp"
-      // even if uniform is set — useful for "fillet everything except
-      // this one edge" workflows.
       if (cfg && cfg.radius != null && cfg.radius <= 0.05) return null;
       if (uniformR > 0.05) {
         return { edge: e, r: uniformR, style: uniformStyle };
@@ -265,14 +259,9 @@ export async function buildCubeGeometryWithFillets(obj) {
     .filter(Boolean);
   if (planned.length === 0) return null;
 
-  const wasm = await getManifold();
   let cube = wasm.Manifold.cube([w, h, dep], true);
-
-  // Tessellation segments for filleted edges — scaled to dimension so a
-  // big plate doesn't get coarse polygons.
   const segs = 24;
-
-  const owned = [cube];
+  const owned = [];
   try {
     for (const p of planned) {
       const r = clampEdgeRadius(p.edge, dimsLocal, p.r);
@@ -281,24 +270,41 @@ export async function buildCubeGeometryWithFillets(obj) {
         wasm, p.edge, dimsLocal, r, p.style, segs,
       );
       owned.push(block, replacement);
-
-      // Carve out the block, then union in the replacement piece.
       const carved = cube.subtract(block);
-      owned.push(carved);
+      owned.push(cube); // previous cube can be released now that carved owns the topology
       const rebuilt = carved.add(replacement);
-      owned.push(rebuilt);
+      owned.push(carved);
       cube = rebuilt;
     }
-
-    const geom = manifoldToGeometry(cube);
-    return geom;
+    return cube;
+  } catch (err) {
+    // On any failure, dispose the in-progress cube too and propagate null.
+    try { if (cube && !cube.isDeleted?.()) cube.delete(); } catch (_) { /* noop */ }
+    // eslint-disable-next-line no-console
+    console.warn("buildCubeManifoldWithFilletsSync failed:", err);
+    return null;
   } finally {
-    // Dispose every manifold we created in this call. Order doesn't
-    // matter — manifold-3d's destructors handle already-detached
-    // children safely.
     for (const m of owned) {
       try { if (m && !m.isDeleted?.()) m.delete(); } catch (_) { /* noop */ }
     }
+  }
+}
+
+/**
+ * Build a THREE.BufferGeometry for a cube with per-edge fillets / chamfers.
+ * Async wrapper around `buildCubeManifoldWithFilletsSync` that initialises
+ * manifold-3d and converts the result to a BufferGeometry. Returns null on
+ * any failure or when no edge ends up active — caller falls back to the
+ * sharp cube / RoundedBoxGeometry fast path.
+ */
+export async function buildCubeGeometryWithFillets(obj) {
+  const wasm = await getManifold();
+  const cube = buildCubeManifoldWithFilletsSync(wasm, obj);
+  if (!cube) return null;
+  try {
+    return manifoldToGeometry(cube);
+  } finally {
+    try { if (!cube.isDeleted?.()) cube.delete(); } catch (_) { /* noop */ }
   }
 }
 

@@ -128,5 +128,27 @@ runCase("X-axis edges with mixed signs", { x: 30, y: 30, z: 30 },
 runCase("Z-axis edges with mixed signs", { x: 30, y: 30, z: 30 },
   ["e_Z_minX_maxY", "e_Z_maxX_minY"], 3);
 
+// ── Case 5: Item-mode chamfer simulated via uniform path (no edgeFillets entries).
+//    Mimics the user's scenario where `dims.edgeRadius=2` is the only signal;
+//    the partial-fillet engine must materialise all 12 edges via the uniform
+//    fallback. This is the path the STL-export pipeline goes through when
+//    edgeFillets has entries (since the synchronous buildGeometry returns a
+//    SHARP placeholder for those cubes — see manifoldEngine.buildObjectManifold
+//    fast-path).
+function runUniformCase(label, dims, r) {
+  const dimsLocal = { x: dims.x, y: dims.z, z: dims.y };
+  let cube = wasm.Manifold.cube([dimsLocal.x, dimsLocal.y, dimsLocal.z], true);
+  for (const edge of CUBE_EDGES) {
+    const { block, prism } = buildChamferPieces(edge, dimsLocal, r);
+    const carved = cube.subtract(block);
+    cube = carved.add(prism);
+    const bb = cube.boundingBox();
+    if (!isFinite(bb.min[0])) throw new Error(`${label}: invalid manifold after ${edge.id}`);
+  }
+  // eslint-disable-next-line no-console
+  console.log(`PASS  ${label}  (all 12 edges via uniform path)`);
+}
+runUniformCase("Item-mode uniform 2mm chamfer on 8x20x118 column", { x: 8, y: 20, z: 118 }, 2);
+
 // eslint-disable-next-line no-console
 console.log("\nAll partialFillet regressions PASS.");
