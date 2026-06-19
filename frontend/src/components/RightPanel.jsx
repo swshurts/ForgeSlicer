@@ -712,22 +712,22 @@ function Inspector() {
             // can see at a glance whether the part is sitting on the bed
             // (bottom=0) or floating. "Pos" is the CENTER which trips up
             // first-time CAD users who think Y means "above the table".
-            let bottomY = null;
+            let bottomZ = null;
             try {
               const bb = computeRotatedBBox(obj);
-              if (isFinite(bb.min.y)) bottomY = (obj.position?.[1] ?? 0) + bb.min.y;
+              if (isFinite(bb.min.z)) bottomZ = (obj.position?.[2] ?? 0) + bb.min.z;
             } catch (_) { /* ignore */ }
-            if (bottomY === null) return null;
-            const onBed = Math.abs(bottomY) < 0.05;
+            if (bottomZ === null) return null;
+            const onBed = Math.abs(bottomZ) < 0.05;
             return (
               <>
-                <span className="text-slate-500">Bottom Y</span>
+                <span className="text-slate-500">Bottom Z</span>
                 <span
-                  data-testid="bottom-y"
+                  data-testid="bottom-z"
                   className={`col-span-2 text-right truncate ${onBed ? "text-green-400" : "text-orange-300"}`}
                   title={onBed ? "Part is sitting on the bed" : "Part is floating or below the bed"}
                 >
-                  {bottomY.toFixed(2)} mm {onBed ? "✓ on bed" : ""}
+                  {bottomZ.toFixed(2)} mm {onBed ? "✓ on bed" : ""}
                 </span>
               </>
             );

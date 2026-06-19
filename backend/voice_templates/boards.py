@@ -353,7 +353,7 @@ def _build_wall(b, L, W, thickness, border, inc_mount,
         steps.append(step_add(
             "cube",
             dims={"x": plate_W_x, "y": plate_T_z, "z": plate_H_y},
-            position=[0.0, plate_H_y / 2.0, 0.0],
+            position=[0.0, 0.0, plate_H_y / 2.0],
             tag="plate",
             note=f"Wall plate {plate_W_x:.1f} (W) × {plate_H_y:.1f} (H) × "
                  f"{plate_T_z:.1f} (T) mm — {b['label']} {face} face",
@@ -377,7 +377,7 @@ def _build_wall(b, L, W, thickness, border, inc_mount,
             "cube",
             modifier="negative",
             dims={"x": cw, "y": plate_T_z + 2.0, "z": ch},
-            position=[cx_world, cy_world, 0.0],
+            position=[cx_world, 0.0, cy_world],
             tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
             note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} W × {ch:.1f} H mm)",
         ))
@@ -415,7 +415,7 @@ def _build_tray(b, L, W, thickness, border, inc_mount, faces_filter, skip_plate)
         steps.append(step_add(
             "cube",
             dims={"x": plate_L, "y": plate_W, "z": thickness},
-            position=[0.0, thickness / 2.0, 0.0],
+            position=[0.0, 0.0, thickness / 2.0],
             tag="plate",
             note=f"Base plate {plate_L:.1f} × {plate_W:.1f} × {thickness:.1f} mm "
                  f"({b['label']} + {border:.1f} mm border)",
@@ -431,7 +431,7 @@ def _build_tray(b, L, W, thickness, border, inc_mount, faces_filter, skip_plate)
                 "cylinder",
                 modifier="negative",
                 dims={"r": r, "h": thickness + 2.0},
-                position=[bx0 + mx, thickness / 2.0, bz0 + mz],
+                position=[bx0 + mx, bz0 + mz, thickness / 2.0],
                 tag=f"mount_{i}",
                 note=f"Mount hole #{i+1}  ⌀{b['mount_hole_diameter']:.1f} mm",
             ))
@@ -457,7 +457,7 @@ def _build_tray(b, L, W, thickness, border, inc_mount, faces_filter, skip_plate)
             "cube",
             modifier="negative",
             dims={"x": cw, "y": ch, "z": thickness + 2.0},
-            position=[wx, thickness / 2.0, wz],
+            position=[wx, wz, thickness / 2.0],
             tag=f"cutout_{c.get('note','').lower().replace(' ', '_')}",
             note=f"Cutout — {c.get('note', 'connector')} ({cw:.1f} × {ch:.1f} mm)",
         ))

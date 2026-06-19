@@ -1,4 +1,4 @@
-"""Regression tests for voice_templates.boards.
+"""Regression tests for voice_templates.boards (Z-up CAD convention).
 
 Locks down the two behaviours the user has stumbled into during normal
 voice use:
@@ -30,13 +30,13 @@ def test_pi4_default_is_wall_orientation():
     steps = expand("board_faceplate", {"board": "raspberry_pi_4b"})
     adds = _adds(steps)
     plate = adds[0]
-    # The plate stands UP: thin Z (thickness through front-back),
-    # tall Y (height), wide X.
+    # The plate stands UP (Z-up CAD): thin Y (thickness through front-back),
+    # tall Z (height), wide X.
     d = plate["dims"]
     assert d["x"] > d["y"], "wall plate should be wider than it is thick"
     assert d["z"] > d["y"], "wall plate should be taller than it is thick"
-    # Plate centred on the bed in Y at half its height (sits on Y=0).
-    assert plate["position"][1] == pytest.approx(d["z"] / 2.0)
+    # Plate centred at half its height along world Z (sits on Z=0).
+    assert plate["position"][2] == pytest.approx(d["z"] / 2.0)
 
 
 def test_pi4_wall_cutouts_pierce_through_thickness():
@@ -54,20 +54,20 @@ def test_pi4_wall_cutouts_pierce_through_thickness():
         # plate's width and height (it has to fit through the wall).
         assert cut["dims"]["x"] < plate["dims"]["x"]
         assert cut["dims"]["z"] < plate["dims"]["z"]
-        # The cutout sits centred at Z=0 (same plane as the wall).
-        assert cut["position"][2] == pytest.approx(0.0)
+        # The cutout sits centred at Y=0 (same plane as the wall).
+        assert cut["position"][1] == pytest.approx(0.0)
 
 
-def test_pi4_wall_cutout_y_position_above_bed():
-    """Each cutout should be entirely above the bed (Y > 0) so it doesn't
+def test_pi4_wall_cutout_z_position_above_bed():
+    """Each cutout should be entirely above the bed (Z > 0) so it doesn't
     cut into the floor when the wall is dropped onto the printer plate."""
     steps = expand("board_faceplate", {"board": "raspberry_pi_4b"})
     negs = [s for s in _adds(steps) if s.get("modifier") == "negative"]
     for cut in negs:
-        cy = cut["position"][1]
+        cz = cut["position"][2]
         ch = cut["dims"]["z"]
-        # Bottom of the cutout (in world Y).
-        bottom = cy - ch / 2.0
+        # Bottom of the cutout (in world Z).
+        bottom = cz - ch / 2.0
         assert bottom >= 0.0, f"cutout bottom {bottom} dips below bed"
 
 
@@ -85,9 +85,9 @@ def test_pi4_tray_orientation_lies_flat():
     steps = expand("board_faceplate", {"board": "raspberry_pi_4b", "orientation": "tray"})
     plate = _adds(steps)[0]
     d = plate["dims"]
-    # Tray: thin in Y (thickness UP), wide in X, deep in Z.
+    # Tray: thin in Z (thickness UP), wide in X, deep in Y.
     assert d["z"] < d["x"] and d["z"] < d["y"]
-    assert plate["position"][1] == pytest.approx(d["z"] / 2.0)
+    assert plate["position"][2] == pytest.approx(d["z"] / 2.0)
 
 
 def test_pi4_tray_mount_holes_when_requested():

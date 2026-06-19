@@ -1,0 +1,50 @@
+{
+  "summary": "Regression test of Z-up axis migration (iter-104.1/.2/.3). Verified across backend (pytest) + frontend (Playwright on preview URL with seeded session). Backend: 201/202 tests pass (1 pre-existing OrcaSlicer arm64 banner failure unrelated to migration). All 23/23 voice-template tests pass (15 test_voice_templates + 8 test_voice_templates_boards). Frontend: BuildPlate lies flat on XY at Z=0 with orange grid ✓; cube/cylinder/cone primitives ALL stand upright with bottom on Z=0 ✓; gizmo blue arrow (Z) points up ✓; Inspector 'Bottom Z: 0.00 mm ✓ on bed' readout works ✓; dropToBed correctly snaps Z so bottom=0 ✓; layFlatSelection rotates a 5×30×5 cube to rotation [0,90,0] with position[2]=2.5 (world Z extent stays at 5) ✓; cube/cylinder/cone show correct dims (cube 20×20×20, cylinder r=10 h=24 pos z=12, cone r=10 h=24 pos z=12) ✓; THREE.Object3D.DEFAULT_UP correctly set to (0,0,1). FOUND ONE BUG: centerOnBed() formula is wrong — for symmetric primitives it leaves X,Y unchanged AND increases Z instead of dropping to bed (see RCA below).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/app/backend/tests/test_iter15_smoke.py::test_status_returns_installed_true_on_arm64", "issue": "Asserts non-empty 'version' banner from /api/orca/status; field is null. Unrelated to Z-up migration — pre-existing OrcaSlicer version-detection issue. 1 failure out of 202 tests."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "store.js → centerOnBed(id)",
+        "issue": "Cube placed at world position [40, 30, 50] with dims 20×20×20, after centerOnBed → [40, 30, 60]. Expected [0, 0, 10] (centred on origin AND dropped to bed). Function does NOT centre X/Y and INCREASES Z instead of dropping. Pos goes UP by 10mm — clearly wrong.",
+        "selector": "/app/frontend/src/lib/store.js:758-785",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_voice_templates.py",
+    "/app/backend/tests/test_voice_templates_boards.py",
+    "/app/test_reports/pytest/iter91_results.xml"
+  ],
+  "action_items": [
+    "FIX centerOnBed in /app/frontend/src/lib/store.js line 766-769: current formula `nx = px - centreX; ny = py - centreY; nz = pz - bb.min.z` is wrong because `computeRotatedBBox(obj)` returns a LOCAL bbox (no position applied — see geometry.js:557 which uses Vector3(0,0,0) as translation in compose()). The formula treats bb as if it were in world space. Correct formulas (matching the docstring at line 753-755): `nx = -centreX; ny = -centreY; nz = -bb.min.z`. With this fix a cube at [40,30,50] with dims 20×20×20 → [0,0,10] (centered on origin, bottom on bed). dropToBed at line 730 already uses the correct form (`newZ = -bb.min.z`). Confirm the early-return at line 770-774 also updates correspondingly (compare nx,ny,nz against 0,0,-bb.min.z, not against original px,py,pz).",
+    "(Non-blocking) Pre-existing /api/orca/status returns null 'version' on arm64 — main agent should investigate OrcaSlicer banner extraction separately (not Z-up related)."
+  ],
+  "critical_code_review_comments": [
+    "store.js centerOnBed (line 758-785): The function's docstring (line 753-755) correctly describes Z-up intent (`dx = -bb.centre.x, dy = -bb.min.y`), but the implementation at line 766-769 uses `px - centreX` instead of `-centreX`. Likely a Z-up-migration regression — a sed/regex that swapped position[1]↔position[2] in the function body might have corrupted the formula. Recommend a unit test for centerOnBed on a non-symmetric primitive (e.g. cone) at non-zero position.",
+    "geometry.js computeRotatedBBox (line 547-570): correctly returns LOCAL bbox after rotation/scale, position excluded. This semantic is consistent — but every consumer must remember not to add position again. Add a one-line comment at the top of the function to make this explicit.",
+    "store.js dropToBed (line 724-742): formula `newZ = -bb.min.z` is correct (drops bottom of rotated bbox to Z=0). LGTM. Good early-return guard at line 731.",
+    "store.js layFlatSelection: behavior verified — for a 5×30×5 cube produces rotation [0, 90, 0] and position[2]=2.5 (bottom on bed). Rotation around Y in a Z-up frame correctly maps the smallest extent to Z. ✓",
+    "Inspector 'Bottom Z' readout (RightPanel.jsx data-testid=bottom-z): verified to show 0.00 mm with the ✓ icon when the object is on the bed. ✓",
+    "Build-plate orientation in Viewport.jsx: confirmed lies flat on XY with the orange grid at Z=0 and the world Z-axis blue gizmo pointing up. ✓",
+    "addPrimitive auto-drop: cube/cylinder/cone added via UI Add menu (or store.addPrimitive) come up with bottom on Z=0 (cube z=10, cyl z=12, cone z=12). Note the auto-drop applies a small +Y offset (cube y=10, cyl/cone y=12) so they don't all stack on origin — this is *not* a Z-up issue but a UX placement choice."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "99.5% (201/202; the 1 failure is pre-existing & unrelated to Z-up)",
+    "frontend": "92% (13/14 Z-up cases pass; centerOnBed is the failing case)"
+  },
+  "test_credentials": "Used seeded session_token=st_zup_test_1781827997715 from the review request — worked. /api/voice/expand-template returns 403 to anonymous external requests but main agent already confirmed it returns position=[0,0,12.25] internally.",
+  "seed_data_creation": "None (used pre-seeded test session).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Z-up migration is 95% solid. The single REGRESSION is centerOnBed in /app/frontend/src/lib/store.js:758-785 — the formula treats `computeRotatedBBox`'s output as world-space when it is local-space. After the fix re-test: cube at [40,30,50] dims 20×20×20 should center to [0,0,10]. Also re-test the early-return guard (lines 770-774) which currently compares nx vs px (wrong baseline). window.__forgeStore is exposed on the workspace page — use `window.__forgeStore.getState().centerOnBed(id)` directly to verify without UI plumbing. Build plate is at Z=0, primitives orient correctly, Inspector readouts and dropToBed/layFlat all work. Voice templates produce correct Z-up geometry (board_faceplate plate position=[0,0,12.25]).",
+  "rca of the issue": "ROOT CAUSE: centerOnBed in store.js (line 766-769) computes `nx = px - centreX; ny = py - centreY; nz = pz - bb.min.z`. But `computeRotatedBBox(obj)` in geometry.js (line 547-570) returns the bbox in LOCAL space — translation is hard-coded to Vector3(0,0,0) in the mat.compose() call. So the bbox is around the object's local origin, NOT its world position. For a symmetric cube, centreX = centreY = 0, so nx = px (unchanged), ny = py (unchanged). For Z, nz = pz - bb.min.z which adds half-the-height to the current position instead of replacing it with -bb.min.z. REPRODUCTION: open /workspace, dispatch `window.__forgeStore.getState().updateObject(<cubeId>, {position:[40,30,50]})` then `window.__forgeStore.getState().centerOnBed(<cubeId>)`. Position becomes [40,30,60] instead of expected [0,0,10]. MITIGATION: change lines 767-769 to `const nx = -centreX; const ny = -centreY; const nz = -bb.min.z;` and update the early-return guard at 770-774 to compare against the same baselines (e.g. `Math.abs(nx - px) + ...`). The docstring at line 753-755 already describes the correct math; the bug is solely in the implementation."
+}

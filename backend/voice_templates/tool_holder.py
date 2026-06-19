@@ -72,7 +72,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims={"x": plate_w, "y": depth, "z": thickness},
-        position=[0.0, thickness / 2.0, 0.0],
+        position=[0.0, 0.0, thickness / 2.0],
         tag="plate",
         note=f"Rack plate {plate_w:.0f} × {depth:.0f} × {thickness:.1f} mm "
              f"(N={n} holes ⌀{hole_r*2:.1f} mm)",
@@ -89,7 +89,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             "cylinder",
             modifier="negative",
             dims={"r": hole_r, "h": thickness + 2.0},
-            position=[x, thickness / 2.0, holes_z],
+            position=[x, holes_z, thickness / 2.0],
             tag=f"hole_{i}",
             note=f"Tool hole #{i+1} (⌀{hole_r*2:.1f} mm)",
         ))
@@ -104,7 +104,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             "cylinder",
             modifier="negative",
             dims={"r": screw_d / 2.0, "h": thickness + 2.0},
-            position=[sx, thickness / 2.0, strap_z],
+            position=[sx, strap_z, thickness / 2.0],
             tag=f"mount_{i}",
             note=f"Wall mount screw hole ⌀{screw_d:.1f} mm",
         ))

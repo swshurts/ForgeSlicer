@@ -1695,26 +1695,32 @@ RULES:
 
 DIM CONVENTION (CRITICAL — for plans and ad-hoc adds, NOT for templates which
 already know):
-  For cube / box / wedge primitives:
-    • dims.x → primitive WIDTH  (world X — left-right)
-    • dims.y → primitive DEPTH  (world Z — front/back along the bed)
-    • dims.z → primitive HEIGHT (world Y — UP)  ← thickness for a flat plate
-  position is [world_x, world_y_up, world_z_depth].
+  ForgeSlicer uses CAD-standard Z-up axes (matches SolidWorks / Fusion 360 /
+  OnShape / FreeCAD):
+    • +X = right, +Y = forward (depth into the bed away from the viewer),
+      +Z = UP (height, print direction).
+    • dims map 1:1 to world axes:
+        dims.x → world X (WIDTH, left-right)
+        dims.y → world Y (DEPTH, front/back)
+        dims.z → world Z (HEIGHT, UP)  ← thickness for a flat plate
+    • position is [world_x, world_y_forward, world_z_up].
   For a flat plate / faceplate / bracket arm lying on the bed, set the
-  THICKNESS in dims.z, not dims.y. Position the part's centre at
-  world_y = thickness / 2 so the bottom sits on Y=0.
+  THICKNESS in dims.z. Position the part's centre at world_z = thickness/2
+  so the bottom sits on Z=0.
 
-  Cylinder axis defaults to world Y (UP). A hole going through a flat
+  Cylinder axis defaults to world Z (UP). A hole going through a flat
   plate's thickness needs NO rotation; just set h slightly larger than
   the plate thickness and position the cylinder's centre at
-  world_y = plate_centre_y (i.e. thickness / 2). NEVER add rotation
-  [90,0,0] for a through-plate hole — that lays the hole on its side.
+  world_z = plate_centre_z (i.e. thickness/2). To make a hole pierce a
+  vertical wall along world X, use rotation=[0, 90, 0] (rotate around Y).
+  To make a hole pierce along world Y, use rotation=[90, 0, 0] (rotate
+  around X).
 
   For a "hole at each corner of the selected item" with the scene
   bbox provided: read scene.selection.bbox.min and .max, inset by the
-  requested margin in X and Z (the bed-plane axes), and emit one cube
-  or cylinder per corner with world_y = (bbox.min.y + bbox.max.y) / 2
-  and h = (bbox.max.y - bbox.min.y) + 2 so it pokes cleanly through.
+  requested margin in X and Y (the bed-plane axes), and emit one cube
+  or cylinder per corner with world_z = (bbox.min.z + bbox.max.z) / 2
+  and h = (bbox.max.z - bbox.min.z) + 2 so it pokes cleanly through.
 """
 
 

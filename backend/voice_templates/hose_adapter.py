@@ -70,7 +70,7 @@ def _build_section(steps, label, end_id, length, wall, barb_count, barb_h,
     steps.append(step_add(
         "cylinder",
         dims={"r": tube_r, "h": length},
-        position=[0.0, y_bottom + length / 2.0, 0.0],
+        position=[0.0, 0.0, y_bottom + length / 2.0],
         tag=f"tube_{label}",
         note=f"{label} tube  ⌀{od:.1f} × {length:.0f} mm",
     ))
@@ -90,7 +90,7 @@ def _build_section(steps, label, end_id, length, wall, barb_count, barb_h,
             steps.append(step_add(
                 "cylinder",
                 dims={"r": barb_r, "h": min(2.0, pitch * 0.6)},
-                position=[0.0, barb_centre_y, 0.0],
+                position=[0.0, 0.0, barb_centre_y],
                 tag=f"barb_{label}_{k}",
                 note=f"Barb {k+1}/{barb_count} on {label}",
             ))
@@ -120,7 +120,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         steps.append(step_add(
             "cylinder",
             dims={"r": flange_d / 2.0, "h": flange_t},
-            position=[0.0, top_after_a + flange_t / 2.0, 0.0],
+            position=[0.0, 0.0, top_after_a + flange_t / 2.0],
             tag="flange",
             note=f"Flange  ⌀{flange_d:.1f} × {flange_t:.1f} mm",
         ))
@@ -137,7 +137,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "cylinder",
         modifier="negative",
         dims={"r": bore_d / 2.0, "h": total_h + 2.0},
-        position=[0.0, total_h / 2.0, 0.0],
+        position=[0.0, 0.0, total_h / 2.0],
         tag="bore",
         note=f"Through-bore  ⌀{bore_d:.1f} mm",
     ))

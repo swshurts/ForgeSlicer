@@ -73,7 +73,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims={"x": total_w, "y": total_d, "z": spine_h},
-        position=[0.0, spine_h / 2.0, 0.0],
+        position=[0.0, 0.0, spine_h / 2.0],
         tag="spine",
         note=f"Spine {total_w:.0f} × {spine_d:.0f} × {spine_h:.1f} mm",
     ))
@@ -85,7 +85,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims={"x": total_w, "y": total_d, "z": finger_h},
-        position=[0.0, wall_y, 0.0],
+        position=[0.0, 0.0, wall_y],
         tag="wall",
         note=f"Finger wall {total_w:.0f} × {spine_d:.0f} × {finger_h:.0f} mm",
     ))
@@ -119,7 +119,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             "cube",
             modifier="negative",
             dims={"x": slot_w, "y": spine_d + 2.0, "z": cutter_h},
-            position=[slot_cx, cutter_y, 0.0],
+            position=[slot_cx, 0.0, cutter_y],
             tag=f"slot_{k}",
             note=f"Slot {k + 1}/{n_slots} (⌀{slot_w:.0f} mm)",
         ))
@@ -138,7 +138,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "cylinder",
                 modifier="negative",
                 dims={"r": screw_d / 2.0, "h": spine_h + 2.0},
-                position=[sx, spine_h / 2.0, 0.0],
+                position=[sx, 0.0, spine_h / 2.0],
                 tag=f"screw_{i}",
                 note=f"Mount hole ⌀{screw_d:.1f} mm",
             ))

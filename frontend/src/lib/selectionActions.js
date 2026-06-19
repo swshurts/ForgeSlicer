@@ -83,11 +83,12 @@ export function duplicateSelectedDelta(state, { mirrorAxis = null, offset = 5, n
       }
       copy.scale[axisIdx] = -copy.scale[axisIdx];
       copy.position[axisIdx] = src.position[axisIdx] + extent + offset;
-      if (mirrorAxis === "y") copy.position[1] = Math.max(0, copy.position[1]);
+      // Don't let a mirror about the Z (up) axis send the copy below the bed.
+      if (mirrorAxis === "z") copy.position[2] = Math.max(0, copy.position[2]);
     } else {
-      // Plain duplicate — small XZ offset so the copy is visible.
+      // Plain duplicate — small XY offset so the copy is visible on the bed.
       copy.position[0] += offset;
-      copy.position[2] += offset;
+      copy.position[1] += offset;
     }
     copies.push(copy);
   }

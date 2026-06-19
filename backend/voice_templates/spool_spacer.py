@@ -76,7 +76,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cylinder",
         dims={"r": or_, "h": length},
-        position=[0.0, half_len, 0.0],
+        position=[0.0, 0.0, half_len],
         tag="shell_outer",
         note=f"Outer shell ⌀{od:.1f} × {length:.0f} mm",
     ))
@@ -86,7 +86,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "cylinder",
         modifier="negative",
         dims={"r": ir, "h": length + 2.0},
-        position=[0.0, half_len, 0.0],
+        position=[0.0, 0.0, half_len],
         tag="bore",
         note=f"Bore ⌀{id_:.1f} mm",
     ))
@@ -109,8 +109,8 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             steps.append(step_add(
                 "cube",
                 dims={"x": rib_h * 1.05, "y": rib_w, "z": rib_tangential},
-                position=[cx, half_len, cz],
-                rotation=[0.0, theta * 180.0 / pi, 0.0],
+                position=[cx, cz, half_len],
+                rotation=[0.0, 0.0, theta * 180.0 / pi],
                 tag=f"rib_{k}",
                 note=f"Grip rib {k + 1}/{rib_n}",
             ))
@@ -121,7 +121,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         steps.append(step_add(
             "cylinder",
             dims={"r": f_od / 2.0, "h": flange_t},
-            position=[0.0, flange_t / 2.0, 0.0],
+            position=[0.0, 0.0, flange_t / 2.0],
             tag="flange",
             note=f"End flange ⌀{f_od:.1f} × {flange_t:.1f} mm",
         ))

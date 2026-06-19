@@ -85,7 +85,7 @@ def _build_one_jaw(side: str, params: Dict[str, Any], x_offset: float) -> List[D
     steps.append(step_add(
         "cube",
         dims={"x": T, "y": W, "z": H},
-        position=[centre_x, H / 2.0, 0.0],
+        position=[centre_x, 0.0, H / 2.0],
         tag=f"{side}_body",
         note=f"{side.capitalize()} jaw body  W={W:.0f}  H={H:.0f}  T={T:.1f}",
     ))
@@ -99,7 +99,7 @@ def _build_one_jaw(side: str, params: Dict[str, Any], x_offset: float) -> List[D
         steps.append(step_add(
             "cube",
             dims={"x": lip_d, "y": W, "z": lip_t},
-            position=[lip_centre_x, lip_top_y - lip_t, 0.0],
+            position=[lip_centre_x, 0.0, lip_top_y - lip_t],
             tag=f"{side}_lip",
             note=f"{side.capitalize()} hook lip ({lip_d:.0f} × {lip_t:.0f} mm)",
         ))
@@ -122,8 +122,8 @@ def _build_one_jaw(side: str, params: Dict[str, Any], x_offset: float) -> List[D
             "cube",
             modifier="negative",
             dims={"x": v_depth * 2.0, "y": W + 2.0, "z": v_half * 2.0},
-            position=[cut_x, H / 2.0, 0.0],
-            rotation=[0.0, 0.0, 45.0],
+            position=[cut_x, 0.0, H / 2.0],
+            rotation=[0.0, 45.0, 0.0],
             tag=f"{side}_v_groove",
             note=f"V-groove {v_angle:.0f}° × {v_depth:.1f} mm deep",
         ))
@@ -139,7 +139,7 @@ def _build_one_jaw(side: str, params: Dict[str, Any], x_offset: float) -> List[D
                 "cube",
                 modifier="negative",
                 dims={"x": 4.0, "y": pad_W, "z": pad_H},
-                position=[pocket_x, H / 2.0, 0.0],
+                position=[pocket_x, 0.0, H / 2.0],
                 tag=f"{side}_pad_pocket",
                 note=f"TPU pad pocket {pad_W:.0f} × {pad_H:.0f} × 2 mm",
             ))
@@ -153,8 +153,8 @@ def _build_one_jaw(side: str, params: Dict[str, Any], x_offset: float) -> List[D
                 "cylinder",
                 modifier="negative",
                 dims={"r": bolt_d / 2.0, "h": T + 2.0},
-                position=[centre_x, H / 2.0, hy],
-                rotation=[0.0, 0.0, 90.0],
+                position=[centre_x, hy, H / 2.0],
+                rotation=[0.0, 90.0, 0.0],
                 tag=f"{side}_bolt_{i}",
                 note=f"Through-hole #{i+1} ({bolts.replace('two_', '').upper()})",
             ))

@@ -78,7 +78,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         steps.append(step_add(
             "cube",
             dims={"x": foot_w, "y": foot_d, "z": foot_h},
-            position=[sign * spacing / 2.0, foot_h / 2.0, 0.0],
+            position=[sign * spacing / 2.0, 0.0, foot_h / 2.0],
             tag=f"foot_{'L' if sign < 0 else 'R'}",
             note=f"Mounting foot ({foot_w:.0f} × {foot_d:.0f} × {foot_h:.0f} mm)",
         ))
@@ -89,8 +89,8 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cylinder",
         dims={"r": bar_r, "h": length},
-        position=[0.0, standoff, 0.0],
-        rotation=[0.0, 0.0, 90.0],
+        position=[0.0, 0.0, standoff],
+        rotation=[0.0, 90.0, 0.0],
         tag="bar",
         note=f"Grip bar ⌀{bar_d:.1f} mm × {length:.0f} mm long",
     ))
@@ -101,7 +101,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         steps.append(step_add(
             "sphere",
             dims={"r": bar_r},
-            position=[sign * length / 2.0, standoff, 0.0],
+            position=[sign * length / 2.0, 0.0, standoff],
             tag=f"cap_{name}",
             note=f"End cap (⌀{bar_d:.1f} mm hemisphere)",
         ))
@@ -112,7 +112,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             "cylinder",
             modifier="negative",
             dims={"r": screw_d / 2.0, "h": standoff + 2.0},
-            position=[sign * spacing / 2.0, standoff / 2.0, 0.0],
+            position=[sign * spacing / 2.0, 0.0, standoff / 2.0],
             tag=f"screw_{name}",
             note=f"Screw hole ⌀{screw_d:.1f} mm",
         ))

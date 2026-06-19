@@ -192,7 +192,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims={"x": plate_t, "y": width, "z": wall_height},
-        position=[plate_t / 2.0, wall_height / 2.0, width / 2.0],
+        position=[plate_t / 2.0, width / 2.0, wall_height / 2.0],
         tag="wall_arm",
         note=f"Wall arm  {plate_t:.1f} × {wall_height:.0f} × {width:.0f} mm  "
              f"(stands vertically; thickness from {material} @ {load_kg:.1f} kg over {depth:.0f} mm)",
@@ -203,7 +203,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims={"x": shelf_length, "y": width, "z": plate_t},
-        position=[shelf_length / 2.0, plate_t / 2.0, width / 2.0],
+        position=[shelf_length / 2.0, width / 2.0, plate_t / 2.0],
         tag="shelf_arm",
         note=f"Shelf arm  {shelf_length:.0f} × {width:.0f} × {plate_t:.1f} mm",
     ))
@@ -215,7 +215,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims={"x": gusset, "y": gusset, "z": g_z_pad},
-        position=[gusset / 2.0, gusset / 2.0, width / 2.0],
+        position=[gusset / 2.0, width / 2.0, gusset / 2.0],
         tag="gusset",
         note=f"Gusset corner block  {gusset:.0f} × {gusset:.0f} × {g_z_pad:.1f} mm "
              f"(braces against {load_kg:.1f} kg load)",
@@ -235,8 +235,8 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "cylinder",
                 modifier="negative",
                 dims={"r": screw_r, "h": plate_t + 2.0},
-                position=[plate_t / 2.0, hy, width / 2.0],
-                rotation=[0.0, 0.0, 90.0],
+                position=[plate_t / 2.0, width / 2.0, hy],
+                rotation=[0.0, 90.0, 0.0],
                 tag=f"wall_hole_{i}",
                 note=f"Wall screw hole  ⌀{screw_d:.1f} mm",
             ))
@@ -254,7 +254,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "cylinder",
                 modifier="negative",
                 dims={"r": screw_r, "h": plate_t + 2.0},
-                position=[hx, plate_t / 2.0, width / 2.0],
+                position=[hx, width / 2.0, plate_t / 2.0],
                 tag=f"shelf_hole_{i}",
                 note=f"Shelf screw hole  ⌀{screw_d:.1f} mm",
             ))

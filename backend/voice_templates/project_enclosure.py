@@ -89,7 +89,7 @@ def _add_vent_slots(steps, wall_axis, length_along_x, plate_T,
                 "cube",
                 modifier="negative",
                 dims={"x": slot_w, "y": pierce_depth, "z": slot_h},
-                position=[along, cy, cz],
+                position=[along, cz, cy],
                 tag=f"vent_{wall_axis}_{k}",
                 note=f"Vent slot {k+1} on {wall_axis} wall",
             ))
@@ -100,7 +100,7 @@ def _add_vent_slots(steps, wall_axis, length_along_x, plate_T,
                 "cube",
                 modifier="negative",
                 dims={"x": pierce_depth, "y": slot_w, "z": slot_h},
-                position=[cx, cy, along],
+                position=[cx, along, cy],
                 tag=f"vent_{wall_axis}_{k}",
                 note=f"Vent slot {k+1} on {wall_axis} wall",
             ))
@@ -131,7 +131,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     steps.append(step_add(
         "cube",
         dims=plate_dims,
-        position=[0.0, oz / 2.0, 0.0],
+        position=[0.0, 0.0, oz / 2.0],
         tag="shell",
         note=f"Outer shell  {ox:.0f} × {oy:.0f} × {oz:.0f} mm",
     ))
@@ -141,7 +141,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         "cube",
         modifier="negative",
         dims={"x": ix, "y": iy, "z": iz + 0.5},   # +0.5 to break the open top cleanly
-        position=[0.0, floor + iz / 2.0 + 0.25, 0.0],
+        position=[0.0, 0.0, floor + iz / 2.0 + 0.25],
         tag="cavity",
         note=f"Interior cavity  {ix:.0f} × {iy:.0f} × {iz:.0f} mm",
     ))
@@ -178,7 +178,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             steps.append(step_add(
                 "cylinder",
                 dims={"r": post_r, "h": post_h},
-                position=[cx, floor + post_h / 2.0, cz],
+                position=[cx, cz, floor + post_h / 2.0],
                 tag=f"post_{i}",
                 note=f"Corner screw post #{i+1}  ⌀{post_d:.1f} × {post_h:.0f} mm",
             ))
@@ -186,7 +186,7 @@ def build(params: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "cylinder",
                 modifier="negative",
                 dims={"r": pilot_r, "h": post_h + 2.0},
-                position=[cx, floor + post_h / 2.0, cz],
+                position=[cx, cz, floor + post_h / 2.0],
                 tag=f"pilot_{i}",
                 note="M3 pilot hole",
             ))
