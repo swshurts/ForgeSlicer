@@ -761,12 +761,16 @@ export const useScene = create((set, get) => ({
     if (!obj) return;
     try {
       const bb = computeRotatedBBox(obj);
+      // computeRotatedBBox returns the bbox of the geometry rotated+scaled
+      // around the LOCAL origin (translation excluded). To centre the
+      // object on world XY and drop bottom to Z=0, the new world position
+      // is exactly the negation of the local bbox's centre/min.
       const centreX = (bb.min.x + bb.max.x) / 2.0;
       const centreY = (bb.min.y + bb.max.y) / 2.0;
       const [px, py, pz] = obj.position;
-      const nx = px - centreX;
-      const ny = py - centreY;
-      const nz = pz - bb.min.z;
+      const nx = -centreX;
+      const ny = -centreY;
+      const nz = -bb.min.z;
       if (
         Math.abs(nx - px) < 1e-4 &&
         Math.abs(ny - py) < 1e-4 &&
