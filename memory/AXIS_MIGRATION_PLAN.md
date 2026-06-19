@@ -103,9 +103,10 @@ the meaning is different. Specifically:
 | `frontend/src/lib/__tests__/partialFillet.regression.mjs` | bbox checks use `bb.min/max[0/1/2]` — semantically need to remap once cube construction changes. |
 
 ## Sequencing (suggested)
-1. **iter-104.1 — Foundation only.** Tier 1 + Tier 2 partial-fillet rewrite + Tier 5 test stubs. App may render templates incorrectly until iter-104.2. Smoke screenshot at the end. Tests pinned to skip/xfail for affected templates.
+1. **iter-104.1 — Foundation only.** Tier 1 + Tier 2 partial-fillet rewrite + Tier 5 test stubs. App may render templates incorrectly until iter-104.2. Smoke screenshot at the end. Tests pinned to skip/xfail for affected templates.  
+   **STATUS (2026-02-19): DONE** — Tier 1 (`index.js` DEFAULT_UP, `Viewport.jsx` camera/plate/overlays/cut-gizmo, `geometry.js` 1:1 dims, `store.js` Z-drop everywhere, `csg.js` plane cut +Z normal, `slicer.js` Z→Y pre-rotation, `exporters.js` removed Y↔Z passes) + Tier 2 (`partialFillet.js` cube `dimsLocal` 1:1 + cube/cylinder/cone lathe Z-up, `edgeFaceMeta.js` 1:1 dims + relabeled faces/edges, `manifoldEngine.js` inherits via `buildGeometry`) shipped. Tier 5 test stubs SKIPPED per user (option b). Smoke screenshot verified: build plate lies on XY, cube stands up on Z-up, gizmo "Z is up" label correct.
 2. **iter-104.2 — All voice templates.** Tier 3 in one batch. Re-enable Tier 5 tests; all should pass.
-3. **iter-104.3 — UI polish + final regression sweep.** Tier 4 labels, ensure no `position[1]` left meaning "up" anywhere via grep audit, run full test suite + manual screenshot per template.
+3. **iter-104.3 — UI polish + final regression sweep.** Tier 4 labels (notably "Bottom Y" → "Bottom Z" in the Inspector transform readout, "Y (depth)" → "Y (forward)" in dim labels), ensure no `position[1]` left meaning "up" anywhere via grep audit, run full test suite + manual screenshot per template.
 
 Each iteration takes ~1 fresh session's context to do safely.
 

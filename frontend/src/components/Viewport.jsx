@@ -277,17 +277,19 @@ function SubElementPickOverlay({ obj }) {
   }
 
   // ── Cylinder: 2 edges (torus rings), 3 faces (caps + side) ──
+  // Cylinder axis is +Z (Z-up); top edge at +Z/2, bottom at -Z/2.
   if (obj.type === "cylinder") {
     const r = obj.dims?.r || 10;
     const h = obj.dims?.h || 20;
     const half = h / 2;
     if (subSelectMode === "edge") {
-      // Render two thin torus rings at y=±half.
+      // Render two thin torus rings at z=±half. TorusGeometry's hole
+      // axis is +Z by default → no rotation needed for Z-up cylinder.
       const ringR = Math.max(0.5, Math.min(1.0, r * 0.05));
       return (
         <group {...baseProps}>
           {["e_top", "e_bottom"].map((id) => {
-            const y = id === "e_top" ? half : -half;
+            const z = id === "e_top" ? half : -half;
             const isPicked = subSelection?.kind === "edge" && subSelection.id === id;
             const isHover = hoverId === id;
             const hasFillet = !!filletMap[id];
@@ -295,8 +297,7 @@ function SubElementPickOverlay({ obj }) {
             return (
               <mesh
                 key={id}
-                position={[0, y, 0]}
-                rotation={[Math.PI / 2, 0, 0]}
+                position={[0, 0, z]}
                 onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
                 onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
                 onClick={onPick("edge", id)}
@@ -313,17 +314,17 @@ function SubElementPickOverlay({ obj }) {
     if (subSelectMode === "face") {
       return (
         <group {...baseProps}>
-          {/* Top cap */}
+          {/* Top / bottom caps lie in the XY plane — circleGeometry default
+              normal is +Z, perfect for Z-up cylinder. */}
           {["f_top", "f_bottom"].map((id) => {
-            const y = id === "f_top" ? half : -half;
+            const z = id === "f_top" ? half : -half;
             const isPicked = subSelection?.kind === "face" && subSelection.id === id;
             const isHover = hoverId === id;
             const color = isPicked ? "#F97316" : isHover ? "#FB923C" : "#0EA5E9";
             return (
               <mesh
                 key={id}
-                position={[0, y, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
+                position={[0, 0, z]}
                 onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
                 onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
                 onClick={onPick("face", id)}
@@ -334,7 +335,7 @@ function SubElementPickOverlay({ obj }) {
               </mesh>
             );
           })}
-          {/* Side */}
+          {/* Side — drei cylinderGeometry has axis +Y; rotate to align with +Z. */}
           {(() => {
             const id = "f_side";
             const isPicked = subSelection?.kind === "face" && subSelection.id === id;
@@ -343,6 +344,7 @@ function SubElementPickOverlay({ obj }) {
             return (
               <mesh
                 key={id}
+                rotation={[Math.PI / 2, 0, 0]}
                 onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
                 onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
                 onClick={onPick("face", id)}
@@ -359,6 +361,7 @@ function SubElementPickOverlay({ obj }) {
   }
 
   // ── Cone: 1 edge (base ring), 2 faces (base + side) ──
+  // Cone axis +Z, base at -Z/2.
   if (obj.type === "cone") {
     const r = obj.dims?.r || 10;
     const h = obj.dims?.h || 20;
@@ -373,8 +376,7 @@ function SubElementPickOverlay({ obj }) {
       return (
         <group {...baseProps}>
           <mesh
-            position={[0, -half, 0]}
-            rotation={[Math.PI / 2, 0, 0]}
+            position={[0, 0, -half]}
             onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(id); }}
             onPointerOut={() => setHoverId((hh) => hh === id ? null : hh)}
             onClick={onPick("edge", id)}
@@ -394,8 +396,7 @@ function SubElementPickOverlay({ obj }) {
       return (
         <group {...baseProps}>
           <mesh
-            position={[0, -half, 0]}
-            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, 0, -half]}
             onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(baseId); }}
             onPointerOut={() => setHoverId((hh) => hh === baseId ? null : hh)}
             onClick={onPick("face", baseId)}
@@ -405,6 +406,7 @@ function SubElementPickOverlay({ obj }) {
             <meshBasicMaterial color={baseIsPicked ? "#F97316" : baseHover ? "#FB923C" : "#0EA5E9"} transparent opacity={baseIsPicked ? 0.45 : baseHover ? 0.35 : 0.18} depthTest={false} side={THREE.DoubleSide} />
           </mesh>
           <mesh
+            rotation={[Math.PI / 2, 0, 0]}
             onPointerOver={(ev) => { ev.stopPropagation(); setHoverId(sideId); }}
             onPointerOut={() => setHoverId((hh) => hh === sideId ? null : hh)}
             onClick={onPick("face", sideId)}
@@ -435,17 +437,10 @@ function CutPlaneGizmo() {
   const lastPos = useRef([0, 25, 0]);
   const lastRot = useRef([0, 0, 0]);
   const size = cutPlane?.size || 200;
-  // PlaneGeometry has its normal pointing along +Z by default, but the CSG
-  // cut code assumes the plane's local +Y is the cut "up" direction. Rotate
-  // the geometry once at construction so the visible plane is horizontal
-  // (normal = +Y) at zero rotation — this is what users expect from a "drop
-  // a cutting plane onto your model" tool. The mesh's own rotation prop
-  // then represents user-applied tilts on top of that horizontal default.
-  const planeGeom = useMemo(() => {
-    const g = new THREE.PlaneGeometry(size, size);
-    g.rotateX(-Math.PI / 2);
-    return g;
-  }, [size]);
+  // With DEFAULT_UP = +Z, a PlaneGeometry's default normal is +Z which
+  // matches the desired "horizontal cutting plane" orientation. The
+  // user's `cutPlane.rotation` then represents tilts on top of that.
+  const planeGeom = useMemo(() => new THREE.PlaneGeometry(size, size), [size]);
   const edgeGeom = useMemo(() => new THREE.EdgesGeometry(planeGeom), [planeGeom]);
   if (!cutMode) return null;
   return (
@@ -731,57 +726,51 @@ function DesignPlate() {
   const dy = Math.max(50, designPlate.y);
   const dz = Math.max(50, designPlate.z);
 
-  // Slightly below the printer plate so the orange perimeter isn't
+  // Slightly below the printer plate (Z=0) so the cyan perimeter isn't
   // z-fighting and the design plate reads as a separate, lower layer.
-  const baseY = -0.15;
+  const baseZ = -0.15;
 
-  // Dashed outline rectangle — drawn as a single Line loop. Five
-  // vertices (closed). Drei's <Line> doesn't natively dash, so we
-  // model the four sides as repeated short segments via two Line
-  // instances (a/b stripes) which is good enough at any zoom.
-  const halfX = dx / 2, halfZ = dy / 2;
-  const cornerYBack = halfZ;     // +Z = back of bed
-  const cornerYFront = -halfZ;
+  // Footprint on the XY plane. Half-extents for the boundary rectangle.
+  const halfX = dx / 2, halfY = dy / 2;
+  // Outline rectangle (closed) lies in the XY plane at Z = baseZ.
   const outline = [
-    new THREE.Vector3(-halfX, baseY, cornerYBack),
-    new THREE.Vector3(+halfX, baseY, cornerYBack),
-    new THREE.Vector3(+halfX, baseY, cornerYFront),
-    new THREE.Vector3(-halfX, baseY, cornerYFront),
-    new THREE.Vector3(-halfX, baseY, cornerYBack),
+    new THREE.Vector3(-halfX, -halfY, baseZ),
+    new THREE.Vector3(+halfX, -halfY, baseZ),
+    new THREE.Vector3(+halfX, +halfY, baseZ),
+    new THREE.Vector3(-halfX, +halfY, baseZ),
+    new THREE.Vector3(-halfX, -halfY, baseZ),
   ];
 
   // Vertical "envelope" wireframe to communicate the modelling
-  // height (designPlate.z). 4 verticals + a top rectangle.
-  const top = baseY + dz;
+  // height (designPlate.z). 4 verticals + a top rectangle along +Z.
+  const top = baseZ + dz;
   const verticals = [
-    [new THREE.Vector3(-halfX, baseY, cornerYBack), new THREE.Vector3(-halfX, top, cornerYBack)],
-    [new THREE.Vector3(+halfX, baseY, cornerYBack), new THREE.Vector3(+halfX, top, cornerYBack)],
-    [new THREE.Vector3(+halfX, baseY, cornerYFront), new THREE.Vector3(+halfX, top, cornerYFront)],
-    [new THREE.Vector3(-halfX, baseY, cornerYFront), new THREE.Vector3(-halfX, top, cornerYFront)],
+    [new THREE.Vector3(-halfX, -halfY, baseZ), new THREE.Vector3(-halfX, -halfY, top)],
+    [new THREE.Vector3(+halfX, -halfY, baseZ), new THREE.Vector3(+halfX, -halfY, top)],
+    [new THREE.Vector3(+halfX, +halfY, baseZ), new THREE.Vector3(+halfX, +halfY, top)],
+    [new THREE.Vector3(-halfX, +halfY, baseZ), new THREE.Vector3(-halfX, +halfY, top)],
   ];
   const topRect = [
-    new THREE.Vector3(-halfX, top, cornerYBack),
-    new THREE.Vector3(+halfX, top, cornerYBack),
-    new THREE.Vector3(+halfX, top, cornerYFront),
-    new THREE.Vector3(-halfX, top, cornerYFront),
-    new THREE.Vector3(-halfX, top, cornerYBack),
+    new THREE.Vector3(-halfX, -halfY, top),
+    new THREE.Vector3(+halfX, -halfY, top),
+    new THREE.Vector3(+halfX, +halfY, top),
+    new THREE.Vector3(-halfX, +halfY, top),
+    new THREE.Vector3(-halfX, -halfY, top),
   ];
 
   return (
     <group data-testid="design-plate">
-      {/* Translucent floor — dark slate with very low opacity so the
-          printer plate above retains contrast but the boundary of the
-          design envelope is still legible at orbit angles. */}
-      <mesh position={[0, baseY, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow={false}>
+      {/* Translucent floor on the XY plane (Z-up). PlaneGeometry's default
+          normal is +Z so no rotation is needed here. */}
+      <mesh position={[0, 0, baseZ]} receiveShadow={false}>
         <planeGeometry args={[dx, dy]} />
         <meshBasicMaterial color="#1E293B" transparent opacity={0.35} depthWrite={false} />
       </mesh>
-      {/* Secondary grid at 50 mm sections — coarser than the printer
-          plate's 5 mm cell grid so they don't fight visually. */}
       {gridVisible && (
         <Grid
           args={[dx, dy]}
-          position={[0, baseY + 0.01, 0]}
+          position={[0, 0, baseZ + 0.01]}
+          rotation={[Math.PI / 2, 0, 0]}
           cellSize={50}
           cellThickness={0.5}
           cellColor="#475569"
@@ -792,17 +781,13 @@ function DesignPlate() {
           infiniteGrid={false}
         />
       )}
-      {/* Cyan dashed perimeter + envelope wireframe. Cyan is reserved
-          across the app as the "design / sketch" colour (Sketch tool,
-          ruler ticks), so users already associate it with "non-print
-          guides". */}
       <Line points={outline} color="#22D3EE" lineWidth={1.5} dashed dashSize={6} gapSize={4} transparent opacity={0.85} />
       {verticals.map((seg, i) => (
         <Line key={`v-${i}`} points={seg} color="#22D3EE" lineWidth={1} dashed dashSize={6} gapSize={4} transparent opacity={0.55} />
       ))}
       <Line points={topRect} color="#22D3EE" lineWidth={1} dashed dashSize={6} gapSize={4} transparent opacity={0.55} />
       {gridVisible && (
-        <Html position={[-halfX, baseY + 4, -halfZ - 8]} center={false} zIndexRange={[18, 0]} sprite={false}>
+        <Html position={[-halfX, halfY + 8, baseZ + 4]} center={false} zIndexRange={[18, 0]} sprite={false}>
           <div
             data-testid="design-plate-label"
             className="px-2 py-0.5 rounded bg-slate-950/85 border border-cyan-500/60 text-cyan-300 text-[11px] font-mono tracking-tight shadow-md whitespace-nowrap select-none"
@@ -821,31 +806,23 @@ function BuildPlate() {
   const gridVisible = useScene((s) => s.gridVisible);
   const { x, y, kinematics } = buildVolume;
 
-  // Delta machines have a circular bed. The bbox-style `x`/`y` we
-  // carry on `buildVolume` are equal (diameter × diameter), so the
-  // radius is whichever-axis-divided-by-two.
+  // Delta machines have a circular bed.
   if (kinematics === "delta") {
     const radius = Math.max(x, y) / 2;
-    // 64-segment perimeter ring keeps the circle visually smooth at
-    // typical orbit distances. No interior spokes or concentric guides
-    // per user request — they read as noise on the empty plate; the
-    // diameter label below carries the size information instead.
     const ringPoints = [];
     const N = 64;
     for (let i = 0; i <= N; i++) {
       const a = (2 * Math.PI * i) / N;
-      ringPoints.push(new THREE.Vector3(radius * Math.cos(a), 0, radius * Math.sin(a)));
+      ringPoints.push(new THREE.Vector3(radius * Math.cos(a), radius * Math.sin(a), 0));
     }
     return (
       <group>
-        {/* Solid dark disk, sat just below Y=0 like the cartesian plate so
-            the orange ring we draw on top isn't z-fighting. */}
-        <mesh receiveShadow position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        {/* Solid dark disk on the XY plane (Z-up) just below Z=0 so the
+            ring on top of it isn't z-fighting. */}
+        <mesh receiveShadow position={[0, 0, -0.05]}>
           <circleGeometry args={[radius, 64]} />
           <meshStandardMaterial color="#0F172A" roughness={0.9} />
         </mesh>
-        {/* Perimeter ring — orange, matches the cartesian plate's outer
-            section colour so the visual language stays consistent. */}
         <Line
           points={ringPoints}
           color="#F97316"
@@ -853,13 +830,9 @@ function BuildPlate() {
           depthTest
           transparent={false}
         />
-        {/* Diameter callout — DOM-rendered via drei's <Html> so the text
-            stays crisp at every zoom level. Anchored just outside the
-            ring at the front edge (positive Z) so the label reads
-            naturally for the default orbit angle. */}
         {gridVisible && (
           <Html
-            position={[0, 0.1, radius + 6]}
+            position={[0, radius + 6, 0.1]}
             center
             zIndexRange={[20, 0]}
             sprite={false}
@@ -877,10 +850,12 @@ function BuildPlate() {
     );
   }
 
-  // Cartesian (default) — square/rectangular bed with drei's Grid.
+  // Cartesian (default) — square/rectangular bed on the XY plane at Z=0.
+  // drei's <Grid> renders its lines in the XZ plane natively; rotate by
+  // +90° about X so the grid lies in the XY plane (normal = +Z).
   return (
     <group>
-      <mesh receiveShadow position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh receiveShadow position={[0, 0, -0.05]}>
         <planeGeometry args={[x, y]} />
         <meshStandardMaterial color="#0F172A" roughness={0.9} />
       </mesh>
@@ -888,6 +863,7 @@ function BuildPlate() {
         <Grid
           args={[x, y]}
           position={[0, 0, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
           cellSize={5}
           cellThickness={0.5}
           cellColor="#334155"
@@ -1254,35 +1230,25 @@ function CameraFitOnPrinterChange() {
   useEffect(() => {
     if (!camera || !controls) return;
     const { x = 220, y = 220, z = 250 } = buildVolume || {};
-    // Largest XZ extent + a generous fraction of Z. Delta beds are
-    // square-bbox so x≈y; tall cartesians like V400 (410 mm Z) need
-    // extra pull-back so the print volume top doesn't get clipped.
+    // Z-up: bed footprint is XY, build height is Z.
     const plate = Math.max(x, y);
     const fov = (camera.fov || 45) * (Math.PI / 180);
-    // Distance derived from the diagonal of plate + half-height, so a
-    // 200 mm plate frames close and a 410 mm tall delta backs off
-    // enough to show the whole printable cylinder.
     const span = Math.hypot(plate, z * 0.6);
     const dist = (span / (2 * Math.tan(fov / 2))) * 1.25 + 30;
     // Preserve the user's current orbit direction if they've moved.
     let dir = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
-    if (dir.lengthSq() < 1e-6) dir.set(0.0, 0.55, 1).normalize();
-    // Aim slightly above the plate's centre — looks more natural than
-    // staring at Y=0 with an empty scene, and matches the framing the
-    // default camera position used for the original 220 mm plate.
-    const targetY = Math.min(z * 0.2, plate * 0.15);
-    controls.target.set(0, targetY, 0);
+    if (dir.lengthSq() < 1e-6) dir.set(0.7, -0.7, 0.55).normalize();
+    // Aim slightly above the plate centre (Z above zero) — better
+    // default framing than staring at Z=0.
+    const targetZ = Math.min(z * 0.2, plate * 0.15);
+    controls.target.set(0, 0, targetZ);
     camera.position.set(
       dir.x * dist,
-      Math.max(dir.y * dist, plate * 0.35),
-      dir.z * dist,
+      dir.y * dist,
+      Math.max(dir.z * dist, plate * 0.35),
     );
     camera.updateProjectionMatrix();
     controls.update();
-    // We intentionally depend on printerId (the user's intent) AND
-    // buildVolume.x/y/z (covers community-printer hot-swaps that keep
-    // the id but mutate the volume). camera/controls are stable from
-    // the same `useThree()` instance, eslint-deps would push for them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printerId, buildVolume?.x, buildVolume?.y, buildVolume?.z]);
   return null;
@@ -1464,7 +1430,7 @@ export default function Viewport() {
       <BedAxisGizmo />
       <Canvas
         shadows
-        camera={{ position: [0, 160, 280], fov: 45, near: 0.1, far: 5000 }}
+        camera={{ position: [220, -260, 200], up: [0, 0, 1], fov: 45, near: 0.1, far: 5000 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
         onPointerMissed={(e) => {
           if (measureMode || marquee || shiftHeld) return;
@@ -1479,13 +1445,13 @@ export default function Viewport() {
         <color attach="background" args={[viewportBg]} />
         <ambientLight intensity={0.55} />
         <directionalLight
-          position={[150, 250, 100]}
+          position={[150, 100, 250]}
           intensity={1.0}
           castShadow
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
         />
-        <directionalLight position={[-100, 120, -100]} intensity={0.35} />
+        <directionalLight position={[-100, -100, 120]} intensity={0.35} />
 
         <DesignPlate />
         <BuildPlate />
@@ -1557,7 +1523,7 @@ export default function Viewport() {
           enabled={!marquee}
           enableDamping
           dampingFactor={0.08}
-          target={[0, buildVolume.z / 4, 0]}
+          target={[0, 0, buildVolume.z / 4]}
           maxDistance={1500}
           minDistance={20}
         />

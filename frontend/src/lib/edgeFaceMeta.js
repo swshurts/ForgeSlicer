@@ -9,54 +9,48 @@
 // All identifiers are pure strings — they survive JSON serialisation
 // into `obj.edgeFillets` without any extra encoding.
 //
-// Coordinate convention (matches the rest of ForgeSlicer):
-//   • +X = right, +Y = UP (height), +Z = depth into the bed.
-//   • Cube `dims.x` → world X span, `dims.y` → world Z span (DEPTH),
-//     `dims.z` → world Y span (HEIGHT). This is the same convention
-//     buildGeometry() uses today, so the IDs below are stable across
-//     UI changes.
+// iter-104.1 — Z-up CAD convention:
+//   • +X = right, +Y = forward (depth from viewer), +Z = UP (height).
+//   • Cube `dims.x` → world X, `dims.y` → world Y, `dims.z` → world Z.
+//   • Local frame is 1:1 with dims (no axis swap relative to dims).
+//   • Position labels:
+//       xPos: min = "Left",   max = "Right"
+//       yPos: min = "Front",  max = "Back"   (low Y = closer to viewer)
+//       zPos: min = "Bottom", max = "Top"    (low Z = down)
 
 // ---------- Cube edges (12) ----------
-// Each edge runs along one of the three world axes (X / Y / Z) at one
-// of four corner positions in the other two axes. Naming pattern:
-//   `e_<axis>_<sign1><axis1><sign2><axis2>` where (axis1, axis2) is the
-// pair of perpendicular axes, in alphabetical order. Signs are 'min' /
-// 'max'.  Example: `e_X_minY_minZ` is the edge parallel to X that sits
-// at minimum Y and minimum Z — the "front-bottom" edge.
+// Naming pattern: `e_<axis>_<sign1><axis1><sign2><axis2>` where
+// (axis1, axis2) is the pair of perpendicular axes, alphabetical order.
+// `axis` is the world axis the edge runs along.
 export const CUBE_EDGES = [
-  // X-parallel edges (run along world X, vary in Y/Z)
-  { id: "e_X_minY_minZ", axis: "X", label: "Front-bottom edge",  yPos: "min", zPos: "min" },
-  { id: "e_X_minY_maxZ", axis: "X", label: "Back-bottom edge",   yPos: "min", zPos: "max" },
-  { id: "e_X_maxY_minZ", axis: "X", label: "Front-top edge",     yPos: "max", zPos: "min" },
-  { id: "e_X_maxY_maxZ", axis: "X", label: "Back-top edge",      yPos: "max", zPos: "max" },
-  // Y-parallel edges (run along world Y / vertical, vary in X/Z)
-  { id: "e_Y_minX_minZ", axis: "Y", label: "Front-left edge",    xPos: "min", zPos: "min" },
-  { id: "e_Y_minX_maxZ", axis: "Y", label: "Back-left edge",     xPos: "min", zPos: "max" },
-  { id: "e_Y_maxX_minZ", axis: "Y", label: "Front-right edge",   xPos: "max", zPos: "min" },
-  { id: "e_Y_maxX_maxZ", axis: "Y", label: "Back-right edge",    xPos: "max", zPos: "max" },
-  // Z-parallel edges (run along world Z / depth, vary in X/Y)
-  { id: "e_Z_minX_minY", axis: "Z", label: "Bottom-left edge",   xPos: "min", yPos: "min" },
-  { id: "e_Z_minX_maxY", axis: "Z", label: "Top-left edge",      xPos: "min", yPos: "max" },
-  { id: "e_Z_maxX_minY", axis: "Z", label: "Bottom-right edge",  xPos: "max", yPos: "min" },
-  { id: "e_Z_maxX_maxY", axis: "Z", label: "Top-right edge",     xPos: "max", yPos: "max" },
+  // X-parallel edges (in YZ plane)
+  { id: "e_X_minY_minZ", axis: "X", label: "Front-bottom edge", yPos: "min", zPos: "min" },
+  { id: "e_X_minY_maxZ", axis: "X", label: "Front-top edge",    yPos: "min", zPos: "max" },
+  { id: "e_X_maxY_minZ", axis: "X", label: "Back-bottom edge",  yPos: "max", zPos: "min" },
+  { id: "e_X_maxY_maxZ", axis: "X", label: "Back-top edge",     yPos: "max", zPos: "max" },
+  // Y-parallel edges (in XZ plane) — horizontal forward-running edges
+  { id: "e_Y_minX_minZ", axis: "Y", label: "Left-bottom edge",  xPos: "min", zPos: "min" },
+  { id: "e_Y_minX_maxZ", axis: "Y", label: "Left-top edge",     xPos: "min", zPos: "max" },
+  { id: "e_Y_maxX_minZ", axis: "Y", label: "Right-bottom edge", xPos: "max", zPos: "min" },
+  { id: "e_Y_maxX_maxZ", axis: "Y", label: "Right-top edge",    xPos: "max", zPos: "max" },
+  // Z-parallel edges (in XY plane) — vertical edges
+  { id: "e_Z_minX_minY", axis: "Z", label: "Front-left vertical edge",  xPos: "min", yPos: "min" },
+  { id: "e_Z_minX_maxY", axis: "Z", label: "Back-left vertical edge",   xPos: "min", yPos: "max" },
+  { id: "e_Z_maxX_minY", axis: "Z", label: "Front-right vertical edge", xPos: "max", yPos: "min" },
+  { id: "e_Z_maxX_maxY", axis: "Z", label: "Back-right vertical edge",  xPos: "max", yPos: "max" },
 ];
 
 // ---------- Cube faces (6) ----------
-// Each face has 4 abutting edges. When the user "selects a surface"
-// the fillet/chamfer is applied to all 4 of those edges.
 export const CUBE_FACES = [
   { id: "f_minX", label: "Left face",   normal: [-1, 0, 0], edges: ["e_Y_minX_minZ", "e_Y_minX_maxZ", "e_Z_minX_minY", "e_Z_minX_maxY"] },
   { id: "f_maxX", label: "Right face",  normal: [ 1, 0, 0], edges: ["e_Y_maxX_minZ", "e_Y_maxX_maxZ", "e_Z_maxX_minY", "e_Z_maxX_maxY"] },
-  { id: "f_minY", label: "Bottom face", normal: [0, -1, 0], edges: ["e_X_minY_minZ", "e_X_minY_maxZ", "e_Z_minX_minY", "e_Z_maxX_minY"] },
-  { id: "f_maxY", label: "Top face",    normal: [0,  1, 0], edges: ["e_X_maxY_minZ", "e_X_maxY_maxZ", "e_Z_minX_maxY", "e_Z_maxX_maxY"] },
-  { id: "f_minZ", label: "Front face",  normal: [0, 0, -1], edges: ["e_X_minY_minZ", "e_X_maxY_minZ", "e_Y_minX_minZ", "e_Y_maxX_minZ"] },
-  { id: "f_maxZ", label: "Back face",   normal: [0, 0,  1], edges: ["e_X_minY_maxZ", "e_X_maxY_maxZ", "e_Y_minX_maxZ", "e_Y_maxX_maxZ"] },
+  { id: "f_minY", label: "Front face",  normal: [0, -1, 0], edges: ["e_X_minY_minZ", "e_X_minY_maxZ", "e_Z_minX_minY", "e_Z_maxX_minY"] },
+  { id: "f_maxY", label: "Back face",   normal: [0,  1, 0], edges: ["e_X_maxY_minZ", "e_X_maxY_maxZ", "e_Z_minX_maxY", "e_Z_maxX_maxY"] },
+  { id: "f_minZ", label: "Bottom face", normal: [0, 0, -1], edges: ["e_X_minY_minZ", "e_X_maxY_minZ", "e_Y_minX_minZ", "e_Y_maxX_minZ"] },
+  { id: "f_maxZ", label: "Top face",    normal: [0, 0,  1], edges: ["e_X_minY_maxZ", "e_X_maxY_maxZ", "e_Y_minX_maxZ", "e_Y_maxX_maxZ"] },
 ];
 
 // ---------- Cube vertices (8) ----------
-// Picking a vertex applies the fillet to the whole item — these IDs
-// exist mainly for the viewport pick widget. They share radius/style
-// with the rest of the cube's edges.
 export const CUBE_VERTICES = [
   { id: "v_minX_minY_minZ", label: "Corner (-X, -Y, -Z)" },
   { id: "v_maxX_minY_minZ", label: "Corner (+X, -Y, -Z)" },
@@ -69,9 +63,7 @@ export const CUBE_VERTICES = [
 ];
 
 // ---------- Cylinder ----------
-// Only two edges (top circle, bottom circle) and three faces
-// (top, bottom, curved side). Picking the side face applies to BOTH
-// edges (it abuts both).
+// Cylinder axis is +Z (CAD up); top edge at +Z/2, bottom at -Z/2.
 export const CYLINDER_EDGES = [
   { id: "e_top",    label: "Top edge" },
   { id: "e_bottom", label: "Bottom edge" },
@@ -81,12 +73,9 @@ export const CYLINDER_FACES = [
   { id: "f_bottom", label: "Bottom face", edges: ["e_bottom"] },
   { id: "f_side",   label: "Curved side", edges: ["e_top", "e_bottom"] },
 ];
-// Cylinders have no real vertices — picking the centre = whole item.
 export const CYLINDER_VERTICES = [{ id: "v_center", label: "Whole cylinder" }];
 
 // ---------- Cone ----------
-// One edge (base circle) and two faces (base, curved side). Apex is a
-// point, not a vertex you'd want to fillet — exposed as "whole item".
 export const CONE_EDGES = [{ id: "e_base", label: "Base edge" }];
 export const CONE_FACES = [
   { id: "f_base", label: "Base face",    edges: ["e_base"] },
@@ -114,9 +103,6 @@ export function getVerticesForType(type) {
   return [];
 }
 
-// Resolve a sub-selection (face / vertex) to the set of edge IDs it
-// affects. Edges resolve to themselves; faces resolve to their 4
-// abutting edges; vertices resolve to ALL edges of the primitive.
 export function resolveSelectionToEdgeIds(obj, sub) {
   if (!sub || !obj) return [];
   if (sub.kind === "edge") return [sub.id];
@@ -130,79 +116,65 @@ export function resolveSelectionToEdgeIds(obj, sub) {
   return [];
 }
 
-// Returns true when the given primitive supports per-edge fillets.
-// Mirrors the supports-edgeStyle list in RightPanel today.
 export function supportsEdgeFillets(type) {
   return type === "cube" || type === "cylinder" || type === "cone";
 }
 
-// Endpoint coords (in object-local space) for a cube edge — used by
-// the viewport hit-zone overlay AND by partialFillet.js to know where
-// the edge sits relative to the cube origin.
-//
-// Cube local frame: object dims.x → world X span, dims.y → world Z
-// (DEPTH), dims.z → world Y (HEIGHT). buildGeometry uses
-// `BoxGeometry(w=dims.x, h=dims.z, dep=dims.y)` — so in three's local
-// frame the cube is centred at (0,0,0) with extents:
-//   ±dims.x/2 along X
-//   ±dims.z/2 along Y  (HEIGHT, which is world UP)
-//   ±dims.y/2 along Z  (DEPTH)
-// Confusingly, the EDGE-ID's `axis` letter refers to WORLD axes, so
-// `axis:"Y"` means "runs vertically through the cube" = three's local
-// Y, which corresponds to the user-facing `dims.z` height value.
+// Endpoint coords (object-local frame) for cube edges. With Z-up,
+// the cube's local frame is 1:1 with dims:
+//   dims.x → local X, dims.y → local Y, dims.z → local Z.
 export function cubeEdgeEndpoints(dims) {
   const hx = (dims.x || 20) / 2;
-  const hyHeight = (dims.z || 20) / 2;   // world-up extent (local Y)
-  const hzDepth = (dims.y || 20) / 2;    // depth extent (local Z)
-  // For a given edge, build [a, b] in three's local frame.
+  const hy = (dims.y || 20) / 2;
+  const hz = (dims.z || 20) / 2;
   const f = (sign) => (sign === "max" ? 1 : -1);
   return CUBE_EDGES.map((e) => {
     let a, b;
     if (e.axis === "X") {
-      const y = f(e.yPos) * hyHeight;
-      const z = f(e.zPos) * hzDepth;
-      a = [-hx, y, z]; b = [ hx, y, z];
+      const y = f(e.yPos) * hy;
+      const z = f(e.zPos) * hz;
+      a = [-hx, y, z]; b = [hx, y, z];
     } else if (e.axis === "Y") {
       const x = f(e.xPos) * hx;
-      const z = f(e.zPos) * hzDepth;
-      a = [x, -hyHeight, z]; b = [x, hyHeight, z];
+      const z = f(e.zPos) * hz;
+      a = [x, -hy, z]; b = [x, hy, z];
     } else { // Z
       const x = f(e.xPos) * hx;
-      const y = f(e.yPos) * hyHeight;
-      a = [x, y, -hzDepth]; b = [x, y, hzDepth];
+      const y = f(e.yPos) * hy;
+      a = [x, y, -hz]; b = [x, y, hz];
     }
     return { id: e.id, label: e.label, axis: e.axis, a, b };
   });
 }
 
-// Face centre point + half-extents in three local frame (for the face
-// hit-zone overlay). Returns { id, label, center, half: [hx, hy], normal }
-// where (hx, hy) is the 2D extent of the face (the face quad).
+// Face centre + half-extents in object-local frame. The picker overlay
+// rotates a PlaneGeometry from its default +Z normal onto each face's
+// normal; `half[0]` is the plane's local-X half-extent (post-rotation
+// it lies along the first in-face axis), `half[1]` is local-Y.
 export function cubeFaceQuads(dims) {
   const hx = (dims.x || 20) / 2;
-  const hyHeight = (dims.z || 20) / 2;
-  const hzDepth = (dims.y || 20) / 2;
+  const hy = (dims.y || 20) / 2;
+  const hz = (dims.z || 20) / 2;
   return CUBE_FACES.map((f) => {
     let center, half, axis;
-    if (f.id === "f_minX") { center = [-hx, 0, 0]; half = [hzDepth, hyHeight]; axis = "X"; }
-    else if (f.id === "f_maxX") { center = [ hx, 0, 0]; half = [hzDepth, hyHeight]; axis = "X"; }
-    else if (f.id === "f_minY") { center = [0, -hyHeight, 0]; half = [hx, hzDepth]; axis = "Y"; }
-    else if (f.id === "f_maxY") { center = [0,  hyHeight, 0]; half = [hx, hzDepth]; axis = "Y"; }
-    else if (f.id === "f_minZ") { center = [0, 0, -hzDepth]; half = [hx, hyHeight]; axis = "Z"; }
-    else                         { center = [0, 0,  hzDepth]; half = [hx, hyHeight]; axis = "Z"; }
+    if (f.id === "f_minX")      { center = [-hx, 0, 0];  half = [hz, hy]; axis = "X"; }
+    else if (f.id === "f_maxX") { center = [ hx, 0, 0];  half = [hz, hy]; axis = "X"; }
+    else if (f.id === "f_minY") { center = [0, -hy, 0];  half = [hx, hz]; axis = "Y"; }
+    else if (f.id === "f_maxY") { center = [0,  hy, 0];  half = [hx, hz]; axis = "Y"; }
+    else if (f.id === "f_minZ") { center = [0, 0, -hz];  half = [hx, hy]; axis = "Z"; }
+    else                         { center = [0, 0,  hz];  half = [hx, hy]; axis = "Z"; }
     return { id: f.id, label: f.label, center, half, axis, normal: f.normal };
   });
 }
 
 export function cubeVertexPositions(dims) {
   const hx = (dims.x || 20) / 2;
-  const hyHeight = (dims.z || 20) / 2;
-  const hzDepth = (dims.y || 20) / 2;
+  const hy = (dims.y || 20) / 2;
+  const hz = (dims.z || 20) / 2;
   const f = (sign) => (sign === "max" ? 1 : -1);
   return CUBE_VERTICES.map((v) => {
-    // Parse "v_<sign>X_<sign>Y_<sign>Z" — signs are "min" / "max".
     const m = v.id.match(/^v_(min|max)X_(min|max)Y_(min|max)Z$/);
     const sx = f(m[1]), sy = f(m[2]), sz = f(m[3]);
-    return { id: v.id, label: v.label, p: [sx * hx, sy * hyHeight, sz * hzDepth] };
+    return { id: v.id, label: v.label, p: [sx * hx, sy * hy, sz * hz] };
   });
 }

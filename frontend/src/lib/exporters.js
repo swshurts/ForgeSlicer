@@ -26,38 +26,12 @@ export function downloadText(text, filename, mime = "text/plain") {
 // Internal: normalise a scene-evaluated Three.js geometry into the
 // coordinate frame every FDM slicer expects.
 //
-// Three.js scenes use **Y-up** (vertical = +Y). Every FDM slicer in
-// existence — OrcaSlicer, Cura, PrusaSlicer, FlashPrint, etc. —
-// expects **Z-up** STLs (vertical = +Z). Emitting raw scene
-// coordinates ships the slicer a model that's tipped 90° on its
-// side, and likely floating in mid-air because the bed plane in
-// Three.js is `Y=0` (which becomes `Y=0` in the STL when the slicer
-// re-interprets axes — leaving the model entirely above the bed
-// plane it expected at `Z=0`). Both bugs together produce the
-// classic "phantom supports filling empty air" failure mode that
-// surfaced in iter-75's spaghetti print and the Cura import
-// screenshot in iter-76.
-//
-// Fix: rotate the geometry by **-90° around X** so old Y → new Z,
-// then translate so `bbox.min.z = 0` (i.e. the lowest point of the
-// model sits exactly on the build plate). The user's relative
-// vertical positioning within the scene is preserved — we only
-// adjust the world origin.
-//
-// Mutates the geometry in place AND returns it for chaining.
+// iter-104.1 — ForgeSlicer is now Z-up internally (matching CAD
+// convention). Slicers (OrcaSlicer, Cura, PrusaSlicer, etc.) are
+// also Z-up. No rotation is required. We still drop the bbox to
+// the build plate (bb.min.z = 0) so the slicer sees the model
+// resting on Z=0.
 function _normaliseForSlicer(geometry) {
-  // Y-up → Z-up rotation. Three.js's `makeRotationX(+π/2)` produces
-  // the matrix where new_z = +old_y (so old height becomes new
-  // height in the slicer's Z-up frame) and new_y = -old_z. Applied
-  // first because the drop-to-bed computation needs the bbox in
-  // the FINAL coordinate frame.
-  const yUpToZUp = new THREE.Matrix4().makeRotationX(Math.PI / 2);
-  geometry.applyMatrix4(yUpToZUp);
-  // Drop to bed: translate so the lowest point sits at Z=0. This
-  // also handles the (rare) case where the user moved an object
-  // intentionally below the grid — we still drop the whole scene
-  // so the lowest extent meets the bed, rather than letting the
-  // slicer clip whatever's below Z=0.
   geometry.computeBoundingBox();
   const bb = geometry.boundingBox;
   if (bb && (Math.abs(bb.min.z) > 1e-4)) {
@@ -413,20 +387,8 @@ export async function import3MFFile(file) {
   }
 
   const verts = new Float32Array(positions);
-  // 3MF files are Z-up (per spec). Apply the same convention conversion
-  // as importSTLFile so the 3MF round-trips through the slice pipeline
-  // correctly. Rotation runs over the Float32Array directly so we don't
-  // allocate a fresh BufferGeometry just for this.
-  // makeRotationX(-π/2): new_y = +old_z, new_z = -old_y.
-  for (let i = 0; i < verts.length; i += 3) {
-    const oldY = verts[i + 1];
-    const oldZ = verts[i + 2];
-    verts[i + 1] = oldZ;
-    verts[i + 2] = -oldY;
-  }
-  // bbox + recenter so XZ center is at origin and bottom sits on Y=0.
-  // Operating in Y-up space now (after the rotation), so min.y is the
-  // height axis to clear.
+  // 3MF files are Z-up natively — same as our internal frame. No
+  // rotation needed; just centre on X/Y and drop bottom to Z=0.
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < verts.length; i += 3) {
@@ -436,11 +398,11 @@ export async function import3MFFile(file) {
     if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
   }
   const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
+  const cy = (minY + maxY) / 2;
   for (let i = 0; i < verts.length; i += 3) {
-    verts[i] -= cx;
-    verts[i + 1] -= minY;
-    verts[i + 2] -= cz;
+    verts[i]     -= cx;
+    verts[i + 1] -= cy;
+    verts[i + 2] -= minZ;
   }
   return {
     name: file.name.replace(/\.[^.]+$/, ""),
@@ -510,18 +472,14 @@ export async function import3MFFileMulti(file) {
     );
   }
 
-  // Pass 1 — apply Z-up → Y-up rotation to every object's vertices
-  // in place, then compute a combined bbox so we can centre/drop the
-  // whole import as a single unit (preserving inter-object offsets).
+  // Pass 1 — compute combined bbox in native Z-up coords so we can
+  // centre/drop the whole import as a single unit (preserving inter-
+  // object offsets). No rotation: 3MF and ForgeSlicer are both Z-up.
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (const o of rich) {
     const v = o.positions;
     for (let i = 0; i < v.length; i += 3) {
-      const oldY = v[i + 1];
-      const oldZ = v[i + 2];
-      v[i + 1] = oldZ;
-      v[i + 2] = -oldY;
       const x = v[i], y = v[i + 1], z = v[i + 2];
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
@@ -529,7 +487,7 @@ export async function import3MFFileMulti(file) {
     }
   }
   const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
+  const cy = (minY + maxY) / 2;
   // Pass 2 — recentre & drop. Also compute each object's individual
   // bbox AFTER the global recentre so the Inspector "dims" panel
   // shows real per-object dimensions.
@@ -539,9 +497,9 @@ export async function import3MFFileMulti(file) {
     let omnX = Infinity, omnY = Infinity, omnZ = Infinity;
     let omxX = -Infinity, omxY = -Infinity, omxZ = -Infinity;
     for (let i = 0; i < v.length; i += 3) {
-      v[i] -= cx;
-      v[i + 1] -= minY;
-      v[i + 2] -= cz;
+      v[i]     -= cx;
+      v[i + 1] -= cy;
+      v[i + 2] -= minZ;
       const x = v[i], y = v[i + 1], z = v[i + 2];
       if (x < omnX) omnX = x; if (x > omxX) omxX = x;
       if (y < omnY) omnY = y; if (y > omxY) omxY = y;
@@ -721,14 +679,11 @@ export async function importGLBFile(file) {
 // sideways" frame will appear rotated 90° after this fix. Users have
 // to re-import those files. We accept that — the alternative (leaving
 // the bug in place) makes the slice flow produce wrong G-code.
+// iter-104.1 — ForgeSlicer is now Z-up internally (matching STL/3MF/OBJ).
+// No coordinate conversion is needed on import; preserve the file's
+// original orientation. We still centre on X/Y and drop to Z=0 so the
+// model rests on the build plate.
 function _zUpToYUp(geometry) {
-  // Three.js's `makeRotationX(-π/2)` produces the matrix where
-  // new_y = +old_z (so the STL's height axis becomes Three.js's
-  // height axis) and new_z = -old_y. This is the inverse of
-  // `_normaliseForSlicer`'s rotation, so import→export round-trips
-  // preserve orientation exactly.
-  const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-  geometry.applyMatrix4(m);
   return geometry;
 }
 
@@ -736,16 +691,12 @@ export async function importSTLFile(file) {
   const buf = await readFileAsArrayBuffer(file);
   const loader = new STLLoader();
   const geom = loader.parse(buf);
-  // STL files are always Z-up — rotate into Three.js's Y-up frame
-  // so the scene viewport shows the model in its print orientation.
-  _zUpToYUp(geom);
   geom.computeVertexNormals();
   geom.computeBoundingBox();
   const bb = geom.boundingBox;
-  // Center on X/Z (footprint) and drop the lowest point to Y=0 so
-  // the model rests on the build-plate grid. Now operating in Y-up
-  // space, so `min.y` is the right axis to clear to zero.
-  geom.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+  // Centre on X/Y (footprint) and drop the lowest point to Z=0 so
+  // the model rests on the build-plate grid (Z-up CAD convention).
+  geom.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
   geom.computeBoundingBox();
   const bb2 = geom.boundingBox;
   const pos = geom.attributes.position.array;
@@ -785,20 +736,17 @@ export async function importOBJFile(file) {
     }
   });
   const verts = new Float32Array(positions);
-  // OBJ files in 3D-printing contexts are typically Z-up (same as STL).
-  // Apply the same rotation as importSTLFile for consistency.
+  // OBJ files in 3D-printing contexts are Z-up — same as our internal
+  // frame. No rotation; just centre on X/Y and drop to Z=0.
   const tmp = new THREE.BufferGeometry();
   tmp.setAttribute("position", new THREE.BufferAttribute(verts, 3));
-  _zUpToYUp(tmp);
-  // After rotation, re-read the vertex array so the in-place rotation
-  // applies to the array we'll return.
   const rotated = tmp.attributes.position.array;
   tmp.computeBoundingBox();
   const bb = tmp.boundingBox;
   for (let i = 0; i < rotated.length; i += 3) {
-    rotated[i] -= (bb.min.x + bb.max.x) / 2;
-    rotated[i + 1] -= bb.min.y;
-    rotated[i + 2] -= (bb.min.z + bb.max.z) / 2;
+    rotated[i]     -= (bb.min.x + bb.max.x) / 2;
+    rotated[i + 1] -= (bb.min.y + bb.max.y) / 2;
+    rotated[i + 2] -= bb.min.z;
   }
   return {
     name: file.name.replace(/\.[^.]+$/, ""),

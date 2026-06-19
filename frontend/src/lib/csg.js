@@ -499,7 +499,8 @@ export function combineTwo(a, b, op) {
 // requires closed manifolds for both operands.
 //
 // `plane` is { position: [x,y,z], rotation: [rx,ry,rz] } in world space.
-// The "upper" half is the side the plane's local +Y axis points toward.
+// The "upper" half is the side the plane's local +Z axis points toward
+// (Z-up CAD convention — cuts default to horizontal slicing).
 export function cutObjectByPlane(obj, plane, options = {}) {
   const wantUpper = options.upper !== false;
   const wantLower = options.lower !== false;
@@ -510,18 +511,17 @@ export function cutObjectByPlane(obj, plane, options = {}) {
   const evaluator = new Evaluator();
   const srcBrush = makeBrush(obj);
 
-  const makeHalfSpace = (signY) => {
+  const makeHalfSpace = (signZ) => {
     const g = new THREE.BoxGeometry(BOX, BOX, BOX);
     const mat = new THREE.MeshStandardMaterial();
     const b = new Brush(g, mat);
-    // In the plane's LOCAL frame, the cut is the XZ plane at y=0. To make a
-    // half-space box, push its center to (0, ±BOX/2, 0) so its bottom (or top)
-    // face sits on y=0. Then rotate+translate the brush by the plane's world
-    // transform.
+    // In the plane's LOCAL frame the cut is the XY plane at z=0. To make a
+    // half-space box, push its center to (0, 0, ±BOX/2) so its near face
+    // sits on z=0. Then rotate+translate by the plane's world transform.
     const planeMat = new THREE.Matrix4();
     const planeEuler = new THREE.Euler(plane.rotation[0], plane.rotation[1], plane.rotation[2]);
     const planeQuat = new THREE.Quaternion().setFromEuler(planeEuler);
-    const offsetLocal = new THREE.Vector3(0, signY * BOX / 2, 0);
+    const offsetLocal = new THREE.Vector3(0, 0, signZ * BOX / 2);
     const offsetWorld = offsetLocal.clone().applyQuaternion(planeQuat);
     planeMat.compose(
       new THREE.Vector3(

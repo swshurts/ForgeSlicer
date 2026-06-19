@@ -41,6 +41,16 @@ export function sliceToGCODE(objects, settings, onProgress) {
   const { geometry, empty } = evaluateScene(objects);
   if (empty) throw new Error("Nothing to slice. Add at least one positive component.");
 
+  // iter-104.1 — Slicer math was written for a Y-up scene (it iterates
+  // along world-Y as the build axis and writes GCODE Z as that Y).
+  // ForgeSlicer is now Z-up internally; rotate the merged geometry
+  // -90° around X so the slicer sees Y-up again (old_z → new_y).
+  // The output GCODE is then in Z-up coords directly (no extra swap).
+  {
+    const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+    geometry.applyMatrix4(m);
+  }
+
   // Pull triangles into a flat array of vec3 triplets (a,b,c)
   const tris = collectTriangles(geometry);
   if (tris.length === 0) throw new Error("Geometry has no triangles.");
@@ -577,6 +587,14 @@ function sliceMultiMaterialToGCODE(objects, settings, onProgress) {
   const { groups } = evaluateSceneByColor(objects);
   if (!groups || groups.length === 0) {
     throw new Error("Nothing to slice. Add at least one positive component.");
+  }
+
+  // iter-104.1 — Slicer math was written for a Y-up scene. Rotate
+  // each group's geometry -90° around X so the slicer sees Y-up
+  // (old_z → new_y). See sliceToGCODE for the rationale.
+  const _zToYRot = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  for (const g of groups) {
+    g.geometry.applyMatrix4(_zToYRot);
   }
 
   // Per-color triangle lists + a combined bbox so layer count is driven

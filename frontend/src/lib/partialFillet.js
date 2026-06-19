@@ -234,11 +234,12 @@ function buildEdgePieces(wasm, edge, dimsLocal, r, style, segments) {
  * initialised manifold-3d module (caller is responsible for `getManifold()`).
  */
 export function buildCubeManifoldWithFilletsSync(wasm, obj) {
+  // iter-104.1 — Z-up CAD frame. dims map 1:1 to local X/Y/Z (no swap).
   const dims = obj.dims || {};
   const w = dims.x || 20;
-  const dep = dims.y || 20;
+  const depY = dims.y || 20;
   const h = dims.z || 20;
-  const dimsLocal = { x: w, y: h, z: dep };
+  const dimsLocal = { x: w, y: depY, z: h };
 
   const fillets = obj.edgeFillets || {};
   const uniformR = Math.max(0, dims.edgeRadius || 0);
@@ -259,7 +260,7 @@ export function buildCubeManifoldWithFilletsSync(wasm, obj) {
     .filter(Boolean);
   if (planned.length === 0) return null;
 
-  let cube = wasm.Manifold.cube([w, h, dep], true);
+  let cube = wasm.Manifold.cube([w, depY, h], true);
   const segs = 24;
   const owned = [];
   try {
@@ -374,6 +375,8 @@ export function buildCylinderGeometryWithFillets(obj) {
   points.push(new THREE.Vector2(0, half));
 
   const g = new THREE.LatheGeometry(points, segs);
+  // Lathe revolves around Y; rotate so the cylinder's axis is +Z (CAD up).
+  g.rotateX(Math.PI / 2);
   g.computeVertexNormals();
   return g;
 }
@@ -411,6 +414,8 @@ export function buildConeGeometryWithFillets(obj) {
   }
   points.push(new THREE.Vector2(0, half));
   const g = new THREE.LatheGeometry(points, segs);
+  // Lathe revolves around Y; rotate so the cone's axis is +Z (CAD up).
+  g.rotateX(Math.PI / 2);
   g.computeVertexNormals();
   return g;
 }

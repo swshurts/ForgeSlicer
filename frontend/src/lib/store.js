@@ -161,13 +161,15 @@ export const useScene = create((set, get) => ({
         if (isUnit) return o;
         const d = { ...(o.dims || {}) };
         if (o.type === "cube") {
+          // iter-104.1 Z-up: dims map 1:1 to world X/Y/Z.
           d.x = (d.x || 20) * sc[0];
-          d.z = (d.z || 20) * sc[1];
-          d.y = (d.y || 20) * sc[2];
+          d.y = (d.y || 20) * sc[1];
+          d.z = (d.z || 20) * sc[2];
         } else if (o.type === "cylinder" || o.type === "cone") {
-          const radialFactor = Math.sqrt(Math.max(0, sc[0]) * Math.max(0, sc[2])) || 1;
+          // Cylinder axis is +Z (height). Radial extent is on X/Y.
+          const radialFactor = Math.sqrt(Math.max(0, sc[0]) * Math.max(0, sc[1])) || 1;
           d.r = (d.r || 10) * radialFactor;
-          d.h = (d.h || 20) * sc[1];
+          d.h = (d.h || 20) * sc[2];
           if (d.r1 != null) d.r1 *= radialFactor;
           if (d.r2 != null) d.r2 *= radialFactor;
         } else if (o.type === "sphere") {
@@ -364,14 +366,12 @@ export const useScene = create((set, get) => ({
     get().pushHistory();
     let obj = buildPrimitive(type, modifier);
     // Honour the "auto-drop new parts to bed" preference (default ON).
-    // We compute the rotated local bbox and offset position.y so the bottom
-    // touches Y=0. Wrapped in try/catch so a missing geometry helper for
-    // exotic types can't break primitive creation.
+    // Z-up: bed is the XY plane at Z=0, drop offsets position[2].
     if (get().autoDropNew) {
       try {
         const bb = computeRotatedBBox(obj);
-        if (isFinite(bb.min.y)) {
-          obj = { ...obj, position: [obj.position[0], -bb.min.y, obj.position[2]] };
+        if (isFinite(bb.min.z)) {
+          obj = { ...obj, position: [obj.position[0], obj.position[1], -bb.min.z] };
         }
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -423,7 +423,7 @@ export const useScene = create((set, get) => ({
       modifier,
       visible: true,
       locked: false,
-      position: [cx, height / 2, cy],
+      position: [cx, cy, height / 2],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       dims: { points: points.map(([x, y]) => [x, y]), h: height },
@@ -510,20 +510,20 @@ export const useScene = create((set, get) => ({
       // is centered on the path's own centroid by buildSweepGeometry, so
       // placing the object at the origin keeps everything where the user
       // drew it.
-      position: [0, role === "path" ? 0 : 10, 0],
+      position: [0, 0, role === "path" ? 0 : 10],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       dims,
       colorIndex: (src.modifier === "negative") ? 0 : 7,
     };
 
-    // Auto-drop so the new sweep sits on the bed.
+    // Auto-drop so the new sweep sits on the bed (Z=0 plane).
     let placed = obj;
     if (get().autoDropNew) {
       try {
         const bb = computeRotatedBBox(placed);
-        if (isFinite(bb.min.y)) {
-          placed = { ...placed, position: [placed.position[0], -bb.min.y, placed.position[2]] };
+        if (isFinite(bb.min.z)) {
+          placed = { ...placed, position: [placed.position[0], placed.position[1], -bb.min.z] };
         }
       } catch (_) { /* non-fatal */ }
     }
@@ -578,8 +578,8 @@ export const useScene = create((set, get) => ({
     if (get().autoDropNew) {
       try {
         const bb = computeRotatedBBox(obj);
-        if (isFinite(bb.min.y)) {
-          obj = { ...obj, position: [obj.position[0], -bb.min.y, obj.position[2]] };
+        if (isFinite(bb.min.z)) {
+          obj = { ...obj, position: [obj.position[0], obj.position[1], -bb.min.z] };
         }
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -596,10 +596,10 @@ export const useScene = create((set, get) => ({
     if (get().autoDropNew && !obj.__skipAutoDrop) {
       try {
         const bb = computeRotatedBBox(withId);
-        if (isFinite(bb.min.y)) {
-          const wy = (withId.position?.[1] ?? 0) + bb.min.y;
-          if (Math.abs(wy) > 1e-3) {
-            withId = { ...withId, position: [withId.position[0], withId.position[1] - wy, withId.position[2]] };
+        if (isFinite(bb.min.z)) {
+          const wz = (withId.position?.[2] ?? 0) + bb.min.z;
+          if (Math.abs(wz) > 1e-3) {
+            withId = { ...withId, position: [withId.position[0], withId.position[1], withId.position[2] - wz] };
           }
         }
       } catch (err) {
@@ -720,25 +720,22 @@ export const useScene = create((set, get) => ({
     }));
   },
 
-  // Drop the object so its lowest point sits on Y=0 (the build plate).
+  // Drop the object so its lowest point sits on Z=0 (the build plate).
   dropToBed: (id, withHistory = true) => {
     const s = get();
     const obj = s.objects.find((o) => o.id === id);
-    if (!obj || obj.type === "imported" ? false : false) {} // placeholder
     if (!obj) return;
     try {
       const bb = computeRotatedBBox(obj);
-      const newY = -bb.min.y;
-      if (Math.abs(newY - obj.position[1]) < 1e-4) return;
+      const newZ = -bb.min.z;
+      if (Math.abs(newZ - obj.position[2]) < 1e-4) return;
       if (withHistory) s.pushHistory();
       set((st) => ({
         objects: st.objects.map((o) =>
-          o.id === id ? { ...o, position: [o.position[0], newY, o.position[2]] } : o
+          o.id === id ? { ...o, position: [o.position[0], o.position[1], newZ] } : o
         ),
       }));
     } catch (err) {
-      // Geometry may not be ready (rebuild mid-flight). Surface it so
-      // recurring failures are visible without breaking the action.
       // eslint-disable-next-line no-console
       console.warn("dropToBed: bbox failed", err);
     }
@@ -765,11 +762,11 @@ export const useScene = create((set, get) => ({
     try {
       const bb = computeRotatedBBox(obj);
       const centreX = (bb.min.x + bb.max.x) / 2.0;
-      const centreZ = (bb.min.z + bb.max.z) / 2.0;
+      const centreY = (bb.min.y + bb.max.y) / 2.0;
       const [px, py, pz] = obj.position;
       const nx = px - centreX;
-      const nz = pz - centreZ;
-      const ny = py - bb.min.y;
+      const ny = py - centreY;
+      const nz = pz - bb.min.z;
       if (
         Math.abs(nx - px) < 1e-4 &&
         Math.abs(ny - py) < 1e-4 &&
@@ -801,27 +798,27 @@ export const useScene = create((set, get) => ({
     const ids = s.selectedIds.length ? s.selectedIds : (s.selectedId ? [s.selectedId] : []);
     if (ids.length === 0) return;
     if (ids.length === 1) { get().dropToBed(ids[0], withHistory); return; }
-    let worldMinY = Infinity;
+    let worldMinZ = Infinity;
     for (const id of ids) {
       const o = s.objects.find((x) => x.id === id);
       if (!o) continue;
       try {
         const bb = computeRotatedBBox(o);
-        const wy = (o.position?.[1] ?? 0) + bb.min.y;
-        if (wy < worldMinY) worldMinY = wy;
+        const wz = (o.position?.[2] ?? 0) + bb.min.z;
+        if (wz < worldMinZ) worldMinZ = wz;
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn("dropSelectionToBed: bbox failed for", o?.id, err);
       }
     }
-    if (!Number.isFinite(worldMinY)) return;
-    if (Math.abs(worldMinY) < 1e-3) return;
+    if (!Number.isFinite(worldMinZ)) return;
+    if (Math.abs(worldMinZ) < 1e-3) return;
     if (withHistory) s.pushHistory();
-    const dy = -worldMinY;
+    const dz = -worldMinZ;
     set((st) => ({
       objects: st.objects.map((o) =>
         ids.includes(o.id)
-          ? { ...o, position: [o.position[0], o.position[1] + dy, o.position[2]] }
+          ? { ...o, position: [o.position[0], o.position[1], o.position[2] + dz] }
           : o
       ),
     }));
@@ -896,22 +893,22 @@ export const useScene = create((set, get) => ({
     // 2. Shortest axis.
     let thinAxis;
     if (extX <= extY && extX <= extZ) thinAxis = "x";
-    else if (extZ <= extX && extZ <= extY) thinAxis = "z";
-    else thinAxis = "y";
+    else if (extY <= extX && extY <= extZ) thinAxis = "y";
+    else thinAxis = "z";
 
     // 3. Already flat — short-circuit to drop-to-bed.
-    if (thinAxis === "y") {
+    if (thinAxis === "z") {
       get().dropSelectionToBed(withHistory);
       return;
     }
 
-    // 4. Rotation: bring the thin axis to world-Y. We rotate +90°
-    // around the appropriate world axis. For thin=X that's the Z axis;
-    // for thin=Z that's the X axis. The sign doesn't matter because
+    // 4. Rotation: bring the thin axis to world-Z. We rotate +90°
+    // around the appropriate world axis. For thin=X that's the Y axis;
+    // for thin=Y that's the X axis. The sign doesn't matter because
     // the bbox is symmetric on the thin axis — either ±90° puts the
     // largest face on the bed.
     const dQ = new THREE.Quaternion().setFromAxisAngle(
-      thinAxis === "x" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0),
+      thinAxis === "x" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
       Math.PI / 2,
     );
     const cx = (minX + maxX) / 2;
@@ -963,7 +960,7 @@ export const useScene = create((set, get) => ({
         ...src,
         id: newId(src.type),
         name: `${src.name} copy`,
-        position: [src.position[0] + 5, src.position[1], src.position[2] + 5],
+        position: [src.position[0] + 5, src.position[1] + 5, src.position[2]],
       };
       return { objects: [...s.objects, copy], selectedId: copy.id, selectedIds: [copy.id] };
     });
@@ -981,26 +978,26 @@ export const useScene = create((set, get) => ({
     set((s) => ({
       objects: s.objects.map((o) => {
         if (o.id !== id) return o;
-        // Compute the bottom-Y BEFORE the dim change so we can pin it after.
-        // This stops a part from "floating" when the user shrinks its Y dim:
-        // e.g. default 20mm cube sits at position Y=10 (bottom on bed). If the
-        // user types Y=6 into the Inspector, the cube now spans Y=7..13 (still
-        // centred at 10). We snap it back so bottom stays on the bed instead.
-        let bottomY = null;
+        // Compute the bottom-Z BEFORE the dim change so we can pin it after.
+        // Stops a part from "floating" when the user shrinks its Z dim: e.g.
+        // a 20mm cube sits at position Z=10 (bottom on bed). If the user
+        // types Z=6 into the Inspector, the cube now spans Z=7..13 (still
+        // centred at 10). We snap it back so bottom stays on the bed.
+        let bottomZ = null;
         try {
           const bbBefore = computeRotatedBBox(o);
-          bottomY = (o.position?.[1] ?? 0) + bbBefore.min.y;
+          bottomZ = (o.position?.[2] ?? 0) + bbBefore.min.z;
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn("updateDims: pre-bbox failed", err);
         }
         const next = { ...o, dims: { ...o.dims, ...dimsPatch } };
-        if (bottomY !== null && bottomY > -1e-3 && bottomY < 1e-3) {
+        if (bottomZ !== null && bottomZ > -1e-3 && bottomZ < 1e-3) {
           // Was sitting on/near the bed — keep it there after the resize.
           try {
             const bbAfter = computeRotatedBBox(next);
-            const newCenterY = -bbAfter.min.y;  // bottom = 0 ⇒ center = -min.y
-            next.position = [next.position[0], newCenterY, next.position[2]];
+            const newCenterZ = -bbAfter.min.z;
+            next.position = [next.position[0], next.position[1], newCenterZ];
           } catch (err) {
             // eslint-disable-next-line no-console
             console.warn("updateDims: post-bbox failed", err);
@@ -1478,14 +1475,12 @@ export const useScene = create((set, get) => ({
     const longest = Math.max(dx, dy, dz);
     if (longest <= 0.001) return { ok: false, reason: "Scene has zero extent" };
 
-    // Build-volume axis mapping: BV.x → world X, BV.y → world Z (depth),
-    // BV.z → world Y (height). The bed-fit target is the largest box
-    // that fits inside that volume — limited by whichever axis ratio
-    // demands the smallest scale.
+    // Build-volume axis mapping (Z-up): BV.x → world X, BV.y → world Y,
+    // BV.z → world Z (height). All axes map 1:1.
     const bv = s.buildVolume || { x: 220, y: 220, z: 250 };
     const fitX = (bv.x * targetFraction) / dx;
-    const fitZ = (bv.y * targetFraction) / dz;
-    const fitY = (bv.z * targetFraction) / dy;
+    const fitY = (bv.y * targetFraction) / dy;
+    const fitZ = (bv.z * targetFraction) / dz;
     const scaleFactor = Math.min(fitX, fitY, fitZ);
     if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
       return { ok: false, reason: "Could not compute scale factor" };
@@ -1497,24 +1492,24 @@ export const useScene = create((set, get) => ({
     }
 
     // Centre of the source AABB (used so the rescaled assembly stays
-    // centred on the bed instead of drifting toward +X/+Z).
+    // centred on the bed instead of drifting toward +X/+Y).
     const cx = (minX + maxX) / 2;
-    const cz = (minZ + maxZ) / 2;
+    const cy = (minY + maxY) / 2;
 
     get().pushHistory();
     set((st) => ({
       objects: st.objects.map((o) => {
         // Rescale each object's position relative to the assembly centre,
-        // then multiply its existing scale by the same factor. Y is
+        // then multiply its existing scale by the same factor. Z is
         // handled separately so we can drop the resulting assembly to
-        // Y=0 in the same pass (no need for a follow-up dropToBed call).
+        // Z=0 in the same pass (no need for a follow-up dropToBed call).
         const px = (o.position?.[0] ?? 0) - cx;
-        const pz = (o.position?.[2] ?? 0) - cz;
-        const py = o.position?.[1] ?? 0;
-        const newY = (py - minY) * scaleFactor;
+        const py = (o.position?.[1] ?? 0) - cy;
+        const pz = o.position?.[2] ?? 0;
+        const newZ = (pz - minZ) * scaleFactor;
         return {
           ...o,
-          position: [px * scaleFactor, newY, pz * scaleFactor],
+          position: [px * scaleFactor, py * scaleFactor, newZ],
           scale: [
             (o.scale?.[0] ?? 1) * scaleFactor,
             (o.scale?.[1] ?? 1) * scaleFactor,
