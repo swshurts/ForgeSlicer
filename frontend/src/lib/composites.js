@@ -53,7 +53,7 @@ export function buildSlot({ modifier = "negative", width = 6, length = 10, depth
     modifier,
     visible: true,
     locked: false,
-    position: [0, baseY, 0],
+    position: [0, 0, baseY],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     dims: { x: w, y: middle, z: d },
@@ -67,7 +67,7 @@ export function buildSlot({ modifier = "negative", width = 6, length = 10, depth
     modifier,
     visible: true,
     locked: false,
-    position: [0, baseY, +halfCap],
+    position: [0, +halfCap, baseY],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     dims: { r: radius, h: d, segments: 48 },
@@ -78,7 +78,7 @@ export function buildSlot({ modifier = "negative", width = 6, length = 10, depth
     ...capA,
     id: ctx.newId("cylinder"),
     name: "Slot · cap B",
-    position: [0, baseY, -halfCap],
+    position: [0, -halfCap, baseY],
   };
   return { parts: [cube, capA, capB], groupId, groupName, primaryId: cube.id };
 }
@@ -110,21 +110,21 @@ export function buildFastenerPair(opts = {}, ctx) {
     {
       ...ctx.buildPrimitive("cylinder", "negative"),
       id: freshId("cylinder"),
-      name: "Bolt Bore", position: [0, headH + workThickness / 2, 0],
+      name: "Bolt Bore", position: [0, 0, headH + workThickness / 2],
       dims: { r: boltR + 0.4, h: workThickness, segments: 48 },
       groupId, groupName,
     },
     {
       ...ctx.buildPrimitive("cylinder", "negative"),
       id: freshId("cylinder"),
-      name: "Head Counterbore", position: [0, counterboreDepth / 2, 0],
+      name: "Head Counterbore", position: [0, 0, counterboreDepth / 2],
       dims: { r: headR + 0.5, h: counterboreDepth, segments: 48 },
       groupId, groupName,
     },
     {
       ...ctx.buildPrimitive("nut", "positive"),
       id: freshId("nut"),
-      name: "Nut", position: [0, headH + workThickness + nutH / 2, 0],
+      name: "Nut", position: [0, 0, headH + workThickness + nutH / 2],
       dims: { r: boltR, pitch, h: nutH, flatR: headR, segments: 48 },
       groupId, groupName,
     },
@@ -147,14 +147,14 @@ export function buildCountersink(opts = {}, ctx) {
     {
       ...ctx.buildPrimitive("cylinder", "negative"),
       id: freshId("cylinder"),
-      name: "CS Bore", position: [0, throughH / 2, 0],
+      name: "CS Bore", position: [0, 0, throughH / 2],
       dims: { r: boreR, h: throughH, segments: 48 },
       groupId, groupName,
     },
     {
       ...ctx.buildPrimitive("cone", "negative"),
       id: freshId("cone"),
-      name: "CS Cup", position: [0, throughH - sinkH / 2, 0],
+      name: "CS Cup", position: [0, 0, throughH - sinkH / 2],
       dims: { r1: headR, r2: boreR, h: sinkH, segments: 48 },
       groupId, groupName,
     },
@@ -172,12 +172,12 @@ export function buildHexPocket(opts = {}, ctx) {
   const part = {
     ...ctx.buildPrimitive("cylinder", "negative"),
     id: `cylinder-${Date.now()}-0`,
-    name: "Hex Pocket", position: [0, depth / 2, 0],
+    name: "Hex Pocket", position: [0, 0, depth / 2],
     // A 6-segment cylinder is a hex prism. We pass the circumradius
     // (across-corners) so the flats line up with the requested
     // across-flats dimension. flats = circumradius * cos(30°).
     dims: { r: acrossFlatsR / Math.cos(Math.PI / 6), h: depth, segments: 6 },
-    rotation: [0, 30, 0],
+    rotation: [0, 0, 30],
     groupId, groupName,
   };
   return { parts: [part], groupId, groupName, primaryId: part.id };
@@ -194,7 +194,7 @@ export function buildGusset(opts = {}, ctx) {
   const part = {
     ...ctx.buildPrimitive("triangle", "positive"),
     id: `triangle-${Date.now()}-0`,
-    name: "Gusset", position: [w / 2, h / 2, 0],
+    name: "Gusset", position: [w / 2, 0, h / 2],
     dims: { r: Math.max(w, h) / 2, h: thickness },
     rotation: [0, 0, 0],
     groupId, groupName,

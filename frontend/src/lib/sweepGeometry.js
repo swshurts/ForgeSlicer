@@ -97,10 +97,11 @@ function buildPathCurve(path, scene) {
     const pitch = path.pitch ?? 6;
     const turns = Math.max(0.1, path.turns ?? 2);
     const H = pitch * turns;
+    // Z-up convention: helix winds around +Z so a "spring" stands up.
     return new (class extends THREE.Curve {
       getPoint(u, target = new THREE.Vector3()) {
         const theta = 2 * Math.PI * turns * u;
-        return target.set(r * Math.cos(theta), u * H - H / 2, r * Math.sin(theta));
+        return target.set(r * Math.cos(theta), r * Math.sin(theta), u * H - H / 2);
       }
     })();
   }
@@ -108,18 +109,19 @@ function buildPathCurve(path, scene) {
   if (kind === "arc") {
     const r = path.r ?? 20;
     const ang = THREE.MathUtils.degToRad(path.angleDeg ?? 180);
+    // Z-up: arcs lie flat in the XY plane (curved on the bed).
     return new (class extends THREE.Curve {
       getPoint(u, target = new THREE.Vector3()) {
-        const t = u * ang - ang / 2; // centered so origin is at u=0.5
-        return target.set(r * Math.cos(t), 0, r * Math.sin(t));
+        const t = u * ang - ang / 2;
+        return target.set(r * Math.cos(t), r * Math.sin(t), 0);
       }
     })();
   }
 
   if (kind === "bezier") {
     const p0 = new THREE.Vector3(...(path.p0 || [-20, 0, 0]));
-    const c1 = new THREE.Vector3(...(path.c1 || [-10, 20, 0]));
-    const c2 = new THREE.Vector3(...(path.c2 || [10, 20, 0]));
+    const c1 = new THREE.Vector3(...(path.c1 || [-10, 0, 20]));
+    const c2 = new THREE.Vector3(...(path.c2 || [10, 0, 20]));
     const p1 = new THREE.Vector3(...(path.p1 || [20, 0, 0]));
     return new THREE.CubicBezierCurve3(p0, c1, c2, p1);
   }
@@ -162,8 +164,8 @@ function buildPathCurve(path, scene) {
           const theta = 2 * Math.PI * turns * u;
           const local = new THREE.Vector3(
             r * Math.cos(theta),
-            u * H - H / 2,
             r * Math.sin(theta),
+            u * H - H / 2,
           );
           local.applyQuaternion(srcQuat).add(srcPos);
           return target.copy(local);

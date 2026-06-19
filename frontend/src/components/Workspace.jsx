@@ -13,6 +13,7 @@ import HelpDialog from "./HelpDialog";
 import SettingsDialog from "./dialogs/SettingsDialog";
 import ProjectExplorerDialog from "./dialogs/ProjectExplorerDialog";
 import { parseTranscript, executeCommand } from "../lib/voiceCommands";
+import { expandTemplate, executePlan } from "../lib/voicePlanExecutor";
 import { useScene } from "../lib/store";
 import { importSTLFile, importAnyMeshFile, import3MFFileMulti, countMeshTriangles, HEAVY_MESH_TRIANGLE_THRESHOLD } from "../lib/exporters";
 import { computeRotatedBBox } from "../lib/geometry";
@@ -94,6 +95,7 @@ export default function Workspace() {
   const remixId = searchParams.get("remix");
   const remixFit = searchParams.get("fit") === "1";
   const addComponentParam = searchParams.get("addComponent");
+  const templateParam = searchParams.get("template");
   const addImportedMesh = useScene((s) => s.addImportedMesh);
   const addRawObject = useScene((s) => s.addRawObject);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -684,25 +686,24 @@ export default function Workspace() {
         // -worldMinY so the lowest point lands exactly on Y=0.
         try {
           const st = useScene.getState();
-          let worldMinY = Infinity;
+          let worldMinZ = Infinity;
           const newObjs = st.objects.filter((x) => newIds.includes(x.id));
           for (const o of newObjs) {
             try {
               const bb = computeRotatedBBox(o);
-              const wy = (o.position?.[1] ?? 0) + bb.min.y;
-              if (wy < worldMinY) worldMinY = wy;
+              const wz = (o.position?.[2] ?? 0) + bb.min.z;
+              if (wz < worldMinZ) worldMinZ = wz;
             } catch (err) {
-              // Surface bbox-calc failures so future drops aren't silent.
               // eslint-disable-next-line no-console
               console.warn("drop-to-bed: bbox failed for", o.id, err);
             }
           }
-          if (isFinite(worldMinY) && Math.abs(worldMinY) > 1e-3) {
-            const dy = -worldMinY;
+          if (isFinite(worldMinZ) && Math.abs(worldMinZ) > 1e-3) {
+            const dz = -worldMinZ;
             useScene.setState((s) => ({
               objects: s.objects.map((o) =>
                 newIds.includes(o.id)
-                  ? { ...o, position: [o.position[0], o.position[1] + dy, o.position[2]] }
+                  ? { ...o, position: [o.position[0], o.position[1], o.position[2] + dz] }
                   : o
               ),
             }));
@@ -740,6 +741,63 @@ export default function Workspace() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addComponentParam]);
+
+  // Launch a curated template — entry point used by the Landing-page
+  // "Project Templates" cards. The card stashes its template_id + params
+  // dict in sessionStorage and navigates to /workspace?template=<id>.
+  // We pop the payload, call expandTemplate to get a step list, then
+  // run it through the standard executePlan. Steps emit "add" / "boolean"
+  // operations which mutate the scene like any other voice plan.
+  useEffect(() => {
+    if (!templateParam) return;
+    let cancelled = false;
+    (async () => {
+      let payload = null;
+      try {
+        const raw = sessionStorage.getItem("forgeslicer.launchTemplate");
+        if (raw) {
+          sessionStorage.removeItem("forgeslicer.launchTemplate");
+          payload = JSON.parse(raw);
+        }
+      } catch (_) { /* no-op */ }
+      // No payload (deep-link without preceding card click) — silently
+      // ignore. We can't synthesise sensible defaults for every template
+      // ID without knowing which one the user wanted.
+      if (!payload?.template_id) {
+        setSearchParams({}, { replace: true });
+        return;
+      }
+      try {
+        setImportBanner({ kind: "info", message: `Loading "${payload.name || payload.template_id}"…` });
+        const data = await expandTemplate(payload.template_id, payload.params || {});
+        if (cancelled) return;
+        if (!data?.steps?.length) {
+          setImportBanner({ kind: "err", message: `Template "${payload.template_id}" returned no steps` });
+          setTimeout(() => setImportBanner(null), 4500);
+          setSearchParams({}, { replace: true });
+          return;
+        }
+        const result = await executePlan(data.steps);
+        if (cancelled) return;
+        setProjectName(payload.name || "Template");
+        setImportBanner({
+          kind: result.ok ? "ok" : "err",
+          message: result.ok
+            ? `Loaded "${payload.name || payload.template_id}" — ${result.executed} step${result.executed === 1 ? "" : "s"}.`
+            : `Template partially loaded (${result.executed}/${result.total} steps)`,
+        });
+        setTimeout(() => setImportBanner(null), 4500);
+      } catch (err) {
+        if (cancelled) return;
+        setImportBanner({ kind: "err", message: `Could not load template: ${err.message || err}` });
+        setTimeout(() => setImportBanner(null), 5000);
+      } finally {
+        if (!cancelled) setSearchParams({}, { replace: true });
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateParam]);
 
   const handleSendTo = (slicer) => {
     setTargetSlicer(slicer);

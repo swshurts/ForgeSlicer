@@ -11,6 +11,8 @@ import AIGenerateDialog from "./AIGenerateDialog";
 import PhotoToPlaneDialog from "./dialogs/PhotoToPlaneDialog";
 import HardwareLibraryDialog from "./dialogs/HardwareLibraryDialog";
 import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
+import DesignChatDialog from "./dialogs/DesignChatDialog";
+import { MessageCircle } from "lucide-react";
 
 const PRIMS_3D = [
   { type: "cube", label: "Cube", icon: Box },
@@ -318,6 +320,7 @@ export default function LeftPanel() {
   const [outlinerCtx, setOutlinerCtx] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [photoPlaneOpen, setPhotoPlaneOpen] = useState(false);
+  const [designChatOpen, setDesignChatOpen] = useState(false);
   // Hardware library dialog state lives here (instead of being lifted
   // to Workspace) because nothing outside LeftPanel needs to coordinate
   // with it — it just overlays the viewport when open, and the only
@@ -387,7 +390,7 @@ export default function LeftPanel() {
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} />}
-        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} />}
+        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} />}
       </div>
 
       {/* ---- Outliner (unchanged) ---- */}
@@ -412,6 +415,7 @@ export default function LeftPanel() {
       <AIGenerateDialog open={aiOpen} onClose={() => setAiOpen(false)} />
       <PhotoToPlaneDialog open={photoPlaneOpen} onClose={() => setPhotoPlaneOpen(false)} />
       <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
+      <DesignChatDialog open={designChatOpen} onClose={() => setDesignChatOpen(false)} />
       <TextureLibraryDialog
         open={textureLibraryOpen}
         targetObjectId={textureLibraryTargetId}
@@ -506,7 +510,7 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
   );
 }
 
-function TabAI({ onOpenAi, onOpenPhotoPlane }) {
+function TabAI({ onOpenAi, onOpenPhotoPlane, onOpenDesignChat }) {
   return (
     <>
       <SectionHeader
@@ -515,26 +519,34 @@ function TabAI({ onOpenAi, onOpenPhotoPlane }) {
         label="AI Generate"
         right={<span className="text-[9px] uppercase tracking-wider text-orange-400/90 border border-orange-500/40 rounded px-1.5 py-0.5">beta</span>}
       />
-      {/* iter-89.2: re-skinned the AI panel to match the rest of the
-          LeftPanel orange-on-slate palette. The previous fuchsia /
-          cyan pastels at 10% opacity read as washed out next to the
-          rest of the app's primitive / component buttons. Now using
-          two saturation tiers of orange so the primary action (AI
-          Generate) leads visually and the secondary action (Photo
-          → Heightmap) supports without competing. */}
       <div className="p-3 space-y-2">
         <button
-          data-testid="ai-generate-btn"
-          onClick={onOpenAi}
-          className="w-full h-12 rounded-md bg-orange-500 hover:bg-orange-400 text-white shadow-lg shadow-orange-900/30 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
-          title="Generate a 3D model from text or an image"
+          data-testid="design-chat-open-btn"
+          onClick={onOpenDesignChat}
+          className="w-full h-12 rounded-md bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white shadow-lg shadow-orange-900/30 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-all"
+          title="Chat with the model — describe what to build and it edits the scene live"
         >
-          <Sparkles size={14} />
-          Generate from Text · Image
+          <MessageCircle size={14} />
+          Design Chat
+          <span className="text-[8px] uppercase tracking-widest bg-white/15 border border-white/20 rounded px-1.5 py-0.5">new</span>
         </button>
         <p className="text-[10px] text-slate-500 leading-snug">
-          Describe a shape or upload a picture — get a printable mesh you can carve &amp; slice.
+          Describe a part or modification — the AI builds it on the bed, reads your selection, and stays grounded in CAD Z-up coordinates.
         </p>
+        <div className="pt-2 border-t border-slate-800/80">
+          <button
+            data-testid="ai-generate-btn"
+            onClick={onOpenAi}
+            className="w-full h-11 rounded-md border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 hover:border-orange-500 text-orange-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
+            title="Generate a 3D model from text or an image (Meshy.ai)"
+          >
+            <Sparkles size={13} />
+            Mesh from Text · Image
+          </button>
+          <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
+            One-shot text→mesh / image→mesh via Meshy.ai. Better for organic shapes; Design Chat is better for mechanical / parametric.
+          </p>
+        </div>
         <div className="pt-2 border-t border-slate-800/80">
           <button
             data-testid="photo-to-plane-btn"

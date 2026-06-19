@@ -7,6 +7,7 @@ import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
 import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
+import LandingTemplates from "./LandingTemplates";
 
 function Feature({ icon: Icon, title, desc, accent }) {
   return (
@@ -345,6 +346,8 @@ export default function Landing() {
           <Feature icon={Move3D} title="Precise Transforms" desc="Per-axis numeric position, rotation, scale. Snap-to-grid in mm or degrees. Build-plate bounds checking." accent="bg-emerald-500" />
           <Feature icon={Layers} title="STL · 3MF · GCODE" desc="Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own — one click, real production slicing." accent="bg-amber-500" />
         </div>
+
+        <LandingTemplates />
       </main>
 
       <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500 space-y-1.5">

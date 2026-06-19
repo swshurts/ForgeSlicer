@@ -19,7 +19,7 @@
 ## Core Pages / Components
 See CHANGELOG.md for the full component-level changelog. Highlights:
 - `Workspace.jsx` shell composes TopToolbar / Left / Viewport / Right / Status
-- `lib/exporters.js` — STL (bin/ASCII) + 3MF (jszip) + STL/OBJ import + JSON project I/O; applies Y-up → Z-up axis conversion for slicer compatibility
+- `lib/exporters.js` — STL (bin/ASCII) + 3MF (jszip) + STL/OBJ import + JSON project I/O. **iter-104.1**: ForgeSlicer is now Z-up internally (matches CAD-standard + STL/3MF natively), so the Y-up↔Z-up rotation passes have been removed — imports and exports preserve orientation directly.
 - `lib/useOrcaSlice.js` — Hook: OrcaSlicer profile state, install polling, SSE progress with polling-fallback (iter 78), runSlice/buildPayload
 - `backend/orca_engine.py` — OrcaSlicer CLI integration: async job queue, SSE progress, validation-error visibility with `--debug 5`, fail-log persistence (iter 78)
 
@@ -33,8 +33,23 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105 + iter-104.x bug sweep)
+- **iter-105 (2026-02-19) — Design Chat MVP shipped + Landing-page Templates Gallery + primitive bug sweep.**
+  - **Design Chat panel**: `/app/frontend/src/components/dialogs/DesignChatDialog.jsx` — conversational textarea that talks to `/api/voice/command` per turn, executes the returned plan/template/atomic command on the live scene, shows assistant replies + step counts in a chat log. Surfaces 4 sample prompts on first open. Exposed via a new "Design Chat" primary button in the LeftPanel `AI` tab (re-skinned to lead with Design Chat; Meshy AI and Heightmap demoted to secondary roles). Single-turn for MVP — the scene IS the persistent context. Cmd/Ctrl+Enter to send.
+  - **Templates Gallery on Landing**: `/app/frontend/src/components/LandingTemplates.jsx` — 4 curated cards (Pi 4 Wall Mount, Tool Holder, Soft Vise Jaws, Drawer Pull) that stash `{template_id, params}` in sessionStorage and navigate to `/workspace?template=<id>`. Workspace's new `templateParam` useEffect picks up the payload, calls `expandTemplate()`, runs the steps through `executePlan()`, sets the project name, and shows a load banner.
+  - **Primitive bug sweep**:
+    - **`bolt` & `nut` & `spline`**: rewrote `geometry.js` to use ExtrudeGeometry-with-holes for the nut + ExtrudeGeometry of cylinder/hex profiles for bolt and a star-shape for spline. Drops the open `TubeGeometry` helical-thread overlay that was breaking Manifold's "watertight" requirement, so bolt/nut/spline now WORK AS CSG NEGATIVES (subtract a bolt from a cube → real screw hole). Nut now visibly has its through-hole too.
+    - **`sweep` & helix path / arc path**: `sweepGeometry.js` updated for Z-up — helix axis = +Z, arc lies flat in XY. Bezier defaults moved Y→Z so the rope preset curves upward. Added `getBaseSize` for sweep/texture types so resize popovers show real dimensions.
+    - **`primitiveDefaults.js` position regression**: was leaking the half-height into `position[1]` (Y/forward) instead of `position[2]` (Z/up); fixed so new primitives land at world origin XY with their bottom on Z=0.
+    - **`Workspace.jsx` add-component carry-over**: drop-to-bed pass was still computing `worldMinY` from `bb.min.y` after the Z-up migration — corrected to `worldMinZ` / `bb.min.z`.
+    - **`composites.js`**: programmatic `position[1]↔position[2]` and `rotation[1]↔rotation[2]` swap across all composite builders (Slot, FastenerPair, Countersink, HexPocket, Gusset) — 15 occurrences.
+    - **`centerOnBed` regression**: fixed (caught by testing agent) — formula now correctly uses `nx = -centreX; ny = -centreY; nz = -bb.min.z` since `computeRotatedBBox` returns a LOCAL bbox.
+  - **Tests**: 36 voice / command / template tests all pass.
+
 ### Recently completed (iter-104)
-- **iter-104.1 (2026-02-19) — Z-up foundation + Tier 2 partial-fillet rewrite (LANDED).** The internal Three.js coordinate space is now Z-up (`THREE.Object3D.DEFAULT_UP = (0,0,1)` set in `index.js` before React mounts). Files touched:
+- iter-104.3 (2026-02-19) — UI polish: Inspector "Bottom Y" → "Bottom Z" with `data-testid=bottom-z`; selectionActions mirror-axis Z floor-clamp; voice_templates_boards regression rewrite (8/8 pass).
+- iter-104.2 (2026-02-19) — Template sweep: programmatic `position[1]↔position[2]` and `rotation[1]↔rotation[2]` swap across all 9 voice templates (45 occurrences). LLM executor system prompt in `backend/server.py` rewritten for Z-up CAD convention.
+- iter-104.1 (2026-02-19) — Z-up foundation + Tier 2 partial-fillet rewrite (LANDED). The internal Three.js coordinate space is now Z-up (`THREE.Object3D.DEFAULT_UP = (0,0,1)` set in `index.js` before React mounts). Files touched:
   - **Tier 1**: `index.js` (DEFAULT_UP), `Viewport.jsx` (camera `[220,-260,200]`, OrbitControls target `[0,0,bv.z/4]`, BuildPlate + DesignPlate now on XY at Z=0, drei `<Grid>` rotated 90° about X, CutPlaneGizmo default plane normal +Z, cylinder/cone sub-element pick overlays repositioned around +Z axis, `CameraFitOnPrinterChange` updated), `geometry.js` (cube `BoxGeometry(d.x, d.y, d.z)` 1:1; cylinder/cone/lathe/helix/bolt/nut/spline/pipe/wedge/2D-extrude all rotated to Z-up; `getBaseSize` 1:1 with dims), `store.js` (`addPrimitive`/`addSketch`/`addSweepFromSketch`/`addImportedMesh`/`addRawObject` auto-drop on `position[2]=-bb.min.z`; `dropToBed`/`centerOnBed`/`dropSelectionToBed`/`layFlatSelection` (thin-axis = Z exit), `updateDims` pin-bottom Z, `duplicateObject` offset on XY not on Z, `bakeScaleIntoDims` 1:1, `resizeSceneToBed` BV axis mapping 1:1).
   - **Tier 2**: `partialFillet.js` (`dimsLocal = { x: w, y: dep, z: h }` 1:1; `Manifold.cube([w, depY, h])`; cube/cylinder/cone lathe finals rotated to Z-up), `edgeFaceMeta.js` (1:1 cubeEdgeEndpoints/cubeFaceQuads/cubeVertexPositions; CUBE_FACES relabeled — `f_minY` → "Front face", `f_maxY` → "Back face", `f_minZ` → "Bottom face", `f_maxZ` → "Top face"; CUBE_EDGES relabeled accordingly), `manifoldEngine.js` (no direct change — inherits via `buildGeometry`), `csg.js` `cutObjectByPlane` (half-space offset moved from local +Y to local +Z), `exporters.js` (removed all Y↔Z rotations on STL/OBJ/3MF import + export — `_zUpToYUp` is now an identity passthrough; `_normaliseForSlicer` only drops bbox), `slicer.js` (pre-rotate merged geometry -90° around X so the existing Y-up slicer math runs unchanged and outputs Z-up GCODE).
   - **Tier 5**: SKIPPED per user (option b — no test stubs).

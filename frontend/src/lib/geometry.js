@@ -239,67 +239,84 @@ export function buildGeometry(obj, scene = null) {
     return new THREE.TubeGeometry(new HelixCurve(), tubularSegs, tube, radialSegs, false);
   }
   if (t === "bolt") {
-    // Bolt with hex/button head + cylindrical shaft + helical thread.
-    // All sub-pieces are built along their NATIVE +Y axis (cylinder
-    // default) then merged. The whole merged geometry is rotated
-    // X by 90° at the end so the bolt's long axis is +Z.
+    // Bolt — shaft + head built as watertight extrusions so the
+    // primitive can be used as a clean CSG negative (was previously
+    // merging an open TubeGeometry helix which broke manifold-ness).
+    // Threads are intentionally smooth; users care about the bore
+    // shape, not the cosmetic spiral.
     const R = d.r || 5;
-    const pitch = Math.max(0.25, d.pitch || 1.5);
     const Hshaft = Math.max(1, d.h || 20);
     const headR = d.headR || 8;
     const headH = Math.max(0.5, d.headH || 4);
     const segs = Math.max(24, d.segments || 48);
-    const turns = Hshaft / pitch;
-    const tubeR = Math.max(0.15, pitch * 0.25);
-    const coreR = R - tubeR * 0.7;
-    const shaft = new THREE.CylinderGeometry(coreR, coreR, Hshaft, segs);
-    shaft.translate(0, headH + Hshaft / 2, 0);
-    class _ThreadCurve extends THREE.Curve {
-      getPoint(u, target = new THREE.Vector3()) {
-        const theta = 2 * Math.PI * turns * u;
-        const y = u * Hshaft;
-        return target.set(R * Math.cos(theta), y, R * Math.sin(theta));
-      }
-    }
-    const thread = new THREE.TubeGeometry(new _ThreadCurve(), Math.max(64, Math.ceil(turns * 12)), tubeR, 6, false);
-    thread.translate(0, headH, 0);
+
+    // Shaft — circular extrusion along +Z, starting just above the head.
+    const shaftShape = new THREE.Shape();
+    shaftShape.absarc(0, 0, R, 0, Math.PI * 2, false);
+    const shaft = new THREE.ExtrudeGeometry(shaftShape, {
+      depth: Hshaft,
+      bevelEnabled: false,
+      curveSegments: segs,
+    });
+    shaft.translate(0, 0, headH);
+
+    // Head — hex prism (or N-sided polygon for "button") with same
+    // extrude technique so the merged result stays watertight.
+    const headShape = new THREE.Shape();
     const headSides = d.headStyle === "button" ? Math.max(24, segs) : 6;
-    const head = new THREE.CylinderGeometry(headR, headR, headH, headSides);
-    head.translate(0, headH / 2, 0);
-    const merged = _mergeGeometries([shaft, thread, head]);
+    for (let i = 0; i < headSides; i++) {
+      const a = (i / headSides) * Math.PI * 2;
+      const x = headR * Math.cos(a), y = headR * Math.sin(a);
+      if (i === 0) headShape.moveTo(x, y);
+      else headShape.lineTo(x, y);
+    }
+    headShape.closePath();
+    const head = new THREE.ExtrudeGeometry(headShape, {
+      depth: headH,
+      bevelEnabled: false,
+    });
+
+    const merged = _mergeGeometries([shaft, head]);
     const totalH = headH + Hshaft;
-    merged.translate(0, -totalH / 2, 0);
-    // Re-orient so bolt's long axis is +Z.
-    merged.rotateX(Math.PI / 2);
+    merged.translate(0, 0, -totalH / 2);
+    merged.computeVertexNormals();
     return merged;
   }
   if (t === "nut") {
+    // Nut — hex prism extruded along +Z with a circular through-hole.
+    // ExtrudeGeometry supports holes natively, so this stays watertight
+    // (which the previous merged "prism + open thread tube" did not).
     const R = d.r || 5;
-    const pitch = Math.max(0.25, d.pitch || 1.5);
     const Hnut = Math.max(1, d.h || 5);
     const flatR = d.flatR || 8;
-    const segs = Math.max(24, d.segments || 48);
-    const turns = Hnut / pitch;
-    const tubeR = Math.max(0.15, pitch * 0.25);
-    const prism = new THREE.CylinderGeometry(flatR, flatR, Hnut, 6);
-    prism.translate(0, Hnut / 2, 0);
-    const innerR = R - tubeR * 0.7;
-    class _InnerThread extends THREE.Curve {
-      getPoint(u, target = new THREE.Vector3()) {
-        const theta = 2 * Math.PI * turns * u;
-        const y = u * Hnut;
-        return target.set(innerR * Math.cos(theta), y, innerR * Math.sin(theta));
-      }
+    const innerR = Math.min(R * 0.95, flatR * 0.85);
+
+    const hexShape = new THREE.Shape();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6; // flat-top hex
+      const x = flatR * Math.cos(a), y = flatR * Math.sin(a);
+      if (i === 0) hexShape.moveTo(x, y);
+      else hexShape.lineTo(x, y);
     }
-    const thread = new THREE.TubeGeometry(new _InnerThread(), Math.max(48, Math.ceil(turns * 12)), tubeR, 6, false);
-    const merged = _mergeGeometries([prism, thread]);
-    merged.translate(0, -Hnut / 2, 0);
-    merged.rotateX(Math.PI / 2);
-    return merged;
+    hexShape.closePath();
+
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+    hexShape.holes.push(hole);
+
+    const g = new THREE.ExtrudeGeometry(hexShape, {
+      depth: Hnut,
+      bevelEnabled: false,
+      curveSegments: Math.max(24, d.segments || 48),
+    });
+    g.translate(0, 0, -Hnut / 2);
+    g.computeVertexNormals();
+    return g;
   }
   if (t === "spline") {
-    // Splined shaft — core cylinder + N angular teeth. Native +Y axis,
-    // then rotated to +Z at the end.
+    // Splined shaft — core cylinder + N angular teeth. Build via
+    // ExtrudeGeometry of a star-like 2D outline so the result is
+    // watertight (so it works as a CSG negative for keying broaches).
     const Rcore = Math.max(0.5, d.r || 6);
     const H = Math.max(1, d.h || 30);
     const N = Math.max(2, Math.min(64, Math.round(d.teeth || 8)));
@@ -307,34 +324,67 @@ export function buildGeometry(obj, scene = null) {
     const toothDeg = Math.max(1, Math.min(360 / N - 0.5, d.toothWidthDeg || 12));
     const profile = d.profile || "rectangular";
     const segs = Math.max(24, d.segments || 32);
-    const core = new THREE.CylinderGeometry(Rcore, Rcore, H, segs);
-    core.translate(0, H / 2, 0);
-    const chord = 2 * Rcore * Math.sin((toothDeg * Math.PI) / 360);
-    const teeth = [];
+
+    // Walk the core boundary, interleaving tooth bumps. For each tooth
+    // we emit:
+    //   • A leading core arc (angular width = (2π/N - toothRad)/2 on each side).
+    //   • The tooth profile (rectangular/triangular/rounded).
+    //   • A trailing core arc.
+    const shape = new THREE.Shape();
+    const Rtip = Rcore + toothH;
+    const stepRad = (2 * Math.PI) / N;
+    const toothRad = (toothDeg * Math.PI) / 180;
+    const gapRad = stepRad - toothRad;
+    const halfGap = gapRad / 2;
+    const arcSamples = Math.max(2, Math.round((segs / N) / 2));
+
+    const pushAt = (r, theta, first) => {
+      const x = r * Math.cos(theta), y = r * Math.sin(theta);
+      if (first) shape.moveTo(x, y); else shape.lineTo(x, y);
+    };
+
+    let first = true;
     for (let i = 0; i < N; i++) {
-      const theta = (i * 2 * Math.PI) / N;
-      let g;
-      if (profile === "rounded") {
-        g = new THREE.CylinderGeometry(chord / 2, chord / 2, H, 16, 1);
-        g.translate(0, H / 2, 0);
-        g.translate(Rcore + chord / 2 - chord / 6, 0, 0);
-      } else if (profile === "triangular") {
-        g = new THREE.CylinderGeometry(0.001, chord / 2, H, 3, 1);
-        g.translate(0, H / 2, 0);
-        g.rotateZ(-Math.PI / 2);
-        g.translate(Rcore + toothH / 2, 0, 0);
-        g.scale(toothH / H, 1, 1);
-      } else {
-        g = new THREE.BoxGeometry(toothH, H, chord);
-        g.translate(Rcore + toothH / 2, H / 2, 0);
+      const center = i * stepRad;
+      const gapStart = center - stepRad / 2;
+      const toothStart = center - toothRad / 2;
+      const toothEnd = center + toothRad / 2;
+      const gapEnd = center + stepRad / 2;
+      // Leading gap arc on the core radius
+      for (let k = 0; k <= arcSamples; k++) {
+        const a = gapStart + (k / arcSamples) * halfGap;
+        pushAt(Rcore, a, first);
+        first = false;
       }
-      g.rotateY(theta);
-      teeth.push(g);
+      // Tooth — rectangular (flat top), triangular, or rounded
+      if (profile === "triangular") {
+        pushAt(Rtip, center, false);
+      } else if (profile === "rounded") {
+        const segCount = Math.max(4, arcSamples * 2);
+        for (let k = 0; k <= segCount; k++) {
+          const a = toothStart + (k / segCount) * toothRad;
+          // Half-sine bump toward Rtip.
+          const t = k / segCount;
+          const r = Rcore + toothH * Math.sin(t * Math.PI);
+          pushAt(r, a, false);
+        }
+      } else { // rectangular
+        pushAt(Rtip, toothStart, false);
+        pushAt(Rtip, toothEnd, false);
+      }
+      // Trailing gap arc on the core radius
+      for (let k = 0; k <= arcSamples; k++) {
+        const a = toothEnd + (k / arcSamples) * halfGap;
+        pushAt(Rcore, a, false);
+      }
     }
-    const merged = _mergeGeometries([core, ...teeth]);
-    merged.translate(0, -H / 2, 0);
-    merged.rotateX(Math.PI / 2);
-    return merged;
+    shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, {
+      depth: H, bevelEnabled: false, curveSegments: segs,
+    });
+    g.translate(0, 0, -H / 2);
+    g.computeVertexNormals();
+    return g;
   }
   if (t === "pipe") {
     // Hollow cylinder via LatheGeometry (revolves around Y), rotated
@@ -520,6 +570,22 @@ export function getBaseSize(obj) {
   }
   if (t === "imported" && obj.originalBbox) {
     return { x: obj.originalBbox.x, y: obj.originalBbox.y, z: obj.originalBbox.z };
+  }
+  if (t === "sweep" || t === "texture") {
+    // Compute from actual built geometry — sweep/texture extents depend
+    // on the descriptor in non-trivial ways (path arc, twist, tiling).
+    try {
+      const g = buildGeometry(obj);
+      g.computeBoundingBox();
+      const bb = g.boundingBox;
+      const size = {
+        x: Math.max(1e-3, bb.max.x - bb.min.x),
+        y: Math.max(1e-3, bb.max.y - bb.min.y),
+        z: Math.max(1e-3, bb.max.z - bb.min.z),
+      };
+      g.dispose();
+      return size;
+    } catch (_) { return { x: 1, y: 1, z: 1 }; }
   }
   return { x: 1, y: 1, z: 1 };
 }

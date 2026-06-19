@@ -94,7 +94,7 @@ const SWEEP_PRESETS = [
     apply: () => ({
       samples: 160, twistDeg: 180,
       profile: { kind: "polygon", r: 3, sides: 5 },
-      path:    { kind: "bezier", p0: [-30, 0, 0], c1: [-10, 25, -10], c2: [10, -25, 10], p1: [30, 0, 0] },
+      path:    { kind: "bezier", p0: [-30, 0, 0], c1: [-10, -10, 25], c2: [10, 10, -25], p1: [30, 0, 0] },
     }),
   },
   {

@@ -146,7 +146,7 @@ export const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     modifier,
     visible: true,
     locked: false,
-    position: [0, halfH, 0],
+    position: [0, 0, halfH],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
     dims: type === "sweep"
