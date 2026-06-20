@@ -441,53 +441,22 @@ export function buildTextureGeometry(obj) {
   return merged;
 }
 
-// iter-105.3 — Surface-wrap textures. Apply a pattern to the ENTIRE
-// outer surface of a target primitive instead of one flat face.
+// iter-105.5 — Surface-wrap textures.
 //
-// Implementation: we generate a high-resolution mesh of the target
-// (sphere / cylinder / cube / cone) and displace each vertex along its
-// outward normal by an amount sampled from the pattern's heightmap.
-// The result is a self-contained "bumpy" version of the target — no
-// CSG boolean needed (faster + sidesteps Manifold watertightness
-// gotchas around non-watertight inputs).
+// One pipeline, one source of truth: callers (TextureLibraryDialog,
+// future "live preview" hooks, etc.) pass a pre-built heightmap object
+// from textureHeightmap.js. That heightmap is the SAME shape whether
+// it came from a built-in pattern or a user-uploaded image, so the
+// wrap engine doesn't need to care which kind it is.
 //
-// For positive modifier: vertices are pushed OUTWARD by depth+h(u,v).
-// For negative modifier: vertices are pushed INWARD by depth+h(u,v).
-
-// ---- Heightmap rasterization ----
-// Build a 2D heightmap (RES × RES) from a single tile of the pattern.
-// We call the pattern builder to get the raw tile pieces (still Y-up
-// internally — the buildTextureGeometry rotation happens at the END,
-// AFTER this function), then bucket each vertex's Y into a grid cell
-// of its XZ footprint.
-function _buildPatternHeightmap(pattern, tileSize, height, RES = 96) {
-  const builder = PATTERN_KINDS[pattern] || PATTERN_KINDS.bumps;
-  // One tile's worth — extra resolution comes from tiling at sample time.
-  const tilePieces = builder({ w: tileSize, d: tileSize, tileSize, height });
-  const merged = mergeGeometries(tilePieces, false);
-  if (!merged) return null;
-  const arr = merged.attributes.position.array;
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (let i = 0; i < arr.length; i += 3) {
-    if (arr[i] < minX) minX = arr[i];
-    if (arr[i] > maxX) maxX = arr[i];
-    if (arr[i + 2] < minZ) minZ = arr[i + 2];
-    if (arr[i + 2] > maxZ) maxZ = arr[i + 2];
-  }
-  const sx = maxX - minX || 1, sz = maxZ - minZ || 1;
-  const hmap = new Float32Array(RES * RES);
-  for (let i = 0; i < arr.length; i += 3) {
-    const u = (arr[i] - minX) / sx;
-    const v = (arr[i + 2] - minZ) / sz;
-    const ix = Math.max(0, Math.min(RES - 1, Math.floor(u * RES)));
-    const iz = Math.max(0, Math.min(RES - 1, Math.floor(v * RES)));
-    const y = arr[i + 1];
-    const idx = iz * RES + ix;
-    if (y > hmap[idx]) hmap[idx] = y;
-  }
-  merged.dispose();
-  return { hmap, RES, tileWidth: sx };
-}
+// Heightmap shape: {hmap: Float32Array, RES: int, tileWidth: number}
+//
+// For positive modifier: vertices push OUTWARD by h(u,v).
+// For negative modifier: vertices push INWARD by h(u,v).
+// Where h(u,v) == 0 the surface stays at the original radius — the
+// silhouette of the source primitive is preserved, so relief reads
+// cleanly against the original surface (no uniform inflation /
+// shrinking like the pre-iter-105.4 code).
 
 function _sampleHeight(hmap, RES, u, v) {
   // u, v can be ANY real number; we wrap to [0, 1) for tiling.
@@ -503,30 +472,54 @@ function _sampleHeight(hmap, RES, u, v) {
 // on the local origin (no translation by `target.position` — the
 // caller drops the new object at the same world position as the
 // original target).
+//
+// `td` shape:
+//   { heightmap, modifier, fitMode, tileSize? }
+// where:
+//   heightmap = {hmap, RES, tileWidth}
+//   fitMode   = "tile" (default) | "stretch"
+//   tileSize  = (mm) used only to pick mesh resolution; falls back
+//               to heightmap.tileWidth / 4 if omitted.
+
+function _resolveTileMM(hm, fitMode, stretchSpanMM) {
+  // In stretch mode the wrap engine overrides the heightmap's
+  // baked-in tileWidth so one canvas-image covers the surface span
+  // exactly once. In tile mode we honour the baked-in tileWidth.
+  if (fitMode === "stretch") return Math.max(0.5, stretchSpanMM);
+  return Math.max(0.5, hm.tileWidth);
+}
 
 function _wrapSphere(target, td) {
   const r = (target.dims?.r || 10) * (target.scale?.[0] || 1);
-  const hm = _buildPatternHeightmap(td.pattern, td.tileSize, td.height);
+  const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const seg = 96;
-  const sphere = new THREE.SphereGeometry(r, seg, Math.max(48, seg / 2));
+  // Sphere "characteristic span" for stretch mode = equator
+  // circumference; that way "stretch" wraps one image exactly once
+  // around the equator and once pole-to-pole.
+  const equatorCirc = 2 * Math.PI * r;
+  const tileMM = _resolveTileMM(hm, td.fitMode, equatorCirc);
+  const refTile = td.tileSize || hm.tileWidth / 4 || 3;
+  const seg = Math.max(64, Math.min(192, Math.ceil(equatorCirc / Math.max(0.5, refTile / 4))));
+  const sphere = new THREE.SphereGeometry(r, seg, Math.max(48, Math.round(seg / 2)));
   const pos = sphere.attributes.position;
-  const baseOffset = td.depth || 0;
-  const tileMM = Math.max(0.5, hm.tileWidth);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    // Spherical coords on Z-up frame (Z = pole, phi around Z in XY).
     const phi = Math.atan2(y, x);
     const theta = Math.acos(Math.max(-1, Math.min(1, z / r)));
-    // Tile space: u along latitude line (circumference shrinks with sin(theta)),
-    // v along meridian (length r·π).
-    const circ = 2 * Math.PI * r * Math.sin(theta);
-    const u = (phi + Math.PI) * Math.max(1, circ) / (2 * Math.PI * tileMM);
-    const v = theta * r / tileMM;
+    let u, v;
+    if (td.fitMode === "stretch") {
+      // Map phi: [-π, π] → [0, 1] and theta: [0, π] → [0, 1] so the
+      // image lands ONCE on the sphere instead of tiling.
+      u = (phi + Math.PI) / (2 * Math.PI);
+      v = theta / Math.PI;
+    } else {
+      u = ((phi + Math.PI) * r) / tileMM;
+      v = (theta * r) / tileMM;
+    }
     const h = _sampleHeight(hm.hmap, hm.RES, u, v);
-    const disp = sign * (baseOffset + h);
-    // Outward unit normal = vertex direction (sphere centred at origin).
+    const disp = sign * h;
+    if (disp === 0) continue;
     const len = Math.sqrt(x * x + y * y + z * z);
     if (len < 1e-6) continue;
     pos.setXYZ(i, x * (1 + disp / len), y * (1 + disp / len), z * (1 + disp / len));
@@ -539,29 +532,35 @@ function _wrapSphere(target, td) {
 function _wrapCylinder(target, td) {
   const r = (target.dims?.r || 10) * (target.scale?.[0] || 1);
   const h = (target.dims?.h || 20) * (target.scale?.[2] || 1);
-  const hm = _buildPatternHeightmap(td.pattern, td.tileSize, td.height);
+  const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const radialSegs = 96;
-  const heightSegs = Math.max(32, Math.round(h / Math.max(0.5, td.tileSize / 2)));
-  // Side mesh (open caps; we add solid caps separately below).
+  const radialSegs = 128;
+  const refTile = td.tileSize || hm.tileWidth / 4 || 3;
+  const heightSegs = Math.max(48, Math.round(h / Math.max(0.5, refTile / 2)));
   const side = new THREE.CylinderGeometry(r, r, h, radialSegs, heightSegs, true);
   side.rotateX(Math.PI / 2); // axis +Z
   const pos = side.attributes.position;
-  const tileMM = Math.max(0.5, hm.tileWidth);
+  const tileMM = _resolveTileMM(hm, td.fitMode, 2 * Math.PI * r);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     const phi = Math.atan2(y, x);
-    const u = ((phi + Math.PI) * r) / tileMM;
-    const v = (z + h / 2) / tileMM;
+    let u, v;
+    if (td.fitMode === "stretch") {
+      u = (phi + Math.PI) / (2 * Math.PI);
+      v = (z + h / 2) / h;
+    } else {
+      u = ((phi + Math.PI) * r) / tileMM;
+      v = (z + h / 2) / tileMM;
+    }
     const hv = _sampleHeight(hm.hmap, hm.RES, u, v);
-    const disp = sign * (td.depth + hv);
+    const disp = sign * hv;
+    if (disp === 0) continue;
     const len = Math.sqrt(x * x + y * y);
     if (len < 1e-6) continue;
     pos.setXYZ(i, x * (1 + disp / len), y * (1 + disp / len), z);
   }
   pos.needsUpdate = true;
-  // Caps — flat disks at ±h/2 (no relief on caps in v1; advertised in dialog).
   const capTop = new THREE.CircleGeometry(r, radialSegs);
   capTop.translate(0, 0, h / 2);
   const capBot = new THREE.CircleGeometry(r, radialSegs);
@@ -573,30 +572,37 @@ function _wrapCylinder(target, td) {
 }
 
 function _wrapCone(target, td) {
-  // Treat cone as a degenerate cylinder with r-top = 0 (or r1/r2) for v1.
-  // The lateral surface gets displaced; the base cap stays flat.
   const rTop = target.dims?.r1 != null ? target.dims.r1 : 0;
   const rBot = target.dims?.r2 != null ? target.dims.r2 : (target.dims?.r || 10);
   const h = (target.dims?.h || 20) * (target.scale?.[2] || 1);
-  const hm = _buildPatternHeightmap(td.pattern, td.tileSize, td.height);
+  const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const radialSegs = 96;
-  const heightSegs = Math.max(32, Math.round(h / Math.max(0.5, td.tileSize / 2)));
+  const radialSegs = 128;
+  const refTile = td.tileSize || hm.tileWidth / 4 || 3;
+  const heightSegs = Math.max(48, Math.round(h / Math.max(0.5, refTile / 2)));
   const side = new THREE.CylinderGeometry(rTop, rBot, h, radialSegs, heightSegs, true);
   side.rotateX(Math.PI / 2);
   const pos = side.attributes.position;
-  const tileMM = Math.max(0.5, hm.tileWidth);
+  const charR = Math.max(rTop, rBot);
+  const tileMM = _resolveTileMM(hm, td.fitMode, 2 * Math.PI * charR);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     const phi = Math.atan2(y, x);
-    const tParam = (z + h / 2) / h;        // 0 at bottom → 1 at top
+    const tParam = (z + h / 2) / h;
     const rLocal = rBot + (rTop - rBot) * tParam;
-    const circ = 2 * Math.PI * Math.max(0.1, rLocal);
-    const u = ((phi + Math.PI) * circ) / (2 * Math.PI * tileMM);
-    const v = (tParam * h) / tileMM;
+    const circLocal = 2 * Math.PI * Math.max(0.1, rLocal);
+    let u, v;
+    if (td.fitMode === "stretch") {
+      u = (phi + Math.PI) / (2 * Math.PI);
+      v = tParam;
+    } else {
+      u = ((phi + Math.PI) * circLocal) / (2 * Math.PI * tileMM);
+      v = (tParam * h) / tileMM;
+    }
     const hv = _sampleHeight(hm.hmap, hm.RES, u, v);
-    const disp = sign * (td.depth + hv);
+    const disp = sign * hv;
+    if (disp === 0) continue;
     const len = Math.sqrt(x * x + y * y);
     if (len < 1e-6) continue;
     pos.setXYZ(i, x * (1 + disp / len), y * (1 + disp / len), z);
@@ -611,91 +617,73 @@ function _wrapCone(target, td) {
 }
 
 function _wrapCube(target, td) {
-  // Six face textures, each oriented to land flush against one face.
-  // The texture mesh from buildTextureGeometry has its relief along +Z
-  // and its base plate spanning Z ∈ [-depth, 0]. To bind to a face we
-  // rotate so the relief axis aligns with the face's outward normal.
   const sx = (target.dims?.x || 20) * (target.scale?.[0] || 1);
   const sy = (target.dims?.y || 20) * (target.scale?.[1] || 1);
   const sz = (target.dims?.z || 20) * (target.scale?.[2] || 1);
-  const baseTex = buildTextureGeometry({
-    dims: { pattern: td.pattern, w: 1, d: 1, tileSize: td.tileSize, height: td.height, depth: Math.max(0.2, td.depth) },
-  });
-  // We'll dispose the prototype after grabbing scales; instead build fresh
-  // per-face textures so each can be sized to that face's two in-plane dims.
-  baseTex.dispose();
-  const makeFace = (w, d) => buildTextureGeometry({
-    dims: { pattern: td.pattern, w, d, tileSize: td.tileSize, height: td.height, depth: Math.max(0.2, td.depth) },
-  });
-  const halfX = sx / 2, halfY = sy / 2, halfZ = sz / 2;
+  const hm = td.heightmap;
+  if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  // Each texture is centred on the LOCAL origin with relief along +Z;
-  // we transform to its world face frame and offset by relief direction.
-  const inset = sign === 1 ? 0.001 : -td.depth; // weld vs cut
-  const faces = [];
-  // +Z (top)
-  {
-    const g = makeFace(sx, sy);
-    g.translate(0, 0, halfZ - inset);
-    faces.push(g);
+  const refTile = td.tileSize || hm.tileWidth / 4 || 3;
+  const maxFace = Math.max(sx, sy, sz);
+  const tileMM = _resolveTileMM(hm, td.fitMode, maxFace);
+  const seg = (s) => Math.max(24, Math.min(96, Math.ceil(s / Math.max(0.5, refTile / 3))));
+  const segX = seg(sx), segY = seg(sy), segZ = seg(sz);
+  const box = new THREE.BoxGeometry(sx, sy, sz, segX, segY, segZ);
+  const pos = box.attributes.position;
+  const norm = box.attributes.normal;
+  const halfX = sx / 2, halfY = sy / 2, halfZ = sz / 2;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const nx = norm.getX(i), ny = norm.getY(i), nz = norm.getZ(i);
+    let u, v;
+    if (td.fitMode === "stretch") {
+      // Stretch one image onto each face independently. Faces share
+      // the same image (the "wrap one airplane around all 6 faces"
+      // ask). UV ranges 0..1 per face.
+      if (Math.abs(nx) > 0.5)      { u = (y + halfY) / sy; v = (z + halfZ) / sz; }
+      else if (Math.abs(ny) > 0.5) { u = (x + halfX) / sx; v = (z + halfZ) / sz; }
+      else                          { u = (x + halfX) / sx; v = (y + halfY) / sy; }
+    } else {
+      if (Math.abs(nx) > 0.5)      { u = (y + halfY) / tileMM; v = (z + halfZ) / tileMM; }
+      else if (Math.abs(ny) > 0.5) { u = (x + halfX) / tileMM; v = (z + halfZ) / tileMM; }
+      else                          { u = (x + halfX) / tileMM; v = (y + halfY) / tileMM; }
+    }
+    const h = _sampleHeight(hm.hmap, hm.RES, u, v);
+    if (h === 0) continue;
+    const disp = sign * h;
+    pos.setXYZ(i, x + nx * disp, y + ny * disp, z + nz * disp);
   }
-  // -Z (bottom)
-  {
-    const g = makeFace(sx, sy);
-    g.rotateX(Math.PI);
-    g.translate(0, 0, -halfZ + inset);
-    faces.push(g);
-  }
-  // +X (right)
-  {
-    const g = makeFace(sy, sz);
-    g.rotateY(Math.PI / 2);
-    g.translate(halfX - inset, 0, 0);
-    faces.push(g);
-  }
-  // -X (left)
-  {
-    const g = makeFace(sy, sz);
-    g.rotateY(-Math.PI / 2);
-    g.translate(-halfX + inset, 0, 0);
-    faces.push(g);
-  }
-  // +Y (back)
-  {
-    const g = makeFace(sx, sz);
-    g.rotateX(-Math.PI / 2);
-    g.translate(0, halfY - inset, 0);
-    faces.push(g);
-  }
-  // -Y (front)
-  {
-    const g = makeFace(sx, sz);
-    g.rotateX(Math.PI / 2);
-    g.translate(0, -halfY + inset, 0);
-    faces.push(g);
-  }
-  const out = mergeGeometries(faces, false);
-  if (out) out.computeVertexNormals();
-  return out;
+  pos.needsUpdate = true;
+  box.computeVertexNormals();
+  return box;
 }
 
 /**
- * Wrap a texture pattern onto the entire outer surface of `target`.
- * Returns a fresh BufferGeometry in target-local coords (caller is
- * expected to drop the result at target.position). Returns null if
- * the target type isn't yet supported — caller falls back to the
- * legacy single-face workflow in that case.
+ * Wrap a heightmap onto the entire outer surface of `target`.
+ *
+ * @param {object} target     primitive object from the scene store
+ * @param {object} args
+ * @param {object} args.heightmap   {hmap, RES, tileWidth} — required.
+ *                                  Built by buildPatternHeightmap()
+ *                                  for built-in patterns, or
+ *                                  imageToHeightmap() for user
+ *                                  uploads.
+ * @param {"positive"|"negative"} args.modifier
+ * @param {"tile"|"stretch"} args.fitMode  default "tile"
+ * @param {number} [args.tileSize]  optional — used only to size the
+ *                                  output mesh resolution; falls back
+ *                                  to heightmap.tileWidth/4.
  */
-export function wrapTextureForTarget(target, textureDims) {
+export function wrapTextureForTarget(target, args) {
   if (!target) return null;
+  if (!args || !args.heightmap || !args.heightmap.hmap) return null;
   const td = {
-    pattern: textureDims.pattern || "bumps",
-    tileSize: Math.max(0.5, textureDims.tileSize || 3),
-    height: Math.max(0.05, textureDims.height || 1.0),
-    depth: Math.max(0, textureDims.depth ?? 0.4),
-    modifier: textureDims.modifier || "positive",
+    heightmap: args.heightmap,
+    modifier: args.modifier || "positive",
+    fitMode: args.fitMode || "tile",
+    tileSize: args.tileSize,
   };
-  if (target.type === "sphere") return _wrapSphere(target, td);
+  if (target.type === "sphere")   return _wrapSphere(target, td);
   if (target.type === "cylinder") return _wrapCylinder(target, td);
   if (target.type === "cone")     return _wrapCone(target, td);
   if (target.type === "cube")     return _wrapCube(target, td);

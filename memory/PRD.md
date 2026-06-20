@@ -28,10 +28,41 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-02-18)
+## Current Open Items (as of 2026-02-20)
 
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
+
+### Recently completed (iter-105.5)
+- **iter-105.5 (2026-02-20) — Texture system rewrite: heightmap-first + user-uploaded images.**
+  - **User pain**: iter-105.4 made things worse — only the dense knurl pattern survived on cube/sphere. Hex / bumps / brick / diamond plate were collapsing to flat planes because the 3D-pattern-to-heightmap rasteriser fills axis-aligned triangle BBs (which over-fill the gaps between shapes and under-fill the dense interiors). User also asked for a new feature: upload ANY image (daisies, airplane, logo) as a texture.
+  - **Rebuilt as one pipeline**:
+    1. `/app/frontend/src/lib/textureHeightmap.js` (NEW) — universal heightmap source. All 9 built-in patterns are now rendered via Canvas2D (proper anti-aliased shapes, ~90% coverage on bumps instead of 12%). Custom user images use the SAME path.
+    2. `wrapTextureForTarget(target, {heightmap, modifier, fitMode, tileSize})` (`/app/frontend/src/lib/textureGeometry.js`) — refactored to accept a heightmap directly. Stretch mode wraps one image once across the entire target; tile mode repeats every `tileSizeMM` of arc length.
+    3. Backend `/api/textures` (NEW — `/app/backend/routes/custom_textures.py`) — per-user CRUD for saved heightmaps. Stored as ≤256×256 grayscale PNG data-URLs (≤200KB each) directly inside the document, with a 64×64 thumb_b64 for the grid.
+    4. `TextureLibraryDialog` (rewritten) — two-tab UI (Built-in patterns / My Textures). My Textures tab has drag-and-drop + file picker upload, list with per-card delete, name field, defaults stored per texture. Removed the old "drop a flat tile on the bed" workflow entirely (the dialog now refuses to apply without a target).
+    5. Per-application Fit toggle: **Tile** (repeat across surface) vs **Stretch** (fit once).
+    6. Per-custom-texture Invert toggle (bright = low) for images whose subject is dark on a light background.
+  - **Verified live** in preview env:
+    - Sphere + positive hex → full coverage with proper hex relief.
+    - Cube + negative bumps → cube body intact (20×20×20mm preserved), dense engraved dimples on all 6 faces.
+    - Custom image upload: drew a 4×4 daisy stamp pattern in browser → POST `/api/textures` returned 200 + texture_id → texture appears in My Textures grid with correct thumbnail → applied to sphere produces a daisy-pattern bumpy surface.
+  - **Killed (per user request)**:
+    - "Drop a flat tile on the bed" — no longer offered; dialog requires a target.
+    - The 3D-pattern-to-heightmap rasteriser (`_buildPatternHeightmap` in textureGeometry.js) — every wrap now uses the new canvas-based heightmap source.
+
+### Recently completed (iter-105.4)
+- **iter-105.4 (2026-02-20) — Surface-Wrap Textures, take 2.**
+  - **Bug**: All NEGATIVE wrap-textures (and most POSITIVE wraps on a cube) were collapsing into floating face plates on the bed. Bumps on a sphere only achieved 10–15% surface coverage.
+  - **Root causes (3)**:
+    1. `_wrapCube` returned only six *disconnected* texture-face plates with no cube body — so NEGATIVE mode literally deleted the cube and POSITIVE rendered as a hollow shell.
+    2. `_wrapSphere` / `_wrapCylinder` / `_wrapCone` used `disp = sign * (depth + h)`, which uniformly inflated (positive) or shrank (negative) the entire mesh by `depth ≈ 0.8 mm` — making the relief read against an already-puffy/shrunken surface (the "10–15% coverage" the user reported).
+    3. After surface wrapping, the replacement mesh kept the original primitive's `position` even though the displaced bbox was a different size, causing positives to dip below the bed and negatives to float above it.
+  - **Fix** (`/app/frontend/src/lib/textureGeometry.js` + `/app/frontend/src/components/dialogs/TextureLibraryDialog.jsx`):
+    1. Rewrote `_wrapCube` to subdivide a `BoxGeometry` (16–64 segments per axis based on `tileSize`) and displace each face's vertices along its own outward normal. BoxGeometry uses separate vertices per face so edge crease behaviour is built in — no tearing, no floating plates.
+    2. Switched `_wrapSphere`/`_wrapCylinder`/`_wrapCone` to `disp = sign * h` (no `depth` offset). Where the pattern is empty (`h=0`) the sphere/cylinder keeps its original silhouette exactly, so relief reads cleanly against the original surface.
+    3. After wrap, `TextureLibraryDialog` repositions the result so its lowest vertex sits on `z=0` (true on-bed contact).
+  - **Verified live** on preview env: sphere + positive bumps now covers the full surface; cube + hex pattern keeps a solid cube body with raised hex relief; negative hex on cube engraves cleanly into the surface; sphere bbox stays at full 24mm after negative wrap (was shrinking to 20mm before).
 
 ### Recently completed (iter-105.1)
 - **iter-105.1 (2026-02-20) — Post-MVP polish sweep.**

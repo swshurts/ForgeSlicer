@@ -26,6 +26,7 @@ import orca_engine
 import orca_upstream
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
+from routes.custom_textures import build_custom_textures_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
 from routes.realtime import router as realtime_router
 
@@ -492,6 +493,12 @@ api_router.include_router(orca_engine.router)
 # The router accepts the auth dependency as a callable so we don't have to
 # import server.py in routes/projects.py (circular import).
 api_router.include_router(build_projects_router(db, get_current_user))
+
+# iter-105.5 — User-uploaded custom textures (heightmap-source images).
+# Persisted server-side so uploads survive reloads and follow the user
+# across sessions / devices. Stored inline as small grayscale PNG
+# data-URLs (≤200KB each).
+api_router.include_router(build_custom_textures_router(db, get_current_user))
 
 # Per-user custom printer definitions — /api/me/printers/* (auth-required).
 # Lets users register printers not in OrcaSlicer's bundled preset library
