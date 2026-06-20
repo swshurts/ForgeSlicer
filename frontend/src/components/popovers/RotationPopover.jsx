@@ -50,9 +50,9 @@ export function RotationPopover({ anchor, onClose }) {
             </div>
           )}
           <div className="grid grid-cols-3 gap-2">
-            <NumberField testid="popover-rot-x" label="X" value={obj.rotation[0]} onChange={(v) => setRot(0, v)} step={5} suffix="°" />
-            <NumberField testid="popover-rot-y" label="Y" value={obj.rotation[1]} onChange={(v) => setRot(1, v)} step={5} suffix="°" />
-            <NumberField testid="popover-rot-z" label="Z" value={obj.rotation[2]} onChange={(v) => setRot(2, v)} step={5} suffix="°" />
+            <NumberField testid="popover-rot-x" label="X" hint="pitch" value={obj.rotation[0]} onChange={(v) => setRot(0, v)} step={5} suffix="°" />
+            <NumberField testid="popover-rot-y" label="Y" hint="roll" value={obj.rotation[1]} onChange={(v) => setRot(1, v)} step={5} suffix="°" />
+            <NumberField testid="popover-rot-z" label="Z" hint="yaw" value={obj.rotation[2]} onChange={(v) => setRot(2, v)} step={5} suffix="°" />
           </div>
           <button
             data-testid="popover-drop-to-bed"

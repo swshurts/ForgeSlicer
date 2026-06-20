@@ -122,10 +122,16 @@ function PrinterPicker({ groups, value, onChange, currentLabel, testid = "printe
   );
 }
 
-function NumberField({ label, value, onChange, step = 1, min, max, testid, suffix }) {
+function NumberField({ label, hint, value, onChange, step = 1, min, max, testid, suffix }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{label}</span>
+      <span
+        className="text-[10px] uppercase tracking-wider text-slate-400 font-medium"
+        title={hint ? `${label} — ${hint}` : undefined}
+      >
+        {label}
+        {hint && <span className="ml-1 normal-case text-[9px] text-slate-500 tracking-normal">({hint})</span>}
+      </span>
       <div className="relative flex items-center">
         <input
           data-testid={testid}
@@ -537,45 +543,48 @@ function CompatibilityWarning() {
 }
 
 function estimateHalfExtents(o) {
+  // iter-104.x — Z-up CAD convention. Returns [hx, hy, hz] where each
+  // element is the half-extent along world X / Y (forward) / Z (up).
+  // Dims map 1:1 to world axes for all primitives now.
   const d = o.dims || {};
   const s = o.scale || [1, 1, 1];
-  if (o.type === "cube") return [(d.x || 20) / 2 * s[0], (d.z || 20) / 2 * s[1], (d.y || 20) / 2 * s[2]];
+  if (o.type === "cube") return [(d.x || 20) / 2 * s[0], (d.y || 20) / 2 * s[1], (d.z || 20) / 2 * s[2]];
   if (o.type === "sphere") return [(d.r || 10) * s[0], (d.r || 10) * s[1], (d.r || 10) * s[2]];
-  if (o.type === "cylinder" || o.type === "cone") return [(d.r || 10) * s[0], (d.h || 20) / 2 * s[1], (d.r || 10) * s[2]];
-  if (o.type === "torus") return [((d.r || 12) + (d.tube || 4)) * s[0], (d.tube || 4) * s[1], ((d.r || 12) + (d.tube || 4)) * s[2]];
-  // ---- Curve primitives (helix / pipe / wedge) ----
-  // helix: bbox = (R + tube) on XZ; height = turns * pitch on Y.
+  if (o.type === "cylinder" || o.type === "cone") {
+    // Axis = +Z (height). Radial extent on X/Y.
+    return [(d.r || 10) * s[0], (d.r || 10) * s[1], (d.h || 20) / 2 * s[2]];
+  }
+  if (o.type === "torus") {
+    // Hole axis = +Z; ring lies in XY. Thickness along Z = tube radius × 2.
+    const R = (d.r || 12) + (d.tube || 4);
+    return [R * s[0], R * s[1], (d.tube || 4) * s[2]];
+  }
   if (o.type === "helix") {
+    // Axis = +Z; tube winds around the Z column.
     const R = (d.r || 12) + (d.tube || 2);
     const H = (d.turns || 4) * (d.pitch || 6);
-    return [R * s[0], (H / 2) * s[1], R * s[2]];
+    return [R * s[0], R * s[1], (H / 2) * s[2]];
   }
-  // pipe: same XZ as a cylinder; height = d.h.
-  if (o.type === "pipe") return [(d.r || 12) * s[0], (d.h || 30) / 2 * s[1], (d.r || 12) * s[2]];
-  // wedge: same as cube dims (x/y/z) but the shape is a ramp.
+  if (o.type === "pipe") {
+    return [(d.r || 12) * s[0], (d.r || 12) * s[1], (d.h || 30) / 2 * s[2]];
+  }
   if (o.type === "wedge") return [(d.x || 24) / 2 * s[0], (d.y || 16) / 2 * s[1], (d.z || 24) / 2 * s[2]];
-  // bolt: head diameter dominates XZ; Y is total head+shaft height.
   if (o.type === "bolt") {
+    // Long axis = +Z. Outer radius dominates X/Y.
     const outerR = Math.max(d.r || 5, d.headR || 8);
     const totalH = (d.headH || 4) + (d.h || 20);
-    return [outerR * s[0], (totalH / 2) * s[1], outerR * s[2]];
+    return [outerR * s[0], outerR * s[1], (totalH / 2) * s[2]];
   }
-  // nut: hex flat-to-flat diameter on XZ; Y is the nut height.
   if (o.type === "nut") {
     const flatR = d.flatR || 8;
-    return [flatR * s[0], (d.h || 5) / 2 * s[1], flatR * s[2]];
+    return [flatR * s[0], flatR * s[1], (d.h || 5) / 2 * s[2]];
   }
-  // spline shaft: outer radius (core + tooth) on XZ; full length on Y.
   if (o.type === "spline") {
     const outerR = (d.r || 6) + (d.toothHeight || 1.2);
-    return [outerR * s[0], (d.h || 30) / 2 * s[1], outerR * s[2]];
+    return [outerR * s[0], outerR * s[1], (d.h || 30) / 2 * s[2]];
   }
-  // sweep: bbox is hard to compute analytically without sampling the
-  // curve. We approximate with the path's bounding-radius times the
-  // profile's largest extent so the half-extents read REASONABLE in
-  // the Inspector dimensions row. The accurate bbox lives in
-  // computeRotatedBBox (geometry.js) — which actually samples the
-  // built geometry — and is what drop-to-bed uses.
+  // sweep: approximate from path/profile. Accurate bbox lives in
+  // computeRotatedBBox (geometry.js) — drop-to-bed uses that.
   if (o.type === "sweep") {
     const p = d.path || {};
     const prof = d.profile || {};
@@ -583,13 +592,12 @@ function estimateHalfExtents(o) {
     if (p.kind === "helix") {
       const ext = (p.r ?? 12) + profR;
       const height = (p.pitch ?? 6) * (p.turns ?? 3) / 2 + profR;
-      return [ext * s[0], height * s[1], ext * s[2]];
+      return [ext * s[0], ext * s[1], height * s[2]];
     }
     if (p.kind === "arc") {
       const ext = (p.r ?? 20) + profR;
-      return [ext * s[0], profR * s[1], ext * s[2]];
+      return [ext * s[0], ext * s[1], profR * s[2]];
     }
-    // Bezier / sketch3d / ref — fall back to a generous default.
     return [30 * s[0], 30 * s[1], 30 * s[2]];
   }
   if (o.originalBbox) return [o.originalBbox.x / 2 * s[0], o.originalBbox.y / 2 * s[1], o.originalBbox.z / 2 * s[2]];
@@ -747,14 +755,14 @@ function Inspector() {
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
             <span>Dimensions (mm)</span>
-            <span className="text-[9px] text-slate-500 normal-case font-normal" title="X = length, Y = width, Z = height">
+            <span className="text-[9px] text-slate-500 normal-case font-normal" title="X = right (width), Y = forward (depth), Z = up (height)">
               X · Y · Z
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <NumberField testid="dim-x" label="X" value={obj.dims.x} onChange={(v) => updateDims(obj.id, { x: v })} step={1} min={0.1} />
-            <NumberField testid="dim-y" label="Y" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
-            <NumberField testid="dim-z" label="Z" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
+            <NumberField testid="dim-x" label="X" hint="width" value={obj.dims.x} onChange={(v) => updateDims(obj.id, { x: v })} step={1} min={0.1} />
+            <NumberField testid="dim-y" label="Y" hint="depth" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
+            <NumberField testid="dim-z" label="Z" hint="height" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
           </div>
           <EdgeControls obj={obj} updateDims={updateDims} />
         </div>
@@ -762,22 +770,50 @@ function Inspector() {
       {(obj.type === "sphere" || obj.type === "cylinder" || obj.type === "cone") && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
-          <div className="grid grid-cols-2 gap-2">
-            {/* Display & edit DIAMETER for less ambiguity ("a 3mm bolt needs
-                a 3.2mm hole" = diameter, never radius). The store still
-                holds radius, so we convert at the boundary. */}
-            <NumberField
-              testid="dim-d"
-              label={`Diameter${typeof obj.dims.r === "number" ? `  (r=${(obj.dims.r).toFixed(1)})` : ""}`}
-              value={(obj.dims.r || 0) * 2}
-              onChange={(v) => updateDims(obj.id, { r: Math.max(0.05, v / 2) })}
-              step={0.5}
-              min={0.1}
-            />
-            {obj.type !== "sphere" && (
+          {/* Cone with explicit top/bottom radii (e.g. a countersink
+              taper) gets a TWO-radius editor so the Inspector matches
+              what the geometry actually uses. Falls through to the
+              single-radius UI for a regular pointy cone. */}
+          {obj.type === "cone" && typeof obj.dims.r1 === "number" && typeof obj.dims.r2 === "number" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField
+                testid="dim-r1"
+                label="Top ⌀"
+                hint="r1"
+                value={(obj.dims.r1 || 0) * 2}
+                onChange={(v) => updateDims(obj.id, { r1: Math.max(0.05, v / 2) })}
+                step={0.5}
+                min={0.1}
+              />
+              <NumberField
+                testid="dim-r2"
+                label="Bottom ⌀"
+                hint="r2"
+                value={(obj.dims.r2 || 0) * 2}
+                onChange={(v) => updateDims(obj.id, { r2: Math.max(0.05, v / 2) })}
+                step={0.5}
+                min={0.1}
+              />
               <NumberField testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {/* Display & edit DIAMETER for less ambiguity ("a 3mm bolt needs
+                  a 3.2mm hole" = diameter, never radius). The store still
+                  holds radius, so we convert at the boundary. */}
+              <NumberField
+                testid="dim-d"
+                label={`Diameter${typeof obj.dims.r === "number" ? `  (r=${(obj.dims.r).toFixed(1)})` : ""}`}
+                value={(obj.dims.r || 0) * 2}
+                onChange={(v) => updateDims(obj.id, { r: Math.max(0.05, v / 2) })}
+                step={0.5}
+                min={0.1}
+              />
+              {obj.type !== "sphere" && (
+                <NumberField testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
+              )}
+            </div>
+          )}
           {/* Segment count — exposes the polygon resolution. Defaults are
               48/64 (smooth-looking); dropping to e.g. 6 turns a cylinder
               into a hex prism, 4 makes a square pillar, etc. This is how

@@ -193,7 +193,7 @@ function CutTool() {
       </ol>
       <H>Tips</H>
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
-        <li>"Upper" = the side the plane's local +Y axis points toward. With a horizontal plane, that's literally up; once you rotate the plane, "upper" follows the rotation.</li>
+        <li>"Upper" = the side the plane's local +Z axis points toward. With a horizontal plane, that's literally up; once you rotate the plane, "upper" follows the rotation.</li>
         <li>The cut is <strong>atomic in undo history</strong> — one <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> restores the original.</li>
         <li>For tall AI-generated meshes that won't fit your printer, drop the plane at your printer's Z-max and split — print each half, glue together.</li>
       </ul>

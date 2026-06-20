@@ -21,7 +21,7 @@
 
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Cpu, Hammer, Wrench, BookOpen } from "lucide-react";
+import { Cpu, Hammer, Wrench, BookOpen, Plug, Box, Disc, Anchor } from "lucide-react";
 
 const TEMPLATES = [
   {
@@ -63,6 +63,46 @@ const TEMPLATES = [
     iconColor: "text-purple-300",
     templateId: "drawer_pull",
     params: { length_mm: 96 },
+  },
+  {
+    id: "cable-comb",
+    title: "Cable Comb",
+    blurb: "Cleans up a thicket of wires — 12 slots in a low-profile comb. Adjust slot count and pitch to your loom.",
+    icon: Plug,
+    accent: "from-indigo-500/20 to-violet-500/10",
+    iconColor: "text-indigo-300",
+    templateId: "cable_comb",
+    params: { slot_count: 12, slot_pitch_mm: 6 },
+  },
+  {
+    id: "project-enclosure",
+    title: "Project Enclosure",
+    blurb: "Open-top box with chamfered edges, vent slots, and mount-screw bosses. Sized for typical hobby boards.",
+    icon: Box,
+    accent: "from-amber-500/20 to-orange-500/10",
+    iconColor: "text-amber-300",
+    templateId: "project_enclosure",
+    params: { interior_x_mm: 90, interior_y_mm: 60, interior_z_mm: 35 },
+  },
+  {
+    id: "spool-spacer",
+    title: "Spool Hub Spacer",
+    blurb: "Two interlocking flanges that adapt a generic spool to a printer's hub. Common bore sizes pre-configured.",
+    icon: Disc,
+    accent: "from-rose-500/20 to-pink-500/10",
+    iconColor: "text-rose-300",
+    templateId: "spool_spacer",
+    params: { bore_mm: 53, hub_mm: 8, flange_mm: 22 },
+  },
+  {
+    id: "right-angle-bracket",
+    title: "Right-Angle Bracket",
+    blurb: "Load-rated L-shelf with a gusset. Specify shelf depth and load (kg) — the gusset thickness scales accordingly.",
+    icon: Anchor,
+    accent: "from-teal-500/20 to-cyan-500/10",
+    iconColor: "text-teal-300",
+    templateId: "right_angle_bracket",
+    params: { shelf_depth_mm: 100, load_kg: 5 },
   },
 ];
 
@@ -121,21 +161,27 @@ export default function LandingTemplates() {
             type="button"
             data-testid={`landing-template-${tpl.id}`}
             onClick={() => launch(tpl)}
-            className={`group relative flex flex-col text-left rounded-xl border border-slate-800 hover:border-orange-500/60 bg-gradient-to-br ${tpl.accent} from-slate-900 via-slate-950 to-slate-900 p-5 transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-orange-500/40`}
+            className={`group relative flex flex-col text-left rounded-xl border border-slate-800 hover:border-orange-500/60 bg-slate-950/80 p-5 transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-orange-500/40 overflow-hidden`}
           >
             <div
-              className={`w-11 h-11 rounded-lg bg-slate-950/70 border border-slate-800 flex items-center justify-center mb-4 ${tpl.iconColor} group-hover:scale-105 transition-transform`}
-            >
-              <tpl.icon size={22} strokeWidth={1.6} />
-            </div>
-            <div className="text-[13px] font-semibold text-white tracking-tight">
-              {tpl.title}
-            </div>
-            <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
-              {tpl.blurb}
-            </p>
-            <div className="mt-4 inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-semibold text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity">
-              Open in workspace →
+              className={`absolute inset-0 -z-0 bg-gradient-to-br ${tpl.accent} opacity-70 pointer-events-none`}
+              aria-hidden="true"
+            />
+            <div className="relative z-10">
+              <div
+                className={`w-11 h-11 rounded-lg bg-slate-950/85 border border-slate-800 flex items-center justify-center mb-4 ${tpl.iconColor} group-hover:scale-105 transition-transform`}
+              >
+                <tpl.icon size={22} strokeWidth={1.6} />
+              </div>
+              <div className="text-[13px] font-semibold text-white tracking-tight">
+                {tpl.title}
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-300/90 leading-relaxed">
+                {tpl.blurb}
+              </p>
+              <div className="mt-4 inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-semibold text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                Open in workspace →
+              </div>
             </div>
           </button>
         ))}

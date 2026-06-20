@@ -13,14 +13,37 @@
 // pattern hint text + a live "preview footprint" callout.
 import React, { useState } from "react";
 import { Layers, X, BookOpen } from "lucide-react";
+import * as THREE from "three";
 import { useScene } from "../../lib/store";
 import { TEXTURE_PATTERNS } from "../../lib/textureGeometry";
+import { computeRotatedBBox } from "../../lib/geometry";
+import { combineTwoAsync } from "../../lib/manifoldEngine";
+
+// Face → outward unit normal in the target's WORLD frame.
+// (Local & world coincide once the target's rotation is applied
+// because the target's bbox we read is already rotation-aware.)
+const FACE_NORMALS = {
+  top:    [0, 0,  1],
+  bottom: [0, 0, -1],
+  front:  [0, -1, 0],
+  back:   [0,  1, 0],
+  left:   [-1, 0, 0],
+  right:  [ 1, 0, 0],
+};
 
 export default function TextureLibraryDialog({ open, onClose, targetObjectId = null }) {
   const addPrimitive = useScene((s) => s.addPrimitive);
   const updateDims = useScene((s) => s.updateDims);
+  const updateObject = useScene((s) => s.updateObject);
   const objects = useScene((s) => s.objects);
-  const target = targetObjectId ? objects.find((o) => o.id === targetObjectId) : null;
+  const selectedId = useScene((s) => s.selectedId);
+  const replaceObjects = useScene((s) => s.replaceObjects);
+  const selectObject = useScene((s) => s.selectObject);
+  // If no explicit target was passed, fall back to the user's current
+  // selection — that's almost always what they mean when they pop the
+  // Texture dialog from the AI tab while a part is highlighted.
+  const effectiveTargetId = targetObjectId || selectedId;
+  const target = effectiveTargetId ? objects.find((o) => o.id === effectiveTargetId) : null;
 
   // Defaults: pick the first pattern + its tuning defaults.
   const [pattern, setPattern] = useState(TEXTURE_PATTERNS[0].id);
@@ -33,6 +56,11 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const [face, setFace] = useState("top");
   const [wrap, setWrap] = useState("flat");
   const [wrapRadius, setWrapRadius] = useState(0);
+  // Auto-merge (default ON when a target is set) — drops the texture
+  // pre-aligned on the chosen face AND immediately runs the boolean,
+  // so the user gets a knurled / engraved part in a single click.
+  const [autoMerge, setAutoMerge] = useState(true);
+  const [busy, setBusy] = useState(false);
   const selectedPattern = TEXTURE_PATTERNS.find((p) => p.id === pattern) || TEXTURE_PATTERNS[0];
 
   // When the pattern changes, snap the tile/height defaults to ones
@@ -46,34 +74,142 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   };
 
   // When the user picks "Apply to face of <target>", size the texture
-  // footprint to the target's AABB on that face. The picker is only
-  // shown if a target was passed in (i.e. dialog was opened from the
-  // right-click "Apply texture..." action on an object).
+  // footprint to the target's AABB on that face (Z-up CAD frame: world
+  // X/Y are the bed plane, Z is up).
   const applyToFace = () => {
     if (!target) return;
-    // Compute target's bounding extent on the chosen face.
-    const s = target.scale || [1, 1, 1];
-    const dims = target.dims || {};
-    // Fall back to dims.h/r if precise bbox isn't available — good
-    // enough for default sizing; user can tweak w/d after.
-    const tw = (dims.x ?? dims.w ?? dims.r ? (dims.r ?? 0) * 2 : 30) * s[0];
-    const tdp = (dims.z ?? dims.d ?? dims.r ? (dims.r ?? 0) * 2 : 30) * s[2];
-    const th = (dims.y ?? dims.h ?? 30) * s[1];
-    if (face === "top" || face === "bottom") { setW(tw); setD(tdp); }
-    else if (face === "front" || face === "back") { setW(tw); setD(th); }
-    else { setW(th); setD(tdp); }
+    let bb;
+    try { bb = computeRotatedBBox(target); } catch (_) { return; }
+    const ex = bb.max.x - bb.min.x;
+    const ey = bb.max.y - bb.min.y;
+    const ez = bb.max.z - bb.min.z;
+    if (face === "top" || face === "bottom") { setW(ex); setD(ey); }
+    else if (face === "front" || face === "back") { setW(ex); setD(ez); }
+    else { setW(ey); setD(ez); }
   };
 
   React.useEffect(() => {
     if (target) applyToFace();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [face, targetObjectId]);
+  }, [face, effectiveTargetId]);
 
-  const handleDrop = () => {
+  const handleDrop = async () => {
+    if (busy) return;
+    // Path A: no target — drop the texture as a standalone primitive
+    // on the bed and let the user position it manually.
+    if (!target) {
+      const id = addPrimitive("texture", modifier);
+      updateDims(id, { pattern, w, d, tileSize, height, depth, wrap, wrapRadius });
+      onClose();
+      return;
+    }
+    // Path B: target picked. Compute a world-space pose that lands the
+    // texture flat on the target's chosen face with its relief pointing
+    // OUTWARD. The texture's local frame is XY footprint, +Z = relief
+    // direction. We rotate so +Z aligns with the face normal.
+    let bb;
+    try { bb = computeRotatedBBox(target); } catch (e) {
+      onClose(); return;
+    }
+    const tp = target.position;
+    const centre = [
+      tp[0] + (bb.min.x + bb.max.x) / 2,
+      tp[1] + (bb.min.y + bb.max.y) / 2,
+      tp[2] + (bb.min.z + bb.max.z) / 2,
+    ];
+    const halfX = (bb.max.x - bb.min.x) / 2;
+    const halfY = (bb.max.y - bb.min.y) / 2;
+    const halfZ = (bb.max.z - bb.min.z) / 2;
+    const n = FACE_NORMALS[face] || FACE_NORMALS.top;
+    const facePoint = [
+      centre[0] + n[0] * halfX,
+      centre[1] + n[1] * halfY,
+      centre[2] + n[2] * halfZ,
+    ];
+    // For a UNION (raised) we want the texture's BASE plate sitting
+    // on the face and the relief popping out (along +n). The texture
+    // mesh's local origin is at the base, so we push the position OUT
+    // by the relief height/2 so the relief crosses the face plane.
+    // For a SUBTRACT (engraved) we sink the texture INTO the part by
+    // (relief height) so the engrave reaches that depth.
+    const reliefOffset = modifier === "positive" ? depth / 2 : -height + depth / 2;
+    const pos = [
+      facePoint[0] + n[0] * reliefOffset,
+      facePoint[1] + n[1] * reliefOffset,
+      facePoint[2] + n[2] * reliefOffset,
+    ];
+    // Rotation: rotate the texture's +Z (relief direction) to align
+    // with the face normal `n`.
+    const upZ = new THREE.Vector3(0, 0, 1);
+    const target_n = new THREE.Vector3(...n);
+    const q = new THREE.Quaternion().setFromUnitVectors(upZ, target_n);
+    const e = new THREE.Euler().setFromQuaternion(q);
+    const rotDeg = [
+      THREE.MathUtils.radToDeg(e.x),
+      THREE.MathUtils.radToDeg(e.y),
+      THREE.MathUtils.radToDeg(e.z),
+    ];
+
     const id = addPrimitive("texture", modifier);
-    // Overwrite the just-added default dims with the user's picks.
     updateDims(id, { pattern, w, d, tileSize, height, depth, wrap, wrapRadius });
-    onClose();
+    updateObject(id, { position: pos, rotation: rotDeg });
+
+    if (!autoMerge) {
+      // Leave the texture as a free-floating primitive aligned with
+      // the face; the user can refine and run the boolean themselves.
+      selectObject(id);
+      onClose();
+      return;
+    }
+
+    // Run the boolean against the target. We let the target retain
+    // its identity (combineTwoAsync produces a fresh merged mesh and
+    // we replace BOTH the target and the texture with the result —
+    // same flow as the toolbar's doBool).
+    setBusy(true);
+    try {
+      const texObj = useScene.getState().objects.find((o) => o.id === id);
+      const op = modifier === "positive" ? "union" : "subtract";
+      const merged = await combineTwoAsync(target, texObj, op);
+      let originalBbox = null;
+      const verts = merged?.vertices;
+      if (verts && verts.length >= 3) {
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        for (let i = 0; i < verts.length; i += 3) {
+          const x = verts[i], y = verts[i + 1], z = verts[i + 2];
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        }
+        if (isFinite(minX)) originalBbox = { x: maxX - minX, y: maxY - minY, z: maxZ - minZ };
+      }
+      replaceObjects([target.id, id], [{
+        name: `${target.name} · ${selectedPattern.label}`,
+        type: "imported",
+        modifier: "positive",
+        visible: true,
+        locked: false,
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        dims: {},
+        geometry: merged,
+        originalBbox,
+        __skipAutoDrop: true,
+      }]);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Texture auto-merge failed:", e);
+      // Leave the un-merged texture in place so the user can debug
+      // visually rather than losing their config silently.
+      if (typeof window !== "undefined" && window.alert) {
+        window.alert("Texture merge failed: " + (e.message || e));
+      }
+    } finally {
+      setBusy(false);
+      onClose();
+    }
   };
 
   if (!open) return null;
@@ -191,6 +327,23 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
               <div className="text-[10px] text-slate-500 mt-1">
                 Texture footprint will be auto-sized to the picked face. Drag/position via Inspector after.
               </div>
+              <label
+                data-testid="texture-auto-merge"
+                className="mt-2 flex items-start gap-2 cursor-pointer text-[11px] text-slate-300 select-none"
+              >
+                <input
+                  type="checkbox"
+                  checked={autoMerge}
+                  onChange={(e) => setAutoMerge(e.target.checked)}
+                  className="mt-0.5 accent-orange-500"
+                />
+                <span>
+                  <span className="font-medium text-slate-200">Bake into the part on drop</span>
+                  <span className="block text-[10px] text-slate-500 mt-0.5 leading-tight">
+                    Auto-runs the {modifier === "positive" ? "union" : "subtract"} so the texture becomes part of <span className="text-orange-300">{target.name}</span>'s mesh. Uncheck to leave them as separate components you can boolean later.
+                  </span>
+                </span>
+              </label>
             </div>
           )}
 
@@ -258,9 +411,12 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
           <button
             data-testid="texture-drop-btn"
             onClick={handleDrop}
-            className="w-full h-9 rounded bg-orange-500 hover:bg-orange-400 text-slate-950 text-sm font-semibold transition-colors"
+            disabled={busy}
+            className="w-full h-9 rounded bg-orange-500 hover:bg-orange-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 text-sm font-semibold transition-colors"
           >
-            Drop on plate
+            {busy ? "Baking texture into part…" : target
+              ? (autoMerge ? `Apply to ${face} face & bake` : `Drop on ${face} face`)
+              : "Drop on plate"}
           </button>
         </div>
       </div>

@@ -91,7 +91,14 @@ export default function DesignChatDialog({ open, onClose }) {
     setInput("");
     setBusy(true);
     try {
-      const cmd = await parseTranscript(text);
+      // iter-105.1 — pass last few turns of chat history so the LLM can
+      // resolve cross-turn references. We strip the welcome greeting +
+      // any error messages (those aren't useful context) and let the
+      // backend's own truncation cap further if needed.
+      const history = messages
+        .filter((m) => m.kind === "user" || m.kind === "assistant")
+        .map((m) => ({ role: m.kind, text: m.text || "" }));
+      const cmd = await parseTranscript(text, { history });
       // /api/voice/command returns:
       //   • atomic action: {action, raw:{action, type, dims, ...}}
       //   • plan:          {action:"plan", steps:[...]}

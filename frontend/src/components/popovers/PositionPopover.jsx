@@ -45,9 +45,9 @@ export function PositionPopover({ anchor, onClose }) {
             </div>
           )}
           <div className="grid grid-cols-3 gap-2">
-            <NumberField testid="popover-pos-x" label="X" value={obj.position[0]} onChange={(v) => setPos(0, v)} step={0.5} suffix="mm" />
-            <NumberField testid="popover-pos-y" label="Y" value={obj.position[1]} onChange={(v) => setPos(1, v)} step={0.5} suffix="mm" />
-            <NumberField testid="popover-pos-z" label="Z" value={obj.position[2]} onChange={(v) => setPos(2, v)} step={0.5} suffix="mm" />
+            <NumberField testid="popover-pos-x" label="X" hint="right" value={obj.position[0]} onChange={(v) => setPos(0, v)} step={0.5} suffix="mm" />
+            <NumberField testid="popover-pos-y" label="Y" hint="forward" value={obj.position[1]} onChange={(v) => setPos(1, v)} step={0.5} suffix="mm" />
+            <NumberField testid="popover-pos-z" label="Z" hint="up" value={obj.position[2]} onChange={(v) => setPos(2, v)} step={0.5} suffix="mm" />
           </div>
         </>
       )}

@@ -10,7 +10,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
-export function NumberField({ label, value, onChange, step = 1, suffix, testid, disabled }) {
+export function NumberField({ label, hint, value, onChange, step = 1, suffix, testid, disabled }) {
   // Keep a string draft so the user can transiently type "" / "0" / "0.5"
   // without the field firing onChange on every keystroke (which used to
   // collapse the scale to 0 mid-edit and freeze the lock math). Commit on
@@ -38,7 +38,13 @@ export function NumberField({ label, value, onChange, step = 1, suffix, testid, 
   return (
     <label className="flex flex-col gap-1">
       {label !== "" && (
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{label}</span>
+        <span
+          className="text-[10px] uppercase tracking-wider text-slate-400 font-medium"
+          title={hint ? `${label} — ${hint}` : undefined}
+        >
+          {label}
+          {hint && <span className="ml-1 normal-case text-[9px] text-slate-500 tracking-normal">({hint})</span>}
+        </span>
       )}
       <div className="relative flex items-center">
         <input

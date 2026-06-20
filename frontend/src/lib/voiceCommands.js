@@ -25,10 +25,18 @@ export function isVoiceSupported() {
 // Parse a transcript through the backend LLM into a structured command.
 // Sends a compact scene snapshot alongside so the LLM can ground
 // references like "the selected item" or "each corner".
-export async function parseTranscript(transcript) {
+export async function parseTranscript(transcript, options = {}) {
   let scene;
   try { scene = getSceneSnapshot(); } catch { scene = undefined; }
-  const { data } = await axios.post(`${API}/voice/command`, { transcript, scene });
+  const payload = { transcript, scene };
+  // iter-105.1 — Design Chat multi-turn: opt-in chat history for the LLM.
+  // Voice commands stay one-shot (no token cost); only Design Chat passes
+  // its log so the LLM can resolve cross-turn references like "make THAT
+  // 2mm taller".
+  if (Array.isArray(options.history) && options.history.length) {
+    payload.history = options.history;
+  }
+  const { data } = await axios.post(`${API}/voice/command`, payload);
   return data; // { action, raw, transcript }
 }
 

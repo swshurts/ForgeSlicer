@@ -1732,6 +1732,10 @@ class VoiceCommandRequest(BaseModel):
     # frontend collects this via store.getSceneSnapshot(). Shape:
     #   {selection: {bbox: {min:[x,y,z], max:[x,y,z]}, count}, ...}
     scene: Optional[Dict[str, Any]] = None
+    # iter-105.1 — optional chat history for Design Chat multi-turn mode.
+    # Each entry: {role: "user"|"assistant", text: str}. Empty / omitted
+    # for one-shot voice commands so we don't pay LLM context for them.
+    history: Optional[List[Dict[str, Any]]] = None
 
 
 class VoiceCommandResponse(BaseModel):
@@ -1770,6 +1774,33 @@ async def parse_voice_command(req: VoiceCommandRequest):
             f"USER: {text}\n\n"
             f"SCENE: {_json.dumps(scene_snip, separators=(',',':'))}"
         )
+    # iter-105.1 — Design Chat multi-turn: prepend the recent chat history
+    # (last ~8 turns, capped) so the LLM has continuity across messages.
+    # We summarise instead of dumping raw — assistant replies often
+    # include "Done." or step counts that don't help future turns, so we
+    # keep the conversational text but strip our standardised "Ran N/N
+    # steps." footers.
+    if req.history:
+        hist_lines = []
+        # Keep only the last 8 turns to control token cost. Order is
+        # chronological; trim from the front.
+        recent = req.history[-8:]
+        for h in recent:
+            if not isinstance(h, dict):
+                continue
+            role = (h.get("role") or "").strip().lower()
+            t = (h.get("text") or "").strip()
+            if not t or role not in ("user", "assistant"):
+                continue
+            label = "USER" if role == "user" else "YOU"
+            hist_lines.append(f"{label}: {t[:600]}")
+        if hist_lines:
+            user_text = (
+                "PRIOR CHAT (oldest → newest):\n"
+                + "\n".join(hist_lines)
+                + "\n\n---\nLATEST TURN:\n"
+                + user_text
+            )
     try:
         chat = LlmChat(
             api_key=key,
