@@ -393,6 +393,8 @@ export function buildTextureGeometry(obj) {
   const merged = mergeGeometries(all, false);
   if (!merged) {
     plate.computeVertexNormals();
+    // Y-up→Z-up: relief along +Z, footprint in XY plane.
+    plate.rotateX(Math.PI / 2);
     return plate;
   }
 
@@ -416,17 +418,26 @@ export function buildTextureGeometry(obj) {
       arr[i + 2] = radial * Math.cos(theta);
     }
     pos.needsUpdate = true;
-    // Rebuild normals — the original flat normals are wrong after the
-    // bend. computeVertexNormals is O(verts) which is fine even at 50k.
     merged.computeVertexNormals();
-    // Recompute bounding box / sphere too, since downstream BVH code
-    // reads them for raycast acceleration.
     merged.computeBoundingBox();
     merged.computeBoundingSphere();
+    // Wrapped textures (cylinder mode) already wound around a vertical
+    // axis in the old code. After the Z-up migration the cylinder
+    // wrap axis is still Y inside this function (the math above uses
+    // +Y as the bumps axis), so we rotate the wrapped mesh too so the
+    // cylinder axis ends up along world Z.
+    merged.rotateX(Math.PI / 2);
     return merged;
   }
 
   merged.computeVertexNormals();
+  // iter-105.2 — textureGeometry was authored Y-up (relief = +Y, footprint
+  // in XZ). ForgeSlicer is now Z-up internally, so rotate by +90° around
+  // X so old +Y (relief) → new +Z (up) and old +Z (footprint depth) →
+  // new -Y (footprint depth on the bed plane). Downstream callers
+  // (Manifold, dialog face-application math) assume +Z is the relief
+  // direction.
+  merged.rotateX(Math.PI / 2);
   return merged;
 }
 
