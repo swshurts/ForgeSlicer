@@ -15,7 +15,7 @@ import React, { useState } from "react";
 import { Layers, X, BookOpen } from "lucide-react";
 import * as THREE from "three";
 import { useScene } from "../../lib/store";
-import { TEXTURE_PATTERNS } from "../../lib/textureGeometry";
+import { TEXTURE_PATTERNS, wrapTextureForTarget, targetSupportsSurfaceWrap } from "../../lib/textureGeometry";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { combineTwoAsync } from "../../lib/manifoldEngine";
 
@@ -56,12 +56,25 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const [face, setFace] = useState("top");
   const [wrap, setWrap] = useState("flat");
   const [wrapRadius, setWrapRadius] = useState(0);
+  // iter-105.3 — surface-wrap mode. Default to "whole" when the target's
+  // type supports a per-vertex displacement wrap (sphere/cylinder/cone/cube).
+  // Otherwise fall back to single-face (the only thing that makes sense
+  // for an imported mesh / torus / etc. in v1).
+  const supportsWrap = targetSupportsSurfaceWrap(target);
+  const [applyMode, setApplyMode] = useState(supportsWrap ? "whole" : "face");
   // Auto-merge (default ON when a target is set) — drops the texture
   // pre-aligned on the chosen face AND immediately runs the boolean,
   // so the user gets a knurled / engraved part in a single click.
   const [autoMerge, setAutoMerge] = useState(true);
   const [busy, setBusy] = useState(false);
   const selectedPattern = TEXTURE_PATTERNS.find((p) => p.id === pattern) || TEXTURE_PATTERNS[0];
+
+  // When the user picks a NEW target (or opens the dialog with one),
+  // reset the apply-mode default to whichever is sensible for them.
+  React.useEffect(() => {
+    if (!target) return;
+    setApplyMode(targetSupportsSurfaceWrap(target) ? "whole" : "face");
+  }, [effectiveTargetId, target?.type]);
 
   // When the pattern changes, snap the tile/height defaults to ones
   // that look reasonable for the new pattern (each kind has different
@@ -103,10 +116,55 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
       onClose();
       return;
     }
-    // Path B: target picked. Compute a world-space pose that lands the
-    // texture flat on the target's chosen face with its relief pointing
-    // OUTWARD. The texture's local frame is XY footprint, +Z = relief
-    // direction. We rotate so +Z aligns with the face normal.
+    // Path A2: target + whole-surface wrap mode. Generate a displaced
+    // mesh that IS the bumpy target and REPLACE the target — no boolean
+    // pass needed (the displacement is baked into the mesh directly).
+    if (applyMode === "whole" && targetSupportsSurfaceWrap(target)) {
+      setBusy(true);
+      try {
+        const wrapped = wrapTextureForTarget(target, {
+          pattern, tileSize, height, depth, modifier,
+        });
+        if (!wrapped) throw new Error("Surface wrap not available for this target type yet");
+        const arr = wrapped.attributes.position.array;
+        const vertices = new Float32Array(arr);
+        const indices = wrapped.index ? new Uint32Array(wrapped.index.array) : null;
+        wrapped.computeBoundingBox();
+        const bb = wrapped.boundingBox;
+        const originalBbox = bb
+          ? { x: bb.max.x - bb.min.x, y: bb.max.y - bb.min.y, z: bb.max.z - bb.min.z }
+          : null;
+        wrapped.dispose();
+        replaceObjects([target.id], [{
+          name: `${target.name} · ${selectedPattern.label}`,
+          type: "imported",
+          modifier: target.modifier || "positive",
+          visible: true,
+          locked: false,
+          position: [...target.position],
+          rotation: [...target.rotation],
+          scale: [1, 1, 1], // displacement already used the target's scale
+          dims: {},
+          geometry: { vertices, indices },
+          originalBbox,
+          __skipAutoDrop: true,
+        }]);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("Surface-wrap texture failed:", e);
+        if (typeof window !== "undefined" && window.alert) {
+          window.alert("Surface wrap failed: " + (e.message || e));
+        }
+      } finally {
+        setBusy(false);
+        onClose();
+      }
+      return;
+    }
+    // Path B: target picked + single-face mode (legacy). Compute a
+    // world-space pose that lands the texture flush on the target's
+    // chosen face with its relief pointing OUTWARD, then optionally
+    // run the boolean.
     let bb;
     try { bb = computeRotatedBBox(target); } catch (e) {
       onClose(); return;
@@ -302,48 +360,86 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
             </div>
           </div>
 
-          {/* Target face — only shown when a target object is set */}
+          {/* Target — Apply mode picker */}
           {target && (
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">
-                Apply to face of <span className="text-orange-300">{target.name}</span>
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {["top", "bottom", "front", "back", "left", "right"].map((f) => (
+            <div data-testid="texture-target-section" className="space-y-2">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">
+                  Apply to <span className="text-orange-300">{target.name}</span>
+                </label>
+                <div className="flex gap-2">
                   <button
-                    key={f}
-                    data-testid={`texture-face-${f}`}
-                    onClick={() => setFace(f)}
-                    className={`h-7 px-2.5 rounded border text-[11px] font-medium transition-all capitalize ${
-                      face === f
+                    data-testid="texture-mode-whole"
+                    onClick={() => setApplyMode("whole")}
+                    disabled={!supportsWrap}
+                    title={supportsWrap ? "" : "Whole-surface wrap not supported for this primitive yet — coming in v2."}
+                    className={`flex-1 h-9 rounded border text-[11px] font-medium transition-all ${
+                      applyMode === "whole"
+                        ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                        : supportsWrap
+                        ? "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                        : "border-slate-800 bg-slate-950 text-slate-600 cursor-not-allowed"
+                    }`}
+                  >
+                    Whole surface{supportsWrap ? "" : " (coming soon)"}
+                  </button>
+                  <button
+                    data-testid="texture-mode-face"
+                    onClick={() => setApplyMode("face")}
+                    className={`flex-1 h-9 rounded border text-[11px] font-medium transition-all ${
+                      applyMode === "face"
                         ? "border-orange-500 bg-orange-500/15 text-orange-300"
                         : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
                     }`}
                   >
-                    {f}
+                    Single face
                   </button>
-                ))}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">
+                  {applyMode === "whole"
+                    ? `Bumps wrap the entire ${target.type}'s outer surface. ${target.type === "cylinder" || target.type === "cone" ? "Caps stay flat in v1." : ""}`
+                    : "Texture lands on the picked face; the rest of the part stays smooth."}
+                </div>
               </div>
-              <div className="text-[10px] text-slate-500 mt-1">
-                Texture footprint will be auto-sized to the picked face. Drag/position via Inspector after.
-              </div>
-              <label
-                data-testid="texture-auto-merge"
-                className="mt-2 flex items-start gap-2 cursor-pointer text-[11px] text-slate-300 select-none"
-              >
-                <input
-                  type="checkbox"
-                  checked={autoMerge}
-                  onChange={(e) => setAutoMerge(e.target.checked)}
-                  className="mt-0.5 accent-orange-500"
-                />
-                <span>
-                  <span className="font-medium text-slate-200">Bake into the part on drop</span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5 leading-tight">
-                    Auto-runs the {modifier === "positive" ? "union" : "subtract"} so the texture becomes part of <span className="text-orange-300">{target.name}</span>'s mesh. Uncheck to leave them as separate components you can boolean later.
-                  </span>
-                </span>
-              </label>
+
+              {applyMode === "face" && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1.5">Face</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["top", "bottom", "front", "back", "left", "right"].map((f) => (
+                      <button
+                        key={f}
+                        data-testid={`texture-face-${f}`}
+                        onClick={() => setFace(f)}
+                        className={`h-7 px-2.5 rounded border text-[11px] font-medium transition-all capitalize ${
+                          face === f
+                            ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                            : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                  <label
+                    data-testid="texture-auto-merge"
+                    className="mt-2 flex items-start gap-2 cursor-pointer text-[11px] text-slate-300 select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={autoMerge}
+                      onChange={(e) => setAutoMerge(e.target.checked)}
+                      className="mt-0.5 accent-orange-500"
+                    />
+                    <span>
+                      <span className="font-medium text-slate-200">Bake into the part on drop</span>
+                      <span className="block text-[10px] text-slate-500 mt-0.5 leading-tight">
+                        Auto-runs the {modifier === "positive" ? "union" : "subtract"} so the texture becomes part of <span className="text-orange-300">{target.name}</span>'s mesh.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
@@ -414,8 +510,10 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
             disabled={busy}
             className="w-full h-9 rounded bg-orange-500 hover:bg-orange-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 text-sm font-semibold transition-colors"
           >
-            {busy ? "Baking texture into part…" : target
-              ? (autoMerge ? `Apply to ${face} face & bake` : `Drop on ${face} face`)
+            {busy ? "Working…" : target
+              ? (applyMode === "whole"
+                  ? `Wrap whole ${target.type}`
+                  : (autoMerge ? `Apply to ${face} face & bake` : `Drop on ${face} face`))
               : "Drop on plate"}
           </button>
         </div>

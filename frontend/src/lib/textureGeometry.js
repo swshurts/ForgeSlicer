@@ -441,6 +441,271 @@ export function buildTextureGeometry(obj) {
   return merged;
 }
 
+// iter-105.3 — Surface-wrap textures. Apply a pattern to the ENTIRE
+// outer surface of a target primitive instead of one flat face.
+//
+// Implementation: we generate a high-resolution mesh of the target
+// (sphere / cylinder / cube / cone) and displace each vertex along its
+// outward normal by an amount sampled from the pattern's heightmap.
+// The result is a self-contained "bumpy" version of the target — no
+// CSG boolean needed (faster + sidesteps Manifold watertightness
+// gotchas around non-watertight inputs).
+//
+// For positive modifier: vertices are pushed OUTWARD by depth+h(u,v).
+// For negative modifier: vertices are pushed INWARD by depth+h(u,v).
+
+// ---- Heightmap rasterization ----
+// Build a 2D heightmap (RES × RES) from a single tile of the pattern.
+// We call the pattern builder to get the raw tile pieces (still Y-up
+// internally — the buildTextureGeometry rotation happens at the END,
+// AFTER this function), then bucket each vertex's Y into a grid cell
+// of its XZ footprint.
+function _buildPatternHeightmap(pattern, tileSize, height, RES = 96) {
+  const builder = PATTERN_KINDS[pattern] || PATTERN_KINDS.bumps;
+  // One tile's worth — extra resolution comes from tiling at sample time.
+  const tilePieces = builder({ w: tileSize, d: tileSize, tileSize, height });
+  const merged = mergeGeometries(tilePieces, false);
+  if (!merged) return null;
+  const arr = merged.attributes.position.array;
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < arr.length; i += 3) {
+    if (arr[i] < minX) minX = arr[i];
+    if (arr[i] > maxX) maxX = arr[i];
+    if (arr[i + 2] < minZ) minZ = arr[i + 2];
+    if (arr[i + 2] > maxZ) maxZ = arr[i + 2];
+  }
+  const sx = maxX - minX || 1, sz = maxZ - minZ || 1;
+  const hmap = new Float32Array(RES * RES);
+  for (let i = 0; i < arr.length; i += 3) {
+    const u = (arr[i] - minX) / sx;
+    const v = (arr[i + 2] - minZ) / sz;
+    const ix = Math.max(0, Math.min(RES - 1, Math.floor(u * RES)));
+    const iz = Math.max(0, Math.min(RES - 1, Math.floor(v * RES)));
+    const y = arr[i + 1];
+    const idx = iz * RES + ix;
+    if (y > hmap[idx]) hmap[idx] = y;
+  }
+  merged.dispose();
+  return { hmap, RES, tileWidth: sx };
+}
+
+function _sampleHeight(hmap, RES, u, v) {
+  // u, v can be ANY real number; we wrap to [0, 1) for tiling.
+  const fu = u - Math.floor(u);
+  const fv = v - Math.floor(v);
+  const ix = Math.max(0, Math.min(RES - 1, Math.floor(fu * RES)));
+  const iz = Math.max(0, Math.min(RES - 1, Math.floor(fv * RES)));
+  return hmap[iz * RES + ix] || 0;
+}
+
+// ---- Per-target wrap implementations ----
+// Each returns a fresh THREE.BufferGeometry in Z-up CAD coords centred
+// on the local origin (no translation by `target.position` — the
+// caller drops the new object at the same world position as the
+// original target).
+
+function _wrapSphere(target, td) {
+  const r = (target.dims?.r || 10) * (target.scale?.[0] || 1);
+  const hm = _buildPatternHeightmap(td.pattern, td.tileSize, td.height);
+  if (!hm) return null;
+  const sign = td.modifier === "negative" ? -1 : 1;
+  const seg = 96;
+  const sphere = new THREE.SphereGeometry(r, seg, Math.max(48, seg / 2));
+  const pos = sphere.attributes.position;
+  const baseOffset = td.depth || 0;
+  const tileMM = Math.max(0.5, hm.tileWidth);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // Spherical coords on Z-up frame (Z = pole, phi around Z in XY).
+    const phi = Math.atan2(y, x);
+    const theta = Math.acos(Math.max(-1, Math.min(1, z / r)));
+    // Tile space: u along latitude line (circumference shrinks with sin(theta)),
+    // v along meridian (length r·π).
+    const circ = 2 * Math.PI * r * Math.sin(theta);
+    const u = (phi + Math.PI) * Math.max(1, circ) / (2 * Math.PI * tileMM);
+    const v = theta * r / tileMM;
+    const h = _sampleHeight(hm.hmap, hm.RES, u, v);
+    const disp = sign * (baseOffset + h);
+    // Outward unit normal = vertex direction (sphere centred at origin).
+    const len = Math.sqrt(x * x + y * y + z * z);
+    if (len < 1e-6) continue;
+    pos.setXYZ(i, x * (1 + disp / len), y * (1 + disp / len), z * (1 + disp / len));
+  }
+  pos.needsUpdate = true;
+  sphere.computeVertexNormals();
+  return sphere;
+}
+
+function _wrapCylinder(target, td) {
+  const r = (target.dims?.r || 10) * (target.scale?.[0] || 1);
+  const h = (target.dims?.h || 20) * (target.scale?.[2] || 1);
+  const hm = _buildPatternHeightmap(td.pattern, td.tileSize, td.height);
+  if (!hm) return null;
+  const sign = td.modifier === "negative" ? -1 : 1;
+  const radialSegs = 96;
+  const heightSegs = Math.max(32, Math.round(h / Math.max(0.5, td.tileSize / 2)));
+  // Side mesh (open caps; we add solid caps separately below).
+  const side = new THREE.CylinderGeometry(r, r, h, radialSegs, heightSegs, true);
+  side.rotateX(Math.PI / 2); // axis +Z
+  const pos = side.attributes.position;
+  const tileMM = Math.max(0.5, hm.tileWidth);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const phi = Math.atan2(y, x);
+    const u = ((phi + Math.PI) * r) / tileMM;
+    const v = (z + h / 2) / tileMM;
+    const hv = _sampleHeight(hm.hmap, hm.RES, u, v);
+    const disp = sign * (td.depth + hv);
+    const len = Math.sqrt(x * x + y * y);
+    if (len < 1e-6) continue;
+    pos.setXYZ(i, x * (1 + disp / len), y * (1 + disp / len), z);
+  }
+  pos.needsUpdate = true;
+  // Caps — flat disks at ±h/2 (no relief on caps in v1; advertised in dialog).
+  const capTop = new THREE.CircleGeometry(r, radialSegs);
+  capTop.translate(0, 0, h / 2);
+  const capBot = new THREE.CircleGeometry(r, radialSegs);
+  capBot.rotateY(Math.PI);
+  capBot.translate(0, 0, -h / 2);
+  const out = mergeGeometries([side, capTop, capBot], false) || side;
+  out.computeVertexNormals();
+  return out;
+}
+
+function _wrapCone(target, td) {
+  // Treat cone as a degenerate cylinder with r-top = 0 (or r1/r2) for v1.
+  // The lateral surface gets displaced; the base cap stays flat.
+  const rTop = target.dims?.r1 != null ? target.dims.r1 : 0;
+  const rBot = target.dims?.r2 != null ? target.dims.r2 : (target.dims?.r || 10);
+  const h = (target.dims?.h || 20) * (target.scale?.[2] || 1);
+  const hm = _buildPatternHeightmap(td.pattern, td.tileSize, td.height);
+  if (!hm) return null;
+  const sign = td.modifier === "negative" ? -1 : 1;
+  const radialSegs = 96;
+  const heightSegs = Math.max(32, Math.round(h / Math.max(0.5, td.tileSize / 2)));
+  const side = new THREE.CylinderGeometry(rTop, rBot, h, radialSegs, heightSegs, true);
+  side.rotateX(Math.PI / 2);
+  const pos = side.attributes.position;
+  const tileMM = Math.max(0.5, hm.tileWidth);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const phi = Math.atan2(y, x);
+    const tParam = (z + h / 2) / h;        // 0 at bottom → 1 at top
+    const rLocal = rBot + (rTop - rBot) * tParam;
+    const circ = 2 * Math.PI * Math.max(0.1, rLocal);
+    const u = ((phi + Math.PI) * circ) / (2 * Math.PI * tileMM);
+    const v = (tParam * h) / tileMM;
+    const hv = _sampleHeight(hm.hmap, hm.RES, u, v);
+    const disp = sign * (td.depth + hv);
+    const len = Math.sqrt(x * x + y * y);
+    if (len < 1e-6) continue;
+    pos.setXYZ(i, x * (1 + disp / len), y * (1 + disp / len), z);
+  }
+  pos.needsUpdate = true;
+  const cap = new THREE.CircleGeometry(rBot, radialSegs);
+  cap.rotateY(Math.PI);
+  cap.translate(0, 0, -h / 2);
+  const out = mergeGeometries([side, cap], false) || side;
+  out.computeVertexNormals();
+  return out;
+}
+
+function _wrapCube(target, td) {
+  // Six face textures, each oriented to land flush against one face.
+  // The texture mesh from buildTextureGeometry has its relief along +Z
+  // and its base plate spanning Z ∈ [-depth, 0]. To bind to a face we
+  // rotate so the relief axis aligns with the face's outward normal.
+  const sx = (target.dims?.x || 20) * (target.scale?.[0] || 1);
+  const sy = (target.dims?.y || 20) * (target.scale?.[1] || 1);
+  const sz = (target.dims?.z || 20) * (target.scale?.[2] || 1);
+  const baseTex = buildTextureGeometry({
+    dims: { pattern: td.pattern, w: 1, d: 1, tileSize: td.tileSize, height: td.height, depth: Math.max(0.2, td.depth) },
+  });
+  // We'll dispose the prototype after grabbing scales; instead build fresh
+  // per-face textures so each can be sized to that face's two in-plane dims.
+  baseTex.dispose();
+  const makeFace = (w, d) => buildTextureGeometry({
+    dims: { pattern: td.pattern, w, d, tileSize: td.tileSize, height: td.height, depth: Math.max(0.2, td.depth) },
+  });
+  const halfX = sx / 2, halfY = sy / 2, halfZ = sz / 2;
+  const sign = td.modifier === "negative" ? -1 : 1;
+  // Each texture is centred on the LOCAL origin with relief along +Z;
+  // we transform to its world face frame and offset by relief direction.
+  const inset = sign === 1 ? 0.001 : -td.depth; // weld vs cut
+  const faces = [];
+  // +Z (top)
+  {
+    const g = makeFace(sx, sy);
+    g.translate(0, 0, halfZ - inset);
+    faces.push(g);
+  }
+  // -Z (bottom)
+  {
+    const g = makeFace(sx, sy);
+    g.rotateX(Math.PI);
+    g.translate(0, 0, -halfZ + inset);
+    faces.push(g);
+  }
+  // +X (right)
+  {
+    const g = makeFace(sy, sz);
+    g.rotateY(Math.PI / 2);
+    g.translate(halfX - inset, 0, 0);
+    faces.push(g);
+  }
+  // -X (left)
+  {
+    const g = makeFace(sy, sz);
+    g.rotateY(-Math.PI / 2);
+    g.translate(-halfX + inset, 0, 0);
+    faces.push(g);
+  }
+  // +Y (back)
+  {
+    const g = makeFace(sx, sz);
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, halfY - inset, 0);
+    faces.push(g);
+  }
+  // -Y (front)
+  {
+    const g = makeFace(sx, sz);
+    g.rotateX(Math.PI / 2);
+    g.translate(0, -halfY + inset, 0);
+    faces.push(g);
+  }
+  const out = mergeGeometries(faces, false);
+  if (out) out.computeVertexNormals();
+  return out;
+}
+
+/**
+ * Wrap a texture pattern onto the entire outer surface of `target`.
+ * Returns a fresh BufferGeometry in target-local coords (caller is
+ * expected to drop the result at target.position). Returns null if
+ * the target type isn't yet supported — caller falls back to the
+ * legacy single-face workflow in that case.
+ */
+export function wrapTextureForTarget(target, textureDims) {
+  if (!target) return null;
+  const td = {
+    pattern: textureDims.pattern || "bumps",
+    tileSize: Math.max(0.5, textureDims.tileSize || 3),
+    height: Math.max(0.05, textureDims.height || 1.0),
+    depth: Math.max(0, textureDims.depth ?? 0.4),
+    modifier: textureDims.modifier || "positive",
+  };
+  if (target.type === "sphere") return _wrapSphere(target, td);
+  if (target.type === "cylinder") return _wrapCylinder(target, td);
+  if (target.type === "cone")     return _wrapCone(target, td);
+  if (target.type === "cube")     return _wrapCube(target, td);
+  return null;
+}
+
+export function targetSupportsSurfaceWrap(target) {
+  return !!target && ["sphere", "cylinder", "cone", "cube"].includes(target.type);
+}
+
 // Pattern catalogue for the dialog. Each entry includes a one-line
 // description + the parameter defaults — keeps the UI thin (the
 // dialog just renders `TEXTURE_PATTERNS` and pulls defaults from here
