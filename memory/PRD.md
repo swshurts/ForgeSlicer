@@ -33,6 +33,23 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.11)
+- **iter-105.11 (2026-02-20) — LithoForge → ForgeSlicer inbox.**
+  - **User ask**: lithophanes flowing in from LithoForge.net should land in ForgeSlicer ready to modify or slice.
+  - **Architecture** (per user choices): partner tool POSTs a finished STL/3MF to a ForgeSlicer endpoint; the workspace polls the inbox; user lands and sees a toast; one click imports onto the plate. Shared Emergent session_token authenticates both sides.
+  - **Backend** (`/app/backend/routes/litho_inbox.py`, wired in `server.py`):
+    - `POST   /api/litho/inbox` — multipart file + form fields `name`, `format` (stl/3mf), `source_shape` (flat/curved/cylinder/disc/lightbox_rect/lightbox_circle), `source_metadata` (JSON). Stream-validates 100MB size cap.
+    - `GET    /api/litho/inbox` — list pending items for current user.
+    - `GET    /api/litho/inbox/{id}/download` — streams the file (marks `consumed=true` opportunistically).
+    - `DELETE /api/litho/inbox/{id}` — removes the inbox record + GridFS payload.
+    - File payloads go through GridFS (`litho_files` bucket) so a 30-50 MB lithophane STL doesn't bust the 16 MB BSON document limit.
+  - **Frontend** (`/app/frontend/src/components/LithoInboxWatcher.jsx` + `lib/lithoInboxApi.js`):
+    - Mounts inside Workspace as a render-less watcher.
+    - Initial poll 1.5s after mount, then every 60s. Listens for `forgeslicer:litho-inbox-refresh` events for future synchronous handoffs.
+    - For each pending item: shows a Sonner toast with the LithoForge name + shape label + file size, an "Open" action and a "Later" cancel.
+    - "Open" downloads the file, runs it through the existing `importAnyMeshFile` / `import3MFFileMulti` pipeline (same code path as drag-and-drop), pre-stores 3MF pristine bytes for round-trip, deletes the inbox record. Store auto-selects the imported mesh → Inspector populates automatically.
+  - **Verified live**: curl POST → toast appears with the right text → clicking Open imports the mesh, selects it, Inspector shows "INSPECTOR — IMPORTED · Family Photo on Cylinder · on bed", inbox empties. Reload doesn't re-toast.
+
 ### Recently completed (iter-105.10)
 - **iter-105.10 (2026-02-20) — Single-face wrap + Mesh-detail slider + Lithophane preset.**
   - **Single-face wrap (P1)**: new `faceMask` arg on `wrapTextureForTarget`. UI exposes a `<select>` (`texture-face-mask`, cube only) with options *All 6 faces / Top (+Z) / Bottom (-Z) / Right (+X) / Left (-X) / Back (+Y) / Front (-Y)*. Only the chosen face gets displaced — the other five stay flat, dramatically shrinking the STL when you only want detail on one "display side".

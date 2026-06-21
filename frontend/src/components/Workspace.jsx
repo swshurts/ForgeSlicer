@@ -28,6 +28,7 @@ import { reportSceneOversize } from "../lib/oversizeCheck";
 import SubdivideDialog from "./dialogs/SubdivideDialog";
 import PlanPreviewDialog from "./PlanPreviewDialog";
 import WorkspaceDropZone from "./WorkspaceDropZone";
+import LithoInboxWatcher from "./LithoInboxWatcher";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -853,6 +854,7 @@ export default function Workspace() {
       />
       <ProjectExplorerDialog open={projectExplorerOpen} onClose={() => setProjectExplorerOpen(false)} />
       <WorkspaceDropZone />
+      <LithoInboxWatcher />
       <SubdivideDialog
         open={subdivideTargetId !== null}
         objectId={subdivideTargetId}
