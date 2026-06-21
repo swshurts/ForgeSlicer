@@ -33,6 +33,17 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.8)
+- **iter-105.8 (2026-02-20) — Custom textures: 401 fix + graceful unauth UX.**
+  - **User report**: persistent `401 Not authenticated` from `GET /api/textures` even though the rest of the workspace worked fine. Console was flooded with red error stacks.
+  - **Root cause**: `customTexturesApi.js` was using `process.env.REACT_APP_BACKEND_URL` *directly* instead of the shared `API` constant in `/app/frontend/src/lib/api.js`. The env var is baked at build time and on the custom production domain it points at the original `*.emergent.host` URL — every API call is cross-origin and the httpOnly `session_token` cookie isn't sent. The bug also manifested on Preview during brief session lapses (the backend logs showed `/api/auth/me 401` interleaved with `/api/textures 401`).
+  - **Fix**:
+    1. `customTexturesApi.js` now imports `API` from `./api`, which uses `resolveBackendUrl()` to switch to `window.location.origin` whenever the page host differs from the env var. Cookies stay first-party.
+    2. `listCustomTextures()` no longer throws on 401 — it returns `{__unauthenticated: true, items: []}` so the dialog can render an empty My Textures grid with a clear sign-in banner instead of spewing red errors.
+    3. New `NotAuthenticatedError` class exported so the upload handler can surface a friendlier message ("Sign in (top-right menu) and try again — your image is still here.") instead of "401".
+    4. New `texture-custom-signed-out` banner inside the My Textures tab explains why the grid is empty and where to sign in.
+  - **Verified live**: with a valid session the grid populates and zero texture-related errors hit the console; without auth the workspace already gates entry, but if a user's session lapses while the dialog is open they now get a clean banner.
+
 ### Recently completed (iter-105.7)
 - **iter-105.7 (2026-02-20) — Selection toast + mesh resolution.**
   - **Issue A — selection-required prompt**: clicking the Texture button with nothing selected now triggers a Sonner toast ("Select an object first — pick a sphere, cube, cylinder or cone to wrap a texture onto.") for 3 seconds and *short-circuits* opening the dialog (since the dialog can no longer drop a flat tile on the bed, opening it without a target would just show a banner). Detection works for both no-selection-at-all and selected-but-unsupported-type (torus / imported / sweep).

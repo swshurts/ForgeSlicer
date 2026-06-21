@@ -33,6 +33,7 @@ import {
   listCustomTextures,
   uploadCustomTexture,
   deleteCustomTexture,
+  NotAuthenticatedError,
 } from "../../lib/customTexturesApi";
 
 export default function TextureLibraryDialog({ open, onClose, targetObjectId = null }) {
@@ -51,6 +52,7 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const [pattern, setPattern] = useState(TEXTURE_PATTERNS[0].id);
   const selectedPattern = TEXTURE_PATTERNS.find((p) => p.id === pattern) || TEXTURE_PATTERNS[0];
   const [customTextures, setCustomTextures] = useState([]);
+  const [customsAuthOk, setCustomsAuthOk] = useState(true);
   const [selectedCustomId, setSelectedCustomId] = useState(null);
   const selectedCustom = customTextures.find((t) => t.texture_id === selectedCustomId) || null;
   // ---- Tuning ----
@@ -83,10 +85,17 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const refreshCustoms = useCallback(async () => {
     try {
       const list = await listCustomTextures();
-      setCustomTextures(list);
+      if (list && list.__unauthenticated) {
+        setCustomsAuthOk(false);
+        setCustomTextures([]);
+      } else {
+        setCustomsAuthOk(true);
+        setCustomTextures(Array.isArray(list) ? list : []);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("Failed to load custom textures:", e);
+      setCustomTextures([]);
     }
   }, []);
   useEffect(() => { if (open) refreshCustoms(); }, [open, refreshCustoms]);
@@ -241,7 +250,12 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
       setUploadSrc(null);
       setUploadName("");
     } catch (e) {
-      setUploadErr(e.message || String(e));
+      if (e instanceof NotAuthenticatedError) {
+        setCustomsAuthOk(false);
+        setUploadErr("You're not signed in on this domain. Sign in (top-right menu) and try again — your image is still here.");
+      } else {
+        setUploadErr(e.message || String(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -400,6 +414,16 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
                   <Upload size={11} /> Upload image
                 </button>
               </div>
+              {!customsAuthOk && (
+                <div
+                  data-testid="texture-custom-signed-out"
+                  className="rounded border border-amber-700 bg-amber-900/30 px-3 py-2 text-[11px] text-amber-300 mb-2"
+                >
+                  <b className="text-amber-200">Sign in to use custom textures.</b> Built-in patterns work without
+                  signing in, but custom uploads are stored per-account so they follow you across reloads. Use the
+                  user menu in the top-right of the workspace to sign in.
+                </div>
+              )}
               {customTextures.length === 0 && !uploadOpen && (
                 <div
                   data-testid="texture-custom-empty"
