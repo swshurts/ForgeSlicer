@@ -33,6 +33,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.10)
+- **iter-105.10 (2026-02-20) — Single-face wrap + Mesh-detail slider + Lithophane preset.**
+  - **Single-face wrap (P1)**: new `faceMask` arg on `wrapTextureForTarget`. UI exposes a `<select>` (`texture-face-mask`, cube only) with options *All 6 faces / Top (+Z) / Bottom (-Z) / Right (+X) / Left (-X) / Back (+Y) / Front (-Y)*. Only the chosen face gets displaced — the other five stay flat, dramatically shrinking the STL when you only want detail on one "display side".
+  - **Mesh-detail (P1)**: new `meshDetail` arg (`draft` / `standard` / `high`). Scales the per-axis segment cap (`0.35× / 0.65× / 1.0×`) for sphere, cube, cylinder and cone wraps. Exposed as a 3-button toggle in the dialog (default High). Lets the creator pick STL size vs surface fidelity without re-uploading.
+  - **Lithophane preset (P2)**: ✨ Lithophane Preset button in the dialog header — one click sets `sourceKind=custom`, `fitMode=stretch`, `invert=true`, `height=3mm`, `modifier=positive`. Slots naturally with the user's LithoForge.net workflow for back-lit prints.
+  - **Exports**: `CUBE_FACES` + `MESH_DETAIL_LEVELS` constants out of `textureGeometry.js` so future UIs (e.g. ContextMenu right-click wrap) can reuse them.
+  - **Verified live**: cube + hex with face=+Z produced a clean 20×20×21.5mm cube (hex relief ONLY on top), Mesh-detail toggle scales vertex counts as expected, Lithophane preset flips the dialog to custom/stretch/invert/3mm in one click.
+
 ### Recently completed (iter-105.9)
 - **iter-105.9 (2026-02-20) — Surface detail bump + upside-down fix.**
   - **Coarseness**: previous mesh resolution (~32-50 segs/axis on a 50mm cube) was leaving custom-image features looking like rough chunks. Bumped:

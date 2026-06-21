@@ -23,6 +23,8 @@ import {
   TEXTURE_PATTERNS,
   wrapTextureForTarget,
   targetSupportsSurfaceWrap,
+  CUBE_FACES,
+  MESH_DETAIL_LEVELS,
 } from "../../lib/textureGeometry";
 import {
   buildPatternHeightmap,
@@ -61,6 +63,8 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const [modifier, setModifier] = useState("positive");        // positive | negative
   const [fitMode, setFitMode] = useState("tile");              // tile | stretch
   const [invert, setInvert] = useState(false);                 // custom-image only
+  const [faceMask, setFaceMask] = useState("all");             // all | +x | -x | +y | -y | +z | -z (cube only)
+  const [meshDetail, setMeshDetail] = useState("high");        // draft | standard | high
   const [busy, setBusy] = useState(false);
   // Upload UI
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -138,6 +142,8 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
       if (!heightmap) throw new Error("Could not build heightmap (no texture selected?)");
       const wrapped = wrapTextureForTarget(target, {
         heightmap, modifier, fitMode, tileSize,
+        faceMask: target.type === "cube" ? faceMask : "all",
+        meshDetail,
       });
       if (!wrapped) throw new Error("Surface wrap not available for this target type");
       const vertices = new Float32Array(wrapped.attributes.position.array);
@@ -276,6 +282,22 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
     }
   };
 
+  // iter-105.10 — Lithophane preset. Pre-configures the wrap for the
+  // classic back-lit lithophane look: a user image is stretched ONCE
+  // across the surface, brightness is inverted (so dark photo areas
+  // become tall — blocking more light — and bright areas stay thin),
+  // height tall enough (3mm) that the contrast reads when back-lit,
+  // positive modifier. Switches the source tab to "custom" because a
+  // built-in pattern as a lithophane doesn't really make sense.
+  // Pairs naturally with LithoForge.net workflow.
+  const applyLithophanePreset = () => {
+    setSourceKind("custom");
+    setFitMode("stretch");
+    setInvert(true);
+    setHeight(3.0);
+    setModifier("positive");
+  };
+
   // ---- Drag-and-drop in the My Textures area ----
   const handleDrop = (e) => {
     e.preventDefault();
@@ -332,7 +354,7 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
           )}
 
           {/* Source tabs */}
-          <div className="flex gap-1.5 border-b border-slate-800">
+          <div className="flex items-end gap-1.5 border-b border-slate-800">
             <button
               data-testid="texture-source-builtin"
               onClick={() => setSourceKind("builtin")}
@@ -357,6 +379,15 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
               {customTextures.length > 0 && (
                 <span className="ml-1.5 text-[10px] text-slate-500">({customTextures.length})</span>
               )}
+            </button>
+            <div className="flex-1" />
+            <button
+              data-testid="texture-preset-lithophane"
+              onClick={applyLithophanePreset}
+              title="Lithophane preset — switches to My Textures, sets Stretch fit + Invert + 3mm height + Positive. Pair with a photo upload for back-lit prints."
+              className="mb-1 px-2.5 h-7 rounded border border-amber-600/40 bg-amber-500/10 text-amber-300 text-[10px] uppercase tracking-wider font-semibold hover:border-amber-500 hover:bg-amber-500/20 transition-colors"
+            >
+              ✨ Lithophane preset
             </button>
           </div>
 
@@ -583,6 +614,57 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
                   title={m.desc}
                 >
                   {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Face picker — cube only */}
+          {target && target.type === "cube" && (
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">
+                Apply to face
+              </label>
+              <select
+                data-testid="texture-face-mask"
+                value={faceMask}
+                onChange={(e) => setFaceMask(e.target.value)}
+                className="w-full h-8 bg-slate-950 border border-slate-700 rounded px-2 text-[11px] text-slate-200"
+              >
+                {CUBE_FACES.map((f) => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
+              </select>
+              {faceMask !== "all" && (
+                <div className="mt-1 text-[10px] text-slate-500 leading-tight">
+                  Only this face will be displaced — the other 5 stay flat. Good for putting a photo
+                  on the &quot;display side&quot; of a part without bloating the STL.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mesh detail */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-slate-400">Mesh detail</label>
+              <span className="text-[9px] text-slate-500">controls STL size vs surface fidelity</span>
+            </div>
+            <div className="flex gap-1.5">
+              {MESH_DETAIL_LEVELS.map((m) => (
+                <button
+                  key={m.id}
+                  data-testid={`texture-mesh-${m.id}`}
+                  onClick={() => setMeshDetail(m.id)}
+                  className={`flex-1 h-9 rounded border text-[11px] font-medium transition-all ${
+                    meshDetail === m.id
+                      ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                      : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                  }`}
+                  title={m.hint}
+                >
+                  <div>{m.label}</div>
+                  <div className="text-[9px] text-slate-500 mt-0.5">{m.hint.split(",")[1]?.trim()}</div>
                 </button>
               ))}
             </div>

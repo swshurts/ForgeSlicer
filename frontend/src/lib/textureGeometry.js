@@ -474,12 +474,25 @@ function _sampleHeight(hmap, RES, u, v) {
 // original target).
 //
 // `td` shape:
-//   { heightmap, modifier, fitMode, tileSize? }
+//   { heightmap, modifier, fitMode, tileSize?, faceMask?, meshDetail? }
 // where:
-//   heightmap = {hmap, RES, tileWidth}
-//   fitMode   = "tile" (default) | "stretch"
-//   tileSize  = (mm) used only to pick mesh resolution; falls back
-//               to heightmap.tileWidth / 4 if omitted.
+//   heightmap   = {hmap, RES, tileWidth}
+//   fitMode     = "tile" (default) | "stretch"
+//   tileSize    = (mm) used only to pick mesh resolution; falls back
+//                 to heightmap.tileWidth / 4 if omitted.
+//   faceMask    = "all" (default) | "+x" | "-x" | "+y" | "-y" | "+z" |
+//                 "-z" — restricts cube wrap to a single face. Ignored
+//                 for non-cube targets (the curved surfaces don't have
+//                 a discrete "face" concept yet — that's the P2
+//                 backlog item).
+//   meshDetail  = "draft" | "standard" | "high" (default). Scales
+//                 the per-axis segment cap so users can trade STL
+//                 size for surface detail without re-uploading.
+
+const _MESH_DETAIL_SCALE = { draft: 0.35, standard: 0.65, high: 1.0 };
+function _meshDetailScale(level) {
+  return _MESH_DETAIL_SCALE[level] ?? _MESH_DETAIL_SCALE.high;
+}
 
 function _resolveTileMM(hm, fitMode, stretchSpanMM) {
   // In stretch mode the wrap engine overrides the heightmap's
@@ -505,7 +518,7 @@ function _wrapSphere(target, td) {
   // pixels per tileSizeMM. Targeting ~24 verts per tile keeps the
   // sphere mesh tractable while still resolving fine custom-image
   // detail.
-  const seg = Math.max(96, Math.min(256, Math.ceil(equatorCirc / Math.max(0.5, refTile / 24))));
+  const seg = Math.max(64, Math.min(256, Math.ceil((equatorCirc / Math.max(0.5, refTile / 24)) * _meshDetailScale(td.meshDetail))));
   const sphere = new THREE.SphereGeometry(r, seg, Math.max(48, Math.round(seg / 2)));
   const pos = sphere.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -540,9 +553,9 @@ function _wrapCylinder(target, td) {
   const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const radialSegs = 192;
+  const radialSegs = Math.max(64, Math.round(192 * _meshDetailScale(td.meshDetail)));
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
-  const heightSegs = Math.max(64, Math.min(192, Math.round(h / Math.max(0.5, refTile / 16))));
+  const heightSegs = Math.max(48, Math.min(192, Math.round((h / Math.max(0.5, refTile / 16)) * _meshDetailScale(td.meshDetail))));
   const side = new THREE.CylinderGeometry(r, r, h, radialSegs, heightSegs, true);
   side.rotateX(Math.PI / 2); // axis +Z
   const pos = side.attributes.position;
@@ -583,9 +596,9 @@ function _wrapCone(target, td) {
   const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const radialSegs = 192;
+  const radialSegs = Math.max(64, Math.round(192 * _meshDetailScale(td.meshDetail)));
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
-  const heightSegs = Math.max(64, Math.min(192, Math.round(h / Math.max(0.5, refTile / 16))));
+  const heightSegs = Math.max(48, Math.min(192, Math.round((h / Math.max(0.5, refTile / 16)) * _meshDetailScale(td.meshDetail))));
   const side = new THREE.CylinderGeometry(rTop, rBot, h, radialSegs, heightSegs, true);
   side.rotateX(Math.PI / 2);
   const pos = side.attributes.position;
@@ -635,11 +648,21 @@ function _wrapCube(target, td) {
   // user-uploaded portraits / line art read crisply on the print.
   // Cap at 200 (per axis) so a maxed-out cube still tops out around
   // 240k verts — heavy but renderable and slicer-friendly.
-  const seg = (s) => Math.max(48, Math.min(200, Math.ceil((s / Math.max(0.5, refTile)) * 24)));
+  const seg = (s) => Math.max(32, Math.min(200, Math.ceil((s / Math.max(0.5, refTile)) * 24 * _meshDetailScale(td.meshDetail))));
   const segX = seg(sx), segY = seg(sy), segZ = seg(sz);
   const box = new THREE.BoxGeometry(sx, sy, sz, segX, segY, segZ);
   const pos = box.attributes.position;
   const halfX = sx / 2, halfY = sy / 2, halfZ = sz / 2;
+  // iter-105.10 — face-mask support. "all" wraps every face (the
+  // original behaviour); any specific face id ("+x", "-z", etc) only
+  // displaces verts on that face — the other five stay flat. Lets the
+  // user crank detail on the "display face" of a part while keeping
+  // the rest crisp for slicing.
+  const allFaces = !td.faceMask || td.faceMask === "all";
+  const faceAllowed = (axis, sgn) => {
+    if (allFaces) return true;
+    return td.faceMask === `${sgn > 0 ? "+" : "-"}${axis}`;
+  };
   // iter-105.6 — close the seams.
   //
   // BoxGeometry creates SEPARATE vertices per face, so every shared
@@ -658,6 +681,7 @@ function _wrapCube(target, td) {
   // they all see the same set of contributing faces.
   const EPS = 1e-4;
   const sampleFace = (axis, sgn, x, y, z) => {
+    if (!faceAllowed(axis, sgn)) return 0;
     let u, v;
     if (td.fitMode === "stretch") {
       if (axis === "x") { u = (y + halfY) / sy; v = (z + halfZ) / sz; }
@@ -712,6 +736,8 @@ export function wrapTextureForTarget(target, args) {
     modifier: args.modifier || "positive",
     fitMode: args.fitMode || "tile",
     tileSize: args.tileSize,
+    faceMask: args.faceMask || "all",
+    meshDetail: args.meshDetail || "high",
   };
   if (target.type === "sphere")   return _wrapSphere(target, td);
   if (target.type === "cylinder") return _wrapCylinder(target, td);
@@ -719,6 +745,22 @@ export function wrapTextureForTarget(target, args) {
   if (target.type === "cube")     return _wrapCube(target, td);
   return null;
 }
+
+export const CUBE_FACES = [
+  { id: "all", label: "All 6 faces (full wrap)" },
+  { id: "+z", label: "Top face (+Z)" },
+  { id: "-z", label: "Bottom face (-Z)" },
+  { id: "+x", label: "Right face (+X)" },
+  { id: "-x", label: "Left face (-X)" },
+  { id: "+y", label: "Back face (+Y)" },
+  { id: "-y", label: "Front face (-Y)" },
+];
+
+export const MESH_DETAIL_LEVELS = [
+  { id: "draft",    label: "Draft",    hint: "fast preview, ~35% verts" },
+  { id: "standard", label: "Standard", hint: "balanced, ~65% verts" },
+  { id: "high",     label: "High",     hint: "max detail, 100% verts" },
+];
 
 export function targetSupportsSurfaceWrap(target) {
   return !!target && ["sphere", "cylinder", "cone", "cube"].includes(target.type);
