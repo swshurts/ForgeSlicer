@@ -626,32 +626,53 @@ function _wrapCube(target, td) {
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
   const maxFace = Math.max(sx, sy, sz);
   const tileMM = _resolveTileMM(hm, td.fitMode, maxFace);
-  const seg = (s) => Math.max(24, Math.min(96, Math.ceil(s / Math.max(0.5, refTile / 3))));
+  const seg = (s) => Math.max(32, Math.min(128, Math.ceil((s / Math.max(0.5, refTile)) * 12)));
   const segX = seg(sx), segY = seg(sy), segZ = seg(sz);
   const box = new THREE.BoxGeometry(sx, sy, sz, segX, segY, segZ);
   const pos = box.attributes.position;
-  const norm = box.attributes.normal;
   const halfX = sx / 2, halfY = sy / 2, halfZ = sz / 2;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const nx = norm.getX(i), ny = norm.getY(i), nz = norm.getZ(i);
+  // iter-105.6 — close the seams.
+  //
+  // BoxGeometry creates SEPARATE vertices per face, so every shared
+  // edge has 2 coincident verts and every corner has 3. The previous
+  // "displace along this vertex's own face normal" approach pushed
+  // those coincident copies in DIFFERENT directions (top-face copy
+  // goes +Z, side-face copy goes +X) → a triangular gap opened up
+  // along every cube edge with the heightmap silhouette visible
+  // through it (cf. user screenshot).
+  //
+  // Fix: displace each vertex by the SUM of contributions from
+  // every face it lies on, looked up by ORIGINAL POSITION (not by
+  // the vertex's stored normal). Interior-of-face verts get one
+  // contribution; edge verts get two; corner verts get three. All
+  // coincident duplicates land at the same final position because
+  // they all see the same set of contributing faces.
+  const EPS = 1e-4;
+  const sampleFace = (axis, sgn, x, y, z) => {
     let u, v;
     if (td.fitMode === "stretch") {
-      // Stretch one image onto each face independently. Faces share
-      // the same image (the "wrap one airplane around all 6 faces"
-      // ask). UV ranges 0..1 per face.
-      if (Math.abs(nx) > 0.5)      { u = (y + halfY) / sy; v = (z + halfZ) / sz; }
-      else if (Math.abs(ny) > 0.5) { u = (x + halfX) / sx; v = (z + halfZ) / sz; }
-      else                          { u = (x + halfX) / sx; v = (y + halfY) / sy; }
+      if (axis === "x") { u = (y + halfY) / sy; v = (z + halfZ) / sz; }
+      else if (axis === "y") { u = (x + halfX) / sx; v = (z + halfZ) / sz; }
+      else /* z */          { u = (x + halfX) / sx; v = (y + halfY) / sy; }
     } else {
-      if (Math.abs(nx) > 0.5)      { u = (y + halfY) / tileMM; v = (z + halfZ) / tileMM; }
-      else if (Math.abs(ny) > 0.5) { u = (x + halfX) / tileMM; v = (z + halfZ) / tileMM; }
-      else                          { u = (x + halfX) / tileMM; v = (y + halfY) / tileMM; }
+      if (axis === "x") { u = (y + halfY) / tileMM; v = (z + halfZ) / tileMM; }
+      else if (axis === "y") { u = (x + halfX) / tileMM; v = (z + halfZ) / tileMM; }
+      else /* z */          { u = (x + halfX) / tileMM; v = (y + halfY) / tileMM; }
     }
     const h = _sampleHeight(hm.hmap, hm.RES, u, v);
-    if (h === 0) continue;
-    const disp = sign * h;
-    pos.setXYZ(i, x + nx * disp, y + ny * disp, z + nz * disp);
+    return sgn * sign * h;
+  };
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    let dx = 0, dy = 0, dz = 0;
+    if (Math.abs(x - halfX) < EPS)      dx += sampleFace("x",  1, x, y, z);
+    else if (Math.abs(x + halfX) < EPS) dx += sampleFace("x", -1, x, y, z);
+    if (Math.abs(y - halfY) < EPS)      dy += sampleFace("y",  1, x, y, z);
+    else if (Math.abs(y + halfY) < EPS) dy += sampleFace("y", -1, x, y, z);
+    if (Math.abs(z - halfZ) < EPS)      dz += sampleFace("z",  1, x, y, z);
+    else if (Math.abs(z + halfZ) < EPS) dz += sampleFace("z", -1, x, y, z);
+    if (dx === 0 && dy === 0 && dz === 0) continue;
+    pos.setXYZ(i, x + dx, y + dy, z + dz);
   }
   pos.needsUpdate = true;
   box.computeVertexNormals();

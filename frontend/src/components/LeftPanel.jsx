@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { toast } from "sonner";
 import { useScene } from "../lib/store";
 import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
@@ -138,12 +139,32 @@ function HardwareLibraryButton({ onOpenHardwareLib }) {
 // Same lifecycle as any other primitive — moveable, rotatable,
 // boolean-able. Geometric (not visual-only) so it survives STL export.
 function TextureLibraryButton({ onOpenTextureLib }) {
+  // iter-105.7 — short-circuit the open if no eligible target is
+  // selected. The dialog itself can no longer "drop a flat tile on
+  // the bed" (that workflow was removed in iter-105.5) so opening it
+  // without a target would just show a "pick a model first" banner
+  // and waste a click. Surface a toast instead and bail.
+  const selectedId = useScene((s) => s.selectedId);
+  const objects = useScene((s) => s.objects);
+  const handleClick = React.useCallback(() => {
+    const target = selectedId ? objects.find((o) => o.id === selectedId) : null;
+    if (!target || !["sphere", "cube", "cylinder", "cone"].includes(target.type)) {
+      toast.warning(
+        target
+          ? `${target.name} (${target.type}) can't be wrapped — surface wrap supports sphere, cube, cylinder, cone.`
+          : "Select an object first — pick a sphere, cube, cylinder or cone to wrap a texture onto.",
+        { duration: 3000, id: "texture-no-target" },
+      );
+      return;
+    }
+    onOpenTextureLib();
+  }, [selectedId, objects, onOpenTextureLib]);
   return (
     <button
       data-testid="open-texture-library-btn"
-      onClick={onOpenTextureLib}
+      onClick={handleClick}
       className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400 transition-all"
-      title="Texture Library — geometric printable textures (knurl, hex, bumps, ridges). Union or subtract onto a surface."
+      title="Texture Library — wrap a printable heightmap onto a selected sphere / cube / cylinder / cone."
     >
       <Grid3X3 size={18} strokeWidth={1.8} />
       <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Textures</span>

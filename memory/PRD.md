@@ -33,6 +33,19 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.7)
+- **iter-105.7 (2026-02-20) — Selection toast + mesh resolution.**
+  - **Issue A — selection-required prompt**: clicking the Texture button with nothing selected now triggers a Sonner toast ("Select an object first — pick a sphere, cube, cylinder or cone to wrap a texture onto.") for 3 seconds and *short-circuits* opening the dialog (since the dialog can no longer drop a flat tile on the bed, opening it without a target would just show a banner). Detection works for both no-selection-at-all and selected-but-unsupported-type (torus / imported / sweep).
+  - **Issue B — hex pattern barely visible on cube**: the previous cube wrap used `seg = max(24, min(96, s/(refTile/3)))`, which on a 20mm cube with tileSize 3mm yielded only 24 segs per axis (~1.2 mm per segment — way too coarse to capture the ~1.5mm hex feature). Bumped to `max(32, min(128, (s/refTile)*12))` which on the same cube gives ~80 segs per axis, ~0.25mm per vertex — features now read cleanly.
+  - **Verified live**: toast fires when clicking Textures with no selection; hex cube now shows full clean hex relief on all faces instead of subtle dots.
+
+### Recently completed (iter-105.6)
+- **iter-105.6 (2026-02-20) — Cube wrap: close the seams.**
+  - **User screenshot showed**: every edge of a textured cube had a triangular dark gap where the heightmap silhouette was visible through the cube body.
+  - **Root cause**: `BoxGeometry` produces SEPARATE vertices per face — every shared edge has 2 coincident copies, every corner has 3. The previous wrap pass displaced each copy along its own face normal, so the top-face copy went +Z and the side-face copy went +X, pulling the duplicates apart into a triangular gap.
+  - **Fix** (`/app/frontend/src/lib/textureGeometry.js`): displace each vertex by the SUM of contributions from every face it lies on (looked up by original position, not stored normal). Interior verts → 1 face. Edge verts → 2 face normals. Corner verts → 3. All coincident duplicates land at the same final position because they all see the same set of contributing faces.
+  - **Verified live**: cube + voronoi (the user's reported failure case) and cube + hex both render as single solid textured cubes with no visible gaps along any edge.
+
 ### Recently completed (iter-105.5)
 - **iter-105.5 (2026-02-20) — Texture system rewrite: heightmap-first + user-uploaded images.**
   - **User pain**: iter-105.4 made things worse — only the dense knurl pattern survived on cube/sphere. Hex / bumps / brick / diamond plate were collapsing to flat planes because the 3D-pattern-to-heightmap rasteriser fills axis-aligned triangle BBs (which over-fill the gaps between shapes and under-fill the dense interiors). User also asked for a new feature: upload ANY image (daisies, airplane, logo) as a texture.
