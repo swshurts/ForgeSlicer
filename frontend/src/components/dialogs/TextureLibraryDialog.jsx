@@ -191,22 +191,25 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
     }
     const reader = new FileReader();
     reader.onload = () => {
-      // Re-encode to a clean 256x256 grayscale PNG so the wire size
-      // stays small and the server validation matches.
+      // Re-encode to a clean 512x512 grayscale PNG so the wire size
+      // stays small AND we keep enough detail for portraits / line
+      // art to read crisply on the print (the heightmap pipeline
+      // uses RES=512 internally — uploading at lower resolution
+      // would force a blurry upscale).
       const img = new Image();
       img.onload = () => {
         const c = document.createElement("canvas");
-        c.width = 256; c.height = 256;
+        c.width = 512; c.height = 512;
         const cx = c.getContext("2d");
         cx.fillStyle = "#000";
-        cx.fillRect(0, 0, 256, 256);
+        cx.fillRect(0, 0, 512, 512);
         // Letterbox-fit so non-square uploads keep their aspect.
         const ar = img.width / img.height;
-        let dw = 256, dh = 256;
-        if (ar > 1) dh = 256 / ar; else dw = 256 * ar;
-        cx.drawImage(img, (256 - dw) / 2, (256 - dh) / 2, dw, dh);
+        let dw = 512, dh = 512;
+        if (ar > 1) dh = 512 / ar; else dw = 512 * ar;
+        cx.drawImage(img, (512 - dw) / 2, (512 - dh) / 2, dw, dh);
         // Grayscale pass
-        const id = cx.getImageData(0, 0, 256, 256);
+        const id = cx.getImageData(0, 0, 512, 512);
         for (let i = 0; i < id.data.length; i += 4) {
           const g = 0.299 * id.data[i] + 0.587 * id.data[i + 1] + 0.114 * id.data[i + 2];
           id.data[i] = id.data[i + 1] = id.data[i + 2] = g;

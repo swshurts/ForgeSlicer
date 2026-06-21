@@ -39,11 +39,11 @@ from pydantic import BaseModel, Field
 
 
 # Hard cap on the image data-URL to keep one document small. A
-# 256×256 grayscale PNG with full opacity rounds out around 60 KB
-# of base64 — 200 KB is a generous ceiling that still keeps the
-# whole "My Textures" list under a few MB even with dozens of
-# uploads.
-_MAX_IMAGE_B64_BYTES = 200_000
+# 512×512 grayscale PNG with full opacity rounds out around 200 KB
+# of base64; 800 KB ceiling keeps headroom for noisy / high-detail
+# uploads while still leaving the whole "My Textures" list well
+# under a few MB even with many uploads.
+_MAX_IMAGE_B64_BYTES = 800_000
 _MAX_THUMB_B64_BYTES = 30_000
 
 

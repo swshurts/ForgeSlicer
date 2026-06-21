@@ -33,6 +33,18 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.9)
+- **iter-105.9 (2026-02-20) — Surface detail bump + upside-down fix.**
+  - **Coarseness**: previous mesh resolution (~32-50 segs/axis on a 50mm cube) was leaving custom-image features looking like rough chunks. Bumped:
+    - Heightmap canvas resolution `256 → 512` (4× pixels — enough to capture portrait / line-art detail).
+    - Cube seg cap `128 → 200` per axis (~240k verts max — heavy but slicer-friendly).
+    - Sphere seg cap `192 → 256`, cylinder/cone radial segs `96-128 → 192`, axial caps bumped to 192.
+    - All seg formulas re-tuned to target ~24 verts per heightmap-tile so mesh density matches heightmap density.
+    - Upload re-encode also `256 → 512` so users uploading high-res source images don't get blurry downscale.
+    - Backend `_MAX_IMAGE_B64_BYTES` raised `200KB → 800KB` to fit the larger PNGs.
+  - **Upside-down**: custom-uploaded images came out flipped along the V axis because canvas Y is top-down but the wrap engine's UV convention is V=0 at the bottom. Fixed in `_canvasToHmap` — heightmap row 0 now corresponds to the bottom of the canvas. Built-in patterns are symmetric so unaffected; custom images now render right-side up.
+  - **Verified live**: an A-arrow test image uploaded and wrapped onto a cube now shows recognisable letterforms across multiple faces (vs the old "rough mush" rendering).
+
 ### Recently completed (iter-105.8)
 - **iter-105.8 (2026-02-20) — Custom textures: 401 fix + graceful unauth UX.**
   - **User report**: persistent `401 Not authenticated` from `GET /api/textures` even though the rest of the workspace worked fine. Console was flooded with red error stacks.

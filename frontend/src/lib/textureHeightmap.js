@@ -15,6 +15,12 @@
 // Pure black = 0 mm. Anti-aliased canvas edges turn into smooth
 // ramps on the printed surface.
 //
+// iter-105.9 — bumped RES from 256→512 so user-uploaded portraits /
+// logos / line art come through with enough detail to read on
+// printed parts. The wrap mesh resolution was bumped in parallel so
+// the heightmap → mesh sampling stays at roughly 1:1 (otherwise the
+// extra heightmap detail would just get aliased back out).
+//
 // `tileWidth` is the physical width (mm) one heightmap-wrap covers.
 // The wrap engine uses it to convert arc-length → UV, so a sphere
 // of circumference C samples the heightmap C / tileWidth times
@@ -23,7 +29,7 @@
 // tileWidth — this module always emits a heightmap baked at its
 // natural physical scale.
 
-const RES = 256;
+const RES = 512;
 
 function _newCanvas() {
   const c = (typeof OffscreenCanvas !== "undefined")
@@ -39,13 +45,24 @@ function _canvasToHmap(ctx, heightMM, { invert = false } = {}) {
   const img = ctx.getImageData(0, 0, RES, RES);
   const data = img.data;
   const hmap = new Float32Array(RES * RES);
-  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-    // Standard luminance: 0.299 R + 0.587 G + 0.114 B (matches what a
-    // grayscale-converted JPEG would look like, so user-uploaded
-    // colour images behave intuitively).
-    let lum = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
-    if (invert) lum = 1 - lum;
-    hmap[j] = lum * heightMM;
+  // iter-105.9 — flip rows on read so heightmap row 0 corresponds to
+  // the BOTTOM of the source image. The wrap engine's UV convention
+  // is v=0 at the bottom of the surface (sphere south pole / cube
+  // bottom edge / cylinder bottom). Without this flip, custom-image
+  // textures came out upside-down (the user uploaded a portrait and
+  // saw it inverted on the print).
+  for (let y = 0; y < RES; y++) {
+    const srcRow = (RES - 1 - y) * RES * 4;
+    const dstRow = y * RES;
+    for (let x = 0; x < RES; x++) {
+      const si = srcRow + x * 4;
+      // Standard luminance: 0.299 R + 0.587 G + 0.114 B (matches what a
+      // grayscale-converted JPEG would look like, so user-uploaded
+      // colour images behave intuitively).
+      let lum = (0.299 * data[si] + 0.587 * data[si + 1] + 0.114 * data[si + 2]) / 255;
+      if (invert) lum = 1 - lum;
+      hmap[dstRow + x] = lum * heightMM;
+    }
   }
   return hmap;
 }

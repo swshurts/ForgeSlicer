@@ -500,7 +500,12 @@ function _wrapSphere(target, td) {
   const equatorCirc = 2 * Math.PI * r;
   const tileMM = _resolveTileMM(hm, td.fitMode, equatorCirc);
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
-  const seg = Math.max(64, Math.min(192, Math.ceil(equatorCirc / Math.max(0.5, refTile / 4))));
+  // iter-105.9 — segment formula tuned to roughly match heightmap
+  // detail. With RES=512 and tilesAcross=4, the heightmap has ~128
+  // pixels per tileSizeMM. Targeting ~24 verts per tile keeps the
+  // sphere mesh tractable while still resolving fine custom-image
+  // detail.
+  const seg = Math.max(96, Math.min(256, Math.ceil(equatorCirc / Math.max(0.5, refTile / 24))));
   const sphere = new THREE.SphereGeometry(r, seg, Math.max(48, Math.round(seg / 2)));
   const pos = sphere.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -535,9 +540,9 @@ function _wrapCylinder(target, td) {
   const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const radialSegs = 128;
+  const radialSegs = 192;
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
-  const heightSegs = Math.max(48, Math.round(h / Math.max(0.5, refTile / 2)));
+  const heightSegs = Math.max(64, Math.min(192, Math.round(h / Math.max(0.5, refTile / 16))));
   const side = new THREE.CylinderGeometry(r, r, h, radialSegs, heightSegs, true);
   side.rotateX(Math.PI / 2); // axis +Z
   const pos = side.attributes.position;
@@ -578,9 +583,9 @@ function _wrapCone(target, td) {
   const hm = td.heightmap;
   if (!hm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const radialSegs = 128;
+  const radialSegs = 192;
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
-  const heightSegs = Math.max(48, Math.round(h / Math.max(0.5, refTile / 2)));
+  const heightSegs = Math.max(64, Math.min(192, Math.round(h / Math.max(0.5, refTile / 16))));
   const side = new THREE.CylinderGeometry(rTop, rBot, h, radialSegs, heightSegs, true);
   side.rotateX(Math.PI / 2);
   const pos = side.attributes.position;
@@ -626,7 +631,11 @@ function _wrapCube(target, td) {
   const refTile = td.tileSize || hm.tileWidth / 4 || 3;
   const maxFace = Math.max(sx, sy, sz);
   const tileMM = _resolveTileMM(hm, td.fitMode, maxFace);
-  const seg = (s) => Math.max(32, Math.min(128, Math.ceil((s / Math.max(0.5, refTile)) * 12)));
+  // iter-105.9 — push the cube mesh to ~24 verts per heightmap tile so
+  // user-uploaded portraits / line art read crisply on the print.
+  // Cap at 200 (per axis) so a maxed-out cube still tops out around
+  // 240k verts — heavy but renderable and slicer-friendly.
+  const seg = (s) => Math.max(48, Math.min(200, Math.ceil((s / Math.max(0.5, refTile)) * 24)));
   const segX = seg(sx), segY = seg(sy), segZ = seg(sz);
   const box = new THREE.BoxGeometry(sx, sy, sz, segX, segY, segZ);
   const pos = box.attributes.position;
