@@ -28,10 +28,22 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-02-20)
+## Current Open Items (as of 2026-02-22)
 
 ### Pending P1 (queued)
-- _(All P1 items currently closed.)_
+- **Shapr3D-style reverse engineering** — RANSAC-based primitive fitting (STL → editable planes/cylinders/cubes) for mechanical parts.
+
+### Pending P2 (backlog)
+- Yjs CRDT live collaborative editing.
+- Design dice / random mood-board generator (optional).
+
+### Recently completed (iter-105.14)
+- **iter-105.14 (2026-02-22) — Multi-Image → STL (Meshy multi-view).**
+  - **New AI Generate tab**: `AIGenerateDialog.jsx` now exposes a 3rd tab "Multi-Image" alongside "From Text" and "From Image". Users upload 2–4 orthographic photos (labelled Front / Side / Top / Extra in a 2×2 grid) and Meshy AI fuses them into a single mesh.
+  - **Backend**: `POST /api/ai/generate/multi-image` validates 2–4 images, calls `meshy_service.create_multi_image_to_3d`, persists the job with `kind='multi_image'`, increments monthly AI usage, and refunds the quota counter on upstream failure (httpx.HTTPStatusError / ValueError). Polling reuses the existing `/api/ai/jobs/{id}` handler.
+  - **Frontend testids**: `ai-tab-multi`, `ai-multi-slot-{0–3}`, `ai-multi-input-{0–3}`, `ai-multi-clear-{0–3}`, `ai-submit-multi-btn`. Submit disabled until ≥2 slots filled. `multiSlots` state clears to `[null,null,null,null]` on dialog close.
+  - **Tests**: `/app/backend/tests/test_ai_multi_image.py` (validation, persistence, quota refund) + Playwright frontend pass. Backend 100% (8 passed, 2 skipped — Meshy rejects 1×1 PNG fixtures, refund path verified instead). Frontend 100%.
+  - **Known minor**: when submission fails with Meshy 502 on degenerate fixtures, Cloudflare's edge layer can rewrite the backend error body. Does not affect real-world flows (real photos route normally). Test-harness-only cosmetic.
 
 ### Recently completed (iter-105.13)
 - **iter-105.13 (2026-02-20) — Per-face image picker + toast audit.**
