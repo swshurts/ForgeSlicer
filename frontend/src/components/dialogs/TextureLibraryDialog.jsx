@@ -65,6 +65,15 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
   const [invert, setInvert] = useState(false);                 // custom-image only
   const [faceMask, setFaceMask] = useState("all");             // all | +x | -x | +y | -y | +z | -z (cube only)
   const [meshDetail, setMeshDetail] = useState("high");        // draft | standard | high
+  const [wrapMode, setWrapMode] = useState("whole");           // whole | single | perface (cube only)
+  // iter-105.13 — per-face source picks. Each entry is either null
+  // (face stays flat) or { kind: "builtin"|"custom", id: string }.
+  const [perFaceSources, setPerFaceSources] = useState({
+    "+x": null, "-x": null, "+y": null, "-y": null, "+z": null, "-z": null,
+  });
+  // Which face slot is currently being edited (drives the small
+  // per-face picker popover at the bottom of the perface panel).
+  const [editingFace, setEditingFace] = useState(null);
   const [busy, setBusy] = useState(false);
   // Upload UI
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -133,18 +142,59 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
     });
   };
 
+  // iter-105.13 — build a heightmap for ONE face slot in per-face
+  // mode. Slots can hold either a built-in pattern id or a custom
+  // texture id; null entries return null (face left flat).
+  const buildHeightmapForSlot = async (slot) => {
+    if (!slot) return null;
+    if (slot.kind === "builtin") {
+      return buildPatternHeightmap(slot.id, tileSize, height);
+    }
+    const tex = customTextures.find((t) => t.texture_id === slot.id);
+    if (!tex) return null;
+    return imageToHeightmap(tex.image_b64, {
+      heightMM: height,
+      tileSizeMM: tileSize,
+      invert,
+      fitMode,
+    });
+  };
+
   // ---- Apply texture: wrap the target's entire surface ----
   const handleApply = async () => {
     if (busy || !target || !supportsWrap) return;
     setBusy(true);
     try {
-      const heightmap = await buildHeightmap();
-      if (!heightmap) throw new Error("Could not build heightmap (no texture selected?)");
-      const wrapped = wrapTextureForTarget(target, {
-        heightmap, modifier, fitMode, tileSize,
-        faceMask: target.type === "cube" ? faceMask : "all",
-        meshDetail,
-      });
+      const isPerFace = target.type === "cube" && wrapMode === "perface";
+      let wrapped = null;
+      if (isPerFace) {
+        // Build all six heightmaps in parallel (each may be null for
+        // a "leave flat" face).
+        const faceIds = ["+x", "-x", "+y", "-y", "+z", "-z"];
+        const built = await Promise.all(
+          faceIds.map((f) => buildHeightmapForSlot(perFaceSources[f])),
+        );
+        const perFaceHeightmaps = {};
+        let anyHm = false;
+        faceIds.forEach((f, i) => {
+          perFaceHeightmaps[f] = built[i];
+          if (built[i] && built[i].hmap) anyHm = true;
+        });
+        if (!anyHm) throw new Error("Pick at least one face's texture before wrapping.");
+        wrapped = wrapTextureForTarget(target, {
+          perFaceHeightmaps, modifier, fitMode, tileSize,
+          faceMask: "all",
+          meshDetail,
+        });
+      } else {
+        const heightmap = await buildHeightmap();
+        if (!heightmap) throw new Error("Could not build heightmap (no texture selected?)");
+        wrapped = wrapTextureForTarget(target, {
+          heightmap, modifier, fitMode, tileSize,
+          faceMask: target.type === "cube" && wrapMode === "single" ? faceMask : "all",
+          meshDetail,
+        });
+      }
       if (!wrapped) throw new Error("Surface wrap not available for this target type");
       const vertices = new Float32Array(wrapped.attributes.position.array);
       const indices = wrapped.index ? new Uint32Array(wrapped.index.array) : null;
@@ -158,9 +208,11 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
       const tp = target.position || [0, 0, 0];
       const newZ = bb ? -bb.min.z : tp[2];
       wrapped.dispose();
-      const labelTail = sourceKind === "builtin"
-        ? selectedPattern.label
-        : (selectedCustom?.name || "Custom image");
+      const labelTail = isPerFace
+        ? "Per-face textures"
+        : (sourceKind === "builtin"
+            ? selectedPattern.label
+            : (selectedCustom?.name || "Custom image"));
       replaceObjects([target.id], [{
         name: `${target.name} · ${labelTail}`,
         type: "imported",
@@ -619,27 +671,57 @@ export default function TextureLibraryDialog({ open, onClose, targetObjectId = n
             </div>
           </div>
 
-          {/* Face picker — cube only */}
+          {/* Cube wrap mode + face picker — cube only */}
           {target && target.type === "cube" && (
             <div>
               <label className="text-[10px] uppercase tracking-wider text-slate-400 block mb-1.5">
-                Apply to face
+                Apply
               </label>
-              <select
-                data-testid="texture-face-mask"
-                value={faceMask}
-                onChange={(e) => setFaceMask(e.target.value)}
-                className="w-full h-8 bg-slate-950 border border-slate-700 rounded px-2 text-[11px] text-slate-200"
-              >
-                {CUBE_FACES.map((f) => (
-                  <option key={f.id} value={f.id}>{f.label}</option>
+              <div className="flex gap-1.5 mb-1.5">
+                {[
+                  { id: "whole",   label: "All faces (same)" },
+                  { id: "single",  label: "Single face" },
+                  { id: "perface", label: "Per-face (different image each side)" },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    data-testid={`texture-wrapmode-${m.id}`}
+                    onClick={() => setWrapMode(m.id)}
+                    className={`flex-1 h-8 rounded border text-[10px] font-medium leading-tight transition-all ${
+                      wrapMode === m.id
+                        ? "border-orange-500 bg-orange-500/15 text-orange-300"
+                        : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
                 ))}
-              </select>
-              {faceMask !== "all" && (
-                <div className="mt-1 text-[10px] text-slate-500 leading-tight">
-                  Only this face will be displaced — the other 5 stay flat. Good for putting a photo
-                  on the &quot;display side&quot; of a part without bloating the STL.
-                </div>
+              </div>
+              {wrapMode === "single" && (
+                <select
+                  data-testid="texture-face-mask"
+                  value={faceMask === "all" ? "+z" : faceMask}
+                  onChange={(e) => setFaceMask(e.target.value)}
+                  className="w-full h-8 bg-slate-950 border border-slate-700 rounded px-2 text-[11px] text-slate-200"
+                >
+                  {CUBE_FACES.filter((f) => f.id !== "all").map((f) => (
+                    <option key={f.id} value={f.id}>{f.label}</option>
+                  ))}
+                </select>
+              )}
+              {wrapMode === "perface" && (
+                <PerFacePicker
+                  faceSources={perFaceSources}
+                  patternThumbs={patternThumbs}
+                  customTextures={customTextures}
+                  editingFace={editingFace}
+                  onEditFace={setEditingFace}
+                  onPickSource={(face, src) => {
+                    setPerFaceSources((prev) => ({ ...prev, [face]: src }));
+                    setEditingFace(null);
+                  }}
+                  onClearFace={(face) => setPerFaceSources((prev) => ({ ...prev, [face]: null }))}
+                />
               )}
             </div>
           )}
@@ -738,6 +820,144 @@ function NumField({ testid, label, value, onChange, min = 0, step = 1 }) {
         }}
         className="h-7 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200"
       />
+    </div>
+  );
+}
+
+// iter-105.13 — Per-face picker. 6 face tiles laid out in a cube-net
+// shape (cross / unfolded) so the user gets a spatial sense of which
+// slot is which face. Each tile shows the picked texture's thumbnail
+// or a "+" placeholder. Click a tile to open a small inline source
+// browser (built-in patterns + custom textures + "leave flat") and
+// pick what to put there.
+const _PERFACE_LAYOUT = [
+  // grid (col, row) positions for the cube-net cross — 4 wide, 3 tall
+  // .  .  +z .       ← top
+  // -x -y +x +y      ← side ring
+  // .  .  -z .       ← bottom
+  { id: "+z", col: 2, row: 0, label: "Top" },
+  { id: "-x", col: 0, row: 1, label: "Left" },
+  { id: "-y", col: 1, row: 1, label: "Front" },
+  { id: "+x", col: 2, row: 1, label: "Right" },
+  { id: "+y", col: 3, row: 1, label: "Back" },
+  { id: "-z", col: 2, row: 2, label: "Bottom" },
+];
+
+function PerFacePicker({
+  faceSources, patternThumbs, customTextures,
+  editingFace, onEditFace, onPickSource, onClearFace,
+}) {
+  return (
+    <div className="rounded border border-slate-700 bg-slate-950 p-2.5 space-y-2.5">
+      <div className="text-[10px] text-slate-500 leading-tight">
+        Click any face to pick its texture. Empty faces stay flat. Image-source &amp; relief settings
+        (height, fit, invert) are shared across all faces — pick them in the panels below.
+      </div>
+      <div className="grid grid-cols-4 grid-rows-3 gap-1.5 mx-auto" style={{ width: 280 }}>
+        {_PERFACE_LAYOUT.map((f) => {
+          const src = faceSources[f.id];
+          const isEditing = editingFace === f.id;
+          let thumb = null, label = "Empty";
+          if (src) {
+            if (src.kind === "builtin") {
+              thumb = patternThumbs[src.id] || null;
+              label = src.id;
+            } else {
+              const tex = customTextures.find((t) => t.texture_id === src.id);
+              if (tex) { thumb = tex.thumb_b64; label = tex.name; }
+            }
+          }
+          return (
+            <button
+              key={f.id}
+              data-testid={`texture-perface-slot-${f.id}`}
+              onClick={() => onEditFace(isEditing ? null : f.id)}
+              style={{ gridColumn: f.col + 1, gridRow: f.row + 1 }}
+              className={`relative aspect-square rounded border transition-all overflow-hidden ${
+                isEditing
+                  ? "border-orange-500 ring-2 ring-orange-500/40"
+                  : src
+                    ? "border-orange-500/50"
+                    : "border-dashed border-slate-700 hover:border-slate-500"
+              }`}
+              title={`${f.label} (${f.id}) — ${src ? label : "click to pick"}`}
+            >
+              {thumb ? (
+                <img src={thumb} alt={label} className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-slate-600 text-xl">+</div>
+              )}
+              <div className="absolute bottom-0 inset-x-0 bg-slate-950/85 text-[9px] uppercase tracking-wider text-slate-300 text-center py-0.5">
+                {f.id}
+              </div>
+              {src && (
+                <span
+                  data-testid={`texture-perface-clear-${f.id}`}
+                  onClick={(e) => { e.stopPropagation(); onClearFace(f.id); }}
+                  className="absolute top-0.5 right-0.5 w-4 h-4 rounded bg-slate-950/80 text-slate-400 hover:text-rose-400 flex items-center justify-center text-[10px]"
+                >×</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {editingFace && (
+        <PerFaceSourceBrowser
+          face={editingFace}
+          patternThumbs={patternThumbs}
+          customTextures={customTextures}
+          onPick={(src) => onPickSource(editingFace, src)}
+          onClose={() => onEditFace(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PerFaceSourceBrowser({ face, patternThumbs, customTextures, onPick, onClose }) {
+  const faceLabel = _PERFACE_LAYOUT.find((f) => f.id === face)?.label || face;
+  return (
+    <div className="mt-1 rounded border border-orange-500/40 bg-slate-900 p-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] text-orange-300 font-semibold">
+          Pick texture for {faceLabel} face ({face})
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-slate-200 text-[11px]">close</button>
+      </div>
+      <div>
+        <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Built-in patterns</div>
+        <div className="grid grid-cols-5 gap-1">
+          {Object.keys(patternThumbs).slice(0, 10).map((pid) => (
+            <button
+              key={pid}
+              data-testid={`texture-perface-pick-builtin-${face}-${pid}`}
+              onClick={() => onPick({ kind: "builtin", id: pid })}
+              className="aspect-square rounded border border-slate-700 hover:border-orange-500 overflow-hidden"
+              title={pid}
+            >
+              <img src={patternThumbs[pid]} alt={pid} className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      </div>
+      {customTextures.length > 0 && (
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">My textures</div>
+          <div className="grid grid-cols-5 gap-1">
+            {customTextures.map((t) => (
+              <button
+                key={t.texture_id}
+                data-testid={`texture-perface-pick-custom-${face}-${t.texture_id}`}
+                onClick={() => onPick({ kind: "custom", id: t.texture_id })}
+                className="aspect-square rounded border border-slate-700 hover:border-orange-500 overflow-hidden"
+                title={t.name}
+              >
+                <img src={t.thumb_b64} alt={t.name} className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

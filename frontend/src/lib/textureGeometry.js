@@ -638,12 +638,29 @@ function _wrapCube(target, td) {
   const sx = (target.dims?.x || 20) * (target.scale?.[0] || 1);
   const sy = (target.dims?.y || 20) * (target.scale?.[1] || 1);
   const sz = (target.dims?.z || 20) * (target.scale?.[2] || 1);
-  const hm = td.heightmap;
-  if (!hm) return null;
+  // iter-105.13 — per-face heightmap support. `td.perFaceHeightmaps`
+  // (when present) maps face ids "+x"/-x/+y/-y/+z/-z to their own
+  // heightmap objects, letting the user drop a different image on
+  // each side of the cube. When absent, fall back to the single
+  // `td.heightmap` for every face (the iter-105.10 behaviour). A
+  // face whose entry is `null` is left flat — same as faceMask
+  // exclusion but per-face granular.
+  const perFace = td.perFaceHeightmaps && typeof td.perFaceHeightmaps === "object";
+  const fallbackHm = td.heightmap;
+  const hmForFace = (faceId) => {
+    if (perFace) return td.perFaceHeightmaps[faceId] || null;
+    return fallbackHm;
+  };
+  // We need a representative hm just for sizing the mesh — pick the
+  // first non-null per-face map, or the fallback. If literally
+  // nothing was supplied, there's nothing to wrap.
+  const refHm = fallbackHm || (perFace
+    ? Object.values(td.perFaceHeightmaps).find((h) => h && h.hmap) || null
+    : null);
+  if (!refHm) return null;
   const sign = td.modifier === "negative" ? -1 : 1;
-  const refTile = td.tileSize || hm.tileWidth / 4 || 3;
+  const refTile = td.tileSize || refHm.tileWidth / 4 || 3;
   const maxFace = Math.max(sx, sy, sz);
-  const tileMM = _resolveTileMM(hm, td.fitMode, maxFace);
   // iter-105.9 — push the cube mesh to ~24 verts per heightmap tile so
   // user-uploaded portraits / line art read crisply on the print.
   // Cap at 200 (per axis) so a maxed-out cube still tops out around
@@ -682,6 +699,10 @@ function _wrapCube(target, td) {
   const EPS = 1e-4;
   const sampleFace = (axis, sgn, x, y, z) => {
     if (!faceAllowed(axis, sgn)) return 0;
+    const faceId = `${sgn > 0 ? "+" : "-"}${axis}`;
+    const hm = hmForFace(faceId);
+    if (!hm || !hm.hmap) return 0;
+    const tileMM = _resolveTileMM(hm, td.fitMode, maxFace);
     let u, v;
     if (td.fitMode === "stretch") {
       if (axis === "x") { u = (y + halfY) / sy; v = (z + halfZ) / sz; }
@@ -730,9 +751,13 @@ function _wrapCube(target, td) {
  */
 export function wrapTextureForTarget(target, args) {
   if (!target) return null;
-  if (!args || !args.heightmap || !args.heightmap.hmap) return null;
+  if (!args) return null;
+  const hasSingle = args.heightmap && args.heightmap.hmap;
+  const hasPerFace = args.perFaceHeightmaps && typeof args.perFaceHeightmaps === "object";
+  if (!hasSingle && !hasPerFace) return null;
   const td = {
     heightmap: args.heightmap,
+    perFaceHeightmaps: args.perFaceHeightmaps,
     modifier: args.modifier || "positive",
     fitMode: args.fitMode || "tile",
     tileSize: args.tileSize,

@@ -33,6 +33,15 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.13)
+- **iter-105.13 (2026-02-20) — Per-face image picker + toast audit.**
+  - **Per-face picker (P2)**: new "Per-face" wrap mode in the Texture dialog (cube only) with a 6-slot cube-net layout (cross/unfolded — top row Top, middle ring Left-Front-Right-Back, bottom row Bottom). Each slot opens an inline source browser to pick a built-in pattern, a custom texture, or leave that face flat.
+    - `_wrapCube` in `textureGeometry.js` now accepts `perFaceHeightmaps: { "+x": hm, "-x": hm, "+y": hm, "-y": hm, "+z": hm, "-z": hm }` — null entries leave that face flat. Seam-stitching still works (the per-face heightmap is sampled per face within the sum-of-contributions pass, so edges between two textured faces still close cleanly).
+    - Dialog builds the 6 heightmaps in parallel via `Promise.all` before invoking the wrap engine.
+    - Shared relief settings (height / fit / invert / modifier) apply uniformly to every textured face in v1 — keeps the UI manageable. Per-face independent settings are a v2 backlog item if a user asks.
+  - **Toast consistency audit**: grepped all 144 `toast.*` call sites — every one already uses a typed variant (`success / error / warning / info / message / loading`). The `richColors` flag enabled globally in iter-105.12 already paints them with the right icons & accent colours. No changes needed; the visual consistency is in place.
+  - **Verified live**: cube + per-face mode, picked hex on +Z, bumps on +X, knurl on -Y, left the other 3 empty. Cube-net UI updated to show each picked thumbnail correctly in the right slot.
+
 ### Recently completed (iter-105.12)
 - **iter-105.12 (2026-02-20) — Centre toast notifications.**
   - **User report**: LithoForge inbox toasts popping in the upper-right corner were getting missed because the workspace's busy right rail (Inspector, Gallery, Send to OrcaSlicer) drew the eye away.
