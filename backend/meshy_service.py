@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MESHY_BASE = "https://api.meshy.ai"
 TEXT_ENDPOINT = "/openapi/v2/text-to-3d"
 IMAGE_ENDPOINT = "/openapi/v1/image-to-3d"
+MULTI_IMAGE_ENDPOINT = "/openapi/v1/multi-image-to-3d"
 
 # Preview-only for text (geometry, no textures) keeps cost at 5–20 credits per gen
 # and matches what we want for 3D printing workflows.
@@ -89,14 +90,45 @@ async def create_image_to_3d(image_data_url: str) -> str:
         return data["result"]
 
 
+async def create_multi_image_to_3d(image_data_urls: list) -> str:
+    """Submit a multi-image-to-3D task; returns Meshy task_id.
+
+    Accepts 1-4 reference photos as data: URLs (typically top / front /
+    side / extra view). Meshy fuses them into a single mesh. We keep
+    `should_texture=False` because the printable-geometry workflow
+    doesn't need textures (saves ~10 credits per generation).
+    """
+    if not (1 <= len(image_data_urls) <= 4):
+        raise ValueError("create_multi_image_to_3d expects between 1 and 4 reference images")
+    payload = {
+        "image_urls": image_data_urls,
+        "enable_pbr": False,
+        "should_remesh": True,
+        "should_texture": False,
+        "target_formats": TARGET_FORMATS,
+        "ai_model": "meshy-5",  # current multi-view default; auto-rolls forward
+    }
+    async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=60.0) as cx:
+        r = await cx.post(MULTI_IMAGE_ENDPOINT, headers=_headers(), json=payload)
+        r.raise_for_status()
+        data = r.json()
+        return data["result"]
+
+
 async def get_task(task_id: str, kind: str) -> Dict[str, Any]:
-    """Fetch task status. `kind` is 'text' or 'image' — picks the right endpoint.
+    """Fetch task status. `kind` is 'text', 'image', or 'multi_image'
+    — picks the right endpoint.
 
     Retries transient 5xx responses up to 3 times with exponential backoff
     so a single Meshy hiccup mid-generation doesn't bubble up as a 502 to
     the user (and ditch their in-flight job).
     """
-    endpoint = TEXT_ENDPOINT if kind == "text" else IMAGE_ENDPOINT
+    if kind == "text":
+        endpoint = TEXT_ENDPOINT
+    elif kind == "multi_image":
+        endpoint = MULTI_IMAGE_ENDPOINT
+    else:
+        endpoint = IMAGE_ENDPOINT
     last_err: Optional[httpx.HTTPStatusError] = None
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=30.0) as cx:
         for attempt in range(3):

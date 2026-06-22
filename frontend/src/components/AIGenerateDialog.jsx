@@ -92,12 +92,19 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
   // it up after the prompt is populated.
   const [pendingAutoSubmit, setPendingAutoSubmit] = useState(false);
 
-  const [tab, setTab] = useState("text");      // "text" | "image"
+  const [tab, setTab] = useState("text");      // "text" | "image" | "multi"
   const [prompt, setPrompt] = useState("");
   const [artStyle, setArtStyle] = useState("realistic");
   const [imageB64, setImageB64] = useState(null);
   const [imageMime, setImageMime] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+  // iter-105.14 — multi-image (3-photos → STL) state. Each slot is
+  // either null or { b64, mime, previewUrl, label }. We pre-label the
+  // first three slots Top / Front / Side because that's the canonical
+  // orthographic-view triplet Meshy's multi-image model expects (a
+  // 4th "extra" slot is also exposed for additional angles).
+  const _MULTI_LABELS = ["Front", "Side", "Top", "Extra"];
+  const [multiSlots, setMultiSlots] = useState([null, null, null, null]);
   const [usage, setUsage] = useState(null);
   const [job, setJob] = useState(null);        // { job_id, status, progress, model_url, error }
   const [busy, setBusy] = useState(false);
@@ -294,6 +301,59 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
       setImagePreviewUrl(dataUrl);
     };
     reader.readAsDataURL(file);
+  };
+
+  // iter-105.14 — multi-image (3-photos → STL) handlers.
+  const handleMultiSlotPick = (slotIdx, file) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      setError(`Slot ${slotIdx + 1}: image too large (max 8 MB).`); return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result;
+      const commaIdx = dataUrl.indexOf(",");
+      setMultiSlots((prev) => {
+        const next = [...prev];
+        next[slotIdx] = {
+          b64: dataUrl.slice(commaIdx + 1),
+          mime: file.type || "image/png",
+          previewUrl: dataUrl,
+        };
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleMultiSlotClear = (slotIdx) => {
+    setMultiSlots((prev) => {
+      const next = [...prev];
+      next[slotIdx] = null;
+      return next;
+    });
+  };
+
+  const handleSubmitMulti = async () => {
+    const filled = multiSlots.filter(Boolean);
+    if (filled.length < 2) {
+      setError("Add at least 2 reference photos (Top / Front / Side recommended)."); return;
+    }
+    setBusy(true); setError(""); setJob(null);
+    try {
+      const { data } = await axios.post(`${API}/ai/generate/multi-image`,
+        { images: filled.map((s) => ({ image_b64: s.b64, mime_type: s.mime })) },
+        { withCredentials: true });
+      setJob({ job_id: data.job_id, status: "PENDING", progress: 0 });
+      pollDeadline.current = Date.now() + POLL_TIMEOUT_MS;
+      pollOnce(data.job_id);
+      refreshUsage();
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || "Generation failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleImport = async () => {

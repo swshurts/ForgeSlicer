@@ -845,6 +845,61 @@ async def ai_generate_image(request: Request):
     return {"job_id": job_id, "status": "PENDING"}
 
 
+@api_router.post("/ai/generate/multi-image")
+async def ai_generate_multi_image(request: Request):
+    """Multi-view image-to-3D — fuses 2-4 reference photos (top/front/side/etc)
+    into a single mesh via Meshy's multi-image endpoint. The rest of the
+    job lifecycle (polling, mesh download) reuses the existing /ai/jobs/*
+    handlers with kind='multi_image'.
+    """
+    user = await get_current_user(request)
+    if not meshy_service.is_configured():
+        raise HTTPException(status_code=503, detail="AI generation not configured")
+    body = await request.json()
+    images = body.get("images") or []
+    if not isinstance(images, list) or not (2 <= len(images) <= 4):
+        raise HTTPException(status_code=400, detail="Provide 2-4 reference photos.")
+    data_urls: list[str] = []
+    for i, item in enumerate(images):
+        b64 = (item.get("image_b64") or "").strip() if isinstance(item, dict) else ""
+        mime = (item.get("mime_type") or "image/png").strip() if isinstance(item, dict) else "image/png"
+        if not b64:
+            raise HTTPException(status_code=400, detail=f"Image {i+1}: missing image_b64")
+        if mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+            raise HTTPException(status_code=400, detail=f"Image {i+1}: unsupported mime_type ({mime})")
+        data_urls.append(f"data:{mime};base64,{b64}")
+    await _ai_increment_or_raise(user)
+    try:
+        meshy_task_id = await meshy_service.create_multi_image_to_3d(data_urls)
+    except httpx.HTTPStatusError as e:
+        await db.ai_usage.update_one(
+            {"user_id": user["user_id"], "month_key": _month_key()},
+            {"$inc": {"count": -1}},
+        )
+        raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
+    except ValueError as ve:
+        await db.ai_usage.update_one(
+            {"user_id": user["user_id"], "month_key": _month_key()},
+            {"$inc": {"count": -1}},
+        )
+        raise HTTPException(status_code=400, detail=str(ve))
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.ai_jobs.insert_one({
+        "job_id": job_id,
+        "user_id": user["user_id"],
+        "kind": "multi_image",
+        "view_count": len(data_urls),
+        "meshy_task_id": meshy_task_id,
+        "status": "PENDING",
+        "progress": 0,
+        "model_url": None,
+        "created_at": now,
+        "updated_at": now,
+    })
+    return {"job_id": job_id, "status": "PENDING"}
+
+
 @api_router.get("/ai/jobs/{job_id}")
 async def ai_job_status(job_id: str, request: Request):
     """Pull the latest status from Meshy; cache result locally so repeated
