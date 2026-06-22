@@ -33,6 +33,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 ### Pending P1 (queued)
 - _(All P1 items currently closed.)_
 
+### Recently completed (iter-105.12)
+- **iter-105.12 (2026-02-20) — Centre toast notifications.**
+  - **User report**: LithoForge inbox toasts popping in the upper-right corner were getting missed because the workspace's busy right rail (Inspector, Gallery, Send to OrcaSlicer) drew the eye away.
+  - **Fix**: switched the Sonner Toaster position from `top-right` → `top-center` in both the default `<Toaster>` wrapper (`/app/frontend/src/components/ui/sonner.jsx`) AND the App-level mount (`/app/frontend/src/App.js` — the App-level prop was overriding the wrapper default, so both needed the change).
+  - **Verified live**: toast `centerX === window.innerWidth / 2` (1280px wide window → centerX=960, viewport centre 960). Stacked toasts also align to centre.
+
 ### Recently completed (iter-105.11)
 - **iter-105.11 (2026-02-20) — LithoForge → ForgeSlicer inbox.**
   - **User ask**: lithophanes flowing in from LithoForge.net should land in ForgeSlicer ready to modify or slice.

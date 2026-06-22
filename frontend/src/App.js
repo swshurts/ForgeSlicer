@@ -128,7 +128,7 @@ function App() {
               top-center toast intercepted clicks even when it didn't
               visually overlap, since sonner sets pointer-events:auto
               on the surrounding viewport). */}
-          <Toaster richColors closeButton position="top-right" />
+          <Toaster richColors closeButton position="top-center" />
           <SplashScreen />
           <ReleaseNotesDialog />
           <SVGImportDialog />
