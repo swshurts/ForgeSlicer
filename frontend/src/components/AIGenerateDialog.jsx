@@ -3,7 +3,7 @@ import axios from "axios";
 import { API } from "../lib/api";
 import { useScene } from "../lib/store";
 import { importAnyMeshFile } from "../lib/exporters";
-import { X, Sparkles, Loader2, Image as ImageIcon, Type, AlertCircle, RotateCw } from "lucide-react";
+import { X, Sparkles, Loader2, Image as ImageIcon, Type, AlertCircle, RotateCw, Images, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 // Poll interval for /ai/jobs/{id}. Meshy's docs warn against aggressive
@@ -126,6 +126,7 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
       setJob(null); setBusy(false); setError("");
       setPrompt(""); setImageB64(null); setImageMime(null);
       setImagePreviewUrl(null);
+      setMultiSlots([null, null, null, null]);
       setPendingAutoSubmit(false);
     } else {
       // Load usage when opening
@@ -497,6 +498,13 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
             >
               <ImageIcon size={13} /> From Image
             </button>
+            <button
+              data-testid="ai-tab-multi"
+              onClick={() => setTab("multi")}
+              className={`flex-1 h-8 rounded text-xs font-semibold flex items-center justify-center gap-1.5 ${tab === "multi" ? "bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/50" : "text-slate-400 hover:text-white"}`}
+            >
+              <Images size={13} /> Multi-Image
+            </button>
           </div>
 
           {/* Form body */}
@@ -562,6 +570,61 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
               )}
               <p className="text-[10px] text-slate-500 leading-snug">
                 JPG, PNG, or WebP up to 8 MB. Best results come from a single subject on a plain background.
+              </p>
+            </div>
+          )}
+
+          {!job && tab === "multi" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-medium">Reference Photos · {multiSlots.filter(Boolean).length}/4</label>
+                <span className="text-[10px] text-slate-500 font-mono">{multiSlots.filter(Boolean).length < 2 ? "need ≥2" : "ready"}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {_MULTI_LABELS.map((label, idx) => {
+                  const slot = multiSlots[idx];
+                  const required = idx < 3;
+                  return (
+                    <div
+                      key={label}
+                      data-testid={`ai-multi-slot-${idx}`}
+                      className={`relative aspect-square rounded border ${slot ? "border-fuchsia-500/50" : "border-dashed border-slate-700 hover:border-slate-600"} bg-slate-950 overflow-hidden group`}
+                    >
+                      {slot ? (
+                        <>
+                          <img src={slot.previewUrl} alt={label} className="w-full h-full object-cover" />
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-2 py-1 flex items-center justify-between">
+                            <span className="text-[10px] font-semibold text-fuchsia-200 uppercase tracking-wider">{label}</span>
+                            <button
+                              data-testid={`ai-multi-clear-${idx}`}
+                              onClick={() => handleMultiSlotClear(idx)}
+                              className="h-5 w-5 rounded bg-slate-900/80 text-slate-300 hover:text-white hover:bg-red-500/60 flex items-center justify-center"
+                              title="Remove"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer text-slate-500 hover:text-slate-300 transition-colors">
+                          <Plus size={20} className="mb-1 opacity-70" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+                          <span className="text-[9px] text-slate-600 mt-0.5">{required ? "recommended" : "optional"}</span>
+                          <input
+                            data-testid={`ai-multi-input-${idx}`}
+                            type="file"
+                            accept="image/png,image/jpeg,image/jpg,image/webp"
+                            onChange={(e) => handleMultiSlotPick(idx, e.target.files?.[0])}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-500 leading-snug">
+                Upload <strong className="text-slate-300">2–4 orthographic photos</strong> of the same object — Front, Side, and Top views give the best reconstruction. Use plain backgrounds and consistent lighting. JPG/PNG/WebP, 8 MB each.
               </p>
             </div>
           )}
@@ -671,6 +734,17 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 Generate
+              </button>
+            )}
+            {!job && tab === "multi" && (
+              <button
+                data-testid="ai-submit-multi-btn"
+                onClick={handleSubmitMulti}
+                disabled={busy || multiSlots.filter(Boolean).length < 2 || (usage && usage.remaining <= 0)}
+                className="h-9 px-4 text-xs font-bold bg-fuchsia-500 hover:bg-fuchsia-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                Fuse views
               </button>
             )}
             {done && (
