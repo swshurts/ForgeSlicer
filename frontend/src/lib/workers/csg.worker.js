@@ -187,7 +187,7 @@ self.addEventListener("message", async (e) => {
             }
           }
         } catch (_) { /* non-fatal */ }
-        result = { bytes, triangleCount: r.triangleCount, manifoldVerified: !!r.manifoldVerified, bbox };
+        result = { bytes, triangleCount: r.triangleCount, manifoldVerified: !!r.manifoldVerified, bbox, droppedNegatives: r.droppedNegatives || [] };
         transfers.push(bytes.buffer);
         break;
       }
@@ -195,16 +195,16 @@ self.addEventListener("message", async (e) => {
         const visibles = (payload.objects || []).filter((o) => o.visible !== false && o.modifier !== "negative");
         const colorSet = new Set(visibles.map((o) => (o.colorIndex | 0) || 0));
         if (colorSet.size >= 2) {
-          const { groups } = await evaluateByColorSmart(payload.objects);
+          const { groups, droppedNegatives } = await evaluateByColorSmart(payload.objects);
           if (groups.length === 0) throw new Error("Scene is empty. Add at least one positive component.");
           const bytes = await build3MFBytesMulti(groups);
-          result = { bytes, parts: groups.length, multicolor: true };
+          result = { bytes, parts: groups.length, multicolor: true, droppedNegatives: droppedNegatives || [] };
           transfers.push(bytes.buffer);
         } else {
           const r = await evaluateSmart(payload.objects);
           if (r.empty) throw new Error("Scene is empty. Add at least one positive component.");
           const bytes = await build3MFBytes(r.geometry);
-          result = { bytes, parts: 1, multicolor: false };
+          result = { bytes, parts: 1, multicolor: false, droppedNegatives: r.droppedNegatives || [] };
           transfers.push(bytes.buffer);
         }
         break;

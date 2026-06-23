@@ -260,8 +260,13 @@ function isValidGeometry(g) {
  */
 export function evaluateScene(objects) {
   _sceneContext = { objects };
+  _droppedNegatives.length = 0;
   try {
-    return _evaluateSceneImpl(objects);
+    const result = _evaluateSceneImpl(objects);
+    if (_droppedNegatives.length > 0) {
+      result.droppedNegatives = [..._droppedNegatives];
+    }
+    return result;
   } finally {
     _sceneContext = null;
   }
@@ -352,24 +357,74 @@ function _evaluateSceneImpl(objects) {
 
 // Subtract every negative from `acc`. Each subtract is guarded so a single
 // failure doesn't nuke the rest of the chain.
+//
+// Non-manifold hosts (e.g. AI-generated STLs) routinely cause three-bvh-csg
+// to emit an empty/invalid geometry. We don't silently drop those — we:
+//   1. Try once with the host as-is.
+//   2. If invalid, re-weld the host accumulator at a tighter tolerance and
+//      try again. AI mesh seams collapse and the BVH inside/outside tests
+//      become consistent.
+//   3. If STILL invalid, push the negative's name onto `_droppedNegatives`
+//      (read by evaluateScene to surface a user-visible warning) and keep
+//      the previous accumulator. We also log a console error so it's
+//      visible in devtools (not just `console.warn`).
+const _droppedNegatives = [];
 function subtractNegatives(acc, negatives, evaluator, mat) {
   let current = acc;
   for (const n of negatives) {
     const nb = makeBrush(n, { inflate: NEG_INFLATE });
+    let res = null;
     try {
-      const res = evaluator.evaluate(current, nb, SUBTRACTION);
-      if (res && res.geometry && isValidGeometry(res.geometry)) {
-        current = res;
-      }
-      // If invalid, keep the previous accumulator. The user-facing "carve
-      // health" surface (future) can flag these silently-dropped negatives;
-      // for now they just don't carve.
+      res = evaluator.evaluate(current, nb, SUBTRACTION);
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.warn(`CSG subtract threw on "${n.name}":`, e);
+      console.warn(`[csg] subtract threw on "${n.name}":`, e);
     }
+    if (res && res.geometry && isValidGeometry(res.geometry)) {
+      current = res;
+      continue;
+    }
+    // Repair-and-retry: re-weld the host accumulator at a tight tolerance.
+    try {
+      const repaired = repairBrush(current, mat);
+      const res2 = evaluator.evaluate(repaired, nb, SUBTRACTION);
+      if (res2 && res2.geometry && isValidGeometry(res2.geometry)) {
+        current = res2;
+        continue;
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(`[csg] repair+retry subtract threw on "${n.name}":`, e);
+    }
+    // Both attempts failed — record the drop and keep the previous result.
+    _droppedNegatives.push(n.name || n.id || "(unnamed)");
+    // eslint-disable-next-line no-console
+    console.error(
+      `[csg] Boolean subtract DROPPED for negative "${n.name || n.id}" — ` +
+      `host mesh is likely non-manifold (open edges / self-intersections). ` +
+      `The export will NOT include this cut.`
+    );
   }
   return current;
+}
+
+// Re-weld + clean a Brush's geometry into a new Brush. Used as a last-ditch
+// repair before retrying a failed BVH boolean.
+function repairBrush(brush, mat) {
+  const baked = bakeBrushToWorld(brush);
+  // 1e-3 mm (1 micron) — aggressive enough to bridge sub-printable seams in
+  // AI-generated meshes while preserving every feature a 3D printer can
+  // actually resolve.
+  let cleaned = weldVertices(baked, 1e-3);
+  cleaned = removeDegenerateTriangles(cleaned);
+  cleaned.computeVertexNormals();
+  const b = new Brush(cleaned, mat);
+  // Identity world matrix — geometry already baked into world space above.
+  b.position.set(0, 0, 0);
+  b.rotation.set(0, 0, 0);
+  b.scale.set(1, 1, 1);
+  b.updateMatrixWorld(true);
+  return b;
 }
 
 // Concatenate multiple positives' world-baked geometries into a single
@@ -417,8 +472,13 @@ function stripToPositionIndex(g) {
  */
 export function evaluateSceneByColor(objects) {
   _sceneContext = { objects };
+  _droppedNegatives.length = 0;
   try {
-    return _evaluateSceneByColorImpl(objects);
+    const result = _evaluateSceneByColorImpl(objects);
+    if (_droppedNegatives.length > 0) {
+      result.droppedNegatives = [..._droppedNegatives];
+    }
+    return result;
   } finally {
     _sceneContext = null;
   }

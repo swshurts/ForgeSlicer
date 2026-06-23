@@ -67,15 +67,19 @@ export default function STLPreviewDialog({ open, onClose }) {
   const [parsed, setParsed] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [dropped, setDropped] = useState([]);
 
   // Re-run the export pipeline whenever the dialog opens. This guarantees
   // what the user sees is *exactly* what will land in the slicer.
   const run = async () => {
-    setErr(""); setBusy(true);
+    setErr(""); setBusy(true); setDropped([]);
     try {
-      const { bytes: b } = await exportSTLBytesAsync(objects);
-      setBytes(b);
-      setParsed(parseBinarySTL(b));
+      const res = await exportSTLBytesAsync(objects);
+      setBytes(res.bytes);
+      setParsed(parseBinarySTL(res.bytes));
+      if (res.droppedNegatives && res.droppedNegatives.length > 0) {
+        setDropped(res.droppedNegatives);
+      }
     } catch (e) {
       setErr(e.message || String(e));
     } finally {
@@ -84,7 +88,7 @@ export default function STLPreviewDialog({ open, onClose }) {
   };
 
   useEffect(() => {
-    if (!open) { setBytes(null); setParsed(null); setErr(""); return; }
+    if (!open) { setBytes(null); setParsed(null); setErr(""); setDropped([]); return; }
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -151,6 +155,16 @@ export default function STLPreviewDialog({ open, onClose }) {
               <div className="max-w-md bg-red-500/10 border border-red-500/50 text-red-300 rounded-md p-4 text-xs leading-relaxed">
                 <div className="font-semibold uppercase tracking-wider mb-1">Could not render preview</div>
                 <div className="font-mono">{err}</div>
+              </div>
+            </div>
+          )}
+          {!err && dropped.length > 0 && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-[520px] bg-amber-500/15 border border-amber-500/60 text-amber-200 rounded-md px-3 py-2 text-[11px] leading-snug shadow-lg" data-testid="stl-preview-dropped-warning">
+              <div className="font-semibold uppercase tracking-wider text-amber-100 mb-0.5">
+                {dropped.length === 1 ? "1 Boolean cut was dropped" : `${dropped.length} Boolean cuts were dropped`}
+              </div>
+              <div>
+                The host mesh is non-manifold (open edges / self-intersections), so the boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>. Try selecting the host and using <strong>Repair Mesh</strong> from its Inspector, or simplify the negative.
               </div>
             </div>
           )}
