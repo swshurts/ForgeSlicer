@@ -164,7 +164,7 @@ export default function STLPreviewDialog({ open, onClose }) {
                 {dropped.length === 1 ? "1 Boolean cut was dropped" : `${dropped.length} Boolean cuts were dropped`}
               </div>
               <div>
-                The host mesh is non-manifold (open edges / self-intersections), so the boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>. Try selecting the host and using <strong>Repair Mesh</strong> from its Inspector, or simplify the negative.
+                The host mesh is non-manifold (open edges / self-intersections), so the boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>. Select the host in the Outliner and click the green <strong>Repair Mesh</strong> button at the top of its Inspector, then Refresh this preview.
               </div>
             </div>
           )}
