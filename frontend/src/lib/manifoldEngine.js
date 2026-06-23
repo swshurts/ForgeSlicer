@@ -613,14 +613,17 @@ export async function cutObjectByPlaneAsync(obj, plane, options = {}) {
   let upper = null, lower = null;
   try {
     src = buildObjectManifold(wasm, obj);
-    // Compute plane normal: rotate +Y by the plane's rotation Euler.
+    // Plane normal: rotate +Z by the plane's rotation Euler. The default
+    // cut plane is the horizontal XY plane (normal = +Z) — this matches
+    // the gizmo's PlaneGeometry default (which renders facing +Z) and the
+    // BVH-path convention in csg.js. Z-up coordinate system throughout.
     const rxRad = THREE.MathUtils.degToRad(plane.rotation[0] || 0);
     const ryRad = THREE.MathUtils.degToRad(plane.rotation[1] || 0);
     const rzRad = THREE.MathUtils.degToRad(plane.rotation[2] || 0);
     const q = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(rxRad, ryRad, rzRad)
     );
-    const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
     // Manifold splits at: normal · v = offset. The plane passes through
     // plane.position with normal `normal`, so offset = normal · position.
     const [px, py, pz] = plane.position;
