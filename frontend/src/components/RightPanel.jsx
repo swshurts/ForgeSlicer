@@ -733,7 +733,7 @@ function Inspector() {
         </button>
       </div>
 
-      {obj.type === "imported" && obj.geometry && false && (
+      {obj.type === "imported" && obj.geometry && (
         <div className="space-y-1.5" data-testid="repair-mesh-block">
           <button
             data-testid="repair-mesh-btn"
