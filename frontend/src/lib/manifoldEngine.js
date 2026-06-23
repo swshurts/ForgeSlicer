@@ -25,6 +25,7 @@ import { buildGeometry } from "./geometry";
 import { buildCubeManifoldWithFilletsSync, hasActiveEdgeFillets } from "./partialFillet";
 
 let _modulePromise = null;
+let _moduleCache = null;
 
 /**
  * Lazy WASM module init. Resolves to the Manifold module with all
@@ -48,9 +49,21 @@ export function getManifold() {
         path.endsWith(".wasm") ? `${baseOrigin}/${path}` : path,
     });
     wasm.setup();
+    _moduleCache = wasm;
     return wasm;
   })();
   return _modulePromise;
+}
+
+/**
+ * Sync accessor for the already-loaded Manifold module. Returns `null` if
+ * `getManifold()` has never resolved yet. Used by the BVH (three-bvh-csg)
+ * fallback path in `csg.js` to build filleted-cube geometry synchronously
+ * — the cache is reliably warm by the time the fallback runs because the
+ * primary manifold-3d path always attempts the WASM-backed solve first.
+ */
+export function getManifoldSync() {
+  return _moduleCache;
 }
 
 // ---------- THREE <-> Manifold conversion ----------

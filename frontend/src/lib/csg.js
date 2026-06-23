@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from "three-bvh-csg";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { buildGeometry, applyTransform } from "./geometry";
+import { buildCubeManifoldWithFilletsSync, hasActiveEdgeFillets } from "./partialFillet";
+import { getManifoldSync } from "./manifoldEngine";
 
 const OP_MAP = { union: ADDITION, subtract: SUBTRACTION, intersect: INTERSECTION };
 
@@ -62,7 +64,34 @@ function bakeNegativeScale(geom, obj) {
 let _sceneContext = null;
 
 function makeBrush(obj, opts = {}, scene = null) {
-  let geom = buildGeometry(obj, scene || _sceneContext);
+  let geom = null;
+  // Cubes with per-edge fillets/chamfers need a Manifold-built mesh —
+  // buildGeometry() returns a SHARP BoxGeometry placeholder for them
+  // because the partial-fillet pipeline only kicks in on the manifold-3d
+  // engine path. When we land here (the three-bvh-csg fallback, taken
+  // when an imported STL is non-manifold), we must materialise the real
+  // filleted geometry ourselves or the carve produces a sharp hole.
+  if (obj.type === "cube" && hasActiveEdgeFillets(obj)) {
+    const wasm = getManifoldSync();
+    if (wasm) {
+      try {
+        const m = buildCubeManifoldWithFilletsSync(wasm, obj);
+        if (m) {
+          const mesh = m.getMesh();
+          geom = new THREE.BufferGeometry();
+          geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(mesh.vertProperties), 3));
+          geom.setIndex(new THREE.BufferAttribute(new Uint32Array(mesh.triVerts), 1));
+          geom.computeVertexNormals();
+          m.delete();
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[csg] filleted-cube manifold build failed, falling back to sharp:", err?.message || err);
+        geom = null;
+      }
+    }
+  }
+  if (!geom) geom = buildGeometry(obj, scene || _sceneContext);
   const { geom: prepped, positiveScale } = bakeNegativeScale(geom, obj);
   const mat = new THREE.MeshStandardMaterial();
   const b = new Brush(prepped, mat);
