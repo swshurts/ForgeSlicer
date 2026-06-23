@@ -551,7 +551,7 @@ export default function PrintPreviewDialog({ open, objects, onClose, onConfirm, 
                     </span>
                   </span>
                   <span className="text-slate-500">Model volume</span>
-                  <span className="text-orange-300 text-right">{(stats.volume / 1000).toFixed(1)} cm³</span>
+                  <span className="text-orange-300 text-right">{stats.volume.toLocaleString(undefined, { maximumFractionDigits: 0 })} mm³</span>
                 </div>
                 {stats.downArea / stats.totalArea > 0.25 && (
                   <div className="text-[10px] text-amber-300/90 leading-tight pt-1 flex gap-1.5">
