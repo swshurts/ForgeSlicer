@@ -11,11 +11,10 @@ import SweepInspectorBlock from "./SweepInspectorBlock";
 import EdgeControls from "./inspector/EdgeControls";
 import AutoSaveSection from "./inspector/AutoSaveSection";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2 } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
-import { repairMeshGeometry } from "../lib/meshRepair";
 import { toast } from "sonner";
 
 // iter-100.8 — Alphabetical, accordion-grouped printer picker. Replaces
@@ -617,11 +616,6 @@ function Inspector() {
   const layFlatSelection = useScene((s) => s.layFlatSelection);
   const setColorIndex = useScene((s) => s.setColorIndex);
 
-  // Repair Mesh button state. The repair pipeline is async + can take a
-  // few seconds on large hosts, so we show a progress bar while it runs.
-  const [repairBusy, setRepairBusy] = useState(false);
-  const [repairProgress, setRepairProgress] = useState(0);
-
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj) {
     return (
@@ -630,52 +624,6 @@ function Inspector() {
       </Section>
     );
   }
-
-  const handleRepairMesh = async () => {
-    if (repairBusy || obj.type !== "imported" || !obj.geometry) return;
-    setRepairBusy(true);
-    setRepairProgress(0);
-    const startedAt = performance.now();
-    try {
-      // Reconstruct a BufferGeometry from the stored vertices/indices.
-      const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(obj.geometry.vertices), 3));
-      if (obj.geometry.indices) {
-        g.setIndex(new THREE.BufferAttribute(new Uint32Array(obj.geometry.indices), 1));
-      }
-      const { geometry: repaired, stats } = await repairMeshGeometry(g, {
-        onProgress: (p) => setRepairProgress(p),
-      });
-      // Persist the repaired geometry. We update originalBbox too so the
-      // inspector's "Bottom Z" / size readouts stay accurate.
-      repaired.computeBoundingBox();
-      const bb = repaired.boundingBox;
-      const newBbox = {
-        x: bb.max.x - bb.min.x,
-        y: bb.max.y - bb.min.y,
-        z: bb.max.z - bb.min.z,
-      };
-      const verts = repaired.attributes.position.array;
-      const idx = repaired.index ? repaired.index.array : null;
-      updateObject(obj.id, {
-        geometry: {
-          vertices: Array.from(verts),
-          indices: idx ? Array.from(idx) : null,
-        },
-        originalBbox: newBbox,
-      });
-      const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
-      toast.success(
-        `Mesh repaired — ${stats.inputTris | 0} → ${stats.outputTris | 0} tris (voxel ${stats.voxelSize.toFixed(2)} mm, ${elapsed}s)`,
-        { duration: 4000 }
-      );
-    } catch (err) {
-      toast.error(`Repair failed: ${err.message || err}`, { duration: 5000 });
-    } finally {
-      setRepairBusy(false);
-      setRepairProgress(0);
-    }
-  };
 
   return (
     <Section title={`Inspector — ${obj.type}`} icon={Sliders} testid="inspector">
@@ -732,32 +680,6 @@ function Inspector() {
           <Layers size={13} /> Lay Flat
         </button>
       </div>
-
-      {obj.type === "imported" && obj.geometry && (
-        <div className="space-y-1.5" data-testid="repair-mesh-block">
-          <button
-            data-testid="repair-mesh-btn"
-            onClick={handleRepairMesh}
-            disabled={repairBusy}
-            className="w-full h-8 bg-emerald-600/90 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-emerald-400/40"
-            title="Voxel-remesh this import to guarantee it's watertight. Use this when STL Preview warns that a Boolean cut was dropped because the mesh is non-manifold. Some fine detail may be lost."
-          >
-            {repairBusy ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
-            {repairBusy ? "Repairing…" : "Repair Mesh"}
-          </button>
-          {repairBusy && (
-            <div className="h-1 w-full bg-slate-800 rounded overflow-hidden" data-testid="repair-mesh-progress">
-              <div
-                className="h-full bg-emerald-400 transition-[width] duration-200"
-                style={{ width: `${Math.round(repairProgress * 100)}%` }}
-              />
-            </div>
-          )}
-          <p className="text-[10px] text-slate-500 leading-snug">
-            Rebuilds this mesh as a guaranteed-watertight solid via voxel remesh. Use after an STL Preview warns about dropped Boolean cuts. Trades a small amount of fine surface detail for reliable carves.
-          </p>
-        </div>
-      )}
 
       {obj.modifier !== "negative" && (
         <div data-testid="inspector-color-picker">
