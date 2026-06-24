@@ -3169,3 +3169,56 @@ modifier reattachment in the slicer's outliner, the carve "just works"
 at slice time. The Repair Mesh path remains available for users who
 need a single-mesh STL output.
 
+
+## Iteration 105.18 (2026-06-24) — Modifier-mesh 3MF schema fix for OrcaSlicer
+
+**Problem reported by user**
+- The 3MF emitted by iter-105.17 was opened in OrcaSlicer (FlashForge
+  AD5X profile). The slicer loaded the geometry but treated the cube
+  negative as a positive protrusion sticking out the side of the
+  hydrant. Object info pane: "Object_1 — Triangles: 32 973 —
+  Error: 1 493 non-manifold edges". The modifier metadata was being
+  ignored.
+
+**Root cause**
+- iter-105.17 wrote the modifier sidecar only as
+  `Metadata/Slic3r_PE_model.config` (the PrusaSlicer name).
+  OrcaSlicer / BambuStudio look for `Metadata/model_settings.config`
+  (the BBS_MODEL_CONFIG_FILE constant in upstream
+  `src/libslic3r/Format/bbs_3mf.cpp`). Without the BBS filename the
+  slicer falls back to treating the file as a generic 3MF —
+  geometry loads, modifier metadata is dropped on the floor.
+
+**Fix — schema brought up to BBS / Slic3r-PE compliance**
+- `lib/threemf.js > packageModifierZip` now writes the sidecar under
+  **BOTH** filenames (`Metadata/model_settings.config` AND
+  `Metadata/Slic3r_PE_model.config`) with identical XML payload.
+- `[Content_Types].xml` now declares the `.config` extension so
+  package validators don't drop the sidecars as unknown payload.
+- Empty `3D/_rels/3dmodel.model.rels` added (some validators reject
+  a 3MF that doesn't have a per-model rels stub).
+- The `<model>` element now carries the BBS production namespace
+  (`xmlns:p`), the Slic3r-PE namespace (`xmlns:slic3rpe`), and the
+  BambuStudio namespace (`xmlns:BambuStudio`), plus two version
+  markers (`BambuStudio:3mfVersion=1`, `slic3rpe:Version3mf=1`)
+  that signal "this is a project-format 3MF, look at the sidecar".
+- The `<object>` carries `p:UUID`, the `<build>` carries `p:UUID`,
+  and the build `<item>` carries the column-major 4×3 identity
+  `transform` attribute — all conventions from the BBS source.
+- Each `<volume>` in the config now carries the full BBS schema
+  (name, volume_type, matrix, source_file, source_object_id,
+  source_volume_id, source_offset_{x,y,z}). The object also carries
+  an `extruder=1` metadata row.
+
+**Verified by testing_agent_v3_fork** (`/app/test_reports/iteration_96.json`)
+- 100% pass on every assertion: zip file list, byte-identity of the
+  two sidecars, namespace presence, version markers, p:UUIDs,
+  transform, per-volume schema completeness, single
+  `ModelNegativeVolume` occurrence for a 1-positive + 1-negative
+  scene. Live bundle smoke confirmed all new strings shipped.
+
+**Files touched**
+- `lib/threemf.js` — modifier model XML rewritten with BBS schema +
+  packageModifierZip writes both filenames + .config Content-Type +
+  per-model rels stub.
+
