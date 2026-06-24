@@ -138,6 +138,13 @@ export async function build3MFBytesWithModifiers({
   for (const v of (negativeVolumes || [])) collectVolume(v, "ModelNegativeVolume");
 
   // 1) 3D/3dmodel.model — one object containing the combined mesh.
+  // We inline the model XML here (rather than reusing `wrapModel`) so
+  // we can include the BambuStudio-format version markers that signal
+  // to OrcaSlicer "this is a BBS-format 3MF, please look in
+  // Metadata/model_settings.config for per-volume info". Without these
+  // markers OrcaSlicer treats the file as a generic 3MF and ignores
+  // the modifier sidecar, which paints the negative cube as a positive
+  // protrusion on the build plate (the exact bug the user hit).
   const vertLines = new Array(allVerts.length);
   for (let i = 0; i < allVerts.length; i++) {
     const v = allVerts[i];
@@ -148,7 +155,14 @@ export async function build3MFBytesWithModifiers({
     const t = allTris[i];
     triLines[i] = `        <triangle v1="${t.v1}" v2="${t.v2}" v3="${t.v3}"/>`;
   }
-  const objectBlock = `    <object id="1" type="model">
+  const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
+  <metadata name="Application">ForgeSlicer</metadata>
+  <metadata name="BambuStudio:3mfVersion">1</metadata>
+  <metadata name="slic3rpe:Version3mf">1</metadata>
+  <metadata name="Title">${escapeXml(projectName)}</metadata>
+  <resources>
+    <object id="1" p:UUID="00000001-61cb-4c03-9d28-80fed5dfa1dc" type="model">
       <mesh>
         <vertices>
 ${vertLines.join("\n")}
@@ -157,21 +171,38 @@ ${vertLines.join("\n")}
 ${triLines.join("\n")}
         </triangles>
       </mesh>
-    </object>`;
-  const modelXml = wrapModel([objectBlock], [{ id: 1 }]);
+    </object>
+  </resources>
+  <build p:UUID="2c7c17d8-22b5-4d84-8835-1976022ea369">
+    <item objectid="1" p:UUID="00000002-b1ec-4553-aec9-835e5b724bb4" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+  </build>
+</model>`;
 
-  // 2) Metadata/Slic3r_PE_model.config — sidecar partitioning the
-  //    triangles into named volumes. Identity matrices because the
-  //    geometries we received are already baked to world coords.
+  // 2) Metadata/model_settings.config — sidecar partitioning the
+  //    triangles into named volumes. Schema follows the
+  //    BambuStudio / OrcaSlicer writer (`bbs_3mf.cpp`):
+  //      - `name`         display string in the slicer outliner
+  //      - `volume_type`  ModelPart | ModelNegativeVolume | ...
+  //      - `matrix`       16-float row-major 4×4 (identity — triangles
+  //                       are already in world space)
+  //      - `source_*`     placeholders so the slicer doesn't try to
+  //                       resolve back to a missing source file
   const volumeBlocks = volumes.map((v) => `  <volume firstid="${v.firstTri}" lastid="${v.lastTri}">
    <metadata type="volume" key="name" value="${escapeXml(v.name)}"/>
    <metadata type="volume" key="volume_type" value="${v.type}"/>
    <metadata type="volume" key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
+   <metadata type="volume" key="source_file" value=""/>
+   <metadata type="volume" key="source_object_id" value="0"/>
+   <metadata type="volume" key="source_volume_id" value="0"/>
+   <metadata type="volume" key="source_offset_x" value="0"/>
+   <metadata type="volume" key="source_offset_y" value="0"/>
+   <metadata type="volume" key="source_offset_z" value="0"/>
   </volume>`);
   const configXml = `<?xml version="1.0" encoding="UTF-8"?>
 <config>
  <object id="1" instances_count="1">
   <metadata type="object" key="name" value="${escapeXml(projectName)}"/>
+  <metadata type="object" key="extruder" value="1"/>
 ${volumeBlocks.join("\n")}
  </object>
 </config>`;
@@ -191,20 +222,41 @@ function escapeXml(s) {
 }
 
 async function packageModifierZip(modelXml, configXml) {
+  // OrcaSlicer / BambuStudio look for `Metadata/model_settings.config`;
+  // PrusaSlicer / SuperSlicer look for `Metadata/Slic3r_PE_model.config`.
+  // The XML schema is IDENTICAL between the two, so we just write the
+  // same payload under both filenames — guarantees the modifier
+  // metadata is picked up regardless of which slicer the user opens
+  // the file in.
+  //
+  // We also declare a `.config` ContentType so the slicer doesn't drop
+  // the sidecar as "unknown payload" during package validation, and
+  // emit `3D/_rels/3dmodel.model.rels` (empty Relationships) so the
+  // 3MF package validator doesn't reject the file for a missing
+  // per-model rels stub.
   const ct = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+  <Default Extension="config" ContentType="application/vnd.bambulab-3dmanufacturing-config+xml"/>
 </Types>`;
   const rels = `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
+  const modelRels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`;
   const zip = new JSZip();
   zip.file("[Content_Types].xml", ct);
   zip.folder("_rels").file(".rels", rels);
-  zip.folder("3D").file("3dmodel.model", modelXml);
-  zip.folder("Metadata").file("Slic3r_PE_model.config", configXml);
+  const folder3d = zip.folder("3D");
+  folder3d.file("3dmodel.model", modelXml);
+  folder3d.folder("_rels").file("3dmodel.model.rels", modelRels);
+  const meta = zip.folder("Metadata");
+  // BambuStudio / OrcaSlicer / Bambu Handy
+  meta.file("model_settings.config", configXml);
+  // PrusaSlicer / SuperSlicer back-compat
+  meta.file("Slic3r_PE_model.config", configXml);
   const ab = await zip.generateAsync({ type: "arraybuffer" });
   return new Uint8Array(ab);
 }
