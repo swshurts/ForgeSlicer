@@ -89,9 +89,42 @@ def _repair_stl_sync(stl_bytes: bytes) -> bytes:
     ms.apply_filter("meshing_remove_duplicate_faces")
     ms.apply_filter("meshing_remove_duplicate_vertices")
     ms.apply_filter("meshing_remove_unreferenced_vertices")
+    # Align all face normals to point outward consistently. AI meshes often
+    # have pockets of inverted-winding tris which sink three-bvh-csg's
+    # inside/outside test even after holes are closed.
+    try:
+        ms.apply_filter("meshing_re_orient_faces_coherently")
+    except Exception:
+        pass  # filter occasionally rejects malformed input; not fatal
+    # Drop T-vertices (verts that sit mid-edge of an adjacent triangle).
+    # These create silent non-manifoldness that close_holes can't fix.
+    try:
+        ms.apply_filter("meshing_remove_t_vertices", method=0)
+    except Exception:
+        pass
     ms.apply_filter("meshing_repair_non_manifold_edges")
-    ms.apply_filter("meshing_repair_non_manifold_vertices")
-    ms.apply_filter("meshing_close_holes", maxholesize=max_hole_edges)
+    ms.apply_filter("meshing_repair_non_manifold_vertices", vertdispratio=0.0)
+    # Close holes WITH refinement — the older basic-fan close was leaving
+    # tiny boundary slivers that three-bvh-csg still tripped on. Refine
+    # adds extra vertices inside each closed cap so the final mesh joins
+    # at watertight precision.
+    # Refinement edge length: roughly 1% of bbox diagonal — tight enough
+    # to weave new triangles into existing ones at the hole boundary.
+    refine_edge = max(0.1, diag * 0.01)
+    ms.apply_filter(
+        "meshing_close_holes",
+        maxholesize=max_hole_edges,
+        refinehole=True,
+        refineholeedgelen=refine_edge,
+        selfintersection=True,
+        newfaceselected=False,
+    )
+    # Final non-manifold pass to clean up any edges that close_holes
+    # introduced during refinement.
+    try:
+        ms.apply_filter("meshing_repair_non_manifold_edges")
+    except Exception:
+        pass
 
     ms.save_current_mesh(out_path, binary=True)
 
