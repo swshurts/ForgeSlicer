@@ -3222,3 +3222,56 @@ need a single-mesh STL output.
   packageModifierZip writes both filenames + .config Content-Type +
   per-model rels stub.
 
+
+## Iteration 105.19 (2026-06-24) — Modifier-mesh 3MF: switch to OrcaSlicer's NATIVE multi-object schema
+
+**Problem reported by user (frustrated, 1200 credits spent)**
+- Even after iter-105.18 (which wrote the sidecar under BOTH
+  `model_settings.config` AND `Slic3r_PE_model.config`), OrcaSlicer
+  STILL loaded the modifier 3MF as a single merged Object_1 with
+  32 973 triangles and the cube negative appeared as a positive
+  protrusion off the hydrant body. The slicer empirically ignored
+  the legacy PrusaSlicer-style triangle-range modifier metadata.
+
+**Root cause**
+- iter-105.17/18 used PrusaSlicer-legacy schema: ONE merged `<mesh>`
+  inside ONE `<object>`, plus a `Metadata/model_settings.config`
+  sidecar with `<volume firstid lastid volume_type=ModelNegativeVolume>`
+  blocks partitioning the triangle range. OrcaSlicer's modern BBS
+  parser doesn't apply that schema reliably — the user's slicer
+  shipped a single blob.
+
+**Fix — OrcaSlicer's NATIVE multi-object schema**
+- Each volume is now its OWN `<object>` in `<resources>` with its OWN
+  `<mesh>`. A parent assembly `<object id=1>` references them via
+  `<components>`. Modifier role is declared per sub-object as
+  `<part id=N subtype="normal_part|negative_part">` inside
+  `Metadata/model_settings.config` (still written under both
+  filenames for PrusaSlicer compat).
+- This is what saving a project natively in OrcaSlicer / Bambu Studio
+  produces, so it's as compatible as humanly possible.
+- **SAFETY NET**: even if a slicer build fails to parse the sidecar
+  entirely (older OrcaSlicer build, exotic fork, etc.), the user
+  STILL sees TWO distinct objects in the slicer outliner and can
+  right-click → "Change type → Negative volume" to flip the cube
+  manually. The previous iter's single-mesh approach had NO such
+  fallback — everything looked like one merged blob.
+
+**Verified by testing_agent_v3_fork** (`/app/test_reports/iteration_97.json`)
+- 37/37 fixture assertions pass on the new `_buildVolumeObjectXml` /
+  `_uuidFor` helpers and the full multi-object output.
+- 9/9 bundle markers present (`negative_part`, `normal_part`,
+  `<components>`, `subtype=`, `<component objectid`,
+  `_buildVolumeObjectXml`, `_uuidFor`, `BambuStudio:3mfVersion`,
+  both sidecar filenames).
+- Old `<volume firstid…>` / `lastid=` triangle-range schema
+  COMPLETELY ABSENT from both the shipped bundle and the generated
+  file — no risk of accidentally falling back to the broken format.
+- Reference fixture at `/tmp/iter105_19.modifier.3mf` (7822 bytes).
+- UI smoke OK.
+
+**Files touched**
+- `lib/threemf.js` — `build3MFBytesWithModifiers` fully rewritten;
+  new helpers `_buildVolumeObjectXml(objectId, geometry)` and
+  `_uuidFor(objectId)`. Legacy triangle-range path removed.
+
