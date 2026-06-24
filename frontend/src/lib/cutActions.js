@@ -24,9 +24,19 @@ import { cutObjectByPlaneAsync } from "./workerClient";
  * @returns { newObjects: [], errors: [], removedIds: [] } | null when nothing selected
  */
 export async function buildCutDelta(state, keep = "both", newId) {
-  const ids = state.selectedIds.length
+  // Explicit selection wins. If nothing's selected, fall back to ALL
+  // visible non-negative objects — when the user enters cut mode and
+  // hits Apply with no selection, the natural intent is "slice
+  // everything visible on the bed". Without this fallback the apply
+  // buttons stayed disabled and the user just saw a dead HUD.
+  let ids = state.selectedIds.length
     ? state.selectedIds
     : (state.selectedId ? [state.selectedId] : []);
+  if (ids.length === 0) {
+    ids = state.objects
+      .filter((o) => o.visible !== false && o.modifier !== "negative")
+      .map((o) => o.id);
+  }
   if (ids.length === 0) return null;
   const plane = state.cutPlane;
   const newObjects = [];

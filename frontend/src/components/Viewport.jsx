@@ -456,7 +456,7 @@ function CutPlaneGizmo() {
         <meshBasicMaterial
           color="#fbbf24"
           transparent
-          opacity={0.18}
+          opacity={0.32}
           side={THREE.DoubleSide}
           depthWrite={false}
           attach="material"
@@ -468,7 +468,7 @@ function CutPlaneGizmo() {
         raycast={() => null}
         geometry={edgeGeom}
       >
-        <lineBasicMaterial color="#f59e0b" attach="material" />
+        <lineBasicMaterial color="#fde047" linewidth={2} attach="material" />
       </lineSegments>
       {meshRef.current && (
         <TransformControls

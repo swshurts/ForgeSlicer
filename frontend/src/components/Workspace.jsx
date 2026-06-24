@@ -964,10 +964,66 @@ function CutHUD() {
   const objects = useScene((s) => s.objects);
   const [busy, setBusy] = useState(false);
 
+  // Compute a plane Z-height at the midpoint of the cut targets. Returns
+  // 0 if we can't determine any bbox (which collapses to "park at the
+  // bed" — old behaviour). Primitives carry their size in `dims`;
+  // imports carry it in `originalBbox`. We probe both.
+  const computeMidZ = (ids) => {
+    let zMin = Infinity, zMax = -Infinity;
+    for (const id of ids) {
+      const o = objects.find((x) => x.id === id);
+      if (!o) continue;
+      // Pick whichever size source is available for this object.
+      let sizeZ = 0;
+      if (o.originalBbox && o.originalBbox.z) sizeZ = o.originalBbox.z;
+      else if (o.dims && o.dims.z) sizeZ = o.dims.z;
+      else if (o.dims && o.dims.height) sizeZ = o.dims.height;
+      else continue;
+      const sz = (o.scale && o.scale[2]) || 1;
+      const halfZ = sizeZ * Math.abs(sz) / 2;
+      const cz = (o.position && o.position[2]) || 0;
+      if (cz - halfZ < zMin) zMin = cz - halfZ;
+      if (cz + halfZ > zMax) zMax = cz + halfZ;
+    }
+    return isFinite(zMin) && isFinite(zMax) ? (zMin + zMax) / 2 : 0;
+  };
+
+  // Auto-position the cut plane at the **mid-Z height of the cut targets**
+  // when entering cut mode. The old behaviour parked the plane at z=0
+  // (the bed) — visually overlapping the bed and impossible to spot, and
+  // the cut equation came out to z=0 so applying Split (both) just sliced
+  // off the floor. Re-positioning on cutMode flip lands the amber plane
+  // halfway up the part the user is trying to slice, which is what 99%
+  // of cuts want anyway. The user can still drag it from there.
+  useEffect(() => {
+    if (!cutMode) return;
+    const ids = selectedIds.length
+      ? selectedIds
+      : (selectedId ? [selectedId] : objects
+          .filter((o) => o.visible !== false && o.modifier !== "negative")
+          .map((o) => o.id));
+    if (ids.length === 0) return;
+    const midZ = computeMidZ(ids);
+    setCutPlane({ position: [0, 0, midZ], rotation: [0, 0, 0] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cutMode]);
+
   if (!cutMode) return null;
 
-  const targetCount = selectedIds.length || (selectedId ? 1 : 0);
-  const target = objects.find((o) => o.id === (selectedIds[0] || selectedId));
+  // Explicit selection wins; otherwise fall back to every visible
+  // non-negative object on the bed. Matches the fallback in
+  // `buildCutDelta` so what the HUD shows == what gets cut.
+  const explicit = selectedIds.length || (selectedId ? 1 : 0);
+  const fallbackTargets = explicit === 0
+    ? objects.filter((o) => o.visible !== false && o.modifier !== "negative")
+    : [];
+  const targetCount = explicit || fallbackTargets.length;
+  const target = explicit > 0
+    ? objects.find((o) => o.id === (selectedIds[0] || selectedId))
+    : fallbackTargets[0];
+  const targetLabel = explicit === 0 && fallbackTargets.length > 0
+    ? `${fallbackTargets.length} visible object${fallbackTargets.length > 1 ? "s" : ""}`
+    : (target?.name || "");
 
   const handleApply = (keep) => {
     setBusy(true);
@@ -990,7 +1046,16 @@ function CutHUD() {
   };
 
   const handleReset = () => {
-    setCutPlane({ position: [0, target ? 25 : 25, 0], rotation: [0, 0, 0] });
+    // Recompute mid-Z of cut targets (so Reset goes back to "halfway
+    // through the part" not "on the bed"). Mirror logic from the
+    // cutMode-entry useEffect above.
+    const ids = selectedIds.length
+      ? selectedIds
+      : (selectedId ? [selectedId] : objects
+          .filter((o) => o.visible !== false && o.modifier !== "negative")
+          .map((o) => o.id));
+    const midZ = computeMidZ(ids);
+    setCutPlane({ position: [0, 0, midZ], rotation: [0, 0, 0] });
   };
 
   return (
@@ -1000,11 +1065,16 @@ function CutHUD() {
     >
       <Scissors size={16} className="text-amber-400 flex-shrink-0" />
       <div className="flex-1">
-        <div className="text-xs font-bold text-amber-300 uppercase tracking-wider">Cut Plane</div>
+        <div className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
+          Cut Plane
+          <span className="text-[10px] font-mono text-amber-200/80 normal-case tracking-normal" data-testid="cut-plane-z-readout">
+            z = {((cutPlane?.position?.[2]) || 0).toFixed(2)} mm
+          </span>
+        </div>
         <div className="text-[10px] text-slate-400">
           {targetCount === 0
-            ? "Select an object to cut, then position the plane below."
-            : `${targetCount} target${targetCount > 1 ? "s" : ""}: ${target?.name || ""}`}
+            ? "Add or select an object to cut, then position the plane below."
+            : `${targetCount} target${targetCount > 1 ? "s" : ""}: ${targetLabel}`}
         </div>
       </div>
 

@@ -171,14 +171,15 @@ export default function EditRow({
         />
       ))}
 
-      {/* Cut — uses cut mode (amber) rather than the popover state. */}
+      {/* Cut — uses cut mode (amber) rather than the popover state.
+          Enabled regardless of selection; the HUD falls back to "all
+          visible positives" when nothing is explicitly selected. */}
       <TabPillButton
         ref={popoverRefs.cut}
         testid="menu-cut-btn"
         icon={Scissors}
         label="Cut"
-        title="Cut the selected object(s) with an adjustable plane (split into pieces)"
-        disabled={selectionCount === 0}
+        title="Cut the selected object(s) — or every visible part if none is selected — with an adjustable plane"
         active={cutMode}
         variant="amber"
         onClick={() => setCutMode(!cutMode)}
