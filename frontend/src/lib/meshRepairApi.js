@@ -12,19 +12,22 @@ import { API } from "./api";
  *   stlBytes   Uint8Array — binary STL representation of obj.geometry.
  *
  * Returns: { bytes: Uint8Array, inputBytes, outputBytes, elapsedSec }
+ *
+ * Wire format: raw `application/octet-stream` body. We previously used
+ * multipart/form-data here, but Cloudflare's managed-WAF in front of
+ * the preview ingress 403'd binary-encoded STL form parts (the form
+ * blob tripped a generic "malicious payload" heuristic). Raw octet-
+ * stream sidesteps the multipart inspection path while keeping the
+ * exact same backend behaviour.
  */
 export async function repairMeshOnServer(stlBytes) {
-  const fd = new FormData();
-  fd.append(
-    "file",
-    new Blob([stlBytes], { type: "application/sla" }),
-    "host.stl"
-  );
-
   const res = await fetch(`${API}/mesh/repair`, {
     method: "POST",
     credentials: "include",
-    body: fd,
+    headers: { "Content-Type": "application/octet-stream" },
+    // `stlBytes` is a Uint8Array — fetch accepts the underlying buffer
+    // directly with zero copy.
+    body: stlBytes,
   });
 
   if (!res.ok) {

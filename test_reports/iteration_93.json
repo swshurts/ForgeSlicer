@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only regression verification for iter 105.15 fixes. All 6 pytest cases passed against the public preview URL. Verified: (a) /api/mesh/repair raw application/octet-stream path returns 200 binary STL with X-Repair-* headers, (b) legacy multipart fallback still returns 200, (c) unauthenticated requests return 401 in BOTH body modes, (d) /api/auth/session with an invalid session_id returns 401 in ~5.8s (well under 20s), (e) /api/auth/me with bearer token returns user payload in <2s.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "supervisor/backend hot-reload", "issue": "Backend uvicorn --reload watches the entire /app/backend tree including /app/backend/tests. When the testing agent created /app/backend/tests/test_mesh_repair_and_auth.py, WatchFiles repeatedly restarted the worker mid-test, causing every public-URL request to time out for ~5 min. Workaround applied: moved the test file to /app/tests/. Suggest excluding the tests subdir from --reload-dir or configuring --reload-exclude='tests/*' in the supervisor command."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_mesh_repair_and_auth.py", "/app/test_reports/pytest/iter93_results.xml"],
+  "action_items": [
+    "(Optional) Adjust uvicorn --reload-exclude to ignore /app/backend/tests to prevent future testing agents triggering destabilising mid-test reloads.",
+    "Cube STL is already watertight so X-Repair-Output-Bytes == X-Repair-Input-Bytes (684). If you want stronger regression coverage of the close_holes branch (the part that exercises the new PercentageValue fix), add a deliberately holey STL fixture and assert output_bytes > input_bytes."
+  ],
+  "critical_code_review_comments": [
+    "routes/mesh_repair.py line 69: `_executor = ProcessPoolExecutor(max_workers=2)` is created at module import. If pymeshlab segfaults inside a child, the pool stays degraded and only `sudo supervisorctl restart backend` recovers it — consider wrapping each call in `with ProcessPoolExecutor(max_workers=1) as ex:` (one-shot worker) per the comment at line 67-68, or catch BrokenProcessPool and recreate _executor.",
+    "routes/mesh_repair.py line 152: `file: UploadFile = File(None)` with two-mode body parsing works, but if a client POSTs Content-Type: multipart/form-data WITHOUT a `file` field, the multipart parser will consume the body and `request.stream()` will yield empty — the 'Empty or truncated STL' 400 path covers it, but it's a subtle UX gotcha. Consider an explicit content-type check.",
+    "routes/mesh_repair.py line 180: `async for chunk in request.stream()` does not respect any reverse-proxy body-size limit; rely on the 50 MB guard which is good. Fine.",
+    "frontend/src/lib/auth.js: 12s timeout on /api/auth/me is reasonable for the bootstrap path; in this env the call returned in 200ms over public URL."
+  ],
+  "updated_files": ["/app/tests/test_mesh_repair_and_auth.py (created)"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "n/a (backend-only request)"},
+  "test_credentials": "Bearer SESSION_TOKEN=st_test_f9cb48812e2d4f29bd73d7bfef69aa1d (steve.shurts@gmail.com). Worked against both localhost:8001 and the public preview URL.",
+  "seed_data_creation": "None — used the pre-seeded session token from /app/memory/test_credentials.md and an in-test generated 684-byte binary STL cube fixture.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/tests/test_mesh_repair_and_auth.py (NOT under /app/backend/tests — that path triggers uvicorn --reload and breaks the suite). Pytest junit XML at /app/test_reports/pytest/iter93_results.xml. To re-run: `python -m pytest /app/tests/test_mesh_repair_and_auth.py -v`. If 401s on /api/auth/me, the SESSION_TOKEN may have expired — regenerate via the mongosh snippet in /app/memory/test_credentials.md and update the constant at the top of the test file.",
+  "rca of the issue": {
+    "original_bugs_under_test": [
+      "Bug A: Cloudflare WAF 403 on multipart STL upload to /api/mesh/repair. FIX applied to frontend (meshRepairApi.js now POSTs raw application/octet-stream) and backend (mesh_repair.py accepts both modes via `file: UploadFile = File(None)` + request.stream() fallback). Both modes verified 200 OK against the public URL — fix CONFIRMED.",
+      "Bug B: pymeshlab.AbsoluteValue AttributeError causing 500 on repair. FIX changed to pymeshlab.PercentageValue(1.0). Verified by 200 OK responses with valid binary STL output (header X-Repair-Output-Bytes=684, ntri parses as 12).",
+      "Bug C: Frontend 20s axios timeout exceeded during /api/auth/session callback. Verified at the network level: invalid /api/auth/session probe returns 401 in ~5.8s (matches backend's ~6s upstream retry budget), and /api/auth/me bearer probe returns 200 in <300ms — both well inside the new 45s/12s axios timeouts."
+    ],
+    "incidental_issue_during_test_run": "First pytest run had all 6 tests time out because creating the test file at /app/backend/tests/ triggered uvicorn --reload, which got wedged mid-shutdown (likely cascading reloads). Resolved by `sudo supervisorctl restart backend` and moving the test file to /app/tests/. Documented as a minor backend issue."
+  }
+}

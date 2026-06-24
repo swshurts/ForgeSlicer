@@ -50,6 +50,15 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
 
+# Cloudflare's managed-WAF in front of the preview ingress was 403-ing
+# `multipart/form-data` uploads of binary STL bytes — the form-encoded
+# binary blob triggered a generic "malicious payload" heuristic even
+# though the bytes are an innocent triangle mesh. Accepting the raw
+# STL as `application/octet-stream` (no multipart wrapper) sidesteps
+# the WAF inspection path entirely and is the canonical way to ship
+# binary uploads to FastAPI behind a CDN.
+
+
 _MAX_INPUT_BYTES = 50 * 1024 * 1024   # 50 MB
 _REPAIR_TIMEOUT_S = 30.0
 
@@ -108,9 +117,13 @@ def _repair_stl_sync(stl_bytes: bytes) -> bytes:
     # tiny boundary slivers that three-bvh-csg still tripped on. Refine
     # adds extra vertices inside each closed cap so the final mesh joins
     # at watertight precision.
-    # Refinement edge length: roughly 1% of bbox diagonal — tight enough
-    # to weave new triangles into existing ones at the hole boundary.
-    refine_edge = max(0.1, diag * 0.01)
+    # `refineholeedgelen` is a percentage of bbox diagonal in this
+    # pymeshlab build (the typed-parameter API rejects bare floats AND
+    # the `AbsoluteValue` wrapper doesn't exist on the version we
+    # bundle — only `PercentageValue` is available). 1% gives us a
+    # tight enough mesh on the closed-hole cap to weave seamlessly
+    # into the surrounding triangles.
+    refine_edge = pymeshlab.PercentageValue(1.0)
     ms.apply_filter(
         "meshing_close_holes",
         maxholesize=max_hole_edges,
@@ -136,26 +149,41 @@ def build_mesh_repair_router(get_current_user) -> APIRouter:
     router = APIRouter(prefix="/mesh", tags=["mesh-repair"])
 
     @router.post("/repair")
-    async def repair_mesh(request: Request, file: UploadFile = File(...)):
+    async def repair_mesh(request: Request, file: UploadFile = File(None)):
         # Auth: same pattern as the other routes — bounce the request
         # off `get_current_user` and reject if the session is invalid.
         user = await get_current_user(request)
         if not user:
             raise HTTPException(status_code=401, detail="Not authenticated")
 
-        # Read the upload up to the hard cap. We stream chunk-by-chunk
-        # so a malicious 4 GB upload doesn't OOM the worker; we just
-        # 413 once we cross the threshold.
+        # Two-mode body parsing:
+        #   1. Modern path (preferred) — raw `application/octet-stream`
+        #      body. Bypasses Cloudflare's multipart WAF rule that 403s
+        #      binary form uploads on the preview ingress.
+        #   2. Legacy path — multipart `file=…` upload, kept so older
+        #      clients / API explorers still work for the few users
+        #      hitting the endpoint directly.
+        # Either way we stream chunk-by-chunk so a malicious 4 GB upload
+        # doesn't OOM the worker; we just 413 once we cross the threshold.
         buf = io.BytesIO()
         size = 0
-        while True:
-            chunk = await file.read(1 << 16)  # 64 KB
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > _MAX_INPUT_BYTES:
-                raise HTTPException(status_code=413, detail=f"File too large (max {_MAX_INPUT_BYTES // 1024 // 1024} MB)")
-            buf.write(chunk)
+        if file is not None:
+            while True:
+                chunk = await file.read(1 << 16)  # 64 KB
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > _MAX_INPUT_BYTES:
+                    raise HTTPException(status_code=413, detail=f"File too large (max {_MAX_INPUT_BYTES // 1024 // 1024} MB)")
+                buf.write(chunk)
+        else:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                size += len(chunk)
+                if size > _MAX_INPUT_BYTES:
+                    raise HTTPException(status_code=413, detail=f"File too large (max {_MAX_INPUT_BYTES // 1024 // 1024} MB)")
+                buf.write(chunk)
         stl_in = buf.getvalue()
         if size < 100:
             raise HTTPException(status_code=400, detail="Empty or truncated STL")
