@@ -14,6 +14,65 @@
 
 export const RELEASE_NOTES = [
   {
+    version: "1.23.1",
+    date: "2026-03-15",
+    title: "Cut-plane Z-up fix · Dropped-cut warnings · Units consistency",
+    changes: [
+      { type: "fix", text: "Cut tool now slices on the correct axis. The cut-plane gizmo has always been drawn as a horizontal plane (Z-up CAD convention), but the manifold worker path was treating the plane as Y-normal — so on clean manifold meshes the cut sliced perpendicular to the wrong axis (a vertical slab instead of the horizontal plane you saw on screen). One-line fix in `manifoldEngine.cutObjectByPlaneAsync`; both engines now use +Z normal consistently." },
+      { type: "improvement", text: "STL Preview now surfaces dropped Boolean cuts. When the three-bvh-csg engine can't safely carve a negative through a non-manifold imported host (common with AI-generated / photogrammetry meshes), the carve used to silently disappear from the export. STL Preview now shows a prominent amber banner: \"N Boolean cuts were dropped — host is non-manifold\" with the names of the affected negatives, and a hint to repair the STL externally (Microsoft 3D Builder / Meshmixer / Blender's 3D Print Toolbox) before re-importing." },
+      { type: "fix", text: "Print Preview's Model volume now displays in mm³ (with comma separators) to match every other measurement in the workspace. The previous cm³ readout was the only stray imperial-to-metric oddity in the UI." },
+      { type: "improvement", text: "When the BVH boolean path receives a cube primitive with per-edge fillets (Edit Fillet panel), the carve now uses the real filleted cube geometry instead of a sharp BoxGeometry placeholder. This already worked on the manifold path; now matches behaviour on the fallback path." },
+    ],
+  },
+
+  {
+    version: "1.23.0",
+    date: "2026-03-12",
+    title: "Multi-Image AI → STL · Reverse-engineer from photos",
+    changes: [
+      { type: "feature", text: "Multi-Image AI generator — new third tab in the AI Generate dialog (alongside From Text / From Image). Upload 2–4 orthographic photos of a real object (Front · Side · Top · Extra) and Meshy AI fuses them into a single 3D mesh. The recommended setup is plain backgrounds, consistent lighting, and at least Front + Side. JPG / PNG / WebP up to 8 MB per slot." },
+      { type: "improvement", text: "AI usage quota now refunds correctly when the upstream Meshy API rejects a submission (degenerate input, transient outage). You won't lose a generation credit to a failed kick-off." },
+    ],
+  },
+
+  {
+    version: "1.22.2",
+    date: "2026-03-08",
+    title: "LithoForge inbox · Centre toasts",
+    changes: [
+      { type: "feature", text: "LithoForge → ForgeSlicer auto-import. Finish a lithophane on LithoForge.net and it lands in your ForgeSlicer inbox automatically — a toast pops up with the file name, shape, and size, and one click imports it onto the build plate (same code path as a drag-and-drop). Shared session means signing in once covers both apps." },
+      { type: "improvement", text: "All toast notifications are now centred at the top of the workspace instead of stacking in the top-right corner. The right rail (Inspector, Gallery, Send-to-OrcaSlicer) used to draw the eye away from notifications popping in over there." },
+    ],
+  },
+
+  {
+    version: "1.22.1",
+    date: "2026-03-05",
+    title: "Single-face wrap · Mesh detail · Lithophane preset · Per-face picker",
+    changes: [
+      { type: "feature", text: "Per-face image picker (cubes) — new \"Per-face\" wrap mode in the Texture Library. A cube-net layout (Top / Left / Front / Right / Back / Bottom) lets you pick a different texture for each face independently. Empty slots stay flat. Seams between two textured faces still close cleanly thanks to the existing edge-stitching pass." },
+      { type: "feature", text: "Single-face wrap — texture-library dialog now exposes a \"Apply to: All 6 faces / Top / Bottom / Right / Left / Front / Back\" selector for cubes. Pick the face you actually want raised relief on (the \"display side\") and the other five stay flat — drastically smaller STLs when you only need detail on one panel." },
+      { type: "feature", text: "Mesh-detail toggle — Draft / Standard / High button row on every wrap. Scales the per-axis segment count by 0.35× / 0.65× / 1.0×, letting you trade STL size for surface fidelity without re-uploading the source image." },
+      { type: "feature", text: "Lithophane preset — sparkle ✨ button in the Texture dialog header. One click sets the wrap to: custom image source, stretch fit, invert ON, 3 mm height, positive modifier. Tuned for back-lit prints — slots straight into the LithoForge.net workflow." },
+    ],
+  },
+
+  {
+    version: "1.22.0",
+    date: "2026-03-01",
+    title: "Texture system v3 — heightmap rewrite · custom image uploads · cube edge fix",
+    changes: [
+      { type: "feature", text: "Upload your own image as a texture. The Texture Library now has a \"My Textures\" tab — drag-and-drop or pick any PNG / JPG / WebP up to 8 MB and it becomes a printable height-relief texture, persisted per-account. Built-in patterns (knurl / hex / bumps / brick / fabric / hex-camo / voronoi / linear ridges / diamond plate) now run through the same pipeline so coverage and fidelity match. 9 patterns × any uploaded image, on any sphere / cube / cylinder / cone surface." },
+      { type: "improvement", text: "Texture-wrap pipeline rebuilt around a universal heightmap source (Canvas2D-rasterised, 512×512). Previous versions used a 3D-pattern-to-heightmap rasteriser that collapsed dense patterns to flat planes. Hex / bumps / brick now cover the full surface with proper anti-aliased relief; custom images come out right-side-up (V-axis flip fixed)." },
+      { type: "improvement", text: "Mesh resolution bumped — cube wraps now sample up to 200 segments per axis (was 128), sphere/cylinder/cone up to 192–256. Fine features survive that previously read as rough chunks." },
+      { type: "fix", text: "Cube edges no longer show triangular dark gaps where the heightmap silhouette used to peek through. BoxGeometry produces separate vertices per face — every shared edge had two coincident copies that displaced in different directions. The wrap pass now displaces each coincident vertex by the SUM of contributions from every face it touches, so duplicates land at the same final position. No more gaps on knurl / voronoi / hex on a cube." },
+      { type: "fix", text: "Negative-wrap textures no longer collapse into floating face plates on the bed. The sphere / cylinder / cone displacement formula was applying a uniform inflation/deflation by ~0.8 mm before adding relief, so engraved features read against an already-shrunken surface (10–15 % coverage). Surfaces now stay at their original silhouette where the pattern is empty, so engraved relief reads cleanly." },
+      { type: "improvement", text: "Texture-Library 401 fix — \"My Textures\" tab no longer floods the console with auth errors. The Custom Textures API now uses the shared cookie-aware backend resolver, and a clean sign-in banner appears in the My Textures grid if the session lapses (instead of red error stacks)." },
+      { type: "improvement", text: "Right-click → \"Apply texture to face…\" on any object opens the Texture Library auto-sized to that face. The dropped texture is positioned flush against the chosen face with rotation aligned to the face normal, and an opt-in \"Bake into the part on drop\" checkbox (default ON) merges the texture into the host via Boolean — one click from object to textured object." },
+    ],
+  },
+
+  {
     version: "1.21.0",
     date: "2026-02-28",
     title: "Wrap to surface · 5 new textures · UNC/UNF · Composite expansion",
