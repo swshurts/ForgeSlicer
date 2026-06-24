@@ -164,7 +164,7 @@ export default function STLPreviewDialog({ open, onClose }) {
                 {dropped.length === 1 ? "1 Boolean cut was dropped" : `${dropped.length} Boolean cuts were dropped`}
               </div>
               <div>
-                The host mesh is non-manifold (open edges / self-intersections), so the boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>. Repair the STL externally first — Microsoft 3D Builder, Meshmixer, or Blender's "3D Print Toolbox → Make Manifold" all work in a couple of clicks — then re-import.
+                The host mesh is non-manifold (open edges / self-intersections), so the boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>. Select the host in the Outliner, click the green <strong>Repair Mesh</strong> button on its Inspector, then reopen this preview. MeshLab will close holes and fix non-manifold edges so the carve goes through cleanly.
               </div>
             </div>
           )}

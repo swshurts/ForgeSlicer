@@ -28,6 +28,7 @@ from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
 from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
+from routes.mesh_repair import build_mesh_repair_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
 from routes.realtime import router as realtime_router
 
@@ -506,6 +507,12 @@ api_router.include_router(build_custom_textures_router(db, get_current_user))
 # and auto-imports onto the build plate the next time they open ForgeSlicer.
 # File payloads go through GridFS so the 16MB BSON limit doesn't bite.
 api_router.include_router(build_litho_inbox_router(db, get_current_user))
+
+# Server-side mesh repair via MeshLab. /api/mesh/repair takes an STL
+# upload and returns a repaired (watertight, manifold) STL. Used by
+# the Repair Mesh button on the Imported Inspector to rescue
+# non-manifold AI / photogrammetry meshes before Boolean ops.
+api_router.include_router(build_mesh_repair_router(get_current_user))
 
 # Per-user custom printer definitions — /api/me/printers/* (auth-required).
 # Lets users register printers not in OrcaSlicer's bundled preset library

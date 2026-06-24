@@ -85,6 +85,7 @@ pydantic_core==2.46.4
 pyflakes==3.4.0
 Pygments==2.20.0
 PyJWT==2.12.1
+pymeshlab==2025.7.post1
 pymongo==4.5.0
 pyparsing==3.3.2
 pypdf==6.12.2

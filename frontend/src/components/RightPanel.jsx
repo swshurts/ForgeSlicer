@@ -11,11 +11,13 @@ import SweepInspectorBlock from "./SweepInspectorBlock";
 import EdgeControls from "./inspector/EdgeControls";
 import AutoSaveSection from "./inspector/AutoSaveSection";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
 import { toast } from "sonner";
+import { repairMeshOnServer } from "../lib/meshRepairApi";
+import { geometryToSTLBinary } from "../lib/exporters";
 
 // iter-100.8 — Alphabetical, accordion-grouped printer picker. Replaces
 // the native <select>+<optgroup> with a Popover-driven UI so each brand
@@ -616,6 +618,13 @@ function Inspector() {
   const layFlatSelection = useScene((s) => s.layFlatSelection);
   const setColorIndex = useScene((s) => s.setColorIndex);
 
+  // Repair Mesh — POSTs the host's STL to /api/mesh/repair, MeshLab
+  // closes holes / fixes non-manifold edges / vertices, repaired STL
+  // comes back and we swap obj.geometry in place. Hook lives ABOVE the
+  // early return because hooks must be called in the same order every
+  // render — moving it below the `if (!obj) return` violates rules-of-hooks.
+  const [repairBusy, setRepairBusy] = useState(false);
+
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj) {
     return (
@@ -624,6 +633,70 @@ function Inspector() {
       </Section>
     );
   }
+
+  const handleRepairMesh = async () => {
+    if (repairBusy || obj.type !== "imported" || !obj.geometry) return;
+    setRepairBusy(true);
+    const t0 = performance.now();
+    try {
+      // Reconstruct a BufferGeometry from the stored vertices/indices,
+      // export to binary STL, ship to the backend.
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(obj.geometry.vertices), 3));
+      if (obj.geometry.indices) {
+        g.setIndex(new THREE.BufferAttribute(new Uint32Array(obj.geometry.indices), 1));
+      }
+      g.computeVertexNormals();
+      const stlDV = geometryToSTLBinary(g);
+      const stlBytes = new Uint8Array(stlDV.buffer, stlDV.byteOffset, stlDV.byteLength);
+
+      const inputTris = (obj.geometry.indices ? obj.geometry.indices.length : obj.geometry.vertices.length / 3) / 3;
+      const { bytes: repairedStl, elapsedSec } = await repairMeshOnServer(stlBytes);
+
+      // Parse the repaired binary STL → BufferGeometry → typed arrays.
+      const dv = new DataView(repairedStl.buffer, repairedStl.byteOffset, repairedStl.byteLength);
+      const triCount = dv.getUint32(80, true);
+      const positions = new Float32Array(triCount * 9);
+      let off = 84;
+      for (let i = 0; i < triCount; i++) {
+        off += 12;  // skip normal
+        for (let v = 0; v < 9; v++) {
+          positions[i * 9 + v] = dv.getFloat32(off, true);
+          off += 4;
+        }
+        off += 2;   // attribute byte count
+      }
+      const repaired = new THREE.BufferGeometry();
+      repaired.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      // Merge duplicate verts so the geometry is indexed (smaller payload).
+      const { mergeVertices } = await import("three/examples/jsm/utils/BufferGeometryUtils.js");
+      const merged = mergeVertices(repaired, 1e-4);
+      merged.computeVertexNormals();
+      merged.computeBoundingBox();
+      const bb = merged.boundingBox;
+      const newBbox = { x: bb.max.x - bb.min.x, y: bb.max.y - bb.min.y, z: bb.max.z - bb.min.z };
+      const verts = merged.attributes.position.array;
+      const idx = merged.index ? merged.index.array : null;
+
+      updateObject(obj.id, {
+        geometry: {
+          vertices: Array.from(verts),
+          indices: idx ? Array.from(idx) : null,
+        },
+        originalBbox: newBbox,
+      });
+
+      const totalElapsed = ((performance.now() - t0) / 1000).toFixed(1);
+      toast.success(
+        `Mesh repaired — ${inputTris | 0} → ${(idx ? idx.length / 3 : verts.length / 9) | 0} tris (MeshLab ${elapsedSec.toFixed(1)}s, total ${totalElapsed}s)`,
+        { duration: 5000 }
+      );
+    } catch (err) {
+      toast.error(`Repair failed: ${err.message || err}`, { duration: 6000 });
+    } finally {
+      setRepairBusy(false);
+    }
+  };
 
   return (
     <Section title={`Inspector — ${obj.type}`} icon={Sliders} testid="inspector">
@@ -680,6 +753,24 @@ function Inspector() {
           <Layers size={13} /> Lay Flat
         </button>
       </div>
+
+      {obj.type === "imported" && obj.geometry && (
+        <div className="space-y-1.5" data-testid="repair-mesh-block">
+          <button
+            data-testid="repair-mesh-btn"
+            onClick={handleRepairMesh}
+            disabled={repairBusy}
+            className="w-full h-8 bg-emerald-600/90 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-emerald-400/40"
+            title="Repair this mesh via MeshLab (same engine as Microsoft 3D Builder). Closes holes, fixes non-manifold edges & vertices, removes duplicates. Use when STL Preview warned that a Boolean cut was dropped because the host is non-manifold. Typical round-trip: 5–20 seconds."
+          >
+            {repairBusy ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
+            {repairBusy ? "Repairing via MeshLab…" : "Repair Mesh"}
+          </button>
+          <p className="text-[10px] text-slate-500 leading-snug">
+            Server-side MeshLab repair. Closes hairline holes, fixes non-manifold edges and vertices, and removes duplicate geometry. Use this when STL Preview reports a dropped Boolean cut.
+          </p>
+        </div>
+      )}
 
       {obj.modifier !== "negative" && (
         <div data-testid="inspector-color-picker">
