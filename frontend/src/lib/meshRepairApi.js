@@ -43,7 +43,23 @@ export async function repairMeshOnServer(stlBytes) {
 
   const inputBytes = Number(res.headers.get("X-Repair-Input-Bytes")) || 0;
   const outputBytes = Number(res.headers.get("X-Repair-Output-Bytes")) || 0;
+  const inputTris = Number(res.headers.get("X-Repair-Input-Tris")) || 0;
+  const outputTris = Number(res.headers.get("X-Repair-Output-Tris")) || 0;
   const elapsedSec = Number(res.headers.get("X-Repair-Elapsed-Seconds")) || 0;
+  // PyMeshFix promises 2-manifold output, but trimesh verifies that on
+  // the backend and surfaces the answer here. If `watertight=false` the
+  // repair didn't fully heal the mesh — caller should warn the user.
+  const watertight = res.headers.get("X-Repair-Watertight") === "true";
+  const windingConsistent = res.headers.get("X-Repair-Winding-Consistent") === "true";
   const ab = await res.arrayBuffer();
-  return { bytes: new Uint8Array(ab), inputBytes, outputBytes, elapsedSec };
+  return {
+    bytes: new Uint8Array(ab),
+    inputBytes,
+    outputBytes,
+    inputTris,
+    outputTris,
+    elapsedSec,
+    watertight,
+    windingConsistent,
+  };
 }

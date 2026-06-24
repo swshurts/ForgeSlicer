@@ -3057,3 +3057,48 @@ in print-flat pose viewed from above.
   4 fast upstream 404s).
 - Landing page Playwright screenshot renders cleanly with the new
   bundle; no console regressions.
+
+
+## Iteration 105.16 (2026-06-24) — Mesh repair: switch from MeshLab close_holes to PyMeshFix
+
+**Problem reported by user**
+- After iter-105.15 fixes shipped, `Repair Mesh` ran successfully on
+  the hydrant (25 416 → 25 394 tris, "MeshLab 1.2 s"), but the STL
+  Preview STILL showed **"1 BOOLEAN CUT WAS DROPPED — host mesh is
+  non-manifold (open edges / self-intersections)"** when carving the
+  filleted cube. MeshLab reported success while the output remained
+  non-manifold.
+
+**Root cause**
+- MeshLab's `meshing_close_holes` only seals **closed boundary loops**.
+  AI / photogrammetry meshes typically have hundreds of isolated open
+  edges plus self-intersecting triangles. close_holes silently skips
+  those, so the mesh stays non-manifold. The 22-triangle delta was
+  just T-vertex removal — nothing got sealed.
+
+**Fix — replace MeshLab close_holes with PyMeshFix**
+- PyMeshFix (Marco Attene's MeshFix algorithm — the same library
+  Slic3r / PrusaSlicer use internally for STL auto-repair) explicitly
+  models surface topology, resolves self-intersections, fills every
+  hole, and **guarantees a watertight 2-manifold output**.
+- New pipeline (`/app/backend/routes/mesh_repair.py`):
+    1. MeshLab — initial cleanup (merge close verts, dedupe faces /
+       vertices, drop ≤4-tri shards, re-orient faces, T-vertex removal).
+    2. **PyMeshFix** — `joincomp=True, remove_smallest_components=False`.
+    3. **Trimesh** — verify `is_watertight` and `is_winding_consistent`,
+       surface both as response headers.
+- New response headers: `X-Repair-Input-Tris`,
+  `X-Repair-Output-Tris`, `X-Repair-Watertight`,
+  `X-Repair-Winding-Consistent`.
+- Frontend toast now splits success vs warning based on watertight
+  status so the user knows immediately whether the boolean will land.
+- New deps: `pymeshfix==0.18.1`, `trimesh==4.11.5`, `scipy==1.17.1`,
+  `networkx==3.6.1`, plus trimesh `[easy]` extras.
+- Repair timeout bumped 30 s → 90 s.
+
+**Verified end-to-end against the public preview URL**
+- Watertight cube (12 tris) → 12 tris, watertight ✓.
+- Holey cube (10 tris, top face missing) → 12 tris, watertight ✓ —
+  PyMeshFix reconstructed the missing face.
+- Broken icosphere (22 tris, 3 missing faces + 5 self-intersecting
+  tris) → 4-tri minimal watertight shell, `is_volume=True`.

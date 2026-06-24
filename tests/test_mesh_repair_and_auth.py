@@ -154,3 +154,98 @@ class TestMeshRepairMultipart:
         assert "X-Repair-Output-Bytes" in r.headers
         ntri = struct.unpack("<I", r.content[80:84])[0]
         assert ntri >= 12
+
+
+# ---------------- iteration 105.16: PyMeshFix watertight pipeline ----------------
+# These tests verify the new X-Repair-Watertight + X-Repair-Winding-Consistent
+# headers and the actual trimesh-level manifold guarantee that maps to the
+# user's dropped-boolean-cut bug.
+
+def _load_fixture(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
+
+
+class TestMeshRepairWatertight:
+    def test_watertight_cube_roundtrip(self):
+        """12-tri cube in → watertight 12-tri cube out, all manifold headers true."""
+        stl = _load_fixture("/tmp/cube.stl")
+        r = requests.post(
+            f"{BASE_URL}/api/mesh/repair",
+            data=stl,
+            headers={**AUTH_HEADERS, "Content-Type": "application/octet-stream"},
+            timeout=120,
+        )
+        assert r.status_code == 200, f"got {r.status_code}: {r.text[:300]}"
+        # New headers
+        assert r.headers.get("X-Repair-Input-Tris") == "12", r.headers.get("X-Repair-Input-Tris")
+        assert r.headers.get("X-Repair-Output-Tris") == "12", r.headers.get("X-Repair-Output-Tris")
+        assert r.headers.get("X-Repair-Watertight") == "true"
+        assert r.headers.get("X-Repair-Winding-Consistent") == "true"
+        # Approx 684 bytes for 12-tri binary STL
+        assert 600 <= len(r.content) <= 800, f"unexpected size {len(r.content)}"
+
+        # End-to-end: parse with trimesh and verify is_watertight & is_volume
+        import trimesh, io
+        m = trimesh.load(io.BytesIO(r.content), file_type="stl", force="mesh")
+        assert m.is_watertight is True, "trimesh says repaired cube is NOT watertight"
+        assert m.is_volume is True, "trimesh says repaired cube is NOT a closed volume"
+        assert m.is_winding_consistent is True
+
+    def test_holey_cube_reconstructed(self):
+        """10-tri cube w/ +Z face missing → PyMeshFix reconstructs to 12 tris, watertight."""
+        stl = _load_fixture("/tmp/holey_cube.stl")
+        r = requests.post(
+            f"{BASE_URL}/api/mesh/repair",
+            data=stl,
+            headers={**AUTH_HEADERS, "Content-Type": "application/octet-stream"},
+            timeout=120,
+        )
+        assert r.status_code == 200, f"got {r.status_code}: {r.text[:300]}"
+        assert r.headers.get("X-Repair-Input-Tris") == "10"
+        out_tris = int(r.headers.get("X-Repair-Output-Tris", 0))
+        assert out_tris == 12, f"expected 12 reconstructed tris, got {out_tris}"
+        assert r.headers.get("X-Repair-Watertight") == "true"
+        assert r.headers.get("X-Repair-Winding-Consistent") == "true"
+
+        import trimesh, io
+        m = trimesh.load(io.BytesIO(r.content), file_type="stl", force="mesh")
+        assert m.is_watertight is True
+        assert m.is_volume is True
+
+    def test_broken_sphere_repaired_to_watertight(self):
+        """22-tri pathological broken icosphere → MUST be watertight,
+        triangle count is allowed to drop (PyMeshFix can produce a minimal shell)."""
+        stl = _load_fixture("/tmp/broken_sphere.stl")
+        r = requests.post(
+            f"{BASE_URL}/api/mesh/repair",
+            data=stl,
+            headers={**AUTH_HEADERS, "Content-Type": "application/octet-stream"},
+            timeout=120,
+        )
+        assert r.status_code == 200, f"got {r.status_code}: {r.text[:300]}"
+        assert r.headers.get("X-Repair-Watertight") == "true", \
+            f"broken sphere repair was NOT watertight: headers={dict(r.headers)}"
+        assert r.headers.get("X-Repair-Winding-Consistent") == "true"
+        out_tris = int(r.headers.get("X-Repair-Output-Tris", 0))
+        assert out_tris >= 4, f"output must have at least a minimal shell, got {out_tris}"
+
+        import trimesh, io
+        m = trimesh.load(io.BytesIO(r.content), file_type="stl", force="mesh")
+        assert m.is_watertight is True
+        assert m.is_volume is True
+
+    def test_multipart_fallback_watertight_headers(self):
+        """Legacy multipart path must also surface the new manifold headers."""
+        stl = _load_fixture("/tmp/cube.stl")
+        r = requests.post(
+            f"{BASE_URL}/api/mesh/repair",
+            files={"file": ("cube.stl", stl, "application/sla")},
+            headers=AUTH_HEADERS,
+            timeout=120,
+        )
+        assert r.status_code == 200, f"got {r.status_code}: {r.text[:300]}"
+        assert r.headers.get("X-Repair-Input-Tris") == "12"
+        assert r.headers.get("X-Repair-Output-Tris") == "12"
+        assert r.headers.get("X-Repair-Watertight") == "true"
+        assert r.headers.get("X-Repair-Winding-Consistent") == "true"

@@ -651,7 +651,12 @@ function Inspector() {
       const stlBytes = new Uint8Array(stlDV.buffer, stlDV.byteOffset, stlDV.byteLength);
 
       const inputTris = (obj.geometry.indices ? obj.geometry.indices.length : obj.geometry.vertices.length / 3) / 3;
-      const { bytes: repairedStl, elapsedSec } = await repairMeshOnServer(stlBytes);
+      const {
+        bytes: repairedStl,
+        elapsedSec,
+        watertight,
+        windingConsistent,
+      } = await repairMeshOnServer(stlBytes);
 
       // Parse the repaired binary STL → BufferGeometry → typed arrays.
       const dv = new DataView(repairedStl.buffer, repairedStl.byteOffset, repairedStl.byteLength);
@@ -687,10 +692,25 @@ function Inspector() {
       });
 
       const totalElapsed = ((performance.now() - t0) / 1000).toFixed(1);
-      toast.success(
-        `Mesh repaired — ${inputTris | 0} → ${(idx ? idx.length / 3 : verts.length / 9) | 0} tris (MeshLab ${elapsedSec.toFixed(1)}s, total ${totalElapsed}s)`,
-        { duration: 5000 }
-      );
+      const outTris = (idx ? idx.length / 3 : verts.length / 9) | 0;
+      // Surface the manifold status — this is the metric that actually
+      // determines whether downstream booleans will succeed. A "repair"
+      // that doesn't yield a watertight mesh is a half-fix and the user
+      // needs to know so they don't keep retrying the same boolean.
+      if (watertight && windingConsistent) {
+        toast.success(
+          `Mesh repaired & watertight — ${inputTris | 0} → ${outTris} tris (MeshFix ${elapsedSec.toFixed(1)}s, total ${totalElapsed}s)`,
+          { duration: 6000 }
+        );
+      } else {
+        const issues = [];
+        if (!watertight) issues.push("still has open edges");
+        if (!windingConsistent) issues.push("inconsistent face winding");
+        toast.warning(
+          `Mesh partially repaired — ${inputTris | 0} → ${outTris} tris, but ${issues.join(" and ")}. Boolean cuts may still drop. Try simplifying the mesh first.`,
+          { duration: 10000 }
+        );
+      }
     } catch (err) {
       toast.error(`Repair failed: ${err.message || err}`, { duration: 6000 });
     } finally {

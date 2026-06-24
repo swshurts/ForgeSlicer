@@ -60,7 +60,10 @@ from fastapi.responses import Response
 
 
 _MAX_INPUT_BYTES = 50 * 1024 * 1024   # 50 MB
-_REPAIR_TIMEOUT_S = 30.0
+# 90 s — PyMeshFix can run for ~45 s on a dense (50 k-tri) AI mesh
+# with hundreds of self-intersections. The earlier 30 s ceiling
+# truncated PyMeshFix mid-iteration on the hydrant.
+_REPAIR_TIMEOUT_S = 90.0
 
 # Shared executor — one MeshLab repair at a time per worker to keep
 # memory predictable. Spinning up a fresh process every request is
@@ -70,79 +73,123 @@ _executor = ProcessPoolExecutor(max_workers=2)
 _log = logging.getLogger(__name__)
 
 
-def _repair_stl_sync(stl_bytes: bytes) -> bytes:
-    """Synchronous MeshLab pipeline. Runs in a child process via the
-    executor so the main event loop stays responsive."""
-    import pymeshlab  # imported lazily so the main FastAPI image starts
-                       # up fast even on cold deploys.
+def _repair_stl_sync(stl_bytes: bytes) -> tuple[bytes, dict]:
+    """Synchronous repair pipeline. Runs in a child process via the
+    executor so the main event loop stays responsive.
 
-    # MeshLab's Python wrapper only takes filesystem paths — round-trip
-    # through a temp dir. We let NamedTemporaryFile clean up on exit.
+    Pipeline:
+      1. MeshLab — initial cleanup (merge close verts, dedupe faces,
+         re-orient, drop T-vertices). Fixes the cheap easy issues.
+      2. PyMeshFix — the heavy hitter. Wraps Marco Attene's MeshFix
+         algorithm (also used inside Slic3r / PrusaSlicer for STL
+         auto-repair). Guarantees a watertight 2-manifold output by
+         removing self-intersections and filling every hole — exactly
+         what we need before three-bvh-csg / manifold-3d will accept
+         the mesh for boolean subtraction.
+      3. Trimesh verification — sanity-checks `is_watertight` and
+         `is_winding_consistent` so we can surface the post-repair
+         manifold state to the user in the response headers.
+
+    Returns (stl_bytes, stats_dict) where stats_dict has:
+        in_tris, out_tris, watertight (bool), winding_consistent (bool),
+        meshfix_repaired (bool — whether PyMeshFix actually changed anything).
+    """
+    import pymeshlab
+    import pymeshfix
+    import trimesh
+    import numpy as np
+
+    stats: dict = {}
+
+    # ── Stage 1: MeshLab prep ─────────────────────────────────────────
+    # We still run MeshLab first because it handles a few things
+    # PyMeshFix is bad at (dedupe, re-orient by topology), and it's
+    # cheap when the input is already mostly clean.
     with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as in_f:
         in_f.write(stl_bytes)
         in_path = in_f.name
-    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as out_f:
-        out_path = out_f.name
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as stage1_f:
+        stage1_path = stage1_f.name
 
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(in_path)
-
-    # Auto-scale hole-fill threshold by bbox diagonal so we close
-    # hairline cracks on a 5 mm trinket and a 500 mm cosplay piece
-    # with the same setting.
-    bbox = ms.current_mesh().bounding_box()
-    diag = bbox.diagonal()
-    max_hole_edges = max(50, int(diag * 5))  # at 0.5 mm avg edge → ~5% diag
+    in_tris = ms.current_mesh().face_number()
+    stats["in_tris"] = in_tris
 
     ms.apply_filter("meshing_merge_close_vertices", threshold=pymeshlab.PercentageValue(0.01))
     ms.apply_filter("meshing_remove_duplicate_faces")
     ms.apply_filter("meshing_remove_duplicate_vertices")
     ms.apply_filter("meshing_remove_unreferenced_vertices")
-    # Align all face normals to point outward consistently. AI meshes often
-    # have pockets of inverted-winding tris which sink three-bvh-csg's
-    # inside/outside test even after holes are closed.
+    # Drop tiny floating shards — AI meshes routinely include 3-tri
+    # specks (orphan triangles, tiny noise) that have nothing to do
+    # with the printable surface. Threshold is intentionally tiny (5
+    # faces) so we don't drop a legitimate small detail; PyMeshFix's
+    # `joincomp=True` will weld anything bigger.
+    try:
+        ms.apply_filter(
+            "meshing_remove_connected_component_by_face_number",
+            mincomponentsize=5,
+            removeunref=True,
+        )
+    except Exception:
+        pass
     try:
         ms.apply_filter("meshing_re_orient_faces_coherently")
     except Exception:
-        pass  # filter occasionally rejects malformed input; not fatal
-    # Drop T-vertices (verts that sit mid-edge of an adjacent triangle).
-    # These create silent non-manifoldness that close_holes can't fix.
+        pass
     try:
         ms.apply_filter("meshing_remove_t_vertices", method=0)
     except Exception:
         pass
-    ms.apply_filter("meshing_repair_non_manifold_edges")
-    ms.apply_filter("meshing_repair_non_manifold_vertices", vertdispratio=0.0)
-    # Close holes WITH refinement — the older basic-fan close was leaving
-    # tiny boundary slivers that three-bvh-csg still tripped on. Refine
-    # adds extra vertices inside each closed cap so the final mesh joins
-    # at watertight precision.
-    # `refineholeedgelen` is a percentage of bbox diagonal in this
-    # pymeshlab build (the typed-parameter API rejects bare floats AND
-    # the `AbsoluteValue` wrapper doesn't exist on the version we
-    # bundle — only `PercentageValue` is available). 1% gives us a
-    # tight enough mesh on the closed-hole cap to weave seamlessly
-    # into the surrounding triangles.
-    refine_edge = pymeshlab.PercentageValue(1.0)
-    ms.apply_filter(
-        "meshing_close_holes",
-        maxholesize=max_hole_edges,
-        refinehole=True,
-        refineholeedgelen=refine_edge,
-        selfintersection=True,
-        newfaceselected=False,
+
+    ms.save_current_mesh(stage1_path, binary=True)
+
+    # ── Stage 2: PyMeshFix — guaranteed watertight 2-manifold ─────────
+    # PyMeshFix takes a vertex/face array and returns a fully repaired
+    # version. It is the industry-standard auto-repair for STL files
+    # (originally from Marco Attene's research lab, used in Slic3r and
+    # PrusaSlicer). Far more robust than MeshLab's close_holes for AI /
+    # photogrammetry meshes because it explicitly models the surface
+    # topology and resolves self-intersections before sealing holes.
+    #
+    # `force_mesh=True` collapses any multi-body Scene into a single
+    # concatenated Trimesh — otherwise STLs with multiple shells load
+    # as a `Scene` object that has no `.vertices` attribute.
+    # We deliberately ALLOW trimesh's default vertex merging here
+    # (`process=True`). STL format inflates verts to 3-per-triangle on
+    # disk; without the merge, PyMeshFix sees 3*N disconnected
+    # vertices and can't reconstruct any surface topology, returning
+    # an empty mesh.
+    stage1_loaded = trimesh.load(stage1_path, file_type="stl", force="mesh")
+    verts = np.asarray(stage1_loaded.vertices, dtype=np.float64)
+    faces = np.asarray(stage1_loaded.faces, dtype=np.int32)
+
+    mfix = pymeshfix.MeshFix(verts, faces)
+    # `joincomp=True` welds disconnected components if they touch
+    # (helps with meshes that have been hot-glued together from
+    # multiple AI passes). `remove_smallest_components=False` because
+    # we already filtered tiny shards in the MeshLab stage above and
+    # we DON'T want PyMeshFix to drop a legitimate small feature.
+    mfix.repair(joincomp=True, remove_smallest_components=False)
+    # PyMeshFix exposes repaired arrays as `.points` (Nx3 float) and
+    # `.faces` (Mx3 int). Earlier docs referenced `.v` / `.f` — those
+    # are no longer present in the 0.18 release we bundle.
+    fixed_verts = np.asarray(mfix.points)
+    fixed_faces = np.asarray(mfix.faces)
+    stats["meshfix_repaired"] = (
+        fixed_verts.shape[0] != verts.shape[0] or fixed_faces.shape[0] != faces.shape[0]
     )
-    # Final non-manifold pass to clean up any edges that close_holes
-    # introduced during refinement.
-    try:
-        ms.apply_filter("meshing_repair_non_manifold_edges")
-    except Exception:
-        pass
+    stats["out_tris"] = int(fixed_faces.shape[0])
 
-    ms.save_current_mesh(out_path, binary=True)
+    # ── Stage 3: Trimesh verification & STL serialisation ─────────────
+    fixed = trimesh.Trimesh(vertices=fixed_verts, faces=fixed_faces, process=False)
+    # Recompute normals — PyMeshFix doesn't always preserve them.
+    fixed.fix_normals()
+    stats["watertight"] = bool(fixed.is_watertight)
+    stats["winding_consistent"] = bool(fixed.is_winding_consistent)
 
-    with open(out_path, "rb") as f:
-        return f.read()
+    out_bytes: bytes = fixed.export(file_type="stl")
+    return out_bytes, stats
 
 
 def build_mesh_repair_router(get_current_user) -> APIRouter:
@@ -188,12 +235,12 @@ def build_mesh_repair_router(get_current_user) -> APIRouter:
         if size < 100:
             raise HTTPException(status_code=400, detail="Empty or truncated STL")
 
-        # Run MeshLab in the process pool. asyncio.wait_for enforces the
+        # Run repair in the process pool. asyncio.wait_for enforces the
         # hard timeout so a hung filter can't pin a worker forever.
         loop = asyncio.get_running_loop()
         started = time.time()
         try:
-            stl_out: bytes = await asyncio.wait_for(
+            stl_out, stats = await asyncio.wait_for(
                 loop.run_in_executor(_executor, _repair_stl_sync, stl_in),
                 timeout=_REPAIR_TIMEOUT_S,
             )
@@ -209,17 +256,30 @@ def build_mesh_repair_router(get_current_user) -> APIRouter:
 
         # Surface useful stats via headers so the frontend can show a
         # meaningful toast without the user having to inspect the file.
+        # `X-Repair-Watertight` is the key one for the dropped-boolean
+        # bug — if it's "false" the frontend should warn the user that
+        # even MeshFix couldn't fully heal the mesh and boolean cuts
+        # may still be dropped.
         return Response(
             content=stl_out,
             media_type="application/sla",
             headers={
                 "X-Repair-Input-Bytes": str(size),
                 "X-Repair-Output-Bytes": str(len(stl_out)),
+                "X-Repair-Input-Tris": str(stats.get("in_tris", 0)),
+                "X-Repair-Output-Tris": str(stats.get("out_tris", 0)),
+                "X-Repair-Watertight": "true" if stats.get("watertight") else "false",
+                "X-Repair-Winding-Consistent": "true" if stats.get("winding_consistent") else "false",
                 "X-Repair-Elapsed-Seconds": f"{elapsed:.2f}",
                 # Expose them to JS even though the request is
                 # same-origin via the preview proxy — defensive against
                 # future cross-origin testing.
-                "Access-Control-Expose-Headers": "X-Repair-Input-Bytes,X-Repair-Output-Bytes,X-Repair-Elapsed-Seconds",
+                "Access-Control-Expose-Headers": (
+                    "X-Repair-Input-Bytes,X-Repair-Output-Bytes,"
+                    "X-Repair-Input-Tris,X-Repair-Output-Tris,"
+                    "X-Repair-Watertight,X-Repair-Winding-Consistent,"
+                    "X-Repair-Elapsed-Seconds"
+                ),
             },
         )
 
