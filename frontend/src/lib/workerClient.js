@@ -152,10 +152,43 @@ export async function exportSTLBytesAsync(objects) {
 }
 
 export async function export3MFBytesAsync(objects) {
+  // Iter-105.17 — auto-route to modifier-mesh export when the CSG
+  // engine would silently drop negatives because an imported (AI /
+  // photogrammetry) host is non-manifold. The modifier-mesh path
+  // emits host + negatives as separate volumes inside a Slic3r-style
+  // 3MF; the downstream slicer (PrusaSlicer / OrcaSlicer / Bambu
+  // Studio) does the carve at slice time using its own (much more
+  // robust) CSG. This is the official 3MF/Prusa recommendation for
+  // hobbyist STL input.
+  //
+  // Heuristic: if the scene contains BOTH (a) a visible imported
+  // positive AND (b) a visible negative, use modifier-mesh export.
+  // Native primitives (cube, sphere, cylinder, etc.) plus our own
+  // SVG / sweep / pipe meshes are always manifold, so the regular
+  // CSG path is safe — we don't penalise those projects by losing
+  // the merged single-mesh output the slicer prefers.
+  const visible = (objects || []).filter((o) => o.visible !== false);
+  const hasImportedPositive = visible.some(
+    (o) => o.type === "imported" && o.modifier !== "negative",
+  );
+  const hasNegative = visible.some((o) => o.modifier === "negative");
+  if (hasImportedPositive && hasNegative) {
+    const { exportSceneToModifier3MFBytes } = await import("./exporters");
+    const r = await exportSceneToModifier3MFBytes(objects);
+    return {
+      bytes: r.bytes,
+      parts: r.parts,
+      multicolor: false,
+      modifierMesh: true,
+      positiveCount: r.positiveCount,
+      negativeCount: r.negativeCount,
+    };
+  }
+
   const p = runOnWorker("threemf-bytes", { objects });
   if (p) return p;
   // Main-thread fallback: mirror the worker's multi-color detection.
-  const visibles = (objects || []).filter((o) => o.visible !== false && o.modifier !== "negative");
+  const visibles = visible.filter((o) => o.modifier !== "negative");
   const colorSet = new Set(visibles.map((o) => (o.colorIndex | 0) || 0));
   const { build3MFBytes, build3MFBytesMulti } = await import("./threemf");
   const { evaluateSceneByColor } = await import("./csg");
@@ -167,6 +200,18 @@ export async function export3MFBytesAsync(objects) {
   const r = evaluateScene(objects);
   if (r.empty) throw new Error("Scene is empty. Add at least one positive component.");
   return { bytes: await build3MFBytes(r.geometry), parts: 1, multicolor: false };
+}
+
+// Modifier-mesh 3MF export — bypasses CSG entirely; emits host +
+// negatives as separate volumes inside a Slic3r-style 3MF so the
+// slicer does the carve at slice time. Runs synchronously on the main
+// thread because (a) the work is just geometry baking + XML
+// serialisation (no expensive CSG passes), and (b) the existing
+// `csg.worker.js` doesn't have a handler for this path and adding one
+// would 2x the surface area for marginal benefit.
+export async function export3MFModifierBytesAsync(objects, projectName) {
+  const { exportSceneToModifier3MFBytes } = await import("./exporters");
+  return exportSceneToModifier3MFBytes(objects, projectName);
 }
 
 // Utility for callers that still need a THREE.BufferGeometry on the main thread

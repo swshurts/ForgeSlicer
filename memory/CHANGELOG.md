@@ -3102,3 +3102,70 @@ in print-flat pose viewed from above.
   PyMeshFix reconstructed the missing face.
 - Broken icosphere (22 tris, 3 missing faces + 5 self-intersecting
   tris) → 4-tri minimal watertight shell, `is_volume=True`.
+
+## Iteration 105.17 (2026-06-24) — 3MF modifier-mesh export (Option A from HYDRANT_EXPORT_PLAN)
+
+**Decision**
+The user pivoted from chasing ever-more-aggressive backend repair toward
+the path the spec called Option A — emit a 3MF that carries the host AND
+each negative as separate **volumes**, and let the downstream slicer
+(PrusaSlicer / OrcaSlicer / Bambu Studio / SuperSlicer) do the boolean at
+slice time using its own (much more robust) CSG. This sidesteps the
+"host mesh is non-manifold → boolean dropped" problem entirely on the
+ForgeSlicer side.
+
+**Implementation — frontend only, zero backend changes**
+- `lib/threemf.js`:
+  - Added `build3MFBytesWithModifiers({ positiveVolumes, negativeVolumes, projectName })`.
+  - All volumes' triangles concatenated into a single `<mesh>` inside one `<object>`.
+  - Sidecar `Metadata/Slic3r_PE_model.config` partitions the triangle
+    range and tags each volume's `volume_type` as `ModelPart` or
+    `ModelNegativeVolume` (Slic3r/PrusaSlicer/Orca extension).
+- `lib/exporters.js`:
+  - Added `bakeObjectToWorldGeometry(obj, sceneObjects)` — bakes the
+    object's local geometry into world-space without touching any
+    Three.js scene graph (pure value-in, value-out).
+  - Added `exportSceneToModifier3MFBytes(objects, projectName)` — bakes
+    every visible object, drops the assembly to z=0, and hands off to
+    `build3MFBytesWithModifiers`. Returns `{ bytes, triangleCount,
+    parts, positiveCount, negativeCount }`.
+- `lib/workerClient.js`:
+  - Added `export3MFModifierBytesAsync(objects, projectName)` — async
+    wrapper for the orchestrator above.
+  - Updated `export3MFBytesAsync` to **auto-route** to the modifier-mesh
+    path when the scene contains BOTH a visible imported positive AND a
+    visible negative. Native primitives (cube/sphere/cylinder/etc.)
+    are always manifold so projects without imports keep the old
+    merged-single-mesh output the slicer prefers.
+- `components/STLPreviewDialog.jsx`:
+  - The amber "Boolean cut was dropped" banner now offers a one-click
+    "Download 3MF with Modifiers" button that calls
+    `export3MFModifierBytesAsync` and downloads `<project>.modifier.3mf`.
+  - Updated copy: the recommended fix is now to download a 3MF with
+    modifier meshes (instead of "click Repair Mesh and reopen"),
+    since modifier-mesh export works even when the host can't be
+    made watertight.
+
+**Manual validation (Node.js, ahead of testing-agent run)**
+- Built a synthetic 3MF with a 12-tri positive cube + 12-tri negative
+  cube; unzipped via JSZip; verified `Metadata/Slic3r_PE_model.config`
+  contains: `volume firstid=0 lastid=11 → ModelPart`,
+  `volume firstid=12 lastid=23 → ModelNegativeVolume`, and the
+  triangle counts add up. Bundle smoke check confirmed the live JS
+  bundle contains `build3MFBytesWithModifiers`, `ModelNegativeVolume`,
+  `Slic3r_PE_model.config`, and `export3MFModifierBytesAsync`.
+
+**Files touched**
+- `lib/threemf.js` — new builder + helpers (escapeXml, packageModifierZip).
+- `lib/exporters.js` — new `bakeObjectToWorldGeometry` + `exportSceneToModifier3MFBytes`.
+- `lib/workerClient.js` — auto-routing in `export3MFBytesAsync`, new `export3MFModifierBytesAsync`.
+- `components/STLPreviewDialog.jsx` — new button + updated copy.
+
+**Net effect for the user**
+For the hydrant project, opening the Send-to-Slicer hand-off now produces
+a 3MF that loads in OrcaSlicer with the host and all negatives already
+attached as modifier volumes — no manual repair step required, no manual
+modifier reattachment in the slicer's outliner, the carve "just works"
+at slice time. The Repair Mesh path remains available for users who
+need a single-mesh STL output.
+

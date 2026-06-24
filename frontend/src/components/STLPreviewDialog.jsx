@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
-import { X, RefreshCw, Download } from "lucide-react";
-import { exportSTLBytesAsync } from "../lib/workerClient";
+import { X, RefreshCw, Download, Layers, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { exportSTLBytesAsync, export3MFModifierBytesAsync } from "../lib/workerClient";
 import { downloadBlob } from "../lib/exporters";
 import { useScene } from "../lib/store";
 
@@ -68,6 +69,7 @@ export default function STLPreviewDialog({ open, onClose }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [dropped, setDropped] = useState([]);
+  const [modBusy, setModBusy] = useState(false);
 
   // Re-run the export pipeline whenever the dialog opens. This guarantees
   // what the user sees is *exactly* what will land in the slicer.
@@ -105,6 +107,28 @@ export default function STLPreviewDialog({ open, onClose }) {
     if (!bytes) return;
     const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
     downloadBlob(new Blob([bytes], { type: "model/stl" }), `${safe}.stl`);
+  };
+
+  // Modifier-mesh 3MF — fired from the amber warning when a boolean
+  // cut was dropped. Bypasses our CSG entirely and lets the slicer do
+  // the carve at slice time. Works perfectly for non-manifold AI hosts.
+  const handleDownloadModifier3MF = async () => {
+    if (modBusy) return;
+    setModBusy(true);
+    try {
+      const { bytes: modBytes, parts, positiveCount, negativeCount } =
+        await export3MFModifierBytesAsync(objects, projectName);
+      const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
+      downloadBlob(new Blob([modBytes], { type: "model/3mf" }), `${safe}.modifier.3mf`);
+      toast.success(
+        `3MF exported with ${positiveCount} positive ${positiveCount === 1 ? "part" : "parts"} + ${negativeCount} negative ${negativeCount === 1 ? "modifier" : "modifiers"} (${parts} volumes total). Open in OrcaSlicer / PrusaSlicer / Bambu Studio — the slicer will carve at slice time.`,
+        { duration: 10000 },
+      );
+    } catch (e) {
+      toast.error(`3MF modifier export failed: ${e.message || e}`, { duration: 8000 });
+    } finally {
+      setModBusy(false);
+    }
   };
 
   return (
@@ -159,13 +183,27 @@ export default function STLPreviewDialog({ open, onClose }) {
             </div>
           )}
           {!err && dropped.length > 0 && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-[520px] bg-amber-500/15 border border-amber-500/60 text-amber-200 rounded-md px-3 py-2 text-[11px] leading-snug shadow-lg" data-testid="stl-preview-dropped-warning">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-[560px] bg-amber-500/15 border border-amber-500/60 text-amber-200 rounded-md px-3 py-2 text-[11px] leading-snug shadow-lg" data-testid="stl-preview-dropped-warning">
               <div className="font-semibold uppercase tracking-wider text-amber-100 mb-0.5">
                 {dropped.length === 1 ? "1 Boolean cut was dropped" : `${dropped.length} Boolean cuts were dropped`}
               </div>
               <div>
-                The host mesh is non-manifold (open edges / self-intersections), so the boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>. Select the host in the Outliner, click the green <strong>Repair Mesh</strong> button on its Inspector, then reopen this preview. MeshLab will close holes and fix non-manifold edges so the carve goes through cleanly.
+                The host mesh is non-manifold (open edges / self-intersections), so ForgeSlicer&apos;s
+                boolean engine could not safely carve: <span className="font-mono text-amber-100">{dropped.join(", ")}</span>.
+                The recommended fix is to download a <strong>3MF with modifier meshes</strong> —
+                the slicer (OrcaSlicer / PrusaSlicer / Bambu Studio) has more robust CSG and will
+                carve the negatives at slice time, bypassing this issue entirely.
               </div>
+              <button
+                data-testid="stl-preview-modifier-3mf-btn"
+                onClick={handleDownloadModifier3MF}
+                disabled={modBusy}
+                className="mt-2 h-7 px-3 text-[10px] uppercase tracking-wider font-semibold rounded bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50 flex items-center gap-1.5"
+                title="Export as 3MF with host + negatives as modifier meshes. Slicer will do the carve."
+              >
+                {modBusy ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
+                {modBusy ? "Building 3MF…" : "Download 3MF with Modifiers"}
+              </button>
             </div>
           )}
           <Canvas

@@ -5,7 +5,8 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { evaluateScene } from "./csg";
-import { build3MFBytes } from "./threemf";
+import { buildGeometry } from "./geometry";
+import { build3MFBytes, build3MFBytesWithModifiers } from "./threemf";
 
 // ---------- Downloads ----------
 export function downloadBlob(blob, filename) {
@@ -97,6 +98,108 @@ export async function exportSceneTo3MF(objects, filename = "model.3mf") {
   _normaliseForSlicer(geometry);
   const bytes = await build3MFBytes(geometry);
   downloadBlob(new Blob([bytes], { type: "model/3mf" }), filename);
+}
+
+// ---------- Modifier-mesh 3MF (Slic3r/PrusaSlicer/Orca/Bambu) ----------
+//
+// Bypass the local CSG entirely. Bake each scene object to world-space
+// geometry and emit a 3MF that names each one as either a ModelPart
+// (positives) or ModelNegativeVolume (negatives). Modern slicers
+// (PrusaSlicer ≥2.4, OrcaSlicer, Bambu Studio, SuperSlicer) do the
+// boolean themselves at slice time using their robust internal CSG —
+// which is way more tolerant of non-manifold AI / photogrammetry input
+// than three-bvh-csg or manifold-3d.
+//
+// Used by the export flow as the automatic fallback when three-bvh-csg
+// would drop one or more negatives, and by the STL Preview's
+// "Export as 3MF with Modifiers" suggestion when an imported mesh has
+// negatives attached.
+
+// Bake an object's local geometry into a world-space BufferGeometry by
+// running it through the same buildGeometry pipeline used by CSG, then
+// applying the object's matrixWorld. We deliberately do NOT use Three's
+// `Mesh.updateMatrixWorld` here because we want zero side-effects on
+// the active viewport's scene graph — pure value-in, value-out.
+function bakeObjectToWorldGeometry(obj, sceneObjects) {
+  const local = buildGeometry(obj, { objects: sceneObjects });
+  if (!local || !local.attributes?.position) return null;
+  const baked = local.clone();
+  // Compose transform: translation × rotation (XYZ Euler in degrees) × scale.
+  const pos = new THREE.Vector3(obj.position[0], obj.position[1], obj.position[2]);
+  const q = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(
+      THREE.MathUtils.degToRad(obj.rotation[0]),
+      THREE.MathUtils.degToRad(obj.rotation[1]),
+      THREE.MathUtils.degToRad(obj.rotation[2]),
+      "XYZ",
+    ),
+  );
+  const scl = new THREE.Vector3(obj.scale[0], obj.scale[1], obj.scale[2]);
+  const mat = new THREE.Matrix4().compose(pos, q, scl);
+  baked.applyMatrix4(mat);
+  // Flip winding when the determinant is negative — otherwise the
+  // baked mesh has inside-out triangles after a mirror-style scale.
+  if (mat.determinant() < 0 && baked.index) {
+    const idx = baked.index.array;
+    for (let i = 0; i < idx.length; i += 3) {
+      const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp;
+    }
+    baked.index.needsUpdate = true;
+  }
+  return baked;
+}
+
+export async function exportSceneToModifier3MFBytes(objects, projectName) {
+  const visible = (objects || []).filter((o) => o.visible !== false);
+  if (visible.length === 0) {
+    throw new Error("Scene is empty. Add at least one positive component.");
+  }
+  const positiveVolumes = [];
+  const negativeVolumes = [];
+  for (const obj of visible) {
+    const geom = bakeObjectToWorldGeometry(obj, objects);
+    if (!geom) continue;
+    const target = obj.modifier === "negative" ? negativeVolumes : positiveVolumes;
+    target.push({ geometry: geom, name: obj.name || obj.type || "Volume" });
+  }
+  if (positiveVolumes.length === 0) {
+    throw new Error(
+      "Modifier-mesh 3MF needs at least one positive (build) object. Add a non-negative component first.",
+    );
+  }
+
+  // Drop the union of all positives to z=0 so the slicer sees the
+  // assembly resting on the build plate. Apply the SAME translation to
+  // every negative so the carve still lands in the right spot.
+  let minZ = Infinity;
+  for (const v of positiveVolumes) {
+    v.geometry.computeBoundingBox();
+    if (v.geometry.boundingBox.min.z < minZ) minZ = v.geometry.boundingBox.min.z;
+  }
+  if (isFinite(minZ) && Math.abs(minZ) > 1e-4) {
+    const drop = new THREE.Matrix4().makeTranslation(0, 0, -minZ);
+    for (const v of positiveVolumes) v.geometry.applyMatrix4(drop);
+    for (const v of negativeVolumes) v.geometry.applyMatrix4(drop);
+  }
+
+  const bytes = await build3MFBytesWithModifiers({
+    positiveVolumes,
+    negativeVolumes,
+    projectName: projectName || "ForgeSlicer Export",
+  });
+  // Tri count for the toast / Gallery chip — sum across all volumes
+  // (positives + negatives, since they're all triangles in the file).
+  const triangleCount = [...positiveVolumes, ...negativeVolumes].reduce(
+    (acc, v) => acc + (v.geometry.index ? v.geometry.index.count / 3 : v.geometry.attributes.position.count / 3),
+    0,
+  );
+  return {
+    bytes,
+    triangleCount,
+    parts: positiveVolumes.length + negativeVolumes.length,
+    positiveCount: positiveVolumes.length,
+    negativeCount: negativeVolumes.length,
+  };
 }
 
 // ---------- Project Save/Load ----------

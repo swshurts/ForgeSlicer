@@ -16,8 +16,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
 import { toast } from "sonner";
-import { repairMeshOnServer } from "../lib/meshRepairApi";
-import { geometryToSTLBinary } from "../lib/exporters";
+import { repairImportedObject } from "../lib/meshRepairApi";
 
 // iter-100.8 — Alphabetical, accordion-grouped printer picker. Replaces
 // the native <select>+<optgroup> with a Popover-driven UI so each brand
@@ -639,67 +638,18 @@ function Inspector() {
     setRepairBusy(true);
     const t0 = performance.now();
     try {
-      // Reconstruct a BufferGeometry from the stored vertices/indices,
-      // export to binary STL, ship to the backend.
-      const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(obj.geometry.vertices), 3));
-      if (obj.geometry.indices) {
-        g.setIndex(new THREE.BufferAttribute(new Uint32Array(obj.geometry.indices), 1));
-      }
-      g.computeVertexNormals();
-      const stlDV = geometryToSTLBinary(g);
-      const stlBytes = new Uint8Array(stlDV.buffer, stlDV.byteOffset, stlDV.byteLength);
-
-      const inputTris = (obj.geometry.indices ? obj.geometry.indices.length : obj.geometry.vertices.length / 3) / 3;
-      const {
-        bytes: repairedStl,
-        elapsedSec,
-        watertight,
-        windingConsistent,
-      } = await repairMeshOnServer(stlBytes);
-
-      // Parse the repaired binary STL → BufferGeometry → typed arrays.
-      const dv = new DataView(repairedStl.buffer, repairedStl.byteOffset, repairedStl.byteLength);
-      const triCount = dv.getUint32(80, true);
-      const positions = new Float32Array(triCount * 9);
-      let off = 84;
-      for (let i = 0; i < triCount; i++) {
-        off += 12;  // skip normal
-        for (let v = 0; v < 9; v++) {
-          positions[i * 9 + v] = dv.getFloat32(off, true);
-          off += 4;
-        }
-        off += 2;   // attribute byte count
-      }
-      const repaired = new THREE.BufferGeometry();
-      repaired.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      // Merge duplicate verts so the geometry is indexed (smaller payload).
-      const { mergeVertices } = await import("three/examples/jsm/utils/BufferGeometryUtils.js");
-      const merged = mergeVertices(repaired, 1e-4);
-      merged.computeVertexNormals();
-      merged.computeBoundingBox();
-      const bb = merged.boundingBox;
-      const newBbox = { x: bb.max.x - bb.min.x, y: bb.max.y - bb.min.y, z: bb.max.z - bb.min.z };
-      const verts = merged.attributes.position.array;
-      const idx = merged.index ? merged.index.array : null;
-
-      updateObject(obj.id, {
-        geometry: {
-          vertices: Array.from(verts),
-          indices: idx ? Array.from(idx) : null,
-        },
-        originalBbox: newBbox,
-      });
+      const { update, stats } = await repairImportedObject(obj);
+      updateObject(obj.id, update);
 
       const totalElapsed = ((performance.now() - t0) / 1000).toFixed(1);
-      const outTris = (idx ? idx.length / 3 : verts.length / 9) | 0;
+      const { inputTris, outputTris, elapsedSec, watertight, windingConsistent } = stats;
       // Surface the manifold status — this is the metric that actually
       // determines whether downstream booleans will succeed. A "repair"
       // that doesn't yield a watertight mesh is a half-fix and the user
       // needs to know so they don't keep retrying the same boolean.
       if (watertight && windingConsistent) {
         toast.success(
-          `Mesh repaired & watertight — ${inputTris | 0} → ${outTris} tris (MeshFix ${elapsedSec.toFixed(1)}s, total ${totalElapsed}s)`,
+          `Mesh repaired & watertight — ${inputTris | 0} → ${outputTris | 0} tris (MeshFix ${elapsedSec.toFixed(1)}s, total ${totalElapsed}s)`,
           { duration: 6000 }
         );
       } else {
@@ -707,7 +657,7 @@ function Inspector() {
         if (!watertight) issues.push("still has open edges");
         if (!windingConsistent) issues.push("inconsistent face winding");
         toast.warning(
-          `Mesh partially repaired — ${inputTris | 0} → ${outTris} tris, but ${issues.join(" and ")}. Boolean cuts may still drop. Try simplifying the mesh first.`,
+          `Mesh partially repaired — ${inputTris | 0} → ${outputTris | 0} tris, but ${issues.join(" and ")}. Boolean cuts may still drop. Try simplifying the mesh first.`,
           { duration: 10000 }
         );
       }

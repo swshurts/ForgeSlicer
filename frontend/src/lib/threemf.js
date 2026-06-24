@@ -48,6 +48,167 @@ ${matLines.join("\n")}
   return packageZip(modelXml);
 }
 
+// ---------- Modifier-mesh 3MF (PrusaSlicer / OrcaSlicer / Bambu Studio) ----------
+//
+// When the host mesh is non-manifold and our CSG engine refuses to carve
+// negatives through it, we have a much better option than failing: emit
+// a 3MF that contains the host AND each negative as separate VOLUMES
+// inside a single object, then let the slicer do the boolean at slice
+// time. Modern slicers (PrusaSlicer ≥2.4, OrcaSlicer, Bambu Studio,
+// SuperSlicer) have battle-tested CSG that handles hobbyist STL input
+// way better than three-bvh-csg / manifold-3d ever will.
+//
+// Wire format follows the de-facto PrusaSlicer extension that
+// OrcaSlicer + Bambu Studio also parse:
+//   1. `3D/3dmodel.model` contains a single `<object>` whose `<mesh>`
+//      concatenates every volume's triangles. Vertex indices for each
+//      volume are remapped to start from 0.
+//   2. `Metadata/Slic3r_PE_model.config` is a sidecar XML that
+//      partitions the triangles into named volumes and tags each with
+//      `volume_type` ∈ { ModelPart, ModelNegativeVolume,
+//      ParameterModifier, SupportEnforcer, SupportBlocker }.
+//
+// The slicer reconstructs the volume topology by mapping the
+// `firstid..lastid` triangle range back into its per-volume object.
+//
+// Reference: PrusaSlicer src/libslic3r/Format/3mf.cpp.
+//
+// `positiveVolumes` / `negativeVolumes` are arrays of:
+//   { geometry: THREE.BufferGeometry,  // ALREADY in world space
+//     name:     string,                // shown in the slicer outliner
+//   }
+export async function build3MFBytesWithModifiers({
+  positiveVolumes,
+  negativeVolumes,
+  projectName = "ForgeSlicer Export",
+}) {
+  if (!positiveVolumes || positiveVolumes.length === 0) {
+    throw new Error(
+      "Modifier-mesh 3MF needs at least one positive volume. Add a printable object first.",
+    );
+  }
+
+  // Concatenate all volumes' vertices/triangles into one big mesh and
+  // track per-volume triangle ranges so the sidecar can reference them.
+  const allVerts = [];        // flat array of {x,y,z}
+  const allTris = [];         // flat array of {v1,v2,v3}
+  const volumes = [];         // metadata: { name, type, firstTri, lastTri }
+
+  const collectVolume = (vol, volumeType) => {
+    const g = vol.geometry;
+    const posAttr = g.attributes.position;
+    const pos = posAttr.array;
+    const vertOffset = allVerts.length;
+    // Append vertices.
+    for (let i = 0; i < pos.length; i += 3) {
+      allVerts.push({ x: pos[i], y: pos[i + 1], z: pos[i + 2] });
+    }
+    // Append triangles (remapped to global vertex indices).
+    const triFirst = allTris.length;
+    if (g.index) {
+      const idx = g.index.array;
+      for (let i = 0; i < idx.length; i += 3) {
+        allTris.push({
+          v1: idx[i]     + vertOffset,
+          v2: idx[i + 1] + vertOffset,
+          v3: idx[i + 2] + vertOffset,
+        });
+      }
+    } else {
+      // Non-indexed: every 3 vertices forms a triangle.
+      const triCount = (pos.length / 3) / 3;
+      for (let i = 0; i < triCount; i++) {
+        allTris.push({
+          v1: i * 3     + vertOffset,
+          v2: i * 3 + 1 + vertOffset,
+          v3: i * 3 + 2 + vertOffset,
+        });
+      }
+    }
+    const triLast = allTris.length - 1;
+    volumes.push({
+      name: vol.name || "Volume",
+      type: volumeType,
+      firstTri: triFirst,
+      lastTri: triLast,
+    });
+  };
+
+  for (const v of positiveVolumes) collectVolume(v, "ModelPart");
+  for (const v of (negativeVolumes || [])) collectVolume(v, "ModelNegativeVolume");
+
+  // 1) 3D/3dmodel.model — one object containing the combined mesh.
+  const vertLines = new Array(allVerts.length);
+  for (let i = 0; i < allVerts.length; i++) {
+    const v = allVerts[i];
+    vertLines[i] = `        <vertex x="${v.x.toFixed(4)}" y="${v.y.toFixed(4)}" z="${v.z.toFixed(4)}"/>`;
+  }
+  const triLines = new Array(allTris.length);
+  for (let i = 0; i < allTris.length; i++) {
+    const t = allTris[i];
+    triLines[i] = `        <triangle v1="${t.v1}" v2="${t.v2}" v3="${t.v3}"/>`;
+  }
+  const objectBlock = `    <object id="1" type="model">
+      <mesh>
+        <vertices>
+${vertLines.join("\n")}
+        </vertices>
+        <triangles>
+${triLines.join("\n")}
+        </triangles>
+      </mesh>
+    </object>`;
+  const modelXml = wrapModel([objectBlock], [{ id: 1 }]);
+
+  // 2) Metadata/Slic3r_PE_model.config — sidecar partitioning the
+  //    triangles into named volumes. Identity matrices because the
+  //    geometries we received are already baked to world coords.
+  const volumeBlocks = volumes.map((v) => `  <volume firstid="${v.firstTri}" lastid="${v.lastTri}">
+   <metadata type="volume" key="name" value="${escapeXml(v.name)}"/>
+   <metadata type="volume" key="volume_type" value="${v.type}"/>
+   <metadata type="volume" key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
+  </volume>`);
+  const configXml = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+ <object id="1" instances_count="1">
+  <metadata type="object" key="name" value="${escapeXml(projectName)}"/>
+${volumeBlocks.join("\n")}
+ </object>
+</config>`;
+
+  // 3) Package the zip — same content-type + relationships as a plain
+  //    3MF, with the extra Slic3r_PE_model.config file alongside.
+  return packageModifierZip(modelXml, configXml);
+}
+
+function escapeXml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+async function packageModifierZip(modelXml, configXml) {
+  const ct = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`;
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", ct);
+  zip.folder("_rels").file(".rels", rels);
+  zip.folder("3D").file("3dmodel.model", modelXml);
+  zip.folder("Metadata").file("Slic3r_PE_model.config", configXml);
+  const ab = await zip.generateAsync({ type: "arraybuffer" });
+  return new Uint8Array(ab);
+}
+
 // ---------- internal helpers ----------
 function buildObjectXml(geometry, objectId, opts = {}) {
   const pos = geometry.attributes.position.array;
