@@ -37,7 +37,13 @@ export default function TopToolbar({ onShare, onSendToOrca, onSaveComponent, onO
   const [busyMsg, setBusyMsg] = useState("");
   const [openPopover, setOpenPopover] = useState(null);
   const [stlPreviewOpen, setStlPreviewOpen] = useState(false);
-  const [cutMode, setCutMode] = useState(false);
+  // Cut mode lives in the global store so the CutHUD overlay and the
+  // CutPlaneGizmo in the viewport (both Workspace-level children, not
+  // children of this toolbar) can observe it. Wiring it here as local
+  // useState would silently break the Cut tool — clicking the toolbar
+  // pill would highlight amber but never show the plane or HUD.
+  const cutMode = useScene((s) => s.cutMode);
+  const setCutMode = useScene((s) => s.setCutMode);
 
   // Selection state used by both rows.
   const selectedId = useScene((s) => s.selectedId);
