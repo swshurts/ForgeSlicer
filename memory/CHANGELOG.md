@@ -3018,3 +3018,42 @@ in print-flat pose viewed from above.
 - Playwright screenshot of HelpMegaMenu shows all 4 templates
   surfaced with their param hints; the faceplate row lists the
   10 supported boards.
+
+
+## Iteration 105.15 (2026-06-24) — Sign-in timeout regression fix
+
+**Problem reported by user**
+- Clicking "Start Modeling" hung on a spinner for 2–3 minutes, then bounced to
+  the sign-in gate. After completing Google OAuth, the round-trip failed with
+  **"Sign-in failed: timeout of 20000ms exceeded"** — an unrecoverable dead
+  end on the very first protected-route visit.
+
+**Root cause**
+- `authApi.exchange()` capped the `POST /api/auth/session` axios call at
+  20 s. The backend's resilience retry loop against
+  `demobackend.emergentagent.com/auth/v1/env/oauth/session-data` can
+  legitimately run for up to ~25 s in the worst case (4 attempts × up to
+  5 s upstream latency plus 5.4 s of exponential backoff between
+  attempts). On a slow-upstream day the axios timeout fires before the
+  backend's last retry has a chance to land.
+- A secondary contributor: `authApi.me()` had **no** explicit timeout,
+  so a one-off network blip on the bootstrap `/auth/me` call could pin
+  the AuthProvider's `loading=true` state for minutes — which is exactly
+  what painted the long orange-spinner screen the user described before
+  the sign-in gate appeared.
+
+**Fix**
+- `frontend/src/lib/auth.js`:
+  - `authApi.exchange()` timeout: `20000` → `45000` ms (comfortably above
+    the backend's worst-case retry budget while still failing fast on a
+    truly unreachable upstream).
+  - `authApi.me()` timeout: added explicit `12000` ms (was unset → axios
+    default of infinite). Failure now falls cleanly through to the
+    sign-in gate instead of stalling the spinner.
+
+**Verified**
+- Clean backend restart confirmed the route now responds in ~5.6 s for
+  an invalid session_id (matches the calculated 5.4 s of backoffs +
+  4 fast upstream 404s).
+- Landing page Playwright screenshot renders cleanly with the new
+  bundle; no console regressions.

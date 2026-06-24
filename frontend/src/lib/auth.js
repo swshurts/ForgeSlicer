@@ -34,15 +34,25 @@ export const authApi = {
   // fragment after Google sign-in) for our app's persistent session_token.
   // The backend sets the httpOnly cookie; we just need the user payload.
   exchange: async (sessionId) => {
+    // 45 s — covers the backend's worst-case retry budget against the
+    // Emergent OAuth provider (4 attempts × up to 15 s httpx timeout +
+    // ~5.4 s of exponential backoffs). The earlier 20 s ceiling
+    // truncated legitimate retries on slow upstream-provider days,
+    // surfacing as "timeout of 20000ms exceeded" to users.
     const { data } = await axios.post(
       `${API}/auth/session`,
       { session_id: sessionId },
-      { ...cfg, timeout: 20000 },     // 20 s — server roundtrips to Emergent OAuth provider
+      { ...cfg, timeout: 45000 },
     );
     return data;
   },
   me: async () => {
-    const { data } = await axios.get(`${API}/auth/me`, cfg);
+    // 12 s — same-region hop to FastAPI behind ingress should complete
+    // in <1 s; the explicit ceiling prevents the bootstrap spinner from
+    // pinning the UI for minutes on a transient network blip (axios
+    // defaults to no timeout, which let earlier sessions stall for 2–3
+    // minutes before falling through to the sign-in gate).
+    const { data } = await axios.get(`${API}/auth/me`, { ...cfg, timeout: 12000 });
     return data;
   },
   logout: async () => {
