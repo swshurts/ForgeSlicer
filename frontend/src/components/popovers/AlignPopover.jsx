@@ -71,8 +71,18 @@ export function AlignPopover({ anchor, onClose }) {
         <EmptyMsg>Select at least two objects to align them.</EmptyMsg>
       ) : (
         <>
-          <div className="text-[10px] text-slate-400 font-mono bg-slate-950/50 border border-slate-800 rounded p-2 max-h-20 overflow-y-auto">
-            {count} selected: <span className="text-orange-300">{names.join(", ")}</span>
+          <div className="text-[10px] text-slate-400 font-mono bg-slate-950/50 border border-slate-800 rounded p-2 space-y-0.5">
+            <div>
+              <span className="text-emerald-400 uppercase tracking-wider text-[9px] font-sans font-semibold mr-1">Anchor:</span>
+              <span className="text-emerald-300">{names[0] || ids[0]}</span>
+              <span className="text-slate-500 ml-1">(stays put)</span>
+            </div>
+            {names.length > 1 && (
+              <div>
+                <span className="text-orange-300/80 uppercase tracking-wider text-[9px] font-sans font-semibold mr-1">Move:</span>
+                <span className="text-orange-300">{names.slice(1).join(", ")}</span>
+              </div>
+            )}
           </div>
 
           {ROWS.map((row) => (
@@ -97,7 +107,7 @@ export function AlignPopover({ anchor, onClose }) {
           ))}
 
           <p className="text-[10px] text-slate-500 leading-snug pt-2">
-            Aligns to the selection&apos;s combined bbox: leftmost wins for −X, topmost wins for +Z, etc. Each axis is independent — apply X-min then Z-max if you want diagonal corner alignment.
+            Aligns to the <strong className="text-emerald-300">first selected object</strong>: its edge or centre becomes the target, every later-selected object moves to match. Pick the reference part first, then shift-click the parts you want to align to it.
           </p>
         </>
       )}

@@ -720,13 +720,17 @@ export const useScene = create((set, get) => ({
     }));
   },
 
-  // Align every currently-selected object on a single axis. Treats the
-  // selection's combined world-space bbox as the reference:
+  // Align every currently-selected object on a single axis. The FIRST
+  // selected object is the **anchor** — it stays in place, and every
+  // other selected object moves to match its edge/centre. This matches
+  // how Figma / Illustrator / Fusion's "Align to first" and most CAD
+  // packages work: you pick the reference, then everything else snaps
+  // to it.
   //   - axis: "x" | "y" | "z"
   //   - mode: "min" (left/front/bottom edge), "max" (right/back/top edge),
   //           "center" (axis midpoint)
   // No-op if fewer than 2 objects are selected (alignment needs at least
-  // two things to align to each other). Lands as a single undo step.
+  // two things to align together). Lands as a single undo step.
   alignSelection: (axis, mode) => {
     const s = get();
     const ids = s.selectedIds.length
@@ -747,15 +751,19 @@ export const useScene = create((set, get) => ({
       }
     }
     if (bbxs.length < 2) return;
-    const allMin = Math.min(...bbxs.map((b) => b.min));
-    const allMax = Math.max(...bbxs.map((b) => b.max));
+
+    // ANCHOR = first selected. The anchor's edge/centre becomes the
+    // target value; the anchor itself never moves.
+    const anchor = bbxs[0];
     let target;
-    if (mode === "min") target = allMin;
-    else if (mode === "max") target = allMax;
-    else target = (allMin + allMax) / 2;
+    if (mode === "min") target = anchor.min;
+    else if (mode === "max") target = anchor.max;
+    else target = (anchor.min + anchor.max) / 2;
+
     get().pushHistory();
     set((st) => ({
       objects: st.objects.map((o) => {
+        if (o.id === anchor.id) return o;       // anchor stays put
         const bbx = bbxs.find((b) => b.id === o.id);
         if (!bbx) return o;
         const cur = mode === "min" ? bbx.min : mode === "max" ? bbx.max : (bbx.min + bbx.max) / 2;
