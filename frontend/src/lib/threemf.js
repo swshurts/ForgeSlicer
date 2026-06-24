@@ -52,26 +52,54 @@ ${matLines.join("\n")}
 //
 // When the host mesh is non-manifold and our CSG engine refuses to carve
 // negatives through it, we have a much better option than failing: emit
-// a 3MF that contains the host AND each negative as separate VOLUMES
-// inside a single object, then let the slicer do the boolean at slice
-// time. Modern slicers (PrusaSlicer ≥2.4, OrcaSlicer, Bambu Studio,
-// SuperSlicer) have battle-tested CSG that handles hobbyist STL input
-// way better than three-bvh-csg / manifold-3d ever will.
+// a 3MF that contains the host AND each negative as separate VOLUMES,
+// then let the slicer do the boolean at slice time. Modern slicers
+// (OrcaSlicer, Bambu Studio, PrusaSlicer ≥ 2.4, SuperSlicer) have
+// battle-tested CSG that handles hobbyist STL input way better than
+// three-bvh-csg / manifold-3d ever will.
 //
-// Wire format follows the de-facto PrusaSlicer extension that
-// OrcaSlicer + Bambu Studio also parse:
-//   1. `3D/3dmodel.model` contains a single `<object>` whose `<mesh>`
-//      concatenates every volume's triangles. Vertex indices for each
-//      volume are remapped to start from 0.
-//   2. `Metadata/Slic3r_PE_model.config` is a sidecar XML that
-//      partitions the triangles into named volumes and tags each with
-//      `volume_type` ∈ { ModelPart, ModelNegativeVolume,
-//      ParameterModifier, SupportEnforcer, SupportBlocker }.
+// Wire format follows the BBS / OrcaSlicer NATIVE multi-object schema
+// (verified against the upstream `src/libslic3r/Format/bbs_3mf.cpp`
+// writer). Each volume is its OWN `<object>` with its OWN `<mesh>` —
+// the parent assembly `<object>` references them via `<components>`.
+// The slicer reconstructs the assembly hierarchy and applies the
+// per-component role from `Metadata/model_settings.config`.
 //
-// The slicer reconstructs the volume topology by mapping the
-// `firstid..lastid` triangle range back into its per-volume object.
+// Schema:
+//   3D/3dmodel.model
+//     <resources>
+//       <object id=2 type="model"><mesh>… positive verts/tris …</mesh></object>
+//       <object id=3 type="model"><mesh>… negative verts/tris …</mesh></object>
+//       <object id=1 type="model">         <!-- assembly -->
+//         <components>
+//           <component objectid=2/>
+//           <component objectid=3/>
+//         </components>
+//       </object>
+//     </resources>
+//     <build><item objectid=1/></build>
 //
-// Reference: PrusaSlicer src/libslic3r/Format/3mf.cpp.
+//   Metadata/model_settings.config
+//     <config>
+//       <object id=1 instances_count=1>
+//         <metadata type=object key=name value=ProjectName/>
+//         <part id=2 subtype=normal_part>     <!-- host -->
+//           <metadata type=part key=name value=Hydrant/>
+//           <metadata type=part key=matrix value=…identity…/>
+//         </part>
+//         <part id=3 subtype=negative_part>   <!-- carved -->
+//           <metadata type=part key=name value=Cube/>
+//           <metadata type=part key=matrix value=…identity…/>
+//         </part>
+//       </object>
+//     </config>
+//
+// Even if a particular slicer build fails to parse `model_settings.config`
+// (and ignores the `subtype="negative_part"` declaration) the user STILL
+// sees two separate objects in the slicer outliner and can right-click
+// → "Change type → Negative volume" to flip the cube manually. That's
+// the safety net the earlier single-mesh + triangle-range format
+// didn't have.
 //
 // `positiveVolumes` / `negativeVolumes` are arrays of:
 //   { geometry: THREE.BufferGeometry,  // ALREADY in world space
@@ -88,73 +116,34 @@ export async function build3MFBytesWithModifiers({
     );
   }
 
-  // Concatenate all volumes' vertices/triangles into one big mesh and
-  // track per-volume triangle ranges so the sidecar can reference them.
-  const allVerts = [];        // flat array of {x,y,z}
-  const allTris = [];         // flat array of {v1,v2,v3}
-  const volumes = [];         // metadata: { name, type, firstTri, lastTri }
+  // Build the per-volume `<object>` blocks first. Each volume gets its
+  // own sequential id starting at 2 (id=1 is reserved for the assembly).
+  const allVolumes = [
+    ...positiveVolumes.map((v) => ({ ...v, subtype: "normal_part" })),
+    ...(negativeVolumes || []).map((v) => ({ ...v, subtype: "negative_part" })),
+  ];
+  const ASSEMBLY_ID = 1;
+  const parts = allVolumes.map((v, i) => ({
+    objectId: i + 2,                 // 2, 3, 4, …
+    name: v.name || "Volume",
+    subtype: v.subtype,
+    geometry: v.geometry,
+  }));
 
-  const collectVolume = (vol, volumeType) => {
-    const g = vol.geometry;
-    const posAttr = g.attributes.position;
-    const pos = posAttr.array;
-    const vertOffset = allVerts.length;
-    // Append vertices.
-    for (let i = 0; i < pos.length; i += 3) {
-      allVerts.push({ x: pos[i], y: pos[i + 1], z: pos[i + 2] });
-    }
-    // Append triangles (remapped to global vertex indices).
-    const triFirst = allTris.length;
-    if (g.index) {
-      const idx = g.index.array;
-      for (let i = 0; i < idx.length; i += 3) {
-        allTris.push({
-          v1: idx[i]     + vertOffset,
-          v2: idx[i + 1] + vertOffset,
-          v3: idx[i + 2] + vertOffset,
-        });
-      }
-    } else {
-      // Non-indexed: every 3 vertices forms a triangle.
-      const triCount = (pos.length / 3) / 3;
-      for (let i = 0; i < triCount; i++) {
-        allTris.push({
-          v1: i * 3     + vertOffset,
-          v2: i * 3 + 1 + vertOffset,
-          v3: i * 3 + 2 + vertOffset,
-        });
-      }
-    }
-    const triLast = allTris.length - 1;
-    volumes.push({
-      name: vol.name || "Volume",
-      type: volumeType,
-      firstTri: triFirst,
-      lastTri: triLast,
-    });
-  };
+  const objectBlocks = parts.map((p) => _buildVolumeObjectXml(p.objectId, p.geometry));
 
-  for (const v of positiveVolumes) collectVolume(v, "ModelPart");
-  for (const v of (negativeVolumes || [])) collectVolume(v, "ModelNegativeVolume");
+  // The assembly object — has no mesh, only components.
+  const componentLines = parts
+    .map((p) => `      <component objectid="${p.objectId}" p:UUID="${_uuidFor(p.objectId)}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>`)
+    .join("\n");
+  const assemblyBlock = `    <object id="${ASSEMBLY_ID}" p:UUID="${_uuidFor(ASSEMBLY_ID)}" type="model">
+      <components>
+${componentLines}
+      </components>
+    </object>`;
 
-  // 1) 3D/3dmodel.model — one object containing the combined mesh.
-  // We inline the model XML here (rather than reusing `wrapModel`) so
-  // we can include the BambuStudio-format version markers that signal
-  // to OrcaSlicer "this is a BBS-format 3MF, please look in
-  // Metadata/model_settings.config for per-volume info". Without these
-  // markers OrcaSlicer treats the file as a generic 3MF and ignores
-  // the modifier sidecar, which paints the negative cube as a positive
-  // protrusion on the build plate (the exact bug the user hit).
-  const vertLines = new Array(allVerts.length);
-  for (let i = 0; i < allVerts.length; i++) {
-    const v = allVerts[i];
-    vertLines[i] = `        <vertex x="${v.x.toFixed(4)}" y="${v.y.toFixed(4)}" z="${v.z.toFixed(4)}"/>`;
-  }
-  const triLines = new Array(allTris.length);
-  for (let i = 0; i < allTris.length; i++) {
-    const t = allTris[i];
-    triLines[i] = `        <triangle v1="${t.v1}" v2="${t.v2}" v3="${t.v3}"/>`;
-  }
+  // 3D/3dmodel.model — full XML with BBS / Slic3r-PE namespaces and
+  // version markers so the slicer recognises this as a project file.
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
   <metadata name="Application">ForgeSlicer</metadata>
@@ -162,7 +151,63 @@ export async function build3MFBytesWithModifiers({
   <metadata name="slic3rpe:Version3mf">1</metadata>
   <metadata name="Title">${escapeXml(projectName)}</metadata>
   <resources>
-    <object id="1" p:UUID="00000001-61cb-4c03-9d28-80fed5dfa1dc" type="model">
+${objectBlocks.join("\n")}
+${assemblyBlock}
+  </resources>
+  <build p:UUID="2c7c17d8-22b5-4d84-8835-1976022ea369">
+    <item objectid="${ASSEMBLY_ID}" p:UUID="00000099-b1ec-4553-aec9-835e5b724bb4" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+  </build>
+</model>`;
+
+  // Metadata/model_settings.config — declares each <part> sub-object's
+  // role. `subtype="negative_part"` is the BBS-schema modifier flag.
+  const partBlocks = parts.map((p) => `  <part id="${p.objectId}" subtype="${p.subtype}">
+   <metadata type="part" key="name" value="${escapeXml(p.name)}"/>
+   <metadata type="part" key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
+   <metadata type="part" key="source_file" value=""/>
+   <metadata type="part" key="source_object_id" value="0"/>
+   <metadata type="part" key="source_volume_id" value="${p.objectId - 2}"/>
+   <metadata type="part" key="source_offset_x" value="0"/>
+   <metadata type="part" key="source_offset_y" value="0"/>
+   <metadata type="part" key="source_offset_z" value="0"/>
+  </part>`);
+  const configXml = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+ <object id="${ASSEMBLY_ID}" instances_count="1">
+  <metadata type="object" key="name" value="${escapeXml(projectName)}"/>
+  <metadata type="object" key="extruder" value="1"/>
+${partBlocks.join("\n")}
+ </object>
+</config>`;
+
+  return packageModifierZip(modelXml, configXml);
+}
+
+// Build the per-volume `<object>` XML — the mesh that belongs to ONE
+// volume. Used as a building block by build3MFBytesWithModifiers.
+function _buildVolumeObjectXml(objectId, geometry) {
+  const pos = geometry.attributes.position.array;
+  const vertCount = pos.length / 3;
+  const vertLines = new Array(vertCount);
+  for (let i = 0; i < vertCount; i++) {
+    vertLines[i] = `        <vertex x="${pos[i * 3].toFixed(4)}" y="${pos[i * 3 + 1].toFixed(4)}" z="${pos[i * 3 + 2].toFixed(4)}"/>`;
+  }
+  let triLines;
+  if (geometry.index) {
+    const idx = geometry.index.array;
+    const triCount = idx.length / 3;
+    triLines = new Array(triCount);
+    for (let i = 0; i < triCount; i++) {
+      triLines[i] = `        <triangle v1="${idx[i * 3]}" v2="${idx[i * 3 + 1]}" v3="${idx[i * 3 + 2]}"/>`;
+    }
+  } else {
+    const triCount = vertCount / 3;
+    triLines = new Array(triCount);
+    for (let i = 0; i < triCount; i++) {
+      triLines[i] = `        <triangle v1="${i * 3}" v2="${i * 3 + 1}" v3="${i * 3 + 2}"/>`;
+    }
+  }
+  return `    <object id="${objectId}" p:UUID="${_uuidFor(objectId)}" type="model">
       <mesh>
         <vertices>
 ${vertLines.join("\n")}
@@ -171,45 +216,17 @@ ${vertLines.join("\n")}
 ${triLines.join("\n")}
         </triangles>
       </mesh>
-    </object>
-  </resources>
-  <build p:UUID="2c7c17d8-22b5-4d84-8835-1976022ea369">
-    <item objectid="1" p:UUID="00000002-b1ec-4553-aec9-835e5b724bb4" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
-  </build>
-</model>`;
+    </object>`;
+}
 
-  // 2) Metadata/model_settings.config — sidecar partitioning the
-  //    triangles into named volumes. Schema follows the
-  //    BambuStudio / OrcaSlicer writer (`bbs_3mf.cpp`):
-  //      - `name`         display string in the slicer outliner
-  //      - `volume_type`  ModelPart | ModelNegativeVolume | ...
-  //      - `matrix`       16-float row-major 4×4 (identity — triangles
-  //                       are already in world space)
-  //      - `source_*`     placeholders so the slicer doesn't try to
-  //                       resolve back to a missing source file
-  const volumeBlocks = volumes.map((v) => `  <volume firstid="${v.firstTri}" lastid="${v.lastTri}">
-   <metadata type="volume" key="name" value="${escapeXml(v.name)}"/>
-   <metadata type="volume" key="volume_type" value="${v.type}"/>
-   <metadata type="volume" key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
-   <metadata type="volume" key="source_file" value=""/>
-   <metadata type="volume" key="source_object_id" value="0"/>
-   <metadata type="volume" key="source_volume_id" value="0"/>
-   <metadata type="volume" key="source_offset_x" value="0"/>
-   <metadata type="volume" key="source_offset_y" value="0"/>
-   <metadata type="volume" key="source_offset_z" value="0"/>
-  </volume>`);
-  const configXml = `<?xml version="1.0" encoding="UTF-8"?>
-<config>
- <object id="1" instances_count="1">
-  <metadata type="object" key="name" value="${escapeXml(projectName)}"/>
-  <metadata type="object" key="extruder" value="1"/>
-${volumeBlocks.join("\n")}
- </object>
-</config>`;
-
-  // 3) Package the zip — same content-type + relationships as a plain
-  //    3MF, with the extra Slic3r_PE_model.config file alongside.
-  return packageModifierZip(modelXml, configXml);
+// Stable, deterministic UUIDs derived from the object id. The BBS spec
+// uses real GUIDs but any 8-4-4-4-12 hex string is accepted by the
+// slicer — it's just a per-object stable identifier. We use the BBS
+// suffix conventions so the file matches a hand-saved OrcaSlicer 3MF
+// at a glance.
+function _uuidFor(objectId) {
+  const idHex = objectId.toString(16).padStart(8, "0");
+  return `${idHex}-61cb-4c03-9d28-80fed5dfa1dc`;
 }
 
 function escapeXml(s) {
