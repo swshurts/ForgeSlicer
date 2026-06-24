@@ -964,26 +964,29 @@ function CutHUD() {
   const objects = useScene((s) => s.objects);
   const [busy, setBusy] = useState(false);
 
-  // Compute a plane Z-height at the midpoint of the cut targets. Returns
-  // 0 if we can't determine any bbox (which collapses to "park at the
-  // bed" — old behaviour). Primitives carry their size in `dims`;
-  // imports carry it in `originalBbox`. We probe both.
+  // Compute a plane Z-height at the midpoint of the cut targets. Uses
+  // the shared `computeRotatedBBox` helper (the same one `dropToBed`
+  // relies on) so we get a TRUE world-space bbox — accounts for the
+  // object's local origin (which for imports is usually at the BOTTOM,
+  // not the center), rotation, and scale. The earlier naïve
+  // `position[2] ± dims.z/2` formula assumed every object's anchor
+  // sits at its geometric center and gave nonsense like `z = -2.00`
+  // for a 150 mm hydrant sitting on the bed.
   const computeMidZ = (ids) => {
     let zMin = Infinity, zMax = -Infinity;
     for (const id of ids) {
       const o = objects.find((x) => x.id === id);
       if (!o) continue;
-      // Pick whichever size source is available for this object.
-      let sizeZ = 0;
-      if (o.originalBbox && o.originalBbox.z) sizeZ = o.originalBbox.z;
-      else if (o.dims && o.dims.z) sizeZ = o.dims.z;
-      else if (o.dims && o.dims.height) sizeZ = o.dims.height;
-      else continue;
-      const sz = (o.scale && o.scale[2]) || 1;
-      const halfZ = sizeZ * Math.abs(sz) / 2;
-      const cz = (o.position && o.position[2]) || 0;
-      if (cz - halfZ < zMin) zMin = cz - halfZ;
-      if (cz + halfZ > zMax) zMax = cz + halfZ;
+      try {
+        const bb = computeRotatedBBox(o);
+        const pz = (o.position && o.position[2]) || 0;
+        const worldMinZ = pz + bb.min.z;
+        const worldMaxZ = pz + bb.max.z;
+        if (worldMinZ < zMin) zMin = worldMinZ;
+        if (worldMaxZ > zMax) zMax = worldMaxZ;
+      } catch {
+        // computeRotatedBBox can fail on partially-loaded imports; skip.
+      }
     }
     return isFinite(zMin) && isFinite(zMax) ? (zMin + zMax) / 2 : 0;
   };

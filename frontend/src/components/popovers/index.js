@@ -6,5 +6,6 @@ export { RotationPopover } from "./RotationPopover";
 export { ScalePopover } from "./ScalePopover";
 export { DuplicatePopover } from "./DuplicatePopover";
 export { MirrorPopover } from "./MirrorPopover";
+export { AlignPopover } from "./AlignPopover";
 export { SlicerPopover } from "./SlicerPopover";
 export { default as SnapAndPlatePopover } from "./SnapAndPlatePopover";

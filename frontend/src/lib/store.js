@@ -720,6 +720,54 @@ export const useScene = create((set, get) => ({
     }));
   },
 
+  // Align every currently-selected object on a single axis. Treats the
+  // selection's combined world-space bbox as the reference:
+  //   - axis: "x" | "y" | "z"
+  //   - mode: "min" (left/front/bottom edge), "max" (right/back/top edge),
+  //           "center" (axis midpoint)
+  // No-op if fewer than 2 objects are selected (alignment needs at least
+  // two things to align to each other). Lands as a single undo step.
+  alignSelection: (axis, mode) => {
+    const s = get();
+    const ids = s.selectedIds.length
+      ? s.selectedIds
+      : (s.selectedId ? [s.selectedId] : []);
+    if (ids.length < 2) return;
+    const axisIdx = axis === "x" ? 0 : axis === "y" ? 1 : 2;
+    const bbxs = [];
+    for (const id of ids) {
+      const o = s.objects.find((x) => x.id === id);
+      if (!o) continue;
+      try {
+        const bb = computeRotatedBBox(o);
+        const p = (o.position && o.position[axisIdx]) || 0;
+        bbxs.push({ id: o.id, min: bb.min[axis] + p, max: bb.max[axis] + p });
+      } catch {
+        // skip — partially-loaded objects can't be aligned
+      }
+    }
+    if (bbxs.length < 2) return;
+    const allMin = Math.min(...bbxs.map((b) => b.min));
+    const allMax = Math.max(...bbxs.map((b) => b.max));
+    let target;
+    if (mode === "min") target = allMin;
+    else if (mode === "max") target = allMax;
+    else target = (allMin + allMax) / 2;
+    get().pushHistory();
+    set((st) => ({
+      objects: st.objects.map((o) => {
+        const bbx = bbxs.find((b) => b.id === o.id);
+        if (!bbx) return o;
+        const cur = mode === "min" ? bbx.min : mode === "max" ? bbx.max : (bbx.min + bbx.max) / 2;
+        const delta = target - cur;
+        if (Math.abs(delta) < 1e-6) return o;
+        const np = [...o.position];
+        np[axisIdx] += delta;
+        return { ...o, position: np };
+      }),
+    }));
+  },
+
   // Drop the object so its lowest point sits on Z=0 (the build plate).
   dropToBed: (id, withHistory = true) => {
     const s = get();

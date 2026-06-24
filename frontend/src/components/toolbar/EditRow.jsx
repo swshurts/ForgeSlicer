@@ -13,7 +13,7 @@ import {
   PlusSquare, MinusSquare, Combine, Move3D, RotateCw, Scale3D,
   Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor,
   MapPin, Maximize, Copy, FlipHorizontal2, Scissors, Sliders,
-  Settings2,
+  Settings2, AlignCenter,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { IconBtn, Divider, TabPillButton } from "./ToolbarUI";
@@ -71,6 +71,15 @@ export default function EditRow({
       disabled: selectionCount === 0,
     },
     { id: "mirror",    refKey: "mir", testid: "menu-mirror-btn",    icon: FlipHorizontal2,  label: "Mirror",    title: "Mirror in-place on X / Y / Z (flips the selected object without duplicating)", disabled: selectionCount === 0 },
+    {
+      id: "align", refKey: "aln", testid: "menu-align-btn", icon: AlignCenter,
+      label: "Align",
+      badge: selectionCount > 1 ? selectionCount : null,
+      title: selectionCount > 1
+        ? `Align ${selectionCount} selected objects (left / right / centre, on any axis)`
+        : "Select 2+ objects to align them (left / right / centre, on any axis)",
+      disabled: selectionCount < 2,
+    },
   ];
 
   return (
