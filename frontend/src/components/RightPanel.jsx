@@ -8,7 +8,10 @@ import { computeRotatedBBox } from "../lib/geometry";
 import { printersApi } from "../lib/api";
 import SplineInspectorBlock from "./SplineInspectorBlock";
 import SweepInspectorBlock from "./SweepInspectorBlock";
-import EdgeControls from "./inspector/EdgeControls";
+// Iter-105.20 — EdgeControls (fillet/chamfer UI) removed from Inspector
+// at user request. The component file at `./inspector/EdgeControls.jsx`
+// is preserved for future use should the slicer pipeline ever honour
+// per-edge geometry in the modifier-mesh carve.
 import AutoSaveSection from "./inspector/AutoSaveSection";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2 } from "lucide-react";
@@ -827,7 +830,15 @@ function Inspector() {
             <NumberField testid="dim-y" label="Y" hint="depth" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
             <NumberField testid="dim-z" label="Z" hint="height" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
           </div>
-          <EdgeControls obj={obj} updateDims={updateDims} />
+          {/* Iter-105.20 — Edge fillet/chamfer controls removed at user
+              request. Reason: the modifier-mesh 3MF export pipeline
+              doesn't carry fine edge geometry through to the slicer's
+              modifier-volume carve, so showing the UI was misleading
+              (users would dial in a fillet, export, and find the
+              slicer rendered the cut with sharp edges anyway). The
+              EdgeControls component is preserved at
+              `./inspector/EdgeControls.jsx` should the path forward
+              ever support it natively in the slicer. */}
         </div>
       )}
       {(obj.type === "sphere" || obj.type === "cylinder" || obj.type === "cone") && (
@@ -909,12 +920,10 @@ function Inspector() {
               />
             </div>
           )}
-          {obj.type === "cylinder" && (
-            <EdgeControls obj={obj} updateDims={updateDims} />
-          )}
-          {obj.type === "cone" && (
-            <EdgeControls obj={obj} updateDims={updateDims} />
-          )}
+          {/* Iter-105.20 — Edge fillet/chamfer controls removed for the
+              same reason as the cube path above (misleading because the
+              modifier-mesh 3MF carve doesn't honour fine edge geometry
+              at slice time). */}
         </div>
       )}
       {obj.type === "torus" && (
