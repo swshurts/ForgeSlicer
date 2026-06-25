@@ -3275,3 +3275,43 @@ need a single-mesh STL output.
   new helpers `_buildVolumeObjectXml(objectId, geometry)` and
   `_uuidFor(objectId)`. Legacy triangle-range path removed.
 
+
+## Iteration 105.20 (2026-06-24) — Remove fillet/chamfer Inspector controls
+
+**User request**
+- "Remove the chamfering and fillet options from the Inspect screen as
+  they are misleading."
+
+**Why misleading**
+- The modifier-mesh 3MF export pipeline (iter-105.19 BBS multi-object
+  schema) doesn't propagate per-edge fillet/chamfer geometry through
+  to the slicer's modifier-volume carve. Users would dial in a fillet,
+  export, then find the slicer carved with sharp edges anyway because
+  the slicer parses the cube as a separate negative volume and
+  ignores the parametric edge metadata we attached to it.
+
+**Change**
+- Deleted all three `<EdgeControls>` JSX usages from
+  `/app/frontend/src/components/RightPanel.jsx` (cube, cylinder, cone
+  Inspector blocks) plus the import. Comment blocks at lines 11, 833,
+  and ~923 document the deliberate removal with rationale and point
+  to `inspector/EdgeControls.jsx` for future restoration.
+- The component file itself is **preserved on disk** — if the slicer
+  pipeline ever honours per-edge geometry through the modifier carve
+  (Bambu future versions are heading this way), it can be restored
+  with a one-line import + three one-line JSX inserts.
+- Webpack tree-shook the dead module from the shipped bundle
+  (verified — all 5 testids absent from `bundle.js`).
+
+**Verified by testing_agent_v3_fork** (`/app/test_reports/iteration_98.json`) — 100% pass:
+- 5/5 bundle removal markers (`edge-controls`, `edge-style-fillet`,
+  `edge-style-chamfer`, `edge-radius-slider`, `edge-mode-picker` all
+  return 0 hits in the shipped bundle).
+- 7/7 iter-105.19 multi-object 3MF markers preserved at exact same
+  hit counts as the iteration_97.json baseline — no regression.
+- 4/4 primitive Inspector probes (cube / cylinder / cone / sphere)
+  confirm zero edge-controls DOM presence; `dim-x/y/z`, `dim-segments`,
+  Transforms, etc. still render correctly.
+- Screenshot at `/app/test_reports/iter105_20_cube_inspector.png`
+  shows the full Cube Inspector minus the edge panel.
+
