@@ -3315,3 +3315,50 @@ need a single-mesh STL output.
 - Screenshot at `/app/test_reports/iter105_20_cube_inspector.png`
   shows the full Cube Inspector minus the edge panel.
 
+
+## Iteration 105.21 (2026-06-24) — Drop Bambu Lab vendor marker from modifier-mesh 3MF
+
+**User request**
+- "When it opens up the slicer on export, it is always saying it is
+  missing a Bambu library. I don't have any Bambu printers; are there
+  better settings other than the Bambu ones?"
+- "I use Sovol and Elegoo printers too; so, don't build me into a
+  corner."
+
+**Root cause**
+- The iter-105.17 → 105.19 modifier-mesh 3MF declared
+  `xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"` and
+  `<metadata name="BambuStudio:3mfVersion">1</metadata>` in
+  `3D/3dmodel.model`. Both markers cue OrcaSlicer to try to resolve a
+  Bambu Lab printer-profile bundle on open. User runs FlashForge AD5X
+  / Sovol / Elegoo (no Bambu profile installed) → "missing a Bambu
+  library" warning.
+
+**Fix — surgical removal of vendor markers**
+- `/app/frontend/src/lib/threemf.js > build3MFBytesWithModifiers` —
+  removed both Bambu strings from the emitted `3D/3dmodel.model`.
+  Kept the generic Slic3r-PE marker (`xmlns:slic3rpe` +
+  `slic3rpe:Version3mf=1`) so OrcaSlicer / PrusaSlicer / SuperSlicer
+  still recognise the file as a "Slic3r-derivative project" — but
+  WITHOUT triggering vendor-library lookups.
+- Multi-object schema from iter-105.19 fully preserved:
+  `<components>` + per-volume `<object>` + `<part subtype="negative_part">`
+  in the `model_settings.config` sidecar.
+- Cura-derivatives (Sovol Cura, Elegoo Cura, FlashPrint) ignore the
+  Slic3r-PE sidecar but still import each `<object>` as a separate
+  mesh the user can manually flag via right-click → Per Model
+  Settings → "Cutting Mesh". The schema is fully spec-compliant 3MF.
+
+**Verified by testing_agent_v3_fork** (`/app/test_reports/iteration_99.json`) — 100% pass:
+- 23/23 fixture invariants on the emitted XML.
+- Bundle smoke: `xmlns:BambuStudio=0`, `BambuStudio:3mfVersion=0`
+  (Bambu markers gone). All iter-105.19 schema markers preserved at
+  exact baseline counts.
+- iter-105.20 edge-controls removal still in effect (0 hits on all
+  five testids).
+- Workspace UI renders correctly authenticated.
+
+**Files touched**
+- `lib/threemf.js` — model.model XML template (lines 145-167) drops
+  `xmlns:BambuStudio` + `BambuStudio:3mfVersion` metadata row.
+
