@@ -142,12 +142,19 @@ ${componentLines}
       </components>
     </object>`;
 
-  // 3D/3dmodel.model — full XML with BBS / Slic3r-PE namespaces and
-  // version markers so the slicer recognises this as a project file.
+  // 3D/3dmodel.model — full XML with Slic3r-PE namespace and
+  // production-extension namespace so the slicer recognises this as a
+  // project file. We DELIBERATELY OMIT the Bambu Lab namespace +
+  // version metadata — they signal "this is a Bambu Lab native file"
+  // and trigger OrcaSlicer's "missing Bambu library" warning on
+  // non-Bambu printer setups (FlashForge / Prusa / Creality / Voron /
+  // etc.). OrcaSlicer's parser still reads our
+  // `<part subtype="negative_part">` metadata in
+  // `Metadata/model_settings.config` without the Bambu marker; it
+  // just doesn't try to resolve Bambu-specific profile presets.
   const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
   <metadata name="Application">ForgeSlicer</metadata>
-  <metadata name="BambuStudio:3mfVersion">1</metadata>
   <metadata name="slic3rpe:Version3mf">1</metadata>
   <metadata name="Title">${escapeXml(projectName)}</metadata>
   <resources>
