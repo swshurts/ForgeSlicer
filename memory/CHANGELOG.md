@@ -3902,3 +3902,74 @@ adds a dedicated conversation-design section.
 ### Files touched
 - `frontend/src/components/Landing.jsx` — hero rewrite, new section
   inserted between hero and feature grid.
+
+
+## Iteration 105.30 (2026-06-26) — Homepage "Who ForgeSlicer is for" audience section
+
+### Why
+The previous iteration repositioned the hero around AI + voice
+("Design. Speak. Slice. Print.") but the page still didn't tell a
+visitor whether THEY belonged here — copy was feature-oriented, not
+audience-oriented. User asked for an explicit audience-segment block
+so 5 different visitor types see themselves on the page within
+seconds.
+
+### What landed (`frontend/src/components/Landing.jsx`)
+- **New section** between "Design by Conversation" and the existing
+  feature grid: `data-testid="landing-audience-section"`.
+- Eyebrow pill: `"Who ForgeSlicer is for"` (cyan, matching the
+  emerald + cyan vocabulary already established by the conversation
+  cards).
+- H2: `"Built for makers, not just engineers."` — sets the tone
+  upfront. "Makers" + the "not engineers" disclaimer disarm the
+  visitor who's seen too many "Powered by industrial-grade NURBS"
+  CAD landing pages.
+- Sub: explicitly mentions Fusion 360, FreeCAD, Blender as things
+  the user does NOT have to learn — anchors ForgeSlicer against
+  competitors the audience knows by name.
+- **5 audience cards in a responsive 1 / 2 / 3 / 5 column grid:**
+  1. **3D Printer Owners** (Printer icon, orange) — "Stop hunting
+     Thingiverse for the right STL. Design exactly what you need —
+     a phone stand sized to your desk, a replacement clip matched
+     to your callipers — then print it."
+  2. **STL Remixers** (Wrench icon, emerald) — "Found a great model
+     with the wrong-size screw holes? Drop it in and say 'make
+     these holes 4 mm bigger.' Remix any STL without remembering
+     which CAD package created it."
+  3. **Teachers & Classrooms** (GraduationCap icon, sky) — "Skip
+     the install tickets and licence chases. Students open
+     ForgeSlicer in any browser, describe what they want in plain
+     English, and watch real geometry appear — perfect introduction
+     to CAD."
+  4. **Etsy & Maker Sellers** (Store icon, amber) — "Custom-name
+     keychains, made-to-measure phone cases, wedding favours. Build
+     a base design once, tweak it per order with a voice command,
+     and re-export print-ready STLs in seconds."
+  5. **Beyond Tinkercad** (Rocket icon, purple) — "Outgrew
+     Tinkercad's primitives but Fusion 360 feels like a 747
+     cockpit? ForgeSlicer is the middle floor — real booleans,
+     precise transforms, and slicer handoff, wrapped in a 'just
+     describe it' interface."
+- Section-level CTA at the bottom: `"Find yourself in there? Open
+  the workspace →"` — orange-on-orange button matching the hero's
+  primary CTA so the eye is drawn back to the action.
+- Each card uses a distinct accent colour (orange / emerald / sky /
+  amber / purple) with matching icon + border hover — visual
+  signal that these are different *kinds* of users, not different
+  tiers / packages.
+- Approachable benefit-focused tone throughout — no feature lists,
+  no jargon, no "leverage parametric workflows."
+- Lucide icons added: `Wrench`, `GraduationCap`, `Store`, `Rocket`.
+
+### Verified live
+- All 5 `audience-card-*` test-ids present in the DOM
+- CTA text: "Find yourself in there? Open the workspace"
+- Screenshot at 1440×900 shows all 5 cards in one row with clean
+  spacing, then the CTA centred below, then the classic 4-card
+  feature grid afterwards. Visual hierarchy reads top-down:
+  Hero → Conversation → Audience → Features → Templates.
+- ESLint clean.
+
+### Files touched
+- `frontend/src/components/Landing.jsx` — new section inserted
+  between the conversation-design block and the feature grid.

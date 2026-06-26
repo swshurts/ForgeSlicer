@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -446,6 +446,125 @@ export default function Landing() {
             ForgeSlicer&apos;s voice + AI features are built for hobbyists, students, and makers — bring an idea, leave with a print-ready file.
           </div>
         </section>
+
+        {/* ─── Who is ForgeSlicer for? ──────────────────────────────
+            5 audience-segment cards. The personas come straight from
+            the user's brief — each card pairs a concrete user with a
+            benefit they actually care about, NOT a feature list.
+            Goal: a visitor sees themselves on the page within 5
+            seconds. Grid is 1 / 2 / 3 / 5 columns responsive — the
+            5-across only kicks in at xl+ so the cards stay readable
+            on laptops. */}
+        <section className="mt-24" data-testid="landing-audience-section">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-[10px] uppercase tracking-widest text-cyan-300 font-semibold">
+              <Sparkles size={11} /> Who ForgeSlicer is for
+            </div>
+            <h2 className="mt-4 text-3xl sm:text-4xl font-bold tracking-tight">
+              Built for makers,{" "}
+              <span className="text-orange-400">not just engineers.</span>
+            </h2>
+            <p className="mt-3 text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">
+              Design printable objects without learning Fusion 360, FreeCAD, or Blender. If you can describe what you want — out loud or in writing — ForgeSlicer can build it.
+            </p>
+          </div>
+
+          <div
+            className="grid sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4"
+            data-testid="landing-audience-grid"
+          >
+            {/* 1. 3D printer owners — design instead of just printing */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-orange-500/40 transition-colors"
+              data-testid="audience-card-printer-owners"
+            >
+              <div className="w-10 h-10 rounded bg-orange-500/20 border border-orange-500/40 flex items-center justify-center mb-3">
+                <Printer size={18} className="text-orange-300" />
+              </div>
+              <div className="text-[15px] font-bold text-white leading-snug">
+                3D Printer Owners
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Stop hunting Thingiverse for the right STL. Design exactly what you need — a phone stand sized to your desk, a replacement clip matched to your callipers — then print it.
+              </p>
+            </div>
+
+            {/* 2. Remix hobbyists — modifying downloaded STLs */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-emerald-500/40 transition-colors"
+              data-testid="audience-card-stl-remixers"
+            >
+              <div className="w-10 h-10 rounded bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mb-3">
+                <Wrench size={18} className="text-emerald-300" />
+              </div>
+              <div className="text-[15px] font-bold text-white leading-snug">
+                STL Remixers
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Found a great model with the wrong-size screw holes? Drop it in and say &ldquo;make these holes 4 mm bigger.&rdquo; Remix any STL without remembering which CAD package created it.
+              </p>
+            </div>
+
+            {/* 3. Teachers — classroom CAD without installs */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-sky-500/40 transition-colors"
+              data-testid="audience-card-teachers"
+            >
+              <div className="w-10 h-10 rounded bg-sky-500/20 border border-sky-500/40 flex items-center justify-center mb-3">
+                <GraduationCap size={18} className="text-sky-300" />
+              </div>
+              <div className="text-[15px] font-bold text-white leading-snug">
+                Teachers &amp; Classrooms
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Skip the install tickets and licence chases. Students open ForgeSlicer in any browser, describe what they want in plain English, and watch real geometry appear — perfect introduction to CAD.
+              </p>
+            </div>
+
+            {/* 4. Etsy / maker sellers — custom-per-order products */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-amber-500/40 transition-colors"
+              data-testid="audience-card-makers-sellers"
+            >
+              <div className="w-10 h-10 rounded bg-amber-500/20 border border-amber-500/40 flex items-center justify-center mb-3">
+                <Store size={18} className="text-amber-300" />
+              </div>
+              <div className="text-[15px] font-bold text-white leading-snug">
+                Etsy &amp; Maker Sellers
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Custom-name keychains, made-to-measure phone cases, wedding favours. Build a base design once, tweak it per order with a voice command, and re-export print-ready STLs in seconds.
+              </p>
+            </div>
+
+            {/* 5. TinkerCAD graduates — bridge to real CAD power */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-purple-500/40 transition-colors"
+              data-testid="audience-card-tinkercad-graduates"
+            >
+              <div className="w-10 h-10 rounded bg-purple-500/20 border border-purple-500/40 flex items-center justify-center mb-3">
+                <Rocket size={18} className="text-purple-300" />
+              </div>
+              <div className="text-[15px] font-bold text-white leading-snug">
+                Beyond Tinkercad
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Outgrew Tinkercad&apos;s primitives but Fusion 360 feels like a 747 cockpit? ForgeSlicer is the middle floor — real booleans, precise transforms, and slicer handoff, wrapped in a &ldquo;just describe it&rdquo; interface.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-8 text-center">
+            <Link
+              to="/workspace"
+              data-testid="audience-cta-workspace"
+              className="inline-flex items-center gap-2 h-10 px-5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded transition-colors"
+            >
+              Find yourself in there? Open the workspace <ChevronRight size={15} />
+            </Link>
+          </div>
+        </section>
+
 
         <div className="mt-24 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Feature icon={Box} title="Primitive Library" desc="Cubes, spheres, cylinders, cones, tori — drop them in and edit dimensions numerically or with gizmos." accent="bg-orange-500" />
