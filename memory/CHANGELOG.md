@@ -3973,3 +3973,26 @@ seconds.
 ### Files touched
 - `frontend/src/components/Landing.jsx` — new section inserted
   between the conversation-design block and the feature grid.
+
+
+## Iteration 105.31 (2026-06-26) — Hero CTA hierarchy: Start Designing Free / Try an Example / Import an STL
+
+### Why
+User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Browse Gallery) were tool-focused — fine for engineers, but the new "beginner-friendly + AI + voice" positioning needs CTAs that match. Beginners may not have an STL yet, and a curious-but-intimidated visitor needs a no-risk entry point to *see* what ForgeSlicer does without committing to a blank workspace.
+
+### What landed (`frontend/src/components/Landing.jsx`)
+- **Primary CTA** → `"Start Designing Free"` (was `"Start Modeling"`). Solid orange, drop-shadow for prominence. "Designing" reads as something the visitor already does, not a skill they need to learn. "Free" is honest and de-risks the click.
+- **Secondary CTA** (NEW) → `"Try an Example Project"` with a Sparkles icon. Smooth-scrolls to the existing `LandingTemplates` block via `scrollIntoView({behavior: "smooth"})`. Lets curious visitors browse pre-built designs they can open instead of staring at an empty workspace. Verified that clicking it scrolls the templates section into view.
+- **Tertiary CTA** → `"Import an STL"` (was `"Import STL · 3MF · OBJ"`). Stripped the format suffix from the button itself — the hint copy below already lists every supported format, so the button stays scannable. Most-muted styling (slate, no accent) since this is a "you already have a project" path.
+- **"Browse Gallery" removed from the hero**. It was duplicating the `landing-gallery-link` already in the top-nav. The hint copy under the CTA strip now mentions the Public Gallery so discoverability stays intact.
+- All three buttons share the same height (`h-11`) and gap (`gap-3`) — different VISUAL weight, identical hit-target ergonomics.
+
+### Verified live
+- Primary text: ✓ "Start Designing Free"
+- Secondary text: ✓ "Try an Example Project" + smooth-scroll to `landing-templates` confirmed
+- Tertiary text: ✓ "Import an STL"
+- Hero gallery button removed (0 instances), header gallery link preserved (1 instance)
+- ESLint clean
+
+### Files touched
+- `frontend/src/components/Landing.jsx` — hero CTA strip rewrite.

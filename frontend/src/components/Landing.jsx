@@ -288,21 +288,53 @@ export default function Landing() {
               <em className="text-orange-200 not-italic">&ldquo;make this cylinder 20&nbsp;mm taller&rdquo;</em>{" "}
               or generate a starter model from a text prompt — no CAD experience required. Then hand off to OrcaSlicer, Bambu Studio, or PrusaSlicer in a single click.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link to="/workspace" data-testid="hero-cta-workspace" className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2">
-                <Box size={16} /> Start Modeling
+            <div className="mt-7 flex flex-wrap gap-3" data-testid="hero-cta-row">
+              {/* ─── Primary CTA ─────────────────────────────────────
+                  "Start Designing Free" beats "Start Modeling" for
+                  beginners — "modeling" still sounds like a learned
+                  skill, "designing" sounds like something they
+                  already do. The "Free" tag is intentional and
+                  honest: the workspace doesn't gate anything behind
+                  a paywall today. */}
+              <Link
+                to="/workspace"
+                data-testid="hero-cta-workspace"
+                className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2 shadow-lg shadow-orange-900/30"
+              >
+                <Box size={16} /> Start Designing Free
               </Link>
+
+              {/* ─── Secondary CTA ───────────────────────────────────
+                  "Try an Example Project" sounds inviting for a
+                  curious-but-intimidated visitor. Scrolls to the
+                  LandingTemplates grid below so the user picks
+                  WHICH example they want — landing them straight
+                  on the workspace with no context would be jarring. */}
+              <button
+                type="button"
+                data-testid="hero-cta-example-project"
+                onClick={() => {
+                  const el = document.querySelector('[data-testid="landing-templates"]');
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-orange-500/40 hover:border-orange-500/70 transition-colors"
+              >
+                <Sparkles size={16} className="text-orange-400" /> Try an Example Project
+              </button>
+
+              {/* ─── Tertiary CTA ────────────────────────────────────
+                  "Import an STL" — kept short; the long
+                  "STL · 3MF · OBJ" detail is now in the hint copy
+                  below so the button itself stays scannable. */}
               <button
                 type="button"
                 data-testid="hero-cta-import"
                 onClick={handlePickFile}
-                className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-orange-500/40 hover:border-orange-500/70 transition-colors"
+                className="h-11 px-5 bg-slate-900/60 hover:bg-slate-800 text-slate-200 font-semibold rounded flex items-center gap-2 border border-slate-700 transition-colors"
               >
-                <Upload size={16} className="text-orange-400" /> Import STL · 3MF · OBJ
+                <Upload size={16} /> Import an STL
               </button>
-              <Link to="/gallery" data-testid="hero-cta-gallery" className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-slate-700">
-                <Globe size={16} /> Browse Gallery
-              </Link>
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -313,7 +345,7 @@ export default function Landing() {
               />
             </div>
             <p className="mt-3 text-[11px] text-slate-500 max-w-xl">
-              Already started a project elsewhere? Drop in an existing STL, 3MF, OBJ, GLB, SVG, or ZIP bundle and pick up right where you left off — measurements, booleans, voice editing, and slicing all work on imports.
+              Already started a project elsewhere? Drop in an existing STL, 3MF, OBJ, GLB, SVG, or ZIP bundle and pick up right where you left off — measurements, booleans, voice editing, and slicing all work on imports. The Public Gallery in the header has hundreds of community designs to remix too.
             </p>
             {importError && (
               <div data-testid="hero-import-error" className="mt-3 flex items-start gap-2 px-3 py-2 rounded bg-red-500/10 border border-red-500/40 text-red-300 text-xs max-w-xl">
