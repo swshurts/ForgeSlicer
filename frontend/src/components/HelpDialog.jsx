@@ -290,7 +290,7 @@ function Account() {
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-4">
         <li><strong>Email + password</strong> — fastest if you don't like third-party providers. Password must be at least 8 characters with at least one letter and one number.</li>
         <li><strong>Magic link</strong> — passwordless. We email a one-time sign-in link that's valid for 15 minutes and only usable once.</li>
-        <li><strong>Continue with Google</strong> — uses Emergent-managed Google OAuth; we only see your name, email, and profile picture.</li>
+        <li><strong>Continue with Google</strong> — uses Google OAuth; we only see your name, email, and profile picture.</li>
       </ul>
       <P><strong>Tip:</strong> if you started with Google and later want a password (for offline access or family members on the same device), just hit <em>Create an account</em> on the sign-in page with the same email — the password attaches to your existing account.</P>
 

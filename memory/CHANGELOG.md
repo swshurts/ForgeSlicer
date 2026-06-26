@@ -3770,3 +3770,65 @@ banner inside the dialog.
   detected transforms. Will involve a Zustand action that takes the
   primitive list and instantiates parametric objects.
 - **Phase 2.5 (deferred)** — Cone detection (requires custom RANSAC).
+
+
+## Iteration 105.28 (2026-06-26) — Branding & SEO metadata cleanup
+
+### Why
+The deployed shell still carried the boilerplate Emergent template
+metadata: `<title>Emergent | Fullstack App</title>`, a placeholder
+"A product of emergent.sh" description, no Open Graph / Twitter
+card tags, no favicon, no manifest. Search engines and social-card
+previews surfaced the template branding instead of ForgeSlicer.
+
+### What landed
+- **`public/index.html` rewritten** with a complete metadata block:
+  - `<title>` → **"ForgeSlicer — Browser CAD & 3D Printing Design Tool"**
+  - Long-form `<meta name="description">` describing primitives,
+    Booleans, AI mesh generation, and the OrcaSlicer / Bambu / Prusa
+    handoff.
+  - `application-name`, `author`, `keywords` for legacy crawlers.
+  - `<link rel="canonical">` pointing at `https://forgeslicer.com/`.
+  - **Open Graph block** (`og:type=website`, `og:site_name=ForgeSlicer`,
+    `og:url`, `og:title`, `og:description`, `og:image` →
+    `forgeslicer-logo.webp`, `og:image:alt`).
+  - **Twitter card block** (`twitter:card=summary_large_image`,
+    `twitter:title`, `twitter:description`, `twitter:image`,
+    `twitter:image:alt`).
+  - **Favicon + Apple touch icons** all pointing at the existing
+    `/forgeslicer-logo.webp` asset (multi-size `apple-touch-icon`
+    declarations).
+  - **JSON-LD structured data** (`@type: WebApplication`) so Google
+    can render rich snippets / sitelinks.
+  - **PWA manifest link** (`/manifest.json`).
+- **`public/manifest.json` created** — full PWA descriptor with
+  ForgeSlicer name, standalone display mode, theme colour `#0f172a`
+  (matches the dark UI), and the logo as 192/512 icons.
+- **"Made with Emergent" badge removed** — the visible black pill at
+  the bottom-right was a template artefact. Gone.
+- **`HelpDialog.jsx`**: removed user-visible "Emergent-managed
+  Google OAuth" wording — now reads "Continue with Google — uses
+  Google OAuth; we only see your name, email, and profile picture."
+- Kept the platform's `emergent-main.js` script tag — it's load-
+  bearing infrastructure for the hosting environment, not user-
+  visible branding.
+
+### Verified live (preview env)
+```
+TITLE        : ForgeSlicer — Browser CAD & 3D Printing Design Tool
+DESC         : ForgeSlicer is a browser-based CAD and 3D printing tool…
+OG_TITLE     : ForgeSlicer — Browser CAD & 3D Printing Design Tool
+OG_IMG       : https://forgeslicer.com/forgeslicer-logo.webp
+TW_CARD      : summary_large_image
+FAVICON      : /forgeslicer-logo.webp
+APPLE_TOUCH  : /forgeslicer-logo.webp
+MANIFEST     : /manifest.json
+VISIBLE_BADGE: 0  (removed)
+"Fullstack App" reference: NONE
+"Made with Emergent" visible: NONE
+```
+
+### Files touched
+- `frontend/public/index.html` — full rewrite with SEO block.
+- `frontend/public/manifest.json` — new.
+- `frontend/src/components/HelpDialog.jsx` — user-visible wording.
