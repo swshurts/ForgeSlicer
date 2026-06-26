@@ -3552,3 +3552,125 @@ existing process-pool plumbing and stream-upload pattern.
   overlay on the original mesh.
 - **Phase 4**: "Replace with Primitives" — swap the static mesh for
   editable Three.js parametric objects.
+
+
+## Iteration 105.26 (2026-06-26) — RANSAC primitive segmentation (Phase 2: cylinders + spheres before planes)
+
+### Why
+Phase 1 detected planes only. Phase 2 extends the iterative detector
+to spheres and cylinders BEFORE planes, so curved surfaces don't get
+fragmented into N narrow planar strips. The cylinder test went from
+"8 planes (Phase 1)" to "1 cylinder + 2 caps (Phase 2)" — the
+explicit success criterion the user set.
+
+### What landed (backend only)
+- **Pipeline order: sphere → cylinder → plane.** Curved primitives
+  detect first; what's left feeds the plane stage as the catch-all.
+- **Sphere detector** (`_detect_spheres`): pyransac3d Sphere fit on a
+  1500-point subsample, then re-classify inliers against the full
+  remaining cloud. Validates by:
+  - **Radius / bbox check** — rejects NaN, negative, or oversize fits.
+  - **3-axis extent check** — smallest inlier-bbox extent must be
+    ≥ 0.4 r (rejects flat-disc / great-circle phantom fits).
+  - **Polar-angle histogram** — inlier latitudes must populate ≥ 5
+    of 10 bins (rejects two-ring "sphere through cylinder caps"
+    phantoms).
+  - **Surface-normal radial alignment** — inlier normals must point
+    radially from / to the candidate center (|n · radial_unit| ≥ 0.9).
+    Single signal that defeats every "inscribed sphere through cube
+    face-rings" phantom fit on flat-faced meshes.
+- **Cylinder detector** — went through three iterations to get right:
+  1. **First cut (pyransac3d Cylinder.fit)** rejected. pyransac3d's
+     cylinder fit consistently returns a tilted axis (off by ~0.1
+     perpendicular components) and inlier counts way below the true
+     value (4-5%). Even with 2500 iterations the axis didn't
+     converge to the true direction.
+  2. **PCA-on-inliers refinement** rejected. PCA on a sparse spiral
+     of true-cylinder points returns roughly the spiral's direction,
+     not the cylinder axis. Couldn't escape the tilted starting axis.
+  3. **Normal-driven Hough + 2D Kasa circle fit** (`_cylinder_axis_candidates`,
+     `_fit_cylinder_from_axis`, `_ransac_2d_circles`). The shipped
+     implementation:
+     - **Hough vote on the Gauss map**: score each candidate axis
+       direction by `(angular bins populated by perpendicular face
+       normals) × (perpendicular face count)`. Real cylinder axes
+       score 4× higher than random directions because cylinder side
+       normals trace a great circle.
+     - **2D RANSAC** on candidate-perpendicular points projected to
+       the perpendicular plane. Picks 3 random points → circumcircle
+       → counts inliers. Iterates 400× per axis. Then refines via
+       Kasa algebraic circle fit on the inliers.
+     - **Multi-circle**: returns up to 3 distinct circles per axis,
+       so a part with an outer cylinder and an inner bore on the
+       same axis comes back as 2 primitives.
+- **Cylinder validation gates** (in order, cheap-first):
+  - `height ≥ 0.4 r` (rejects curved-cap fits).
+  - `max axial gap / height < 0.35` (rejects 2-cluster phantom fits
+    on cap rims at z = ±h/2).
+  - `arc coverage ≥ 90°` (rejects too-narrow arcs).
+  - `position angular bins ≥ 9 / 18` (rejects phantom fits whose
+    inliers cluster at only a few positions).
+  - `radial residual std-dev ≤ 0.6 eps` (tight shell).
+  - `mean |normal · radial_unit| ≥ 0.85` (radial-aligned normals).
+  - **`normal-direction bins ≥ 12 / 18`** (the killer) — the
+    inliers' surface normal directions must sweep at least 2/3 of
+    the perpendicular circle. Real cylinder side walls have 18/18;
+    phantom fits on flat-faced meshes (cube → 4-strip inscribed
+    circle; L-bracket → 8 face normals) max out at 9. Threshold 12
+    keeps a 3-bin margin from the worst phantoms while easily
+    admitting real cylinders.
+- **Deterministic RNG seeding** (`np.random.seed(hash(stl))`):
+  pyransac3d uses `np.random` globally without honouring a custom
+  Generator. Seeding from the STL hash makes results reproducible
+  across calls and independent of earlier RNG consumption (so a
+  cube test followed by a cylinder test always returns the same
+  result; previously order-dependent).
+- **Legacy pyransac3d-based `_detect_cylinders`** kept in the
+  module but unwired — preserved for future fallback experiments
+  on low-poly / no-normals meshes.
+
+### Test coverage (`/app/backend/tests/test_segment_phase2.py`)
+| Shape | tris | primitives | coverage | wall |
+|---|---|---|---|---|
+| Cube 20³ | 12 | 6 planes | 100% | 1.0 s |
+| Sphere r=20 | 1280 | 1 sphere | 100% | 0.06 s |
+| Cylinder r=10 h=30 | 256 | 1 cyl + 2 planes | 100% | 1.5 s |
+| L-bracket (2-box union) | 24 | 8 planes | 100% | 1.0 s |
+| Block 40×40×20 + Ø16 through-hole | 272 | 1 cyl + 6 planes | 100% | 2.5 s |
+
+The block-with-hole result is the most important one: pyransac3d-only
+detection misses holes < 20% of the cloud (RANSAC iteration count
+needed grows ∝ 1/cluster⁵). The normal-driven Hough finds them
+deterministically.
+
+### Files touched
+- `backend/routes/mesh_segment.py` — added `_cylinder_axis_candidates`,
+  `_fit_cylinder_from_axis`, `_ransac_2d_circles`,
+  `_detect_cylinders_via_normals`, `_detect_spheres`, `_refine_cylinder`,
+  `_sphere_inliers`, `_cylinder_inliers`. Refactored `_segment_stl_sync`
+  to sphere → cylinder → plane stages. ~1240 lines total.
+- `backend/tests/test_segment_phase2.py` — new (the 5-shape battery).
+- `backend/tests/test_segment_edges.py` — updated sphere assertion
+  (Phase 2 now detects the sphere primitive; previously 0 planes,
+  now 100% coverage as a sphere).
+
+### Up next
+- **Phase 3**: frontend "Reverse Engineer" button + primitive panel.
+  Honest "this looks like an art piece" warning when `stats.coverage`
+  < 30% (the `coverage` field already carries this signal). Color-
+  coded inlier overlay on the original mesh.
+- **Phase 4**: "Replace with Primitives" — swap the static mesh for
+  editable Three.js parametric Box / Cylinder / Sphere objects.
+
+### Known limitations
+- **No cone detector yet**. Deferred to a Phase 2.5: pyransac3d has
+  no Cone class so we'd need a custom RANSAC. Affects screw heads
+  and chamfered features — important for hardware but not for
+  generic CAD parts.
+- **Tilted-axis cylinders** (oblique to canonical axes) detection
+  depends on the Hough sampling's 240 random directions covering
+  the true axis. For most CAD parts the axis is canonical (X/Y/Z)
+  which we include as fixed samples. A pathologically-tilted
+  cylinder (e.g., axis at 47.3° to everything) is still handled
+  via the random samples but with a ~1° angular resolution. Tighten
+  if user feedback says it's missing oblique cylinders.

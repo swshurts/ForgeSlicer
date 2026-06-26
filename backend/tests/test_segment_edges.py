@@ -30,10 +30,13 @@ def run(name, mesh):
 # exists.
 sph = trimesh.creation.icosphere(subdivisions=3, radius=20)
 res = run("sphere", sph)
-assert res["stats"]["coverage"] < 0.20, (
-    f"sphere should have low planar coverage; got {res['stats']['coverage']:.2%}"
+assert res["stats"]["coverage"] >= 0.95, (
+    f"Phase-2 sphere detector should find the sphere (≥95% coverage); got {res['stats']['coverage']:.2%}"
 )
-print("  -> low planar coverage as expected (organic shape)")
+# The sphere should be the SOLE primitive — no planes false-fit to it.
+plane_count = sum(1 for p in res["primitives"] if p["type"] == "plane")
+assert plane_count == 0, f"sphere should yield no planes, got {plane_count}"
+print("  -> sphere correctly detected as a single sphere primitive")
 
 # Cylinder — 2 caps should appear as planes. Side surface stays in
 # remainder (Phase 2 will detect cylinder there).
