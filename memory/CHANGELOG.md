@@ -3832,3 +3832,73 @@ VISIBLE_BADGE: 0  (removed)
 - `frontend/public/index.html` — full rewrite with SEO block.
 - `frontend/public/manifest.json` — new.
 - `frontend/src/components/HelpDialog.jsx` — user-visible wording.
+
+
+## Iteration 105.29 (2026-06-26) — Homepage repositioning: AI (Meshy.ai) + voice as core value-prop
+
+### Why
+Prior landing copy ("Model. Carve. Slice. Print." + boolean-ops blurb)
+positioned ForgeSlicer as a CAD power-tool. The actual differentiator
+vs Onshape / Tinkercad / Bambu Handy is **AI + voice for beginners** —
+"just say what you want" beats "open the Extrude dialog" for the
+hobbyist/maker target audience. This iteration rewrites the hero +
+adds a dedicated conversation-design section.
+
+### What landed (`frontend/src/components/Landing.jsx`)
+- **Eyebrow pill** → `"Beginner-friendly CAD · AI · Voice"` (was
+  `"Browser CAD + Slicer"`).
+- **Headline** → `"Design. Speak. Slice. Print."` (was `"Model.
+  Carve. Slice. Print."`) — "Speak" is the orange accent word now,
+  bringing voice front-and-centre.
+- **Sub-headline** rewritten end-to-end. New copy explicitly names:
+  - simple CAD tools
+  - AI assistance via **Meshy.ai**
+  - voice commands with a literal example: "make this cylinder
+    20 mm taller"
+  - generate a starter model from a text prompt
+  - no CAD experience required
+  Followed by the OrcaSlicer / Bambu / Prusa handoff line.
+- **Stats row** changed from `5 Primitives / 3 Booleans / 3 Exports`
+  → `5 Primitives / AI starter models / 🎙 Voice Editing`. The two
+  newer stats use semantic labels (AI, 🎙) instead of numbers
+  because "1" or "∞" for those is the wrong frame.
+- **NEW section** between hero and the existing feature grid:
+  `data-testid="landing-ai-voice-section"` —
+  - Emerald "DESIGN BY CONVERSATION" pill.
+  - H2: "You don't need to learn CAD. **Just say what you want.**"
+  - Three example cards (one per example phrase the user
+    explicitly requested):
+    1. **Voice editing** — *"Make this cylinder 20 mm taller."* —
+       "Click the mic, say the change, watch it happen."
+    2. **Voice booleans** — *"Cut a hole through the centre."* —
+       "The same boolean subtract a CAD pro would set up — but
+       spoken in one sentence."
+    3. **AI starter models · Meshy.ai** — *"Generate a low-poly
+       fox keychain."* — "Type or speak a prompt; Meshy.ai returns
+       a printable starter model in seconds. Refine it with
+       primitives, booleans, or another voice command — your AI
+       co-designer never gets tired of revisions."
+  - Footer disclaimer: "No CAD background required. ForgeSlicer's
+    voice + AI features are built for hobbyists, students, and
+    makers — bring an idea, leave with a print-ready file."
+- Existing 4-card classic feature grid (Primitives / Booleans /
+  Transforms / Export) preserved as-is — it's still relevant for
+  the visitors who DO want the technical detail, just no longer the
+  first thing they see.
+- Hint copy under the import button now mentions "voice editing"
+  works on imports too.
+- Lucide icons added: `Mic`, `Wand2`, `MessageSquare`.
+
+### Verified live (preview)
+- PILL text: ✓ "Beginner-friendly CAD · AI · Voice"
+- HEADLINE: ✓ "Design. Speak. Slice. Print."
+- Sub-headline: ✓ mentions Meshy.ai, voice commands, "make this
+  cylinder 20 mm taller", "no CAD experience required"
+- All 3 example cards render with correct `data-testid`s
+  (`example-card-voice-edit`, `example-card-voice-boolean`,
+  `example-card-ai-prompt`)
+- Screenshots: clean rendering at 1440×900, ESLint clean.
+
+### Files touched
+- `frontend/src/components/Landing.jsx` — hero rewrite, new section
+  inserted between hero and feature grid.

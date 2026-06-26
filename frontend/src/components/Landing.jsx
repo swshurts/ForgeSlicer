@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -273,18 +273,20 @@ export default function Landing() {
         <SsoBridgeBanner />
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full text-[10px] uppercase tracking-widest text-orange-400 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-500" /> Browser CAD + Slicer
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full text-[10px] uppercase tracking-widest text-orange-400 font-semibold" data-testid="landing-eyebrow-pill">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-500" /> Beginner-friendly CAD · AI · Voice
             </div>
-            <h1 className="mt-5 text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
-              Model. Carve.<br />
-              <span className="text-orange-400">
-                Slice.
-              </span>{" "}
-              Print.
+            <h1 className="mt-5 text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]" data-testid="landing-hero-headline">
+              Design. <span className="text-orange-400">Speak.</span><br />
+              Slice. Print.
             </h1>
-            <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl">
-              CAD for people who wish they could do CAD, but don&apos;t know how — 3D modeler with positive &amp; negative parts, real boolean operations, and integrated production slicing. Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own with a single click — or export STL / 3MF directly. All in your browser tab.
+            <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl" data-testid="landing-hero-subheadline">
+              Design 3D-printable objects with{" "}
+              <span className="text-white font-semibold">simple CAD tools</span>,{" "}
+              <span className="text-white font-semibold">AI assistance via Meshy.ai</span>, and{" "}
+              <span className="text-white font-semibold">voice commands</span>. Say{" "}
+              <em className="text-orange-200 not-italic">&ldquo;make this cylinder 20&nbsp;mm taller&rdquo;</em>{" "}
+              or generate a starter model from a text prompt — no CAD experience required. Then hand off to OrcaSlicer, Bambu Studio, or PrusaSlicer in a single click.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/workspace" data-testid="hero-cta-workspace" className="h-11 px-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded flex items-center gap-2">
@@ -311,7 +313,7 @@ export default function Landing() {
               />
             </div>
             <p className="mt-3 text-[11px] text-slate-500 max-w-xl">
-              Already started a project elsewhere? Drop in an existing STL, 3MF, OBJ, GLB, SVG, or ZIP bundle and pick up right where you left off — measurements, booleans, and slicing all work on imports.
+              Already started a project elsewhere? Drop in an existing STL, 3MF, OBJ, GLB, SVG, or ZIP bundle and pick up right where you left off — measurements, booleans, voice editing, and slicing all work on imports.
             </p>
             {importError && (
               <div data-testid="hero-import-error" className="mt-3 flex items-start gap-2 px-3 py-2 rounded bg-red-500/10 border border-red-500/40 text-red-300 text-xs max-w-xl">
@@ -325,12 +327,12 @@ export default function Landing() {
                 <div className="text-[10px] uppercase tracking-wider text-slate-500">Primitive Types</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-cyan-400 font-mono">3</div>
-                <div className="text-[10px] uppercase tracking-wider text-slate-500">Boolean Ops</div>
+                <div className="text-2xl font-bold text-cyan-400 font-mono">AI</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Starter Models</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-400 font-mono">3</div>
-                <div className="text-[10px] uppercase tracking-wider text-slate-500">Export Formats</div>
+                <div className="text-2xl font-bold text-emerald-400 font-mono">🎙</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Voice Editing</div>
               </div>
             </div>
           </div>
@@ -364,6 +366,86 @@ export default function Landing() {
             />
           </div>
         </div>
+
+        {/* ─── Design-by-conversation section ──────────────────────
+            AI + voice are the headline value-prop, so they get a
+            dedicated panel between the hero and the classic-feature
+            grid. The three example cards are LITERAL phrases users
+            can speak / type into the workspace today — beginner-
+            friendly framing on purpose ("just say it" beats "open
+            the Extrude dialog"). */}
+        <section className="mt-20" data-testid="landing-ai-voice-section">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-[10px] uppercase tracking-widest text-emerald-300 font-semibold">
+              <Mic size={11} /> Design by Conversation
+            </div>
+            <h2 className="mt-4 text-3xl sm:text-4xl font-bold tracking-tight">
+              You don&apos;t need to learn CAD.<br />
+              <span className="text-orange-400">Just say what you want.</span>
+            </h2>
+            <p className="mt-3 text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">
+              ForgeSlicer interprets natural language and turns it into real geometry edits. Speak, type, or describe — the model updates the same way a CAD veteran would do it, just without the menus.
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-4" data-testid="landing-conversation-examples">
+            {/* Voice editing card — concrete edit-this-mesh example */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-emerald-500/40 transition-colors"
+              data-testid="example-card-voice-edit"
+            >
+              <div className="w-10 h-10 rounded bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mb-3">
+                <Mic size={18} className="text-emerald-300" />
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-emerald-300 font-semibold">Voice editing</div>
+              <div className="mt-2 text-[15px] font-semibold text-white leading-snug">
+                &ldquo;Make this cylinder 20&nbsp;mm taller.&rdquo;
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Click the mic, say the change, watch it happen. Resize, rotate, move, and align with plain English — no dialog hunting.
+              </p>
+            </div>
+
+            {/* Boolean-by-voice card — shows complex ops are accessible */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-cyan-500/40 transition-colors"
+              data-testid="example-card-voice-boolean"
+            >
+              <div className="w-10 h-10 rounded bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center mb-3">
+                <MessageSquare size={18} className="text-cyan-300" />
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-cyan-300 font-semibold">Voice booleans</div>
+              <div className="mt-2 text-[15px] font-semibold text-white leading-snug">
+                &ldquo;Cut a hole through the centre.&rdquo;
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                The same boolean subtract a CAD pro would set up — but spoken in one sentence. Holes, slots, embossed text, and unions all respond to natural prompts.
+              </p>
+            </div>
+
+            {/* AI generation card — kicks off a fresh model from prompt */}
+            <div
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-orange-500/40 transition-colors"
+              data-testid="example-card-ai-prompt"
+            >
+              <div className="w-10 h-10 rounded bg-orange-500/20 border border-orange-500/40 flex items-center justify-center mb-3">
+                <Wand2 size={18} className="text-orange-300" />
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-orange-300 font-semibold">AI starter models · Meshy.ai</div>
+              <div className="mt-2 text-[15px] font-semibold text-white leading-snug">
+                &ldquo;Generate a low-poly fox keychain.&rdquo;
+              </div>
+              <p className="mt-2 text-xs text-slate-400 leading-relaxed">
+                Type or speak a prompt; Meshy.ai returns a printable starter model in seconds. Refine it with primitives, booleans, or another voice command — your AI co-designer never gets tired of revisions.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 text-center text-[11px] text-slate-500">
+            <span className="text-slate-400">No CAD background required.</span>{" "}
+            ForgeSlicer&apos;s voice + AI features are built for hobbyists, students, and makers — bring an idea, leave with a print-ready file.
+          </div>
+        </section>
 
         <div className="mt-24 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Feature icon={Box} title="Primitive Library" desc="Cubes, spheres, cylinders, cones, tori — drop them in and edit dimensions numerically or with gizmos." accent="bg-orange-500" />
