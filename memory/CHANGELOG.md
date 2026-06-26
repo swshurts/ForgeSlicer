@@ -3362,3 +3362,54 @@ need a single-mesh STL output.
 - `lib/threemf.js` — model.model XML template (lines 145-167) drops
   `xmlns:BambuStudio` + `BambuStudio:3mfVersion` metadata row.
 
+
+## Iteration 105.23 (2026-06-26) — Slicer auto-handoff (`open/?file=<URL>`)
+
+**User request**
+- "When it loads the Slicer, you then have to manually go to 'Open
+  Project' to load the 3MF file." Previously Send-to-Slicer launched
+  the slicer via bare `orcaslicer://` (no file arg) → slicer opened
+  with an empty workspace, user had to drag/open the downloaded file
+  by hand.
+
+**Fix — new backend route + frontend handoff plumbing**
+
+BACKEND (new file `/app/backend/routes/exports.py`):
+- `POST /api/exports/handoff?filename=<name>` — auth-required (session
+  cookie OR `Authorization: Bearer`), accepts raw `application/octet-stream`
+  body, stores in GridFS bucket `export_handoff_files`. Returns
+  `{token, url, filename, expires_at, size}`. Token = 128-bit hex,
+  single-shot, 30-min TTL.
+- `GET /api/exports/handoff/{token}` — PUBLIC (no auth — slicer can't
+  forward browser cookies). Streams the file back with
+  `Content-Disposition: attachment`. Deletes the index record BEFORE
+  streaming (so concurrent / subsequent GETs see 404), schedules
+  GridFS chunk cleanup via `BackgroundTasks`. 410 Gone for expired.
+- Passive `_purge_expired` sweep on every POST.
+- Router mounted in `server.py` alongside `mesh_repair`.
+
+FRONTEND (`/app/frontend/src/lib/customSlicers.js`):
+- New `stageHandoff(bytes, filename)` — POSTs to `/api/exports/handoff`.
+- `launchSlicer(protocol, {fileUrl})` now constructs
+  `<protocol>open/?file=<URL-encoded URL>` for Slic3r-family
+  protocols (orcaslicer / prusaslicer / superslicer / bambustudioopen).
+  Cura-family + unknowns fall back to bare-protocol launch.
+
+FRONTEND (`/app/frontend/src/components/dialogs/OrcaDialog.jsx > handleDownload`):
+- Still downloads local copy (backup for Cura users + handoff-failure
+  fallback).
+- Now ALSO stages bytes → gets public URL → passes to `launchSlicer`.
+- Graceful fallback toast if staging fails.
+
+**Verified by testing_agent_v3_fork** (`/app/test_reports/iteration_101.json`) — 17/17 pytest cases + 1 race test PASS:
+- Happy path: stage → 200 + token + URL + size; GET via token → 200 +
+  byte-identical body + correct headers.
+- Auth: POST without bearer → 401. Empty body → 400. 60 MB body → 413.
+- Single-shot: 2nd GET → 404. 5-way concurrent race → exactly 1×200 +
+  4×404 (delete-before-stream is atomic via Mongo `delete_one`).
+- Expired: 410 Gone + GridFS purge confirmed.
+- Bundle smoke: all four new code-path strings shipped.
+- Regression: iter-105.19 / .20 / .21 markers all intact.
+
+**Test artefact**: `/app/backend/tests/test_exports_handoff.py` (17 tests, canonical regression).
+
