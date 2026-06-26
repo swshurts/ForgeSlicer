@@ -30,6 +30,7 @@ from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
 from routes.mesh_repair import build_mesh_repair_router
 from routes.exports import build_exports_router
+from routes.release import build_release_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
 from routes.realtime import router as realtime_router
 
@@ -520,6 +521,13 @@ api_router.include_router(build_mesh_repair_router(get_current_user))
 # (launched via the orcaslicer:// custom protocol with `?file=<URL>`)
 # can fetch and auto-open it — no more manual "Open Project" step.
 api_router.include_router(build_exports_router(db, get_current_user))
+
+# Release-info route. /api/release/current parses CHANGELOG.md for the
+# latest `## Iteration X.Y` heading and serves it to the frontend so
+# the displayed iter label updates automatically whenever a new
+# iteration is appended. Replaces the brittle hand-edited constant
+# in `lib/iterLabel.js` that kept going stale.
+api_router.include_router(build_release_router())
 
 # Per-user custom printer definitions — /api/me/printers/* (auth-required).
 # Lets users register printers not in OrcaSlicer's bundled preset library

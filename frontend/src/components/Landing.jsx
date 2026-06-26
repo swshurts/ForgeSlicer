@@ -1,5 +1,6 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
 import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
@@ -8,6 +9,8 @@ import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import LandingTemplates from "./LandingTemplates";
+
+const API = (process.env.REACT_APP_BACKEND_URL || "") + "/api";
 
 function Feature({ icon: Icon, title, desc, accent }) {
   return (
@@ -25,11 +28,33 @@ function Feature({ icon: Icon, title, desc, accent }) {
 //
 // Renders the muted "iter-X.Y" pill next to the wordmark and, when
 // clicked, drops a small popover with the last 3 iterations sourced
-// from /lib/iterLabel.js. Pure presentation — no fetch, no network —
-// so it works on the static Landing page without an auth round trip.
+// from /lib/iterLabel.js.
+//
+// Iter-105.25 — the label string is now LIVE-FETCHED from
+// `GET /api/release/current`, which parses CHANGELOG.md server-side
+// for the newest `## Iteration X.Y` heading. The ITER_LABEL constant
+// is the FALLBACK only (used when the backend is unreachable or
+// during the brief moment before the fetch resolves). This kills
+// the recurring "iter label is stale" bug at the root — bumping the
+// changelog now bumps the display with no code edit required.
 function IterPopoverTrigger() {
   const [open, setOpen] = React.useState(false);
+  const [liveLabel, setLiveLabel] = React.useState(ITER_LABEL);
   const ref = React.useRef(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await axios.get(`${API}/release/current`, { timeout: 5000 });
+        if (!cancelled && data?.label) setLiveLabel(data.label);
+      } catch {
+        // Backend unreachable — keep the constant fallback so the
+        // page still renders something sensible. This is the
+        // designed-for failure mode.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   React.useEffect(() => {
     if (!open) return;
     const onDoc = (e) => {
@@ -52,7 +77,7 @@ function IterPopoverTrigger() {
         className="text-[10px] font-mono text-slate-500 hover:text-orange-400 tracking-tight select-text transition-colors"
         title="What's new — click for recent iterations"
       >
-        {ITER_LABEL}
+        {liveLabel}
       </button>
       {open && (
         <div
@@ -61,7 +86,7 @@ function IterPopoverTrigger() {
         >
           <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-200">Recent iterations</span>
-            <span className="text-[10px] font-mono text-orange-400">{ITER_LABEL}</span>
+            <span className="text-[10px] font-mono text-orange-400">{liveLabel}</span>
           </div>
           <ul className="divide-y divide-slate-800">
             {RECENT_ITERATIONS.map((it) => (
