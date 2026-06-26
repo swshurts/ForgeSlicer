@@ -20,6 +20,15 @@ const LS_PREFERRED_KEY = "forgeslicer.preferredSlicerId.v1";
 
 // The seven well-known slicers ForgeSlicer ships with knowledge of.
 // Keeping protocol detection central avoids drift between dialogs.
+//
+// `noProtocolLauncher: true` flags slicers that DON'T register an OS
+// URL-protocol handler — there's no `cura://` or `flashforge://` that
+// the operating system knows what to do with, so `window.location.href`
+// just silently fails. For those slicers the Send-to-Slicer flow has
+// to fall back to "download the file, then ask the user to drag it
+// into the slicer window or set the slicer as the default `.3mf`
+// app". This is the most we can do without installing a companion
+// app or browser extension.
 export const BUILTIN_SLICERS = [
   {
     id: "orcaslicer",
@@ -62,6 +71,11 @@ export const BUILTIN_SLICERS = [
     protocol: "flashforge://",
     installUrl: "https://www.flashforge.com/download-center",
     isUserCustom: false,
+    // FlashForge ships Flash Studio without an OS URL-protocol
+    // handler. Browser auto-open is impossible until they (or a
+    // community installer) register one. Until then we download
+    // the .3mf and tell the user how to open it manually.
+    noProtocolLauncher: true,
   },
   {
     id: "cura",
@@ -69,6 +83,10 @@ export const BUILTIN_SLICERS = [
     protocol: "cura://",
     installUrl: "https://ultimaker.com/software/ultimaker-cura/",
     isUserCustom: false,
+    // Cura intentionally doesn't register a custom URL protocol —
+    // their stance is "use File → Open" or set Cura as the default
+    // `.3mf` application. Same fallback path as Flash Studio.
+    noProtocolLauncher: true,
   },
 ];
 

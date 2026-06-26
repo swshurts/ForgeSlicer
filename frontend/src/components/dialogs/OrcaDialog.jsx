@@ -99,6 +99,23 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
       // browser blocks the protocol etc.).
       downloadBlob(new Blob([bytes], { type: "model/3mf" }), outFilename);
       setDownloaded(true);
+
+      // Iter-105.24 — short-circuit for slicers WITHOUT an OS URL-
+      // protocol handler (Cura, Flash Studio, anything user-flagged
+      // `noProtocolLauncher: true`). For those there's nothing the
+      // browser can do beyond the local download we just triggered.
+      // Be honest about it via the launch state + a toast so the
+      // user isn't left wondering why nothing opened.
+      if (slicer.noProtocolLauncher) {
+        setLaunchState("manual_only");
+        toast.info(
+          `${slicer.name} doesn't support browser auto-open — your file is in your Downloads folder. Open ${slicer.name} and drag the file in, or use File → Open. Tip: set ${slicer.name} as the default app for .3mf files to make this a one-click double-click.`,
+          { duration: 12000 },
+        );
+        setBusy(false);
+        return;
+      }
+
       setLaunchState("trying");
       // Iter-105.23 — slicer handoff with file argument.
       // Stage the bytes on the backend so the desktop slicer can
@@ -217,9 +234,22 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
           </div>
 
           <p className="text-sm text-slate-300">
-            Downloads a print-ready <span className="font-mono text-orange-400">.3mf</span> for{" "}
-            <span className="font-semibold text-orange-400">{slicer?.name}</span> and tries to launch it
-            via its <span className="font-mono">{slicer?.protocol}</span> handler.
+            {slicer?.noProtocolLauncher ? (
+              <>
+                Downloads a print-ready <span className="font-mono text-orange-400">.3mf</span> for{" "}
+                <span className="font-semibold text-orange-400">{slicer?.name}</span>.{" "}
+                <span className="text-amber-300">
+                  {slicer?.name} doesn&apos;t support browser auto-launch — you&apos;ll open the file manually
+                  (drag into the window or <span className="font-mono">File → Open</span>).
+                </span>
+              </>
+            ) : (
+              <>
+                Downloads a print-ready <span className="font-mono text-orange-400">.3mf</span> for{" "}
+                <span className="font-semibold text-orange-400">{slicer?.name}</span> and tries to launch it
+                via its <span className="font-mono">{slicer?.protocol}</span> handler.
+              </>
+            )}
           </p>
 
           {/* Iter-94 — preserve-color toggle. Only surfaces when a
@@ -268,6 +298,46 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
             <div className="bg-emerald-500/10 border border-emerald-500/40 rounded p-2 text-[11px] text-emerald-200 flex items-start gap-2" data-testid="orca-launch-likely">
               <CheckCircle2 size={13} className="mt-0.5 flex-shrink-0" />
               <span>Looks like {slicer?.name} took focus — check your taskbar / dock for it.</span>
+            </div>
+          )}
+          {launchState === "manual_only" && (
+            <div className="bg-sky-500/10 border border-sky-500/40 rounded p-2 text-[11px] text-sky-200 space-y-1.5" data-testid="orca-launch-manual-only">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={13} className="mt-0.5 flex-shrink-0" />
+                <span>
+                  <span className="font-semibold">{slicer?.name}</span> doesn&apos;t register a browser URL handler,
+                  so we can&apos;t auto-launch it. Your <span className="font-mono">.3mf</span> downloaded
+                  successfully — open {slicer?.name} and drag the file into its window, or use
+                  <span className="font-mono"> File → Open</span>.
+                </span>
+              </div>
+              {lastFilename && (
+                <div className="flex items-center gap-1.5 pl-5">
+                  <code
+                    data-testid="orca-launch-filename-manual"
+                    className="flex-1 text-[10px] font-mono bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-sky-100 truncate"
+                  >
+                    {lastFilename}
+                  </code>
+                  <button
+                    data-testid="orca-launch-copy-filename-manual-btn"
+                    onClick={() => {
+                      navigator.clipboard
+                        ?.writeText(lastFilename)
+                        .then(() => toast.success(`Copied "${lastFilename}" to clipboard.`))
+                        .catch(() => toast.error("Copy failed — your browser blocked clipboard access."));
+                    }}
+                    className="h-6 px-2 text-[10px] bg-sky-500/20 hover:bg-sky-500/30 text-sky-100 rounded border border-sky-500/40 flex items-center gap-1"
+                    title={`Copy "${lastFilename}" — paste it into your file manager's search to locate the download`}
+                  >
+                    <Copy size={10} /> Copy filename
+                  </button>
+                </div>
+              )}
+              <p className="pl-5 text-[10px] text-sky-300/80">
+                Tip: set {slicer?.name} as the default app for <span className="font-mono">.3mf</span> files
+                in your OS settings — then double-clicking the download opens it directly.
+              </p>
             </div>
           )}
           {launchState === "uncertain" && (
