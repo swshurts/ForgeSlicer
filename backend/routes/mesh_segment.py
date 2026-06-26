@@ -735,6 +735,29 @@ def _detect_spheres(points, normals, remaining, eps, bbox_diag, min_inliers, tot
                         break
                     continue
 
+        # ─── Dedup against previously-detected spheres ───────────────
+        # When the first fit leaves a small residual of points ALSO
+        # on the same shell (icosphere artefacts, sampling noise),
+        # the next pass re-detects nearly the same sphere with
+        # slightly different center / radius. Reject any candidate
+        # that's within 10% of an already-recorded sphere on BOTH
+        # center distance and radius — mark its inliers consumed so
+        # we don't keep finding it.
+        is_dup = False
+        for prev in primitives:
+            if prev.get("type") != "sphere":
+                continue
+            pc = prev["params"]["center"]
+            pr = prev["params"]["radius"]
+            d_center = float(np.linalg.norm(np.asarray(center) - np.asarray(pc)))
+            if d_center < radius * 0.1 and abs(radius - pr) < radius * 0.1:
+                is_dup = True
+                break
+        if is_dup:
+            consumed_global = rem_idx[np.flatnonzero(mask)]
+            remaining[consumed_global] = False
+            continue
+
         consecutive_misses = 0
         primitives.append({
             "type": "sphere",

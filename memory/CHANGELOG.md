@@ -3674,3 +3674,99 @@ deterministically.
   cylinder (e.g., axis at 47.3° to everything) is still handled
   via the random samples but with a ~1° angular resolution. Tighten
   if user feedback says it's missing oblique cylinders.
+
+
+## Iteration 105.27 (2026-06-26) — RANSAC primitive segmentation (Phase 3: frontend Reverse-Engineer dialog) + sphere-dedup fix
+
+### Why
+Phase 3 of the Shapr3D-style reverse engineering feature. Phase 1
+shipped backend plane detection; Phase 2 added curved primitives;
+Phase 3 surfaces the results to the user via a new "Reverse Engineer"
+button on imported meshes. User explicitly requested an honest
+"this looks like an art piece" warning when the mesh isn't suitable
+for primitive reconstruction — implemented as a coverage-threshold
+banner inside the dialog.
+
+### What landed
+- **New `lib/meshSegmentApi.js`** (frontend) — wraps `/api/mesh/segment`
+  the same way `meshRepairApi.js` wraps `/api/mesh/repair`: raw
+  `application/octet-stream` POST of binary STL bytes (Cloudflare WAF
+  bypass), returns the JSON primitive list. Exports:
+  - `segmentMeshOnServer(stlBytes, { epsFrac })` — low-level wire call.
+  - `segmentImportedObject(obj)` — high-level helper that pulls the
+    geometry out of a Zustand `imported` scene object, exports it via
+    `geometryToSTLBinary`, and hits the endpoint.
+  - `classifyMeshShape(coverage)` — heuristic: `mechanical` (≥ 80%),
+    `mixed` (30–80%), `organic` (< 30%). Drives the banner.
+- **New `components/dialogs/ReverseEngineerDialog.jsx`** — modal that
+  fires on click of the new "Reverse Engineer" button. Layout:
+  - Sparkles + title header.
+  - Loading state while POSTing.
+  - **Honest-warning banner** when `classification === "organic"`
+    (coverage < 30%) — amber AlertTriangle: "This looks like an art
+    piece. Only X% of the mesh fits geometric primitives — sculptures,
+    organic forms, and freeform CAD won't reconstruct cleanly. The
+    detected primitives below are a best-effort approximation, not an
+    accurate parametric model. Reverse-Engineering works best on
+    mechanical parts."
+  - **Mixed-coverage banner** for the 30–80% range — softer sky-blue
+    "review carefully" callout.
+  - 4-tile stats grid: Planes / Cylinders / Spheres / Coverage. The
+    coverage tile turns amber when organic, lime when mechanical.
+  - Scrollable primitive list — one row per detected primitive with
+    type icon (orange Square, blue Cylinder, emerald Circle), inlier
+    count + %, and the type-specific params (plane normal+d / sphere
+    center+r / cylinder center+axis+r+h+arc).
+  - Footer with raw stats: tri count, ε, wall time.
+  - "Phase 4 will add &apos;Replace with Primitives&apos; — for now
+    this is inspection-only" hint at the bottom.
+  - data-testids on every interactive / informational element for
+    testing-agent driving.
+- **Inspector wiring** (`components/RightPanel.jsx`):
+  - New `reverseEngineerOpen` useState (hooks-order-stable, declared
+    next to the existing `repairBusy`).
+  - "Reverse Engineer" button added under the existing "Repair Mesh"
+    block on imported objects, indigo styling with Sparkles icon,
+    tooltip explaining when to use it. `data-testid="reverse-engineer-btn"`.
+  - Dialog mounted at the Inspector root so it overlays the entire
+    workspace (not just the right panel).
+
+### Bug fixed alongside (regression in iter-105.26 sphere detector)
+- **Sphere dedup check.** Repeated RANSAC passes on a low-poly
+  icosphere were re-detecting the same sphere 2-3× because the first
+  fit's residual points STILL formed a roughly-spherical shell. Added
+  a "is this new sphere within 10% center distance + 10% radius of
+  an already-recorded one?" check — if so, mark its inliers consumed
+  but don't record the duplicate. `_segment_stl_sync` on an
+  icosphere (subdivisions=2, r=20) now returns 1 sphere @ 99.9%
+  coverage instead of 2-3 phantom dupes.
+
+### Test coverage
+- Phase 2 backend tests still pass (`test_segment_phase2.py`):
+  - Cube: 6 planes
+  - Sphere: 1 sphere (with dedup, was 1-3)
+  - Cylinder: 1 cyl + 2 caps
+  - L-bracket: 8 planes
+  - Block with through-hole: 1 cyl + 6 planes
+- Frontend end-to-end verified via playwright on the preview env:
+  - Cube STL injected → button visible → dialog opens → loading →
+    "6 Planes 0 Cylinders 0 Spheres 100% Coverage" + 6 rows. No
+    organic warning (correctly hidden — coverage = 100%).
+  - All data-testids present and queryable.
+- Full preview-env wire test confirmed (`POST /api/mesh/segment` with
+  cube STL via session cookie returns the expected payload).
+
+### Files touched
+- `frontend/src/lib/meshSegmentApi.js` — new (~95 lines).
+- `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — new (~315 lines).
+- `frontend/src/components/RightPanel.jsx` — added import, `reverseEngineerOpen`
+  state, the button, and the dialog mount at the bottom.
+- `backend/routes/mesh_segment.py` — sphere dedup check in `_detect_spheres`.
+
+### Up next
+- **Phase 4** — "Replace with Primitives" action. The dialog currently
+  is read-only; Phase 4 will swap the imported triangle mesh for
+  editable Three.js Box / Cylinder / Sphere objects positioned at the
+  detected transforms. Will involve a Zustand action that takes the
+  primitive list and instantiates parametric objects.
+- **Phase 2.5 (deferred)** — Cone detection (requires custom RANSAC).

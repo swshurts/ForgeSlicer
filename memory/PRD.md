@@ -34,8 +34,8 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **Shapr3D-style reverse engineering** — RANSAC-based primitive fitting (STL → editable planes/cylinders/cubes) for mechanical parts.
   - ✅ **Phase 1 (iter-105.25)** — Backend plane segmentation (`POST /api/mesh/segment`) using `pyransac3d`. Cube → 6 planes, sphere → 0, L-bracket → 8 (100% coverage).
   - ✅ **Phase 2 (iter-105.26)** — Sphere + cylinder detection before planes. Normal-driven Hough-on-Gauss-map + 2D Kasa circle fit replaces unreliable pyransac3d Cylinder. Cylinder → 1 cyl + 2 caps; block-with-hole → 1 cyl + 6 planes (the bonus mechanical-CAD success).
-  - 🟡 **Phase 3 (next)** — Frontend "Reverse Engineer" button + primitive panel; honest warning when coverage < 30% (organic / art mesh).
-  - 🟡 **Phase 4** — "Replace with Primitives" — swap static mesh for editable Three.js parametric objects.
+  - ✅ **Phase 3 (iter-105.27)** — Frontend "Reverse Engineer" button + dialog. Loading / primitive list / stats grid / honest-warning banner when coverage < 30% ("this looks like an art piece"). Sphere dedup regression fixed alongside.
+  - 🟡 **Phase 4 (next)** — "Replace with Primitives" — swap static mesh for editable Three.js parametric objects.
   - ⏸️ **Phase 2.5 (deferred)** — Cone detection (requires custom RANSAC; pyransac3d has no Cone class).
 
 ### Pending P2 (backlog)
