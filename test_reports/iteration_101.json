@@ -1,0 +1,39 @@
+{
+  "summary": "iter-105.23 backend-only — NEW /api/exports/handoff route for slicer auto-handoff. 17/17 pytest cases PASS, plus a 5-way concurrent GET race-test PASS. Every assertion in the review request verified: (a) POST happy path returns 32-hex token + HTTPS public URL + ~30 min expires_at + correct size; (b) POST without auth -> 401 'Not authenticated'; (c) empty body -> 400 'Empty or truncated payload'; (d) 60 MB body -> 413 'File too large (>50 MB cap)'; (e) public GET returns byte-for-byte STL with Content-Disposition: attachment; filename=\"TEST_cube.3mf\" and Content-Type: model/3mf; (f) single-shot — second GET 404 'Unknown handoff token'; (g) malformed token & format-valid-but-DB-miss both 404; (h) expired handoff (expires_at mutated via mongosh to 2020-01-01) returns 410 'Handoff link expired' and is purged; (i) bundle.js ships all four new code-path strings (/exports/handoff, stageHandoff, open/?file=, openedWithFile); (j) regressions intact — iter-105.19 multi-object markers (negative_part>=5, <components>>=1, <component objectid present, _buildVolumeObjectXml, _uuidFor), iter-105.21 Bambu bans (xmlns:BambuStudio=0, BambuStudio:3mfVersion=0), iter-105.20 edge-controls bans (all 5 testids = 0). RACE-TEST: 5 concurrent GETs against the same just-staged token -> exactly 1×200 + 4×404 (delete-before-stream pattern on server.py route line ~228 is correctly atomic via Mongo's delete_one — no race window).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_exports_handoff.py",
+    "/app/test_reports/pytest/iter105_23_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Single-shot correctness verified empirically under concurrent load (5 parallel GETs -> 1×200, 4×404). The delete_one BEFORE the StreamingResponse on line 228 of /app/backend/routes/exports.py is the right pattern. Background-task GridFS chunk delete on line 229 is correctly scheduled to fire after the response is fully sent.",
+    "Token entropy: secrets.token_hex(16) -> 128 bits, unguessable per the same threat model as PrusaSlicer's upload handoff. Good.",
+    "Filename sanitisation (line 113-115) is defensive: any filename not ending in .3mf or .stl is force-suffixed .3mf. This means `TEST_blob.bin` is served back as `TEST_blob_bin.3mf` with model/3mf content-type — slightly surprising but documented in the code comment and the GET still works (verified by test_octet_stream_for_non_3mf_filename).",
+    "Size cap enforcement uses streaming chunk accounting (line 134-140) which correctly aborts the GridFS upload mid-stream — verified with a 60 MB dd payload that returned 413 without OOMing.",
+    "Expired-handoff cleanup path (_delete_handoff on line 211) is idempotent and was empirically confirmed: post-410 GET returns 404, meaning both the index row and GridFS chunks are gone.",
+    "Public GET (no auth) is intentional and documented (line 28-38 docstring). Token-as-authority pattern is correct for desktop-slicer fetch where browser cookies cannot be forwarded.",
+    "MINOR style nit (not a bug): `stage_handoff` reads `request.stream()` directly. Because FastAPI also accepts `Content-Length` headers, a client lying about CL larger than the body could hang the server momentarily — but the upstream ingress already enforces a 60s read timeout, so this is benign in this deployment."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_exports_handoff.py (NEW — 17 tests, all passing)"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 pytest cases + 1 concurrent race test)",
+    "frontend": "N/A (backend-only request)"
+  },
+  "test_credentials": "Bearer SESSION_TOKEN st_test_f9cb48812e2d4f29bd73d7bfef69aa1d → user steve.shurts@gmail.com. Cookie-less GET on /api/exports/handoff/<token> works as designed.",
+  "seed_data_creation": "Each test creates+consumes its own ephemeral GridFS handoff (TEST_*.3mf prefix). Single-shot semantics + 30 min TTL mean no manual cleanup required.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Canonical regression: `cd /app && python -m pytest backend/tests/test_exports_handoff.py -v`. The expired-handoff test depends on `mongosh` being reachable at mongodb://localhost:27017/test_database (verified). The bundle smoke fetches https://orca-cad-slice.preview.emergentagent.com/static/js/bundle.js (~10.8 MB) so each run takes ~9 s end-to-end. If main agent later changes the TTL from 30 min, update the band in TestStageHandoff::test_happy_path_returns_token_url_size (line ~97: 25*60 < delta < 35*60).",
+  "rca_of_the_issue": "Original UX issue (slicer launched empty, user had to manually Open Project) traces to the previous launchSlicer() emitting bare `orcaslicer://` with no `file=` query. iter-105.23 fix: stage the 3MF bytes server-side, return an HTTPS URL, then emit `orcaslicer://open/?file=<url-encoded URL>` so the slicer auto-downloads and opens the file. The backend half (this route) is solid; the frontend handoff path string in the bundle is present (verified via bundle smoke). No bugs found."
+}

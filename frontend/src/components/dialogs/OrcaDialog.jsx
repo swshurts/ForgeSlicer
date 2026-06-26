@@ -4,7 +4,7 @@ import { downloadBlob } from "../../lib/exporters";
 import { export3MFBytesAsync } from "../../lib/workerClient";
 import {
   getAllSlicers, getPreferredSlicer, setPreferredSlicerId,
-  launchSlicer,
+  launchSlicer, stageHandoff,
 } from "../../lib/customSlicers";
 import { X, Loader2, Printer, Download, Star, Settings, CheckCircle2, AlertCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -94,15 +94,39 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
         outFilename = `${safe}.3mf`;
       }
       setLastFilename(outFilename);
+      // Always download a local copy so the user has a backup if the
+      // protocol launch fails (Cura-derivatives, missing OS handler,
+      // browser blocks the protocol etc.).
       downloadBlob(new Blob([bytes], { type: "model/3mf" }), outFilename);
       setDownloaded(true);
       setLaunchState("trying");
+      // Iter-105.23 — slicer handoff with file argument.
+      // Stage the bytes on the backend so the desktop slicer can
+      // fetch them via `<protocol>open/?file=<URL>` and auto-open
+      // without the manual "Open Project" step. We fire this in
+      // parallel with the local download so the user gets both
+      // paths (auto-open in slicer + local copy in Downloads).
+      // If staging fails (network blip, backend unavailable), we
+      // fall back to the bare protocol launch — same as before,
+      // user can still drag the local copy in.
+      let fileUrl = null;
+      try {
+        const handoff = await stageHandoff(bytes, outFilename);
+        fileUrl = handoff.url;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn("Handoff staging failed; falling back to bare protocol launch:", e);
+        toast.warning(
+          "Could not stage the file for auto-open — the slicer will launch with an empty workspace. Drag the downloaded file in from your Downloads folder.",
+          { duration: 6000 },
+        );
+      }
       // Give the browser ~500 ms to finish the download attachment
       // before stealing focus with the OS protocol dialog. Without
       // this delay some browsers cancel the download in favour of
       // the protocol launch.
       await new Promise((r) => setTimeout(r, 500));
-      const result = await launchSlicer(slicer.protocol);
+      const result = await launchSlicer(slicer.protocol, { fileUrl });
       setLaunchState(result.launched ? "likely" : "uncertain");
     } catch (e) {
       toast.error(e.message || "Download failed");

@@ -170,6 +170,35 @@ export function removeCustomSlicer(id) {
 }
 
 /**
+ * Stage the 3MF bytes on the backend handoff route so the desktop
+ * slicer (launched via custom URL protocol) can fetch them. Returns
+ * the public URL the slicer should download. Throws on failure so the
+ * caller falls back to the plain-download path.
+ *
+ * Authentication: same Emergent session cookie / Authorization bearer
+ * the rest of the app uses. The returned URL itself is unauthenticated
+ * (slicer can't forward cookies) but carries a single-shot opaque
+ * token that the backend validates.
+ */
+export async function stageHandoff(bytes, filename) {
+  const { API } = await import("./api");
+  const url = new URL(`${API}/exports/handoff`, window.location.origin);
+  url.searchParams.set("filename", filename || "model.3mf");
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: bytes,
+  });
+  if (!res.ok) {
+    let detail;
+    try { detail = (await res.json()).detail; } catch { detail = res.statusText; }
+    throw new Error(`Handoff staging failed (HTTP ${res.status}): ${detail}`);
+  }
+  return res.json();   // { token, url, filename, expires_at, size }
+}
+
+/**
  * Attempt to launch a slicer via its registered URL protocol. Returns
  * a Promise<{launched: boolean, reason?: string}> that resolves after
  * a 2s probe — `launched: false` doesn't mean it definitely didn't
@@ -183,8 +212,17 @@ export function removeCustomSlicer(id) {
  *   • Detects "window lost focus" within 2s as a positive signal
  *     that the OS protocol dialog appeared.
  */
-export async function launchSlicer(protocol) {
+export async function launchSlicer(protocol, { fileUrl = null } = {}) {
   if (!protocol) return { launched: false, reason: "no protocol" };
+  // Slicer families that honour `<protocol>open/?file=<URL>` so they
+  // auto-open the file on launch (no manual File → Open Project).
+  // Cura-derivatives are NOT in this list; for them the caller must
+  // fall back to file download + drag-into-slicer guidance.
+  const OPEN_FILE_FAMILIES = ["orcaslicer://", "prusaslicer://", "superslicer://", "bambustudioopen://"];
+  const supportsOpenArg = OPEN_FILE_FAMILIES.some((p) => protocol.startsWith(p));
+  const target = (fileUrl && supportsOpenArg)
+    ? `${protocol}open/?file=${encodeURIComponent(fileUrl)}`
+    : protocol;
   let focusLost = false;
   const onBlur = () => { focusLost = true; };
   window.addEventListener("blur", onBlur, { once: true });
@@ -192,13 +230,13 @@ export async function launchSlicer(protocol) {
     // Primary path: setting window.location to a custom protocol
     // triggers the OS handler dialog without navigating the page.
     // The browser stays on the current URL after handling.
-    window.location.href = protocol;
+    window.location.href = target;
   } catch (err1) {
     // Fallback: synthesise an anchor click. Works in Firefox where
     // the location-href path is sometimes throttled.
     try {
       const a = document.createElement("a");
-      a.href = protocol;
+      a.href = target;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
@@ -215,5 +253,5 @@ export async function launchSlicer(protocol) {
   // (or the slicer itself) took focus — strong positive signal.
   await new Promise((resolve) => setTimeout(resolve, 2000));
   window.removeEventListener("blur", onBlur);
-  return { launched: focusLost };
+  return { launched: focusLost, target, openedWithFile: Boolean(fileUrl && supportsOpenArg) };
 }

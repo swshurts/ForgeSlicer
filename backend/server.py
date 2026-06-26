@@ -29,6 +29,7 @@ from routes.user_printers import build_user_printers_router
 from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
 from routes.mesh_repair import build_mesh_repair_router
+from routes.exports import build_exports_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
 from routes.realtime import router as realtime_router
 
@@ -513,6 +514,12 @@ api_router.include_router(build_litho_inbox_router(db, get_current_user))
 # the Repair Mesh button on the Imported Inspector to rescue
 # non-manifold AI / photogrammetry meshes before Boolean ops.
 api_router.include_router(build_mesh_repair_router(get_current_user))
+
+# Slicer-handoff staging. /api/exports/handoff lets the workspace push
+# the just-built 3MF to a short-lived public URL so the desktop slicer
+# (launched via the orcaslicer:// custom protocol with `?file=<URL>`)
+# can fetch and auto-open it — no more manual "Open Project" step.
+api_router.include_router(build_exports_router(db, get_current_user))
 
 # Per-user custom printer definitions — /api/me/printers/* (auth-required).
 # Lets users register printers not in OrcaSlicer's bundled preset library
