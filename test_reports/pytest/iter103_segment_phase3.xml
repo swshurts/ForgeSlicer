@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="241.641" timestamp="2026-06-26T20:30:36.345096+00:00" hostname="agent-env-daa8bbd0-7e1b-41e9-85fb-13fc2c4f8cf6"><testcase classname="backend.tests.test_segment_api_phase3" name="test_auth_required_returns_401" time="60.250"><failure message="assert 502 == 401&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_segment_api_phase3.py:43: in test_auth_required_returns_401
+    assert r.status_code == 401
+E   assert 502 == 401
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_segment_api_phase3" name="test_cube_returns_six_planes" time="60.224"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_segment_api_phase3.py:48: in test_cube_returns_six_planes
+    assert r.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_segment_api_phase3" name="test_sphere_returns_one_sphere" time="60.246"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_segment_api_phase3.py:59: in test_sphere_returns_one_sphere
+    assert r.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_segment_api_phase3" name="test_cylinder_returns_one_cyl_plus_two_caps" time="60.236"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_segment_api_phase3.py:68: in test_cylinder_returns_one_cyl_plus_two_caps
+    assert r.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase></testsuite></testsuites>

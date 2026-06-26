@@ -18,6 +18,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Hierarchical Project Structure (Rocket → Engine → Fuel Pump)~~ [DONE — iter 63]
 
 ## 🟢 P2 — Polish
+- **Flexible triangle primitive** (iter-105.27 enhancement, 2026-06-26) — the triangle primitive currently only creates equilateral triangles. Add: base + height inputs, three angles + side lengths, a "right triangle" preset, and an isosceles / scalene picker. Keep the equilateral path as the default for backwards-compat with existing scenes. Likely touches `lib/store.js` (PRIMITIVE_DEFAULTS for triangle), the `Shape2DControls` block in `RightPanel.jsx`, and the triangle geometry builder in `lib/geometry.js`.
 - **Refactor `lib/store.js` further** — was 1486 lines after iter 73; iter 74 extracted PRIMITIVE_DEFAULTS / buildPrimitive (→ `primitiveDefaults.js`) and the anchored-ruler action slice (→ `rulerActions.js`), bringing store.js to **1295 lines (-191, -13%)**. Further candidates: composite-primitives block (lines 676-997, ~320 lines) could move into a `compositeActions.js` slice next.
 - ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
 - ~~HelpDialog.jsx split~~ [DONE — iter 59, 771→515 lines]

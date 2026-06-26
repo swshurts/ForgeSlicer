@@ -14,12 +14,13 @@ import SweepInspectorBlock from "./SweepInspectorBlock";
 // per-edge geometry in the modifier-mesh carve.
 import AutoSaveSection from "./inspector/AutoSaveSection";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2 } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2, Sparkles } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
 import { toast } from "sonner";
 import { repairImportedObject } from "../lib/meshRepairApi";
+import ReverseEngineerDialog from "./dialogs/ReverseEngineerDialog";
 
 // iter-100.8 — Alphabetical, accordion-grouped printer picker. Replaces
 // the native <select>+<optgroup> with a Popover-driven UI so each brand
@@ -626,6 +627,11 @@ function Inspector() {
   // early return because hooks must be called in the same order every
   // render — moving it below the `if (!obj) return` violates rules-of-hooks.
   const [repairBusy, setRepairBusy] = useState(false);
+  // Reverse-Engineer dialog — Phase 3 of the RANSAC primitive
+  // segmentation feature. Hits /api/mesh/segment and renders the
+  // detected primitives. The same hook-order rule applies as for
+  // `repairBusy` above — keep it above the early-return.
+  const [reverseEngineerOpen, setReverseEngineerOpen] = useState(false);
 
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj) {
@@ -741,6 +747,22 @@ function Inspector() {
           </button>
           <p className="text-[10px] text-slate-500 leading-snug">
             Server-side MeshLab repair. Closes hairline holes, fixes non-manifold edges and vertices, and removes duplicate geometry. Use this when STL Preview reports a dropped Boolean cut.
+          </p>
+          {/* Reverse-Engineer (Phase 3): RANSAC primitive segmentation.
+              Detects planes / cylinders / spheres that approximate the
+              imported mesh, useful for mechanical parts. Honest about
+              its limits — the dialog warns when coverage < 30% (organic
+              meshes can't be reconstructed from primitives). */}
+          <button
+            data-testid="reverse-engineer-btn"
+            onClick={() => setReverseEngineerOpen(true)}
+            className="w-full h-8 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-indigo-400/40"
+            title="Detect geometric primitives (planes, cylinders, spheres) that approximate this imported mesh. Designed for mechanical parts — sculptures will trigger an honest 'won't work well' warning."
+          >
+            <Sparkles size={13} /> Reverse Engineer
+          </button>
+          <p className="text-[10px] text-slate-500 leading-snug">
+            RANSAC primitive detection. Returns a list of planes, cylinders, and spheres that approximate the imported mesh. Phase 3 — read-only; Phase 4 will let you replace the mesh with editable primitives.
           </p>
         </div>
       )}
@@ -1063,6 +1085,14 @@ function Inspector() {
       {(obj.type === "circle" || obj.type === "square2d" || obj.type === "triangle" || obj.type === "polygon") && (
         <Shape2DControls obj={obj} updateDims={updateDims} />
       )}
+
+      {/* Reverse-Engineer dialog — mounted at the Inspector root so it
+          overlays the entire workspace, not just the right panel. */}
+      <ReverseEngineerDialog
+        open={reverseEngineerOpen}
+        onClose={() => setReverseEngineerOpen(false)}
+        obj={obj}
+      />
     </Section>
   );
 }
