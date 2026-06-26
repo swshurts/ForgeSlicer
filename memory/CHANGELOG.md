@@ -3413,3 +3413,56 @@ FRONTEND (`/app/frontend/src/components/dialogs/OrcaDialog.jsx > handleDownload`
 
 **Test artefact**: `/app/backend/tests/test_exports_handoff.py` (17 tests, canonical regression).
 
+
+## Iteration 105.24 (2026-06-26) — Honest "manual-open" path for Cura + Flash Studio
+
+**User report**
+- "Loads OrcaSlicer and displays the model. Does not open Flash Studio
+  or Cura." (Iter-105.23's auto-handoff worked for OrcaSlicer.)
+
+**Root cause**
+- Neither Ultimaker (Cura) nor FlashForge (Flash Studio Desktop)
+  register an OS URL-protocol handler for `cura://` or `flashforge://`.
+  iter-105.23's `launchSlicer()` blindly set `window.location.href` to
+  those non-existent protocols — browser fired the protocol, OS had
+  no handler, nothing happened. User sees "did nothing".
+
+**Fix — frontend only, no backend changes**
+
+1. `lib/customSlicers.js > BUILTIN_SLICERS`: added
+   `noProtocolLauncher: true` to the `flashstudio` and `cura` entries
+   (source of truth for "can't auto-launch via browser").
+2. `dialogs/OrcaDialog.jsx > handleDownload`: short-circuits when
+   `slicer.noProtocolLauncher === true`. Skips both the
+   `stageHandoff` upload AND the `launchSlicer` call entirely. Sets
+   `launchState='manual_only'` and surfaces a 12-second `toast.info`
+   explaining how to open the file manually.
+3. New sky-blue UI card (`data-testid="orca-launch-manual-only"`)
+   mirrors the existing uncertain-card UX (filename code box +
+   copy-filename button + default-app tip) but with honest copy
+   that doesn't blame the user for misconfiguration.
+4. Dialog description above the Download button now reads
+   "<Slicer> doesn't support browser auto-launch — you'll open the
+   file manually" (instead of the misleading "tries to launch via
+   `<protocol>://` handler" copy that the user definitely was NOT
+   going to see succeed).
+
+**Verified by testing_agent_v3_fork** (`/app/test_reports/iteration_102.json`) — 6/6 review items PASS:
+- Playwright on the live preview URL drove the full Send-to-Slicer
+  flow for all four target slicers (Cura, Flash Studio, OrcaSlicer,
+  PrusaSlicer).
+- Cura + Flash Studio: download triggers, `orca-launch-manual-only`
+  card visible, `orca-launch-uncertain`/`-likely` NOT visible,
+  ZERO POSTs to `/api/exports/handoff` (staging correctly skipped —
+  saves bandwidth too).
+- OrcaSlicer + PrusaSlicer regression: download + `orca-launch-uncertain`
+  card + exactly 1 POST to `/api/exports/handoff` per launch — iter-
+  105.23 happy path intact.
+- BUILTIN_SLICERS unit (Node import): 9/9 — exactly 7 builtins,
+  Cura/FlashStudio have the flag, the other 5 don't.
+
+**Files touched**
+- `lib/customSlicers.js` — 2 entries flagged.
+- `components/dialogs/OrcaDialog.jsx` — handleDownload short-circuit,
+  conditional description copy, new manual_only card.
+
