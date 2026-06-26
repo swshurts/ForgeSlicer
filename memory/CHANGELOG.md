@@ -3466,3 +3466,89 @@ FRONTEND (`/app/frontend/src/components/dialogs/OrcaDialog.jsx > handleDownload`
 - `components/dialogs/OrcaDialog.jsx` — handleDownload short-circuit,
   conditional description copy, new manual_only card.
 
+
+
+## Iteration 105.25 (2026-06-26) — RANSAC primitive segmentation (Phase 1: planes)
+
+### Why
+First slice of the Shapr3D-style "Reverse Engineer" feature on the
+P1 backlog. Goal: turn an imported mechanical-part STL into a list
+of editable parametric primitives (planes, cylinders, spheres,
+cones) so the user can modify the part rather than being stuck with
+an immutable triangle soup. Phase 1 ships plane detection only —
+just enough to validate the backend pipeline end-to-end before
+extending to curved surfaces in Phase 2.
+
+### What landed (backend only)
+- **New `POST /api/mesh/segment` route** (`routes/mesh_segment.py`):
+  accepts raw STL bytes (`application/octet-stream`, same Cloudflare
+  WAF-bypass pattern as `/api/mesh/repair`), returns JSON describing
+  every detected plane with normal, offset, inlier count + fraction,
+  centroid, and bbox. Auth-gated like the rest of the mesh routes.
+- **Iterative RANSAC loop**: detects the largest planar region using
+  `pyransac3d` (pure-Python, 18 KB dep), removes its inliers, repeats
+  until the next plane would account for < 2% of remaining points or
+  the per-iteration min-inlier count (50) isn't met. Hard cap at 24
+  primitives so a noisy mesh can't produce dozens of micro-planes.
+- **Surface sampling, not centroid sampling**: `trimesh.sample_surface`
+  generates ~8k uniformly-distributed surface points. Centroid
+  sampling on low-poly meshes (e.g. a 12-tri cube) collapses the
+  cloud enough that RANSAC fits *diagonal* planes through face
+  midpoints — surface sampling drowns out those false positives.
+- **Sliver + aspect-ratio filter**: after each fit, project inliers
+  onto the candidate plane, measure in-plane extents (u, v). Reject
+  if either extent is below 5% of bbox-diagonal OR if the u:v aspect
+  ratio exceeds 8:1. This drops cylinder side-wall strips that
+  RANSAC would otherwise hallucinate as a parade of tiny planes.
+  The aspect threshold is the key parameter — too tight rejects long
+  brackets, too loose lets curved-strip slivers through.
+- **Mesh-scale-relative epsilon**: default `eps_frac=0.002` of bbox
+  diagonal (overridable via `?eps_frac=` query param, clamped to
+  [0.0001, 0.05]). The same absolute tolerance that works on a 5 mm
+  bracket is useless on a 500 mm enclosure.
+- **Process-pool isolation**: 60s timeout, 50 MB upload cap, two
+  workers — mirrors the `/api/mesh/repair` plumbing so a slow segment
+  can't pin the main event loop.
+
+### Test coverage (`/app/backend/tests/`)
+- `test_segment_cube.py`: 20mm cube → expects 6 planes, 100% coverage.
+  PASSES.
+- `test_segment_edges.py`: smoke battery —
+  - Sphere (icosphere subdiv 3) → 0 planes, 0% coverage. Correctly
+    identifies organic shape with no flat regions (this signal will
+    power the "Phase 3 honest warning" — if coverage < 30% after
+    full segmentation, the mesh is organic/sculptural and the
+    Reverse-Engineer button should flash a "this won't work well for
+    art pieces" message rather than running silently).
+  - Cylinder (radius 10, height 30, 64 sections) → 8 planes (2 caps
+    + 6 surviving side-wall strips). Phase 2 will collapse the
+    strips by detecting the cylinder *first*.
+  - L-bracket (boolean union of two boxes) → 8 planes, 100%
+    coverage. The textbook mechanical-part case works beautifully.
+
+### Why this is the right architecture
+RANSAC is iterative and numpy-heavy. Pure-JS implementations exist
+but would be 5-10× slower than the Python build. A WASM port of
+CGAL or Open3D would ship 2-3 MB to every page load. With the
+backend already running `pymeshfix` + `trimesh` for `/api/mesh/repair`,
+adding `pyransac3d` alongside is an 18 KB pip dep that reuses the
+existing process-pool plumbing and stream-upload pattern.
+
+### Files touched
+- `backend/routes/mesh_segment.py` — new (245 lines).
+- `backend/server.py` — import + `api_router.include_router(...)`.
+- `backend/requirements.txt` — `pyransac3d==0.6.0`.
+- `backend/tests/test_segment_cube.py` — new.
+- `backend/tests/test_segment_edges.py` — new.
+
+### Up next
+- **Phase 2**: extend the iterative loop to cylinders / spheres /
+  cones BEFORE planes (so caps don't get detected first and strip
+  out the data needed to fit the curved primitive). Will likely
+  reduce the cylinder test's plane count from 8 → 2.
+- **Phase 3**: frontend "Reverse Engineer" button + primitive panel.
+  Honest warning when coverage < 30% ("this looks like an art piece
+  — primitives won't reconstruct it well"). Color-coded inlier
+  overlay on the original mesh.
+- **Phase 4**: "Replace with Primitives" — swap the static mesh for
+  editable Three.js parametric objects.

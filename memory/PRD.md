@@ -28,10 +28,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-02-22)
+## Current Open Items (as of 2026-06-26)
 
-### Pending P1 (queued)
+### In Progress P1
 - **Shapr3D-style reverse engineering** — RANSAC-based primitive fitting (STL → editable planes/cylinders/cubes) for mechanical parts.
+  - ✅ **Phase 1 (iter-105.25)** — Backend plane segmentation (`POST /api/mesh/segment`) using `pyransac3d`. Cube → 6 planes, sphere → 0, L-bracket → 8 (100% coverage).
+  - 🟡 **Phase 2 (next)** — Extend to cylinder / sphere / cone detection before planes.
+  - 🟡 **Phase 3** — Frontend "Reverse Engineer" button + primitive panel; honest warning when coverage < 30% (organic / art mesh).
+  - 🟡 **Phase 4** — "Replace with Primitives" — swap static mesh for editable Three.js parametric objects.
 
 ### Pending P2 (backlog)
 - Yjs CRDT live collaborative editing.
