@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only smoke + integration test of the new Learn section (iter-105.36). Verified /learn index, all 8 lesson cards (correct slugs), start-here ribbon with 3 cards; deep-tested cad-basics, wall-thickness, exporting-to-slicers; back-to-index navigation; unknown-slug friendly fallback; landing nav link, promo strip, primary CTA, mistakes shortcut, and 6 shortcut cards. Content correctness spot-checks (STL/3MF/OBJ/G-code; OrcaSlicer/Bambu Studio/PrusaSlicer; bold '1.6 mm.'; recap 'Remember this'; CTA href=/workspace) all pass. No fixes were required.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Pre-existing (unrelated to Learn): two background HTTP 401 console errors fire on every page load (visible in console logs). They do not affect Learn flows but are visible to users who open dev-tools — main agent may want to tighten the AuthContext bootstrap so anonymous /learn visitors don't trigger 401-on-load.",
+    "Minor a11y nit (optional): the Learn header has Learn (graduation-cap icon) and Public Gallery links rendered as plain Link without aria-labels — fine for sighted users; consider aria-label on the icon-only Learn link for screen readers."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "100%"},
+  "test_credentials": "n/a — /learn routes are public, no auth needed.",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Learn section is fully functional. /learn (data-testid=learn-index), 8 lesson cards (learn-lesson-card-<slug>), start-here ribbon with 3 cards, lesson detail with hero/minutes pill/body/recap/CTA strip, back-to-index, unknown-slug graceful page, landing nav (landing-learn-link), promo (landing-learn-promo + landing-learn-cta + landing-learn-mistakes-shortcut + 6 landing-learn-card-<slug>) all confirmed. Inline **bold** formatter works (verified '1.6 mm.' renders as <strong>). Recap callout textContent reads 'Remember this' (CSS uppercase only — innerText returns uppercased, textContent is correct). Two console 401 errors appear on every page load — pre-existing, unrelated to Learn, safe to ignore for this iteration.",
+  "rca of the issue": "n/a — no bugs detected"
+}

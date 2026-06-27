@@ -17,6 +17,7 @@ import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
 import SsoAccept from "@/components/SsoAccept";
 import Handoff from "@/components/Handoff";
+import Learn from "@/components/Learn";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -48,6 +49,8 @@ function AppRouter() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/gallery" element={<Gallery />} />
+      <Route path="/learn" element={<Learn />} />
+      <Route path="/learn/:slug" element={<Learn />} />
       <Route path="/signin" element={<SignIn />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />

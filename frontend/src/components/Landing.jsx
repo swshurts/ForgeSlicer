@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -263,6 +263,9 @@ export default function Landing() {
         </a>
         <Link to="/gallery" data-testid="landing-gallery-link" className="h-8 px-3 text-xs text-slate-300 hover:text-white flex items-center gap-1.5">
           <Globe size={14} /> Public Gallery
+        </Link>
+        <Link to="/learn" data-testid="landing-learn-link" className="h-8 px-3 text-xs text-slate-300 hover:text-white flex items-center gap-1.5">
+          <GraduationCap size={14} /> Learn
         </Link>
         <Link to="/workspace" data-testid="landing-launch-btn" className="h-8 px-4 ml-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center gap-1.5">
           Launch Workspace <ChevronRight size={14} />
@@ -764,6 +767,78 @@ export default function Landing() {
         </section>
 
         <BeginnerStarters />
+
+        {/* ─── Learn promo strip ──────────────────────────────────
+            Teaches the visitor that we have a beginner-friendly
+            documentation surface BEFORE they go hunting in /help.
+            Sits between the Starters (which are doing) and the
+            community gallery (which is browsing) so the journey
+            reads: "do → learn → browse → build". */}
+        <section
+          data-testid="landing-learn-promo"
+          className="mt-24"
+          aria-labelledby="landing-learn-heading"
+        >
+          <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.07] via-slate-950/30 to-emerald-500/[0.03] p-7 sm:p-10">
+            <div className="grid lg:grid-cols-2 gap-8 items-center">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-[10px] uppercase tracking-widest text-emerald-300 font-semibold mb-4">
+                  <GraduationCap size={11} /> Learn
+                </div>
+                <h2
+                  id="landing-learn-heading"
+                  className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight"
+                >
+                  New to 3D design?{" "}
+                  <span className="text-emerald-300">Eight short lessons</span>{" "}
+                  get you printing.
+                </h2>
+                <p className="mt-4 text-slate-300 text-sm leading-relaxed">
+                  Beginner-friendly explainers covering CAD basics, STL vs 3MF, boolean operations, wall thickness, tolerances, designing for FDM, common first-print mistakes, and exporting to OrcaSlicer / Bambu Studio / PrusaSlicer.
+                </p>
+                <p className="mt-2 text-slate-400 text-xs leading-relaxed">
+                  Practical numbers (≥&nbsp;1.6&nbsp;mm walls, 0.15&nbsp;mm push-fit clearance, 45° overhang rule), no jargon, every lesson under 6&nbsp;minutes.
+                </p>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Link
+                    to="/learn"
+                    data-testid="landing-learn-cta"
+                    className="inline-flex items-center gap-1.5 h-10 px-5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold rounded-full transition"
+                  >
+                    <BookOpen size={15} /> Open the Learn section
+                  </Link>
+                  <Link
+                    to="/learn/common-mistakes"
+                    data-testid="landing-learn-mistakes-shortcut"
+                    className="inline-flex items-center gap-1.5 h-10 px-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white text-sm font-semibold rounded-full transition"
+                  >
+                    Top-10 beginner mistakes <ChevronRight size={13} />
+                  </Link>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  { slug: "cad-basics", title: "CAD basics", min: 4 },
+                  { slug: "file-types", title: "STL · 3MF · G-code", min: 5 },
+                  { slug: "wall-thickness", title: "Wall thickness", min: 3 },
+                  { slug: "tolerances", title: "Tolerances & fit", min: 4 },
+                  { slug: "boolean-operations", title: "Booleans", min: 4 },
+                  { slug: "exporting-to-slicers", title: "Slicer hand-off", min: 5 },
+                ].map((l) => (
+                  <Link
+                    key={l.slug}
+                    to={`/learn/${l.slug}`}
+                    data-testid={`landing-learn-card-${l.slug}`}
+                    className="rounded-lg border border-slate-800 bg-slate-950/70 hover:border-emerald-500/40 p-3 transition flex flex-col gap-1"
+                  >
+                    <div className="text-[12px] font-semibold text-white truncate">{l.title}</div>
+                    <div className="text-[10px] text-slate-400">{l.min} min read</div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
 
         <LandingTemplates />
 
