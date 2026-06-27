@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.1"
+PLAN_VERSION = "1.2"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -80,12 +80,42 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
         "1. Onboarding & First-Run",
         [
             (
+                "Landing tab bar (iter-108)",
+                [
+                    ("LAND-01",
+                     "Landing tab bar shows 5 tabs in fixed order below the hero",
+                     "1. Open / in a private window. 2. Locate the row of tabs directly below the hero block and above the marketing sections.",
+                     "Exactly 5 tabs in this order: Start · Templates · Gallery · Learn · Trust. Each has an icon + label and a data-testid 'landing-tab-{id}'. The container has data-testid 'landing-tabbar'. The header and footer remain visible above and below.",
+                     "P0"),
+                    ("LAND-02",
+                     "Start is the default tab on every fresh load",
+                     "1. Open / in a private window. 2. Observe which tab is active before clicking anything.",
+                     "Start tab is selected (orange underline + orange text); active panel data-testid is 'landing-tabpanel-start'. The AI/voice, audience, feature grid, 5-step, and Beginner Starters sections all render.",
+                     "P0"),
+                    ("LAND-03",
+                     "Each tab swaps the body content; hero stays pinned above",
+                     "1. Click Templates → Gallery → Learn → Trust → Start in turn.",
+                     "Each click swaps the tabpanel content within ~50 ms; only the content area below the tab bar changes. The hero (logo, headline, CTAs, anvil image) remains visible above the tab bar across all 5 tabs.",
+                     "P0"),
+                    ("LAND-04",
+                     "Tab state is session-only — refresh resets to Start",
+                     "1. Click Trust tab. 2. Hard refresh the page (Cmd-R / F5).",
+                     "After refresh, the URL stays '/', Start tab is selected again. No ?tab= query string is added or required.",
+                     "P1"),
+                    ("LAND-05",
+                     "Trust tab links route to the full Trust hub, Privacy, and Changelog",
+                     "1. Switch to Trust tab. 2. Click each of the 3 CTAs.",
+                     "'Read the full Trust hub' → /trust. 'Privacy details' → /privacy. 'Changelog' → /changelog. Each destination renders correctly.",
+                     "P1"),
+                ],
+            ),
+            (
                 "Beginner Starters",
                 [
                     ("ONB-01",
-                     "12 Beginner Starter cards render in a responsive grid below the landing hero",
-                     "1. Open / in a private window. 2. Scroll down past the hero until you reach the 'Beginner Starter Projects' section. 3. Count the cards.",
-                     "12 starter cards render in a responsive grid (2 cols on small, 3 on lg, 4 on xl). Each card shows an icon, title, difficulty pill, estimated print time, and skill tags. data-testid 'landing-beginner-starters' is present and 'landing-starters-grid' contains 12 children.",
+                     "12 Beginner Starter cards render in a responsive grid inside the Start tab",
+                     "1. Open / in a private window. 2. Ensure the Start tab is active (it is by default). 3. Scroll down past the marketing sections (AI/voice, Audience, Feature grid, 5-step) until you reach the 'Beginner Starter Projects' grid. 4. Count the cards.",
+                     "12 starter cards render in a responsive grid (2 cols on small, 3 on lg, 4 on xl). Each card shows an icon, title, difficulty pill, estimated print time, and skill tags. data-testid 'landing-beginner-starters' is present inside 'landing-tabpanel-start' and 'landing-starters-grid' contains 12 children.",
                      "P0"),
                     ("ONB-02",
                      "Opening a starter populates the workspace with that starter's geometry",
@@ -715,14 +745,14 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>Refreshed test plan based on your first pass. Changes since v1.0:</p>
+            <p>Refreshed test plan (v1.2) reflecting today's two changes:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>ONB-01</b> rewritten — it's a responsive <b>grid below the hero</b>, not a carousel; reviewer scrolls down to see all 12 cards.</li>
-              <li><b>ONB-04</b> added — the "small welcome popup" you saw on /workspace is the <b>tips toast cycle</b>; now its own test case.</li>
-              <li><b>ONB-05</b> added — verifies the just-fixed bug: <b>post-signup must land on the landing page, not the workspace</b>. SignIn / AuthCallback / MagicLink all default to "/" now (Workspace's "sign in to save" prompt still passes ?return=/workspace explicitly so that flow still works).</li>
-              <li><b>PRIM-02</b> split into 2a (Inspector numeric edits via RightPanel) and 2b (TinkerCAD-style face-handle dragging — those colored squares in your screenshot).</li>
+              <li><b>Bug fixed</b> — post-signup now lands on the landing page, not the workspace. Added <b>ONB-05</b> to lock the regression down.</li>
+              <li><b>Landing redesigned</b> as a 5-tab strip (Start · Templates · Gallery · Learn · Trust) below the hero. Header + hero + footer all unchanged. Added a new <b>Landing tab bar</b> area with <b>LAND-01 → LAND-05</b>.</li>
+              <li><b>ONB-01</b> updated — the Beginner Starters grid now lives inside the Start tab.</li>
+              <li>Older v1.1 changes retained: <b>ONB-04</b> workspace-tips toast, <b>PRIM-02a/2b</b> Inspector vs face-handle editing.</li>
             </ul>
-            <p>Same coverage shape as v1.0 — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting quality bars.</p>
+            <p>Same overall coverage shape — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting quality bars.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

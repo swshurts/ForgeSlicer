@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -11,6 +11,64 @@ import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import LandingTemplates from "./LandingTemplates";
 import BeginnerStarters from "./BeginnerStarters";
 import LandingCommunityStrip from "./LandingCommunityStrip";
+import { PRIVACY_FACTS } from "../lib/trustContent";
+
+// ─── Landing tab navigation ──────────────────────────────────────
+// The landing page used to be one long scroll. iter-108 chunks the
+// content into 5 curated tabs (Start · Templates · Gallery · Learn ·
+// Trust) so a visitor lands on the hero + first tab and can swap
+// surfaces with one click instead of scrolling past sections they
+// don't care about. Hero stays pinned above the tab bar; header and
+// footer are unchanged. State is client-side only (the user
+// explicitly opted out of URL-deep-linking) so refresh resets to
+// "start" — the right default for a marketing page.
+const LANDING_TABS = [
+  { id: "start", label: "Start", icon: Rocket },
+  { id: "templates", label: "Templates", icon: LayoutGrid },
+  { id: "gallery", label: "Gallery", icon: Globe },
+  { id: "learn", label: "Learn", icon: GraduationCap },
+  { id: "trust", label: "Trust", icon: Shield },
+];
+
+function LandingTabBar({ activeTab, onChange }) {
+  return (
+    <nav
+      data-testid="landing-tabbar"
+      role="tablist"
+      aria-label="Landing sections"
+      className="mt-12 mb-10 flex items-center gap-1 sm:gap-2 border-b border-slate-800 overflow-x-auto scrollbar-none"
+    >
+      {LANDING_TABS.map((tab) => {
+        const Icon = tab.icon;
+        const active = tab.id === activeTab;
+        return (
+          <button
+            key={tab.id}
+            data-testid={`landing-tab-${tab.id}`}
+            role="tab"
+            aria-selected={active}
+            aria-controls={`landing-tabpanel-${tab.id}`}
+            onClick={() => onChange(tab.id)}
+            className={`relative flex-shrink-0 inline-flex items-center gap-2 px-4 sm:px-5 h-11 text-[13px] font-semibold whitespace-nowrap transition-colors ${
+              active
+                ? "text-orange-300"
+                : "text-slate-400 hover:text-slate-100"
+            }`}
+          >
+            <Icon size={15} className={active ? "text-orange-400" : ""} />
+            {tab.label}
+            <span
+              aria-hidden="true"
+              className={`absolute left-2 right-2 -bottom-px h-[2px] rounded-full transition-colors ${
+                active ? "bg-orange-500" : "bg-transparent"
+              }`}
+            />
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
 
 const API = (process.env.REACT_APP_BACKEND_URL || "") + "/api";
 
@@ -183,6 +241,9 @@ export default function Landing() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [importError, setImportError] = useState("");
+  // iter-108 — Tabbed landing layout. Default to "start" on each load
+  // (the user opted out of URL-based deep links).
+  const [activeTab, setActiveTab] = useState("start");
   const { user } = useAuth();
 
   // Iter-99.2 — When the visitor is signed into ForgeSlicer, route the
@@ -411,6 +472,16 @@ export default function Landing() {
             />
           </div>
         </div>
+
+        <LandingTabBar activeTab={activeTab} onChange={setActiveTab} />
+
+        <div
+          role="tabpanel"
+          id={`landing-tabpanel-${activeTab}`}
+          aria-labelledby={`landing-tab-${activeTab}`}
+          data-testid={`landing-tabpanel-${activeTab}`}
+        >
+        {activeTab === "start" && (<>
 
         {/* ─── Design-by-conversation section ──────────────────────
             AI + voice are the headline value-prop, so they get a
@@ -768,6 +839,10 @@ export default function Landing() {
 
         <BeginnerStarters />
 
+        </>)}
+
+        {activeTab === "learn" && (<>
+
         {/* ─── Learn promo strip ──────────────────────────────────
             Teaches the visitor that we have a beginner-friendly
             documentation surface BEFORE they go hunting in /help.
@@ -776,7 +851,7 @@ export default function Landing() {
             reads: "do → learn → browse → build". */}
         <section
           data-testid="landing-learn-promo"
-          className="mt-24"
+          className="mt-4"
           aria-labelledby="landing-learn-heading"
         >
           <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.07] via-slate-950/30 to-emerald-500/[0.03] p-7 sm:p-10">
@@ -840,9 +915,77 @@ export default function Landing() {
           </div>
         </section>
 
-        <LandingTemplates />
+        </>)}
 
-        <LandingCommunityStrip />
+        {activeTab === "templates" && <LandingTemplates />}
+
+        {activeTab === "gallery" && <LandingCommunityStrip />}
+
+        {activeTab === "trust" && (
+          <section
+            data-testid="landing-trust-tab"
+            className="mt-4"
+            aria-labelledby="landing-trust-heading"
+          >
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-sky-500/10 border border-sky-500/30 rounded-full text-[10px] uppercase tracking-widest text-sky-300 font-semibold">
+                <Shield size={11} /> Trust &amp; Transparency
+              </div>
+              <h2
+                id="landing-trust-heading"
+                className="mt-4 text-3xl sm:text-4xl font-bold tracking-tight"
+              >
+                Private by default.{" "}
+                <span className="text-sky-300">Public only when you say so.</span>
+              </h2>
+              <p className="mt-3 text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">
+                Every design starts private and stays local until you sign in and explicitly publish. You own your exports — STL, 3MF, OBJ, G-code — without watermarks or invisible identifiers.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {PRIVACY_FACTS.slice(0, 4).map((fact, i) => (
+                <div
+                  key={fact.title}
+                  data-testid={`landing-trust-fact-${i}`}
+                  className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-sky-500/40 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300 flex items-center justify-center mb-3">
+                    <Lock size={15} />
+                  </div>
+                  <h3 className="text-[13px] font-bold text-white leading-snug">{fact.title}</h3>
+                  <p className="mt-2 text-xs text-slate-400 leading-relaxed">{fact.body}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 flex flex-wrap gap-3 justify-center">
+              <Link
+                to="/trust"
+                data-testid="landing-trust-cta-full"
+                className="inline-flex items-center gap-1.5 h-10 px-5 bg-sky-500 hover:bg-sky-600 text-white text-sm font-semibold rounded-full transition"
+              >
+                <Shield size={15} /> Read the full Trust hub
+              </Link>
+              <Link
+                to="/privacy"
+                data-testid="landing-trust-cta-privacy"
+                className="inline-flex items-center gap-1.5 h-10 px-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white text-sm font-semibold rounded-full transition"
+              >
+                Privacy details <ChevronRight size={13} />
+              </Link>
+              <Link
+                to="/changelog"
+                data-testid="landing-trust-cta-changelog"
+                className="inline-flex items-center gap-1.5 h-10 px-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white text-sm font-semibold rounded-full transition"
+              >
+                Changelog <ChevronRight size={13} />
+              </Link>
+            </div>
+          </section>
+        )}
+
+        </div>
       </main>
 
       <footer className="border-t border-slate-800 py-10 px-6" data-testid="landing-footer">
