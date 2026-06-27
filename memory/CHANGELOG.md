@@ -4055,3 +4055,45 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 
 ### Known limits (filed in ROADMAP P2)
 - Flat-face only — text is positioned via gizmos and composed via boolean union/subtract. Curved-surface projection (text wrapping onto cylinder rims / spheres) is the planned follow-up; will require face picking + per-glyph raycast.
+
+---
+
+## Iter-105.34 (2026-06-27) — Gallery community & discovery upgrade
+
+### What landed
+- **Shared taxonomy** (`backend/gallery_taxonomy.py`): 10 categories — household, tools, organizers, replacement_parts, toys, education, cosplay, mechanical, decorative, misc. One regex-driven backfill heuristic that runs on backend startup and tags legacy gallery items by name (e.g. "Keychain" → toys, "Vise Jaws" → tools, "Cable Clip" → household).
+- **New backend endpoints**:
+  - `GET /api/gallery/_meta/taxonomy` — single source of truth for the category list (frontend reads on mount).
+  - `GET /api/gallery/_meta/featured-creators` — **hybrid** ranking: editorial picks (any user owning an `is_featured` design) first, then algorithmic top-N by sum of remix_count across public designs in the last 90 days.
+  - `POST /api/admin/gallery/feature-design` — admin lever to spotlight a creator by flipping their flagship design's `is_featured` flag.
+  - `GET /api/gallery?category=<id>&tag=<t>` — list filter supports the new taxonomy params (still respects `mine` + `material`).
+- **GalleryItem schema** extended with `category` (default `misc`), `tags: List[str]` (normalised lowercase/dashed/deduped, ≤8/item), and `is_featured: bool`. Backfill on startup is idempotent and capped at 5 000 rows per boot.
+- **`ShareDialog`** now exposes a Category dropdown (loads from `/api/gallery/_meta/taxonomy`) and a comma/space-separated Tags input.
+- **`Gallery` page** redesign:
+  - **Featured Creators** strip at the top (`<FeaturedCreators />`) — horizontal scroll, avatar from a flagship-design thumbnail, design count, remix count, "Editor's pick" badge for editorial picks.
+  - **Mode-explainer card** that adapts to `source` ("Browse · Customize · Publish" + Private toggle hint when on Public, "Your library" + browse-public link when on Mine).
+  - **Category chip row** (`gallery-category-chip-row`) with All + 10 taxonomy chips; active chip turns orange.
+  - **Cards** now render a category chip (orange pill) + up to 3 tag chips (slate, `#tag`) above the action row.
+  - **Renamed Remix → "Customize in ForgeSlicer"** on every card CTA, the preview dialog's primary CTA, and the fit-bed remix variant.
+- **`LandingCommunityStrip`** (NEW component) sits above the footer on the landing page:
+  - "Community Gallery" eyebrow + headline "Hundreds of designs you can customize, not just download."
+  - Four verb cards making the community offer explicit: **Browse · Customize · Publish · Keep private**.
+  - 4 recent public designs (thumb + name + author + category chip + "Customize" badge); click any to open the preview dialog via `?preview=<id>` deep-link.
+  - Orange "Browse the community gallery" CTA.
+- **Deep-link** `/gallery?preview=<id>` auto-opens the preview dialog (used by the landing community cards).
+
+### Verified
+- iteration_106.json: **100% (17/17)** acceptance criteria pass. Backend 7/7 pytest + frontend 10/10 UI flows (taxonomy ordering, featured creators contract, category filter, backfill, ShareDialog category+tags, Customize CTA renaming everywhere, mode-explainer, 11 chips, deep-link preview, landing community strip + verb cards).
+- Cosmetic LOW issue (`<kbd>R</kbd>` shortcut badge reading run-on in screen readers) fixed by adding a `sr-only` separator span.
+
+### Files touched
+- `backend/gallery_taxonomy.py` (NEW)
+- `backend/server.py` — extended GalleryItemCreate/Meta with category/tags/is_featured; new taxonomy/featured-creators/admin-feature endpoints; category+tag query params on list; startup backfill task.
+- `frontend/src/lib/api.js` — `galleryApi.taxonomy()`, `galleryApi.featuredCreators()`, category/tag params on list.
+- `frontend/src/components/FeaturedCreators.jsx` (NEW)
+- `frontend/src/components/LandingCommunityStrip.jsx` (NEW)
+- `frontend/src/components/Landing.jsx` — render `<LandingCommunityStrip />` above the footer.
+- `frontend/src/components/Gallery.jsx` — category state + chip row + mode-explainer + FeaturedCreators block + `?preview=<id>` deep-link handler + Customize CTA renaming + per-card taxonomy chips + new `CategoryChip` helper.
+- `frontend/src/components/dialogs/GalleryPreviewDialog.jsx` — Customize CTA + accessible kbd separator.
+- `frontend/src/components/dialogs/ShareDialog.jsx` — Category select + Tags input wired into `galleryApi.create`.
+- `backend/tests/test_gallery_taxonomy_iter106.py` (NEW — by testing agent).
