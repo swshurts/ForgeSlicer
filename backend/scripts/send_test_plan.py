@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.5"
+PLAN_VERSION = "1.6"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -167,6 +167,16 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "1. /signin → 'Continue with Google'. 2. Approve the consent screen.",
                      "User is created or matched on email, profile photo + name populate.",
                      "P0"),
+                    ("AUTH-05",
+                     "Google sign-in completes inside the 45 s frontend timeout (no spurious cancellation)",
+                     "1. From / click any Templates card while signed out → land on /signin. 2. Click 'Continue with Google' and complete the Google consent screen. 3. Watch the 'Signing you in…' screen.",
+                     "Within ≤ 35 seconds the backend exchange returns 200 (worst case is 4 × 7 s httpx + ~5.4 s backoff = 33.4 s — comfortably under the 45 s axios ceiling in `lib/auth.js -> authApi.exchange`). The user is redirected to the page that initiated sign-in. The browser network tab does NOT show `(canceled)` on the `POST /api/auth/session` row. Regression: the earlier 15 s per-attempt budget could push total backend time past 60 s, surfacing as 'timeout of 45000ms exceeded' on the client.",
+                     "P0"),
+                    ("AUTH-06",
+                     "Backend logs per-attempt timing for auth-provider exchange",
+                     "1. After a Google sign-in (success or failure). 2. Inspect backend.out.log / backend.err.log.",
+                     "INFO lines of the form 'auth-provider attempt N returned <status> in <X.XX>s; retrying' for each retry, and either 'auth-provider succeeded on attempt N in X.XXs (total Y.YYs)' on success or 'auth-provider gave up after 4 attempts in Y.YYs (last_status=…)' on failure. These let an operator confirm whether the upstream provider or our own retry policy is the culprit if a user complains.",
+                     "P1"),
                 ],
             ),
         ],
@@ -921,12 +931,12 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.5 patches today's two findings:</p>
+            <p>v1.6 patches today's sign-in timeout bug:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>Bug fixed</b> — the "Try an Example Project" hero button on the Home tab now switches to the <b>Templates tab</b> (it was a no-op because its scroll target moved into a different tab during the tabbed-landing refactor). Locked down as <b>LAND-06</b>.</li>
-              <li><b>RE-01 note</b> — if RANSAC returns 'HTTP 404', it's a stale browser bundle (the server is fine — we verified the route exists and returns 401 unauth / 200 when signed in). Added a hard-refresh hint to the test steps so future testers don't chase a ghost.</li>
+              <li><b>Bug fixed</b> — Google sign-in timing out at 45 s. Root cause: backend retry budget (4 × 15 s = 60 s worst case) could exceed the frontend axios ceiling (45 s) when upstream was slow, so axios cancelled the in-flight POST while the backend was still mid-retry. Tightened the per-attempt httpx timeout from 15 s → 7 s, so backend worst case is now 33.4 s — comfortably under the frontend's 45 s. Also added per-attempt timing logs so we can diagnose it instantly if it ever recurs.</li>
+              <li>New <b>AUTH-05</b> (Google sign-in must complete inside 45 s; network tab MUST NOT show '(canceled)' on POST /api/auth/session) and <b>AUTH-06</b> (backend logs per-attempt timing).</li>
             </ul>
-            <p>Carried over from v1.4: the Lexicon appendix (Hero / Gizmo / Inspector / Outliner / RANSAC / etc.), 6-tab landing (Home default), ONB-05 post-signup redirect, ONB-04 workspace-tips toast, ONB-01 Beginner Starters grid in Start tab, PRIM-02a/2b Inspector vs face-handle editing.</p>
+            <p>Carried over from v1.5: the Lexicon appendix, the 6-tab landing (Home default), the post-signup redirect fix (ONB-05), LAND-06 'Try an Example Project' tab switch, the workspace-tips toast (ONB-04), PRIM-02a/2b Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

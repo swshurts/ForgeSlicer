@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
+import time
 import base64
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
@@ -227,9 +228,13 @@ async def exchange_session(req: SessionExchangeRequest, response: FastResponse):
     consistency window for newly-issued session_ids — the first GET after
     redirect-back can return 401/404 because the session hasn't propagated
     across their nodes yet. We retry up to 4 times with exponential backoff
-    (0.4 / 0.9 / 1.6 / 2.5 s; ~5.4 s total worst case) before giving up.
-    This entirely eliminates the "first sign-in fails, second succeeds"
-    UX bug reported by users on first OAuth attempt."""
+    (0.4 / 0.9 / 1.6 / 2.5 s) and a 7 s per-attempt httpx timeout. The
+    aggregate worst-case is ~33 s (4 × 7 + 5.4 s of backoffs), which fits
+    comfortably under the frontend's 45 s axios ceiling defined in
+    `auth.js -> authApi.exchange`. The earlier 15 s per-attempt budget
+    could push the backend past 60 s when upstream was slow, surfacing
+    as "timeout of 45000ms exceeded" on the client while the backend was
+    still mid-retry."""
     sid = (req.session_id or "").strip()
     if not sid:
         raise HTTPException(status_code=400, detail="Missing session_id")
@@ -242,23 +247,47 @@ async def exchange_session(req: SessionExchangeRequest, response: FastResponse):
     last_status = None
     profile = None
     log = logging.getLogger(__name__)
+    t_start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=15.0) as cx:
+        async with httpx.AsyncClient(timeout=7.0) as cx:
             for attempt, sleep_before in enumerate(backoffs):
                 if sleep_before:
                     await asyncio.sleep(sleep_before)
-                r = await cx.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": sid})
+                t_attempt = time.monotonic()
+                try:
+                    r = await cx.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": sid})
+                except (httpx.TimeoutException, httpx.ConnectError) as exc:
+                    # Treat network/timeout the same as a transient 5xx —
+                    # log and retry. Without this, a single slow attempt
+                    # would surface as a 502 and the user couldn't retry
+                    # (session_id is one-shot at the provider).
+                    log.info(
+                        "auth-provider attempt %d failed in %.2fs (%s); retrying",
+                        attempt + 1, time.monotonic() - t_attempt, type(exc).__name__,
+                    )
+                    last_status = "timeout"
+                    continue
                 last_status = r.status_code
                 if r.status_code == 200:
                     profile = r.json()
                     if attempt > 0:
-                        log.info("auth-provider succeeded on attempt %d (status %d)", attempt + 1, r.status_code)
+                        log.info(
+                            "auth-provider succeeded on attempt %d in %.2fs (total %.2fs)",
+                            attempt + 1, time.monotonic() - t_attempt, time.monotonic() - t_start,
+                        )
                     break
                 if r.status_code not in RETRY_STATUSES:
                     # Definitive failure (e.g. 400) — don't waste retries.
                     break
-                log.info("auth-provider attempt %d returned %d; retrying", attempt + 1, r.status_code)
+                log.info(
+                    "auth-provider attempt %d returned %d in %.2fs; retrying",
+                    attempt + 1, r.status_code, time.monotonic() - t_attempt,
+                )
         if profile is None:
+            log.warning(
+                "auth-provider gave up after 4 attempts in %.2fs (last_status=%s)",
+                time.monotonic() - t_start, last_status,
+            )
             raise HTTPException(status_code=401, detail=f"Auth provider rejected session ({last_status})")
     except HTTPException:
         raise
