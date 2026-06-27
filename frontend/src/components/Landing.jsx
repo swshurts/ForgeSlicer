@@ -384,23 +384,25 @@ export default function Landing() {
               </Link>
 
               {/* ─── Secondary CTA ───────────────────────────────────
-                  "Try an Example Project" sounds inviting for a
-                  curious-but-intimidated visitor. Scrolls to the
-                  LandingTemplates grid below so the user picks
-                  WHICH example they want — landing them straight
-                  on the workspace with no context would be jarring. */}
+                  "Try an Example Project" — switches to the Templates
+                  tab (per Steve's direction). The pre-tab implementation
+                  scroll-targeted DOM nodes that now live inside other
+                  tabs, so on the Home tab they're not mounted and the
+                  click did nothing. Routing through the tab state makes
+                  the intent explicit and survives future refactors. */}
               <button
                 type="button"
                 data-testid="hero-cta-example-project"
                 onClick={() => {
-                  // Prefer the beginner-starter gallery — it's the
-                  // first thing first-timers should see. Fall back to
-                  // the intermediate templates if for some reason the
-                  // starters block isn't mounted (defensive).
-                  const el =
-                    document.querySelector('[data-testid="landing-beginner-starters"]') ||
-                    document.querySelector('[data-testid="landing-templates"]');
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  setActiveTab("templates");
+                  // Bring the Templates content into view in case the
+                  // user is scrolled past the tab bar.
+                  requestAnimationFrame(() => {
+                    document.querySelector('[data-testid="landing-tabbar"]')?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  });
                 }}
                 className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-orange-500/40 hover:border-orange-500/70 transition-colors"
               >

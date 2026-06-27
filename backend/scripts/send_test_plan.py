@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.4"
+PLAN_VERSION = "1.5"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -107,6 +107,11 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "1. Switch to Trust tab. 2. Click each of the 3 CTAs.",
                      "'Read the full Trust hub' → /trust. 'Privacy details' → /privacy. 'Changelog' → /changelog. Each destination renders correctly.",
                      "P1"),
+                    ("LAND-06",
+                     "Hero 'Try an Example Project' button switches to the Templates tab",
+                     "1. On Home tab, locate the 'Try an Example Project' CTA in the hero. 2. Click it.",
+                     "Templates tab becomes active (orange underline moves), the tabpanel swaps to show the 8-card 'Start with a finished part' grid, and the viewport scrolls to put the tab bar at the top. No console errors. Regression check: this used to be a no-op when the underlying scroll targets moved into other tabs.",
+                     "P0"),
                 ],
             ),
             (
@@ -269,8 +274,8 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                 [
                     ("RE-01",
                      "Open Reverse Engineer dialog from a selected mesh",
-                     "1. Select an imported mesh. 2. Toolbar → 'Reverse engineer'.",
-                     "Modal opens, sensitivity controls visible, detection runs and lists primitives.",
+                     "1. Import an STL (e.g. MiniRack_RPI4_Tray). 2. Select the imported mesh in the viewport or Outliner. 3. Toolbar → 'Reverse engineer'. NOTE: if you see 'Segmentation failed (HTTP 404)', do a hard refresh (Ctrl-Shift-R / Cmd-Shift-R) — that error means your browser cached an older frontend bundle from before the /api/mesh/segment route shipped; the server is fine.",
+                     "Modal opens with title 'Reverse Engineer', subtitle 'RANSAC primitive detection on <mesh name>', a stats row (Planes / Cylinders / Spheres / Coverage), and a list of detected primitives. data-testid 'reverse-engineer-dialog' is present.",
                      "P0"),
                     ("RE-02",
                      "RANSAC detects a box+cylinder composite",
@@ -916,8 +921,12 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>Test plan v1.4 adds the thing you asked for: a <b>plain-English Lexicon</b> as Appendix A — covering all the UI / CAD / slicing / AI / QA jargon I tend to throw around (hero, gizmo, inspector, outliner, manifold, RANSAC, P0/P1/P2, etc.). Five short tables, one term per row, one sentence per term. If I use a word in chat that isn't on the list, ask and I'll add it.</p>
-            <p>Carried over from v1.3: the 6-tab landing structure (Home · Start · Templates · Gallery · Learn · Trust, Home default), the post-signup-redirect fix (ONB-05), the workspace-tips toast (ONB-04), PRIM-02a/2b (Inspector vs face-handle editing), and the rest of the coverage shape — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting QA.</p>
+            <p>v1.5 patches today's two findings:</p>
+            <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
+              <li><b>Bug fixed</b> — the "Try an Example Project" hero button on the Home tab now switches to the <b>Templates tab</b> (it was a no-op because its scroll target moved into a different tab during the tabbed-landing refactor). Locked down as <b>LAND-06</b>.</li>
+              <li><b>RE-01 note</b> — if RANSAC returns 'HTTP 404', it's a stale browser bundle (the server is fine — we verified the route exists and returns 401 unauth / 200 when signed in). Added a hard-refresh hint to the test steps so future testers don't chase a ghost.</li>
+            </ul>
+            <p>Carried over from v1.4: the Lexicon appendix (Hero / Gizmo / Inspector / Outliner / RANSAC / etc.), 6-tab landing (Home default), ONB-05 post-signup redirect, ONB-04 workspace-tips toast, ONB-01 Beginner Starters grid in Start tab, PRIM-02a/2b Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>
