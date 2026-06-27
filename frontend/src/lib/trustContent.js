@@ -173,8 +173,8 @@ export const PRIVACY_FACTS = [
         body: "A design becomes public only when you tick the 'Publish' option in the Share dialog and submit. There is no auto-publish, no background sharing, and no opt-out switch — the default is and always will be private.",
     },
     {
-        title: "You own your exports",
-        body: "Anything you export — STL, 3MF, OBJ, PNG, G-code — is yours. You hold the copyright. ForgeSlicer doesn't claim any rights to your exports, and we don't add invisible identifiers or watermarks.",
+        title: "Creators keep ownership. Exporters get a license.",
+        body: "If you designed it, you own it — whether you share it or not. ForgeSlicer never claims rights to your work, doesn't watermark exports, and doesn't embed invisible identifiers. If you download someone else's published design, the creator's chosen license (CC-BY-4.0, CC0, GPL, all-rights-reserved) governs what you can do with the file you exported. Substantially modifying a download into a functionally new design makes the derivative yours, subject to that same license.",
     },
     {
         title: "Uploaded files are not made public",
@@ -201,8 +201,16 @@ export const PRIVACY_FACTS = [
 // ─── Design ownership (separated from privacy for clarity) ─────────
 export const DESIGN_OWNERSHIP = [
     {
-        title: "You own what you export",
-        body: "STL, 3MF, OBJ, PNG, G-code from the Export dialog are yours. ForgeSlicer makes no claim on them.",
+        title: "Creators keep ownership — always",
+        body: "Designing something in ForgeSlicer makes you the creator. You hold the copyright on your original work whether you share it or not. ForgeSlicer makes no claim on your designs or exports — no watermarks, no invisible identifiers.",
+    },
+    {
+        title: "Exporters get a license, not ownership",
+        body: "Downloading someone else's published design gives you a usage license — what you can do with the exported STL / 3MF / OBJ / G-code is governed by the creator's choice (CC-BY-4.0 default; CC0, GPL, all-rights-reserved also available). Respect the license: attribute when required, don't redistribute non-redistributable work.",
+    },
+    {
+        title: "Derivative works follow the same rule",
+        body: "If you modify a downloaded design into something functionally different, the derivative is YOUR work — subject to the original license's redistribution terms. Trivial edits (rescale, recolour, repose) don't transfer ownership; substantive design changes do.",
     },
     {
         title: "Published gallery designs use a license you choose",

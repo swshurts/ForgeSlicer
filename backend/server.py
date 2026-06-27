@@ -1275,7 +1275,6 @@ async def download_gallery_stl(item_id: str):
     doc = await db.gallery.find_one({"id": item_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Gallery item not found")
-    await db.gallery.update_one({"id": item_id}, {"$inc": {"downloads": 1}})
     stl_b64 = doc.get("stl_base64", "")
     try:
         stl_bytes = base64.b64decode(stl_b64)
@@ -1283,6 +1282,30 @@ async def download_gallery_stl(item_id: str):
         # Always raise here so we never fall through with an undefined
         # `stl_bytes`. The 500 surfaces "DB blob is malformed" to the client.
         raise HTTPException(status_code=500, detail=f"Corrupted STL data: {e}")
+    # Sanity-check the payload before returning it. A valid binary STL
+    # needs at LEAST 84 bytes (80-byte header + 4-byte triangle count).
+    # ASCII STL files always start with "solid " (case-insensitive, with
+    # a trailing space or newline). Without this gate the download
+    # endpoint will happily return 3 bytes of zeros from corrupted /
+    # seed rows, and the client-side STLLoader throws an opaque
+    # "Offset is outside the bounds of the DataView" — what GAL-00
+    # reproduced. Returning 422 + an explicit detail string lets the
+    # gallery preview dialog show a friendly message instead.
+    if len(stl_bytes) < 84:
+        is_ascii_stl = (
+            len(stl_bytes) >= 6
+            and stl_bytes[:6].lower().startswith(b"solid ")
+        )
+        if not is_ascii_stl:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "This gallery item has no usable STL payload "
+                    f"(only {len(stl_bytes)} bytes stored). It may be a "
+                    "placeholder / seed row; ask the creator to re-publish."
+                ),
+            )
+    await db.gallery.update_one({"id": item_id}, {"$inc": {"downloads": 1}})
     safe_name = "".join(c for c in doc.get("name", "model") if c.isalnum() or c in ("-", "_")) or "model"
     return Response(
         content=stl_bytes,

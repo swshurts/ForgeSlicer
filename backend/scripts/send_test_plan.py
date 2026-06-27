@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.10"
+PLAN_VERSION = "1.11"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -353,10 +353,10 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "Dropdown shows 21 options grouped as: SANS (Helvetiker R/B, Droid Sans R/B) → SERIF (Gentilis R/B, Optimer R/B, Droid Serif R/B) → MONO (Droid Sans Mono R) → SCRIPT/HANDWRITTEN (Pacifico, Lobster, Permanent Marker, Knewave) → DISPLAY/COMIC (Bangers, Frijole, Bowlby One, Press Start 2P) → GOTHIC/BLACKLETTER (UnifrakturMaguntia, Pirata One). Selecting any of them renders real glyphs. First-fetch latency per font is ≤ 800 ms (largest face Frijole ~1.65 MB).",
                      "P0"),
                     ("TXT-04",
-                     "Whimsical & Gothic faces render with the expected character (not as sans fallback)",
-                     "1. Create a Text primitive, type a short phrase. 2. Try in turn: Pacifico (curvy script) · Lobster (bold cursive) · Permanent Marker (hand-drawn) · Bangers (cartoon caps) · Press Start 2P (8-bit pixel blocks) · UnifrakturMaguntia (medieval blackletter) · Pirata One (modern blackletter).",
-                     "Each typeface looks distinctly different from Helvetiker — script faces show ligatures and slanted strokes, Press Start 2P shows pixel-block letterforms, UnifrakturMaguntia and Pirata One show recognisable blackletter strokes. None render as a slab or as Helvetiker Regular (which would indicate a load failure).",
-                     "P1"),
+                     "Whimsical & Gothic faces render with the expected character — RIGHT-SIDE UP (not flipped)",
+                     "1. Create a Text primitive, type a short phrase. 2. Try in turn: Pacifico (curvy script) · Lobster (bold cursive) · Permanent Marker (hand-drawn) · Knewave (bold marker) · Bangers (cartoon caps) · Frijole (cartoon bold) · Bowlby One (bold display) · Press Start 2P (8-bit pixel blocks) · UnifrakturMaguntia (medieval blackletter) · Pirata One (modern blackletter).",
+                     "Each typeface looks distinctly different from Helvetiker AND reads top-to-bottom in the correct orientation. Regression: when first shipped, my TTF→typeface.json converter forgot to negate Y (opentype.js uses PostScript Y-down convention, three.js typeface.json uses math Y-up convention) so every face extruded upside-down. Verified by inspecting ascender / descender Y signs in the JSON.",
+                     "P0"),
                     ("TXT-03",
                      "Switching from one loaded font to another swaps instantly (no slab flash)",
                      "1. Pick Droid Sans Regular — wait for swap. 2. Switch to Droid Sans Bold — wait. 3. Switch back to Droid Sans Regular.",
@@ -397,6 +397,11 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
             (
                 "Browse & filter",
                 [
+                    ("GAL-00",
+                     "Opening any non-owner gallery item renders the design preview, NOT a DataView error",
+                     "1. Sign in as user A. 2. Open /gallery. 3. Click any tile from another user (or any seed/featured creator). 4. Wait for the preview canvas to render.",
+                     "Either the orange mesh appears centred on the build plate (success) OR — for the rare row whose STL is missing — a friendly message reads 'This gallery item has no usable 3D data stored — it's most likely a placeholder.' Under no circumstance should the raw 'Offset is outside the bounds of the DataView' surface. Regression: the gallery seed table used to ship ~59 rows whose stl_base64 blob was 3 bytes of zeros; the STLLoader threw the DataView error trying to read offset 80 from a 3-byte buffer.",
+                     "P0"),
                     ("GAL-01",
                      "Public gallery loads with taxonomy",
                      "1. Open /gallery.",
@@ -448,9 +453,9 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                 "Trust pages",
                 [
                     ("TRUST-01",
-                     "/trust renders policy summary",
-                     "1. Open /trust.",
-                     "Sections: data handling, third-party services (Meshy, OpenAI, Resend), security posture.",
+                     "/trust renders the creator-vs-exporter ownership story correctly",
+                     "1. Open /. 2. Click the Trust tab.",
+                     "First trust card reads 'Creators keep ownership. Exporters get a license.' and its body explains: creators hold copyright on their designs whether shared or not; exporters get a usage license bound by the creator's chosen license (CC-BY-4.0 default; CC0, GPL, all-rights-reserved); substantial modifications make derivatives the modifier's work, subject to the original license. /trust hub page covers the same in expanded form. Third-party services (Meshy, OpenAI, Resend) are credited; private-by-default and explicit-publish callouts are unchanged.",
                      "P1"),
                     ("TRUST-02",
                      "/privacy + /changelog accessible from footer",
@@ -956,14 +961,14 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.10 ships:</p>
+            <p>v1.11 patches today's four findings:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>MEAS-02b — Dim-mode grid line bug.</b> Root cause: the minor grid lines were hard-coded to slate-700 (#334155), which is <em>exactly</em> the Dim theme's viewport background — so they disappeared. The cell colour is now <b>theme-aware</b>: slate-400 in Dim (bright enough to stand off the slate-700 background), slate-600 in Light, slate-500 in Dark. Major (50 mm) orange section lines untouched.</li>
-              <li><b>Mystery font identified (best guess).</b> The WHITE RABBIT sign uses a hand-lettered psychedelic-poster style — likely custom for the sign. The closest free Google Font with the same bold, hand-drawn, slightly wavy feel is <b>Knewave</b>, which I've added to the dropdown under SCRIPT/HANDWRITTEN. Also bundled <b>Frijole</b> (cartoon bold) and <b>Bowlby One</b> (bold display) so you have a wider whimsical palette to pick from.</li>
-              <li>Dropdown is now <b>21 typefaces · 15 families</b>. New: Knewave, Frijole, Bowlby One. <b>TXT-02</b> updated to lock the list down.</li>
+              <li><b>TXT-04 — all new fonts were upside-down.</b> Root cause: opentype.js returns paths in PostScript convention (Y-down) while three.js typeface.json uses math convention (Y-up). My converter forgot to negate Y. Fixed in <code>scripts/ttf2typeface.js</code> and re-converted all 10 affected faces. Verified by inspecting ascender / descender Y signs in the regenerated JSON. <b>TXT-04</b> rewritten to lock the orientation down.</li>
+              <li><b>GAL-00 — clicking any non-owner design surfaced 'Offset is outside the bounds of the DataView'.</b> Root cause: the gallery had ~59 seed rows whose stl_base64 was 3 bytes of zeros — STLLoader threw trying to read the binary-STL header. Three-layer fix: (1) backend `/api/gallery/{id}/download` now returns 422 with an explicit detail string when the STL blob is too short; (2) GalleryPreviewDialog now surfaces that detail instead of the raw DataView error, and adds a client-side length check as defence-in-depth; (3) cleaned up the 59 dead rows from the gallery — only 12 real designs remain. Locked down as new <b>GAL-00</b> (P0).</li>
+              <li><b>TRUST-01 — ownership wording fixed.</b> Now states the creator-vs-exporter distinction explicitly: creators always own the design (regardless of sharing); exporters get a license bound by the creator's choice; substantial modifications make derivatives the modifier's work, subject to the original license. Updated on the landing Trust tab AND on the full /trust hub.</li>
+              <li><b>SEO-01 — Start page is too busy</b>. Acknowledged; I'm pinging you in a follow-up question to scope the sub-menu / accordion layout before refactoring (avoiding a big restructure on a hunch).</li>
             </ul>
-            <p>If none of those nail the "WHITE RABBIT" vibe, share the .ttf and I'll convert it on the spot via <code>scripts/ttf2typeface.js</code>.</p>
-            <p>Carried over from v1.9: 7 whimsical+Gothic fonts, voice 'stop' regex, lithophane disambiguation, font-load resilience, Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect, tips toast, Inspector vs face-handle editing.</p>
+            <p>Carried over from v1.10: dim-mode grid lines, voice 'stop' regex, lithophane disambiguation, font-load resilience, 21-font dropdown, Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect, tips toast, Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

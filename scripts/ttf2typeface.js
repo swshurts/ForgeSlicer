@@ -30,18 +30,26 @@ function inRanges(cp) {
 
 // facetype.js builds the `o` field as a space-separated stream:
 //   token = one of m / l / q / b (case is preserved as facetype emits)
-// Followed by 2/4/6 coordinates (rounded to ints). We mirror that.
+// Followed by 2/4/6 coordinates (rounded to ints).
+//
+// IMPORTANT: opentype.js returns paths in PostScript convention with
+// Y pointing DOWN (i.e. ascenders are at NEGATIVE y, descenders at
+// positive). Three.js's typeface.json — and its TextGeometry consumer
+// — uses the math convention with Y pointing UP. We negate every Y
+// coordinate here so the glyphs come out right-side up. Without this,
+// every converted font extrudes upside-down (TXT-04 regression from
+// iter-108.x first font batch).
 function pathToFacetypeO(path) {
     const out = [];
     for (const cmd of path.commands) {
         if (cmd.type === "M") {
-            out.push("m", Math.round(cmd.x), Math.round(cmd.y));
+            out.push("m", Math.round(cmd.x), Math.round(-cmd.y));
         } else if (cmd.type === "L") {
-            out.push("l", Math.round(cmd.x), Math.round(cmd.y));
+            out.push("l", Math.round(cmd.x), Math.round(-cmd.y));
         } else if (cmd.type === "Q") {
-            out.push("q", Math.round(cmd.x), Math.round(cmd.y), Math.round(cmd.x1), Math.round(cmd.y1));
+            out.push("q", Math.round(cmd.x), Math.round(-cmd.y), Math.round(cmd.x1), Math.round(-cmd.y1));
         } else if (cmd.type === "C") {
-            out.push("b", Math.round(cmd.x), Math.round(cmd.y), Math.round(cmd.x1), Math.round(cmd.y1), Math.round(cmd.x2), Math.round(cmd.y2));
+            out.push("b", Math.round(cmd.x), Math.round(-cmd.y), Math.round(cmd.x1), Math.round(-cmd.y1), Math.round(cmd.x2), Math.round(-cmd.y2));
         } else if (cmd.type === "Z") {
             out.push("z");
         }

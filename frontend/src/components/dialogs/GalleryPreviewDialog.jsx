@@ -113,10 +113,47 @@ export default function GalleryPreviewDialog({ item, open, onClose }) {
           fetch(galleryApi.downloadUrl(item.id)),
         ]);
         if (cancelled) return;
-        if (!stlRes.ok) throw new Error(`STL fetch failed (${stlRes.status})`);
+        if (!stlRes.ok) {
+          // The backend now returns 422 with a human-readable `detail`
+          // string when the gallery row's STL blob is empty / corrupted
+          // (see GAL-00 — most seed rows had a 3-byte zero payload).
+          // Surface that detail instead of a bare status code so the
+          // user sees the friendlier "no usable STL payload" copy.
+          let detail = `STL fetch failed (${stlRes.status})`;
+          try {
+            const body = await stlRes.json();
+            if (body?.detail) detail = body.detail;
+          } catch (_) { /* not JSON, keep generic */ }
+          throw new Error(detail);
+        }
         const buf = await stlRes.arrayBuffer();
         if (cancelled) return;
-        const geom = buildGeometryFromSTLBuffer(buf);
+        // Defence-in-depth: even if the byte stream is well-formed but
+        // shorter than a binary STL header (84 bytes), refuse to feed
+        // it to STLLoader — that's what produces the cryptic
+        // "Offset is outside the bounds of the DataView" we saw in GAL-00.
+        if (buf.byteLength < 84) {
+          // Allow ASCII STL ("solid …") through; binary STL has no such
+          // sniffable signature, so length is the only safe check.
+          const head = new Uint8Array(buf, 0, Math.min(6, buf.byteLength));
+          const ascii = String.fromCharCode(...head).toLowerCase().startsWith("solid ");
+          if (!ascii) {
+            throw new Error(
+              "This gallery item has no usable 3D data stored — it's most likely a placeholder."
+            );
+          }
+        }
+        let geom;
+        try {
+          geom = buildGeometryFromSTLBuffer(buf);
+        } catch (parseErr) {
+          // STLLoader can still throw on malformed binaries that
+          // *look* long enough. Translate the technical message into
+          // something a designer can act on.
+          throw new Error(
+            `Couldn't read this design's STL data (${parseErr.message || parseErr}). It may be corrupted.`
+          );
+        }
         fullRecRef.current = rec;
         const bb = geom.boundingBox;
         setBbox({
