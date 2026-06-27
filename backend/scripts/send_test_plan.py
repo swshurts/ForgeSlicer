@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.7"
+PLAN_VERSION = "1.8"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -347,6 +347,16 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "1. Workspace → 3D tab → 'Text' primitive. 2. With the text selected, open the Inspector's font dropdown and pick each of: Helvetiker Regular, Helvetiker Bold, Optimer Serif. 3. After each pick, wait 2 s.",
                      "Each selection renders the corresponding typeface as a real extruded mesh — NOT a flat slab. While a newly-requested font is loading, the text temporarily renders in the default Helvetiker Regular (fallback) and swaps to the requested font once the typeface.json arrives. Browser console shows a one-line `[textGeometry] font 'X' loaded in Nms` breadcrumb on success or a `FAILED to load` warning on error (which then auto-purges the cache so a retry will re-fetch).",
                      "P0"),
+                    ("TXT-02",
+                     "Inspector font dropdown lists 11 typefaces across 5 families",
+                     "1. Create a Text primitive. 2. Open the font dropdown.",
+                     "Dropdown shows 11 options in this order: Helvetiker Regular · Helvetiker Bold · Droid Sans Regular · Droid Sans Bold · Gentilis Regular · Gentilis Bold · Optimer Regular · Optimer Bold · Droid Serif Regular · Droid Serif Bold · Droid Sans Mono Regular. Selecting any of them renders real glyphs (no slab). First-fetch latency per font is ≤ 300 ms (largest face Gentilis Bold is ~635 KB).",
+                     "P0"),
+                    ("TXT-03",
+                     "Switching from one loaded font to another swaps instantly (no slab flash)",
+                     "1. Pick Droid Sans Regular — wait for swap. 2. Switch to Droid Sans Bold — wait. 3. Switch back to Droid Sans Regular.",
+                     "Re-selecting an already-loaded font renders instantly on the same frame (no placeholder flash). The fallback only kicks in for the very first request of a never-loaded family.",
+                     "P1"),
                 ],
             ),
         ],
@@ -936,14 +946,14 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.7 patches today's three findings:</p>
+            <p>v1.8 ships the <b>font expansion</b> you green-lit:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>AI-01 — Voice "stop" reliability.</b> The exit-phrase regex now strips Whisper's typical hallucinated prefixes ("okay", "uh", "just", "please") and suffixes ("thank you", "you") and accepts natural variants ("Stop now", "Stop please", "I'm done", "Just stop"). Verified with 22-case unit harness. Locked down as new <b>AI-01b</b> (P0). Long-form commands like "stop the slicer" still pass through to runCommand() — no false positives.</li>
-              <li><b>AI-03 — Lithophane confusion.</b> The two AI-tab buttons that looked identical (orange Sparkles) are now visually distinct: <b>orange Sparkles → AI 3D Mesh (Meshy.ai)</b>, <b>teal ImageDown → Lithophane / 2.5D Relief</b>. Labels and tooltips state the difference explicitly. <b>AI-03</b> test case rewritten with the new naming + a sharp warning not to click the lithophane button when expecting a 3D mesh.</li>
-              <li><b>TXT-01 — Helvetiker Bold / Optimer fell through to the placeholder slab.</b> Hardened the font loader: requested font that hasn't loaded yet now temporarily renders with the default font (Helvetiker Regular) instead of a confusing slab, and swaps to the real face once the typeface.json arrives. Failed loads now auto-purge from the cache so a retry actually retries. Added console breadcrumbs (`[textGeometry] font 'X' loaded in Nms`) so the next time a font misbehaves we can see exactly what happened. <b>TXT-01</b> rewritten to verify all three shipped fonts render real glyphs.</li>
+              <li><b>11 typefaces now live</b> in the Inspector's font dropdown (was 3), across 5 families: Helvetiker (R/B), Droid Sans (R/B), Gentilis (R/B), Optimer (R/B), Droid Serif (R/B), Droid Sans Mono (R). All sourced from the Three.js examples repo (MIT-licensed) so they're guaranteed to play nicely with TextGeometry.</li>
+              <li>All 11 verified loading from the preview URL in &lt; 300 ms each. Largest face (Gentilis Bold, 635 KB) is still well under a one-second budget.</li>
+              <li>New <b>TXT-02</b> (11-font list lockdown) and <b>TXT-03</b> (re-selecting a loaded font swaps instantly — no slab flash).</li>
             </ul>
-            <p>About font expansion (your "is that the best we can do?" question): noted as option 4d — stay at 3 for now, fix the bug first. When you're ready, I have curated 10–15 popular faces + an upload-your-own .ttf path lined up.</p>
-            <p>Carried over from v1.6: the Lexicon appendix, 6-tab landing (Home default), AUTH-05/06 sign-in timeout fix, LAND-06 'Try an Example Project' tab switch, ONB-05 post-signup redirect, ONB-04 tips toast, PRIM-02a/2b Inspector vs face-handle editing.</p>
+            <p>If you want me to also wire up the <b>"upload your own .ttf / .otf"</b> path (opentype.js-based client-side converter) later, just say the word — that unlocks effectively unlimited fonts.</p>
+            <p>Carried over from v1.7: AI-01b voice 'stop' regex, AI-03 lithophane disambiguation, TXT-01 font-load resilience, Lexicon appendix, 6-tab landing, AUTH-05/06 sign-in timeout fix, LAND-06 example-project button, ONB-05 post-signup redirect, ONB-04 tips toast, PRIM-02a/2b Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

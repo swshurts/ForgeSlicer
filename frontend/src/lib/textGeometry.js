@@ -57,11 +57,28 @@ export const TEXT_DEFAULTS = {
     align: "center",                   // "left" | "center" | "right"
 };
 
-// Display labels for the inspector dropdown.
+// Display labels for the inspector dropdown — grouped by family so the
+// dropdown reads naturally (sans-serif first, then serif, then mono).
+// All values must match a file in /public/fonts/<value>.typeface.json.
+// iter-108.x expansion: added Droid Sans (R/B), Droid Sans Mono, Droid
+// Serif (R/B), Gentilis (R/B) and Optimer Bold — bringing the
+// dropdown from 3 → 11 weights across 5 families. Source: three.js
+// official examples (MIT-licensed).
 export const TEXT_FONTS = [
-    { value: "helvetiker_regular", label: "Helvetiker · Regular" },
-    { value: "helvetiker_bold", label: "Helvetiker · Bold" },
-    { value: "optimer_regular", label: "Optimer · Serif" },
+    // Sans-serif
+    { value: "helvetiker_regular",       label: "Helvetiker · Regular" },
+    { value: "helvetiker_bold",          label: "Helvetiker · Bold" },
+    { value: "droid_sans_regular",       label: "Droid Sans · Regular" },
+    { value: "droid_sans_bold",          label: "Droid Sans · Bold" },
+    { value: "gentilis_regular",         label: "Gentilis · Regular" },
+    { value: "gentilis_bold",            label: "Gentilis · Bold" },
+    // Serif
+    { value: "optimer_regular",          label: "Optimer · Regular" },
+    { value: "optimer_bold",             label: "Optimer · Bold" },
+    { value: "droid_serif_regular",      label: "Droid Serif · Regular" },
+    { value: "droid_serif_bold",         label: "Droid Serif · Bold" },
+    // Monospace
+    { value: "droid_sans_mono_regular",  label: "Droid Sans Mono · Regular" },
 ];
 
 // Cache: family-id → Promise<Font>. Promises (not resolved Fonts) so
