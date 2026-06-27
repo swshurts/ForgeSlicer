@@ -5,7 +5,7 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3, Type,
+  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3, Type, Box as BoxIcon, ImageDown,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -564,27 +564,27 @@ function TabAI({ onOpenAi, onOpenPhotoPlane, onOpenDesignChat }) {
             data-testid="ai-generate-btn"
             onClick={onOpenAi}
             className="w-full h-11 rounded-md border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 hover:border-orange-500 text-orange-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
-            title="Generate a 3D model from text or an image (Meshy.ai)"
+            title="Generate a real 3D mesh from text or an image — Meshy.ai (third-party AI, 13 free gens/month)"
           >
             <Sparkles size={13} />
-            Mesh from Text · Image
+            AI 3D Mesh <span className="opacity-60 font-normal">— Meshy.ai</span>
           </button>
           <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
-            One-shot text→mesh / image→mesh via Meshy.ai. Better for organic shapes; Design Chat is better for mechanical / parametric.
+            Real 3D mesh (closed volume) from text or image via Meshy.ai. Best for organic shapes &amp; figurines; Design Chat is better for mechanical / parametric.
           </p>
         </div>
         <div className="pt-2 border-t border-slate-800/80">
           <button
             data-testid="photo-to-plane-btn"
             onClick={onOpenPhotoPlane}
-            className="w-full h-11 rounded-md border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 hover:border-orange-500 text-orange-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
-            title="Convert a photo or typed text into a heightmap relief — lithophanes, keychains, signs"
+            className="w-full h-11 rounded-md border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 text-teal-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
+            title="Convert a photo to a 2.5D heightmap relief — lithophane, keychain, sign. NOT a real 3D mesh."
           >
-            <Sparkles size={13} />
-            Photo / Text → Heightmap
+            <ImageDown size={13} />
+            Lithophane / 2.5D Relief
           </button>
           <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
-            Bright pixels become tall, dark pixels stay thin. Perfect for lithophanes, keychains &amp; name plates.
+            Photo &rarr; flat plate with bright pixels tall, dark pixels thin. For lithophanes, keychains &amp; name plates — <span className="text-teal-400/80">not</span> a true 3D mesh.
           </p>
         </div>
       </div>

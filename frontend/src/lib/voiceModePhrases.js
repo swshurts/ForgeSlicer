@@ -32,25 +32,62 @@ export const GO_PAUSE_SILENCE_MS = 1500;
 export const GO_PAUSE_MAX_MS = 120000;
 
 // ── Phrase classification ───────────────────────────────────────────
+//
+// Whisper-related leniency
+// ------------------------
+// Real-world Whisper transcripts of "stop"-style utterances often arrive
+// with hallucinated filler prefixes ("okay", "uh", "just", "please") or
+// suffixes ("thank you", "you", "now") — especially on the short, low-
+// energy clips that exit phrases produce. The strict ^stop$ regex used
+// to require the cleaned utterance to be exactly the exit verb, which
+// meant "Okay stop." or "Just stop now." silently passed through to
+// `runCommand()` instead of leaving go-mode. iter-108.x widens this in
+// two steps: (1) strip the common filler prefix/suffix before matching,
+// (2) accept a small set of natural variants ("stop now", "stop please",
+// "stop it"). Still conservative — we don't fire on long utterances
+// like "stop the slicer" or "cancel my last operation".
+function _normalizeForExit(text) {
+    let norm = String(text || "").trim().toLowerCase();
+    norm = norm.replace(/[.!?,]+/g, " ").replace(/\s+/g, " ").trim();
+    // Strip common Whisper hallucinated/filler PREFIX words. Loop in case
+    // the model stacked two (e.g. "okay just stop").
+    let prev;
+    do {
+        prev = norm;
+        norm = norm.replace(/^(?:okay|ok|alright|right|so|hey|just|um|uh|please|now|well)\s+/, "");
+    } while (norm !== prev);
+    // Strip Whisper's favorite hallucinated SUFFIX phrases. It loves
+    // appending "thank you" or "you" to short/silent audio.
+    norm = norm.replace(/\s+(?:thank\s+you|thanks|you)$/, "").trim();
+    return norm;
+}
+
 export function isGoExitPhrase(text) {
-  if (!text) return false;
-  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
-  return /^(stop(?:\s+(?:voice|listening|go(?:\s+mode)?))?|exit(?:\s+(?:voice|go(?:\s+mode)?))?|done|i'?m\s+done|cancel|quit|end\s+voice|stop\s+listening)$/i
-    .test(norm);
+    if (!text) return false;
+    const norm = _normalizeForExit(text);
+    if (!norm) return false;
+    // Safety: don't fire on long utterances — could be a real command
+    // that happens to mention "stop" / "cancel".
+    if (norm.split(" ").length > 4) return false;
+    return /^(stop(?:\s+(?:voice|listening|go(?:\s+mode)?|now|please|it|that|already|here))?|exit(?:\s+(?:voice|go(?:\s+mode)?|now|please))?|done|i'?m\s+done|we'?re\s+done|all\s+done|cancel(?:\s+(?:voice|listening|now|please))?|quit(?:\s+(?:voice|listening))?|end(?:\s+(?:voice|listening|go(?:\s+mode)?))?)$/i.test(norm);
 }
 
 export function isGoPausePhrase(text) {
-  if (!text) return false;
-  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
-  return /^(wait(?:\s+(?:a\s+)?(?:sec|second|moment|minute|bit))?|pause(?:\s+voice)?|hold\s+on|one\s+(?:moment|sec|second|minute)|give\s+me\s+(?:a\s+)?(?:sec|second|moment|minute)|hang\s+on)$/i
-    .test(norm);
+    if (!text) return false;
+    const norm = _normalizeForExit(text);
+    if (!norm) return false;
+    if (norm.split(" ").length > 5) return false;
+    return /^(wait(?:\s+(?:a\s+)?(?:sec|second|moment|minute|bit))?|pause(?:\s+voice)?|hold\s+on|one\s+(?:moment|sec|second|minute)|give\s+me\s+(?:a\s+)?(?:sec|second|moment|minute)|hang\s+on)$/i
+        .test(norm);
 }
 
 export function isResumePhrase(text) {
-  if (!text) return false;
-  const norm = text.trim().toLowerCase().replace(/[.!?,]+$/, "");
-  return /^(resume|continue|ready|i'?m\s+back|go\s+again|let'?s\s+(?:continue|go)|okay\s+(?:continue|go)|go\s+ahead|start\s+(?:again|over))$/i
-    .test(norm);
+    if (!text) return false;
+    const norm = _normalizeForExit(text);
+    if (!norm) return false;
+    if (norm.split(" ").length > 5) return false;
+    return /^(resume|continue|ready|i'?m\s+back|go\s+again|let'?s\s+(?:continue|go)|okay\s+(?:continue|go)|go\s+ahead|start\s+(?:again|over))$/i
+        .test(norm);
 }
 
 // ── Mode persistence (localStorage) ────────────────────────────────
