@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.3"
+PLAN_VERSION = "1.4"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -494,6 +494,133 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
 ]
 
 
+# ---------- Lexicon (appendix) ---------------------------------------
+# Plain-English definitions of the jargon I use in the test plan and in
+# day-to-day messages, organized so the reader can find a term fast.
+# Keep entries tight — 1 sentence each, no marketing fluff. Only include
+# terms I actually use; expand later if I introduce a new one.
+
+LEXICON: list[tuple[str, list[tuple[str, str]]]] = [
+    (
+        "UI & web layout",
+        [
+            ("Hero",
+             "The large intro block at the top of a marketing page (headline + image + CTA buttons). What you'd call the 'homepage banner'."),
+            ("Header",
+             "The persistent top bar with the logo, nav links, and sign-in button. Stays put while the page scrolls."),
+            ("Footer",
+             "The persistent bottom bar with copyright, secondary links, and contact info."),
+            ("Banner",
+             "A wide horizontal info strip (often colored) used for announcements; dismissible with an X."),
+            ("Toast / snackbar",
+             "A small auto-fading notification that pops into a corner (usually bottom-right) — 'success', 'error', 'tip-of-the-day' messages."),
+            ("Modal / dialog",
+             "A popup window that takes focus and dims the page behind it; closes on X / ESC / outside-click."),
+            ("Popover / tooltip",
+             "A small floating info bubble attached to a button or icon — not modal, dismisses on click-away."),
+            ("Carousel / strip",
+             "A horizontally-scrolling row of items, usually with prev/next arrows. ForgeSlicer's Beginner Starters is NOT a carousel — it's a grid."),
+            ("Grid",
+             "Items laid out in rows × columns. 'Responsive grid' means the column count changes with screen size."),
+            ("Tab / tab bar / tab panel",
+             "A row of clickable tabs that swap the content area below. Active tab is the highlighted one; tab panel is the swap-able body."),
+            ("CTA (Call-to-Action)",
+             "The primary clickable button you want the user to press — e.g. 'Start Designing Free'."),
+            ("data-testid",
+             "An HTML attribute we add to elements specifically so automated tests can find them reliably (independent of styling changes)."),
+        ],
+    ),
+    (
+        "3D editor (workspace)",
+        [
+            ("Workspace",
+             "Our in-browser CAD editor at /workspace — where you build, edit, and slice models."),
+            ("Viewport / canvas",
+             "The 3D view in the middle of the workspace where the model is shown."),
+            ("Build plate",
+             "The orange rectangle on the floor of the viewport — represents your printer's bed; objects must fit inside it."),
+            ("Primitive",
+             "A basic built-in shape (cube, sphere, cylinder, cone, torus, triangle) that you drop in and edit."),
+            ("Gizmo",
+             "The colored arrows / handles attached to a selected object that you drag to move (translate), rotate, or scale it."),
+            ("Face handle",
+             "The small colored square in the middle of each face of a selected primitive — drag it to resize that face directly, TinkerCAD-style."),
+            ("Inspector / right panel",
+             "The right-hand sidebar showing the selected object's name + numeric dimensions / position / rotation / scale."),
+            ("Outliner / scene tree",
+             "The left-hand list of every object in the scene with visibility, lock, duplicate, delete controls."),
+            ("Transform",
+             "A position + rotation + scale combined — the 'where and how big' of an object."),
+            ("Snapping",
+             "Locking transforms to a grid step (e.g. 1 mm position, 15° rotation) so you don't end up with 12.473 mm."),
+            ("Modifier",
+             "An object marked 'positive' (adds to the final shape) or 'negative' (cuts away from the final shape) before booleans run."),
+            ("Boolean operation",
+             "Union (merge), Subtract (cut), or Intersect (keep overlap) — the three ways to combine two meshes."),
+            ("Mesh",
+             "A 3D shape made of triangles. STL files are pure meshes."),
+            ("Manifold / watertight",
+             "A mesh with no holes, no self-intersections, and a clear inside/outside — required for reliable slicing."),
+            ("Normal",
+             "A direction-vector that says 'this triangle is facing outward'. Inverted normals cause slicers to confuse inside vs outside."),
+            ("Bounding box (bbox)",
+             "The smallest axis-aligned rectangular box that contains an object — used for fit checks against the build plate."),
+        ],
+    ),
+    (
+        "File formats & slicing",
+        [
+            ("STL",
+             "Plain mesh file — just triangles. No colors, no units, no print settings. Most common 3D-printing format."),
+            ("OBJ",
+             "Mesh file that can also carry material/group info. Older format from the 3D-art world."),
+            ("3MF",
+             "Modern multi-object mesh container (zip-based). Preserves transforms, modifiers, units, and slicer settings — the format we hand off to OrcaSlicer."),
+            ("SVG",
+             "2D vector format. We can extrude it into a 3D solid by giving it a depth."),
+            ("G-code",
+             "The plain-text file your printer actually reads — line-by-line instructions: move here, extrude this much, etc. Output of a slicer."),
+            ("Slicer",
+             "Software that converts a 3D mesh into G-code by cutting it into layers and planning toolpaths. ForgeSlicer does this in-browser, server-side, or hands off to your desktop slicer."),
+            ("Slicer handoff",
+             "Exporting a 3MF and opening it in OrcaSlicer / Bambu Studio / PrusaSlicer to finish slicing there instead of in-browser."),
+            ("FDM",
+             "Fused Deposition Modeling — the most common consumer 3D-printing process; melts plastic filament and extrudes it layer by layer."),
+        ],
+    ),
+    (
+        "AI, voice & reverse engineering",
+        [
+            ("Meshy / Meshy.ai",
+             "Third-party AI service we use to turn a text prompt or image into a 3D mesh. Not built by us — we just integrate with their API."),
+            ("Whisper",
+             "OpenAI's speech-to-text model. We use it to transcribe what you say into the mic."),
+            ("Intent / JSON intent",
+             "After Whisper transcribes your voice, GPT-5.2 converts the sentence into a structured JSON action like '{op:\"add\",shape:\"cube\",size:20}' that the workspace executes."),
+            ("RANSAC",
+             "RANdom SAmple Consensus — a statistical algorithm that looks at a messy imported mesh and detects clean shapes (boxes, cylinders, spheres) hiding inside it. The basis for our 'Reverse Engineer' feature."),
+            ("Primitive fitting",
+             "The second half of RANSAC — once shapes are detected, we estimate their exact dimensions and transforms so we can swap the mesh for editable primitives."),
+        ],
+    ),
+    (
+        "QA & release process",
+        [
+            ("P0 / P1 / P2",
+             "Priority levels. P0 = run every release (must pass to ship), P1 = run weekly (regression coverage), P2 = run when the related area changes."),
+            ("Smoke test",
+             "A 30-second sanity check that the app boots and the headline features still work — not a full test pass."),
+            ("Regression",
+             "A bug that re-appears in something that used to work. Test plans exist mainly to catch these."),
+            ("iter-N",
+             "Our internal iteration tag (e.g. 'iter-108'). Shown next to the logo on the landing page and bumped each release."),
+            ("Sandbox sender",
+             "Resend's onboarding@resend.dev address — only allowed to email the account owner until a custom domain is verified."),
+        ],
+    ),
+]
+
+
 # ---------- PDF generation ----------
 
 def _styles():
@@ -634,6 +761,10 @@ def build_pdf() -> bytes:
     toc_rows = [[Paragraph(f"<b>{_esc(section)}</b>", s["Cell"]),
                  Paragraph(_esc(", ".join(area for area, _ in areas)), s["Cell"])]
                 for section, areas in SECTIONS]
+    toc_rows.append([
+        Paragraph("<b>Appendix A — Lexicon</b>", s["Cell"]),
+        Paragraph(_esc(", ".join(group for group, _ in LEXICON)), s["Cell"]),
+    ])
     toc = Table(toc_rows, colWidths=[2.6 * inch, 4.5 * inch])
     toc.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -687,6 +818,46 @@ def build_pdf() -> bytes:
             tbl.setStyle(TableStyle(style_cmds))
             story.append(tbl)
             story.append(Spacer(1, 0.12 * inch))
+
+    # --- Appendix A: Lexicon ---------------------------------------
+    # Plain-English glossary of the jargon used in this document and in
+    # day-to-day chat about ForgeSlicer, grouped into 5 buckets.
+    story.append(PageBreak())
+    story.append(Paragraph("Appendix A — Lexicon", s["H1"]))
+    story.append(Paragraph(
+        "Quick reference for the UI, CAD, slicing, AI, and QA terms used in this "
+        "test plan. Only terms I actually use are listed here — if I drop a new "
+        "one, ask anytime and I'll add it.",
+        s["Body"],
+    ))
+    lex_col_widths = [1.6 * inch, 5.5 * inch]
+    for group_title, entries in LEXICON:
+        story.append(Paragraph(_esc(group_title), s["H2"]))
+        lex_data = [[
+            Paragraph("<b>Term</b>", s["Cell"]),
+            Paragraph("<b>Plain-English meaning</b>", s["Cell"]),
+        ]]
+        for term, meaning in entries:
+            lex_data.append([
+                Paragraph(_esc(term), s["CellMono"]),
+                Paragraph(_esc(meaning), s["Cell"]),
+            ])
+        lex_tbl = Table(lex_data, colWidths=lex_col_widths, repeatRows=1)
+        lex_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.white]),
+            ("BOX", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(lex_tbl)
+        story.append(Spacer(1, 0.12 * inch))
 
     # --- Sign-off ---
     story.append(PageBreak())
@@ -745,14 +916,8 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>Refreshed test plan (v1.3) reflects the latest landing rework:</p>
-            <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li>The hero block (anvil image, headline, CTAs, stats) now lives in its own <b>Home tab</b>, not pinned above the tabs. Default tab on load is <b>Home</b>.</li>
-              <li>Tab bar now sits directly under the site header — 6 tabs in order: <b>Home · Start · Templates · Gallery · Learn · Trust</b>.</li>
-              <li><b>LAND-01 through LAND-05</b> updated to lock down the 6-tab structure and the Home default.</li>
-              <li>Carried over from v1.2: <b>ONB-05</b> post-signup redirect, <b>ONB-04</b> workspace-tips toast, <b>ONB-01</b> Beginner Starters grid inside Start tab, <b>PRIM-02a/2b</b> Inspector vs face-handle editing.</li>
-            </ul>
-            <p>Same overall coverage shape — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting quality bars.</p>
+            <p>Test plan v1.4 adds the thing you asked for: a <b>plain-English Lexicon</b> as Appendix A — covering all the UI / CAD / slicing / AI / QA jargon I tend to throw around (hero, gizmo, inspector, outliner, manifold, RANSAC, P0/P1/P2, etc.). Five short tables, one term per row, one sentence per term. If I use a word in chat that isn't on the list, ask and I'll add it.</p>
+            <p>Carried over from v1.3: the 6-tab landing structure (Home · Start · Templates · Gallery · Learn · Trust, Home default), the post-signup-redirect fix (ONB-05), the workspace-tips toast (ONB-04), PRIM-02a/2b (Inspector vs face-handle editing), and the rest of the coverage shape — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting QA.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>
