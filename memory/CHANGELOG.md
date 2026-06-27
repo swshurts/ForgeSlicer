@@ -4097,3 +4097,29 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/dialogs/GalleryPreviewDialog.jsx` — Customize CTA + accessible kbd separator.
 - `frontend/src/components/dialogs/ShareDialog.jsx` — Category select + Tags input wired into `galleryApi.create`.
 - `backend/tests/test_gallery_taxonomy_iter106.py` (NEW — by testing agent).
+
+---
+
+## Iter-105.35 (2026-06-27) — Meshy.ai third-party attribution + example prompts
+
+### What landed
+- **Hero subhead** (Landing.jsx) explicitly labels Meshy.ai as "a third-party AI design tool integrated into the ForgeSlicer workflow". Replaces vague "AI assistance via Meshy.ai" copy. Three example prompts (the ones the user requested) appear inline: *"create a simple phone stand"*, *"add a 5 mm keyring hole"*, *"make this box hollow with 2 mm walls"* — letting visitors see the three intent classes in one glance.
+- **"Design by Conversation" section** gets a dedicated attribution row directly under the sub-headline: clarifies that Meshy.ai powers generative model creation but voice edits + boolean ops run on ForgeSlicer's own engine. Outbound link to meshy.ai with `rel="noopener noreferrer"`.
+- **Three example cards** updated with the user's exact prompts and engine attribution:
+  - "Make this box hollow with 2 mm walls." (Voice editing · **ForgeSlicer engine**)
+  - "Add a 5 mm keyring hole." (Voice booleans · **ForgeSlicer engine**)
+  - "Create a simple phone stand." (Starter models · **Meshy.ai (third-party)**)
+- **AIGenerateDialog header** — added a sub-row directly under the title: *"Powered by Meshy.ai · third-party AI design tool integrated into ForgeSlicer"*. Every user opening the dialog sees the relationship before they hit Generate. Linked to meshy.ai.
+- **HelpDialog AI section** — replaced the previous one-liner with a dedicated fuchsia-bordered callout: *"Meshy.ai is an independent third-party AI design tool, integrated into the ForgeSlicer workflow but not a ForgeSlicer-owned product. It helps you generate, refine, and modify 3D design ideas from plain-language prompts…"* — followed by an example-prompt list (the three user-requested prompts) and a clear "Generate-from-prompt requests go to Meshy.ai. Edit / boolean / hollow / resize requests run on ForgeSlicer's own engine — nothing leaves your tab for those." sentence.
+- Side-nav AI entry renamed to "Text/Image-to-3D via Meshy.ai (third-party)".
+
+### Verified
+- Live smoke-test on the preview URL confirms all five attribution surfaces render correctly (hero, conversation-section row, the three example cards with their engine labels, the AIGenerateDialog header sub-row, and the HelpDialog AI callout).
+
+### Files touched
+- `frontend/src/components/Landing.jsx` (hero subhead + conversation section + 3 example cards)
+- `frontend/src/components/AIGenerateDialog.jsx` (header sub-row)
+- `frontend/src/components/HelpDialog.jsx` (AI Generate section callout + sidebar desc)
+
+### Discoverability
+- All new attribution surfaces carry `data-testid` hooks (`landing-meshy-attribution`, `landing-meshy-link`, `ai-generate-meshy-attribution`, `help-ai-meshy-attribution`) for downstream automation / regression.

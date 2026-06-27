@@ -27,7 +27,7 @@ function Index({ onJump }) {
     { id: "gallery",      icon: Globe,     title: "Gallery & Sharing", desc: "Publish to the public library, remix others' work." },
     { id: "components",   icon: Library,   title: "Component Library", desc: "Save reusable parts; recall with one click." },
     { id: "voice",        icon: Mic,       title: "Voice Commands",    desc: "Hands-free CAD. Lexicon + examples." },
-    { id: "ai",           icon: Sparkles,  title: "AI Generate",       desc: "Text-to-3D or image-to-3D via Meshy. 13 free gens/month." },
+    { id: "ai",           icon: Sparkles,  title: "AI Generate",       desc: "Text/Image-to-3D via Meshy.ai (third-party). 13 free gens/month." },
     { id: "account",      icon: UserCircle,title: "Account & Sign-in", desc: "Three sign-in options, profile editor, per-field privacy." },
     { id: "shortcuts",    icon: Keyboard,  title: "Keyboard Shortcuts", desc: "Speed up the workflow." },
   ];
@@ -319,25 +319,55 @@ function AIGenerate() {
   return (
     <div data-testid="help-section-ai">
       <H>AI Generate (Beta)</H>
-      <P>ForgeSlicer can turn text descriptions or reference images into 3D meshes using <strong>Meshy AI</strong>. The result lands on the build plate as a regular imported mesh — boolean carving, fillet, scale, slice, and export all work normally on top of it.</P>
+      <P>
+        ForgeSlicer can turn text descriptions or reference images into 3D meshes using{" "}
+        <strong>
+          <a
+            href="https://www.meshy.ai"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+          >
+            Meshy.ai
+          </a>
+        </strong>. The result lands on the build plate as a regular imported mesh — boolean carving, fillet, scale, slice, and export all work normally on top of it.
+      </P>
+      <div className="my-3 p-3 rounded border border-fuchsia-500/30 bg-fuchsia-500/[0.06]" data-testid="help-ai-meshy-attribution">
+        <P className="text-[12px] text-slate-200">
+          <strong className="text-fuchsia-300">About Meshy.ai —</strong>{" "}
+          Meshy.ai is an <em>independent third-party AI design tool</em>, integrated into the ForgeSlicer workflow but not a ForgeSlicer-owned product. It helps you{" "}
+          <strong>generate, refine, and modify</strong> 3D design ideas from plain-language prompts: a single sentence becomes a printable starter mesh, which ForgeSlicer&apos;s own tools (primitives, booleans, voice edits, slicing) take the rest of the way. Generations consume Meshy credits managed under your ForgeSlicer monthly cap; the actual generation runs on Meshy.ai&apos;s servers.
+        </P>
+        <P className="mt-2 text-[12px] text-slate-300">
+          <strong className="text-slate-100">Example prompts:</strong>
+        </P>
+        <ul className="text-[12px] text-slate-300 space-y-1 list-disc list-inside ml-1">
+          <li><em>&ldquo;Create a simple phone stand.&rdquo;</em> &mdash; AI generates a fresh starter mesh.</li>
+          <li><em>&ldquo;Add a 5&nbsp;mm keyring hole.&rdquo;</em> &mdash; ForgeSlicer voice-boolean edit on the existing mesh.</li>
+          <li><em>&ldquo;Make this box hollow with 2&nbsp;mm walls.&rdquo;</em> &mdash; ForgeSlicer voice modification on the selection.</li>
+        </ul>
+        <P className="mt-2 text-[11px] text-slate-400">
+          Generate-from-prompt requests go to Meshy.ai. Edit / boolean / hollow / resize requests run on ForgeSlicer&apos;s own engine — nothing leaves your tab for those.
+        </P>
+      </div>
       <H>Where to find it</H>
-      <P>Left panel → bottom section labeled <Code>AI Generate</Code> → click <strong>"Generate from Text · Image"</strong>.</P>
+      <P>Left panel → bottom section labeled <Code>AI Generate</Code> → click <strong>&quot;Generate from Text · Image&quot;</strong>.</P>
       <H>Two flows</H>
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
-        <li><strong>From Text</strong> — type a description (e.g. <em>"a small articulated dragon for FDM printing"</em>) and pick a style: <strong>realistic</strong> or <strong>sculpture</strong>. Need low-poly geometry? Most slicers can decimate on import — just bring the realistic mesh in and reduce face count there.</li>
+        <li><strong>From Text</strong> — type a description (e.g. <em>&quot;create a simple phone stand&quot;</em>, <em>&quot;a small articulated dragon for FDM printing&quot;</em>) and pick a style: <strong>realistic</strong> or <strong>sculpture</strong>. Need low-poly geometry? Most slicers can decimate on import — just bring the realistic mesh in and reduce face count there.</li>
         <li><strong>From Image</strong> — upload a JPG/PNG/WebP (up to 8 MB). Works best with a single subject on a plain background. Great for translating your own artwork or photography into a printable form.</li>
-        <li><strong>By voice</strong> — hit the mic button and say <em>"Generate a small dragon for FDM printing"</em>. The dialog pops open with your prompt pre-filled and submits automatically. Say <em>"I want to make X with AI"</em> if you want to pre-fill without auto-submitting.</li>
+        <li><strong>By voice</strong> — hit the mic button and say <em>&quot;Generate a small dragon for FDM printing&quot;</em>. The dialog pops open with your prompt pre-filled and submits automatically. Say <em>&quot;I want to make X with AI&quot;</em> if you want to pre-fill without auto-submitting.</li>
       </ul>
       <H>Monthly cap</H>
-      <P>Free accounts get <strong>13 generations per calendar month</strong>; Contributor Lifetime users get double. The remaining count is shown in the dialog header. The cap resets on the 1st of each month.</P>
+      <P>Free accounts get <strong>13 generations per calendar month</strong>; Contributor Lifetime users get double. The remaining count is shown in the dialog header. The cap resets on the 1st of each month. (Meshy.ai is the upstream provider — ForgeSlicer pools the credits so you don&apos;t need a separate Meshy account.)</P>
       <H>Tips for better results</H>
       <ul className="text-sm text-slate-300 space-y-1.5 list-disc list-inside mb-3">
-        <li>Mention scale and use-case (e.g. <em>"FDM printable"</em>, <em>"miniature for tabletop gaming"</em>).</li>
+        <li>Mention scale and use-case (e.g. <em>&quot;FDM printable&quot;</em>, <em>&quot;miniature for tabletop gaming&quot;</em>).</li>
         <li>For image-to-3D, use a high-contrast photo with the subject filling most of the frame.</li>
-        <li>Generation takes 30–90 seconds — the dialog stays open so you can keep modeling while you wait. A transient hiccup from Meshy won't lose your job; we automatically retry up to the 5-minute deadline.</li>
-        <li>Once the mesh arrives, click <Code>Add to scene →</Code> to drop it; click <Code>Try another</Code> to regenerate without using a new credit if you're unhappy with the geometry.</li>
+        <li>Generation takes 30–90 seconds — the dialog stays open so you can keep modeling while you wait. A transient hiccup from Meshy.ai won&apos;t lose your job; we automatically retry up to the 5-minute deadline.</li>
+        <li>Once the mesh arrives, click <Code>Add to scene →</Code> to drop it; click <Code>Try another</Code> to regenerate without using a new credit if you&apos;re unhappy with the geometry.</li>
       </ul>
-      <P className="text-amber-200 text-xs italic">Heads-up: AI meshes often have thin walls or non-manifold edges. After import, use the dimension inspector to scale up to printable size and consider a "make manifold" pass in your slicer.</P>
+      <P className="text-amber-200 text-xs italic">Heads-up: Meshy.ai meshes often have thin walls or non-manifold edges. After import, use the dimension inspector to scale up to printable size and consider a &quot;make manifold&quot; pass in your slicer.</P>
     </div>
   );
 }

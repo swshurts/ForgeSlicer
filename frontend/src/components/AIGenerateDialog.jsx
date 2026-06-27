@@ -466,19 +466,43 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
         className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="h-12 border-b border-slate-800 flex items-center px-4 gap-2 bg-gradient-to-r from-fuchsia-500/15 via-purple-500/10 to-orange-500/10">
-          <Sparkles size={16} className="text-fuchsia-400" />
-          <div className="flex-1 text-sm font-semibold text-white">AI Generate · 3D Mesh</div>
-          {usage && (
-            <span className="text-[10px] font-mono text-fuchsia-300 border border-fuchsia-500/40 rounded px-2 py-0.5">
-              {usage.remaining}/{usage.cap} left this month
-            </span>
-          )}
-          {!inProgress && (
-            <button data-testid="ai-close-btn" onClick={safeClose} className="ml-1 h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center">
-              <X size={16} />
-            </button>
-          )}
+        <div className="border-b border-slate-800 px-4 py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-purple-500/10 to-orange-500/10">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-fuchsia-400" />
+            <div className="flex-1 text-sm font-semibold text-white">AI Generate · 3D Mesh</div>
+            {usage && (
+              <span className="text-[10px] font-mono text-fuchsia-300 border border-fuchsia-500/40 rounded px-2 py-0.5">
+                {usage.remaining}/{usage.cap} left this month
+              </span>
+            )}
+            {!inProgress && (
+              <button data-testid="ai-close-btn" onClick={safeClose} className="ml-1 h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          {/* Third-party attribution — sits right under the title so
+              every user opening this dialog learns the relationship.
+              Meshy.ai handles the generation; ForgeSlicer hands the
+              prompt off, fetches the result, and lands the mesh on
+              the plate. Tiny font keeps the chrome compact but is
+              still ≥10 px for legibility. */}
+          <div
+            className="mt-0.5 text-[10px] text-slate-400 flex items-center gap-1 pl-6"
+            data-testid="ai-generate-meshy-attribution"
+          >
+            Powered by{" "}
+            <a
+              href="https://www.meshy.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+            >
+              Meshy.ai
+            </a>
+            <span className="text-slate-500">·</span>
+            <span>third-party AI design tool integrated into ForgeSlicer</span>
+          </div>
         </div>
 
         <div className="p-5 space-y-3">

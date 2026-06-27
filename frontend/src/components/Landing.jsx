@@ -285,10 +285,12 @@ export default function Landing() {
             <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl" data-testid="landing-hero-subheadline">
               Design 3D-printable objects with{" "}
               <span className="text-white font-semibold">simple CAD tools</span>,{" "}
-              <span className="text-white font-semibold">AI assistance via Meshy.ai</span>, and{" "}
-              <span className="text-white font-semibold">voice commands</span>. Say{" "}
-              <em className="text-orange-200 not-italic">&ldquo;make this cylinder 20&nbsp;mm taller&rdquo;</em>{" "}
-              or generate a starter model from a text prompt — no CAD experience required. Slice in your browser, on our server&apos;s OrcaSlicer engine, or export STL / 3MF to your desktop slicer.
+              <span className="text-white font-semibold">voice commands</span>, and{" "}
+              <span className="text-white font-semibold">Meshy.ai</span> &mdash; a{" "}
+              <span className="text-fuchsia-300">third-party AI design tool integrated into the ForgeSlicer workflow</span>. Say{" "}
+              <em className="text-orange-200 not-italic">&ldquo;create a simple phone stand&rdquo;</em>,{" "}
+              <em className="text-orange-200 not-italic">&ldquo;add a 5&nbsp;mm keyring hole&rdquo;</em>, or{" "}
+              <em className="text-orange-200 not-italic">&ldquo;make this box hollow with 2&nbsp;mm walls&rdquo;</em> &mdash; no CAD experience required. Slice in your browser, on our server&apos;s OrcaSlicer engine, or export STL / 3MF to your desktop slicer.
             </p>
             <div className="mt-7 flex flex-wrap gap-3" data-testid="hero-cta-row">
               {/* ─── Primary CTA ─────────────────────────────────────
@@ -426,10 +428,36 @@ export default function Landing() {
             <p className="mt-3 text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">
               ForgeSlicer interprets natural language and turns it into real geometry edits. Speak, type, or describe — the model updates the same way a CAD veteran would do it, just without the menus.
             </p>
+            {/* Explicit third-party attribution row. Sits just under
+                the section sub-headline so a visitor reading top-to-
+                bottom learns the relationship before they hit the
+                example cards. Meshy.ai is one of three plain-prompt
+                surfaces — voice editing + voice booleans run on
+                ForgeSlicer's own engine, but the "starter mesh from
+                a text prompt" generator is provided by Meshy.ai. */}
+            <p
+              className="mt-2 text-[11px] text-slate-500 max-w-2xl mx-auto leading-relaxed"
+              data-testid="landing-meshy-attribution"
+            >
+              Generative model creation is powered by{" "}
+              <a
+                href="https://www.meshy.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+                data-testid="landing-meshy-link"
+              >
+                Meshy.ai
+              </a>
+              {" "}— an independent third-party AI design tool integrated into the ForgeSlicer workflow, not a ForgeSlicer-owned product. Voice edits and boolean ops run on ForgeSlicer&apos;s own engine.
+            </p>
           </div>
 
           <div className="grid sm:grid-cols-3 gap-4" data-testid="landing-conversation-examples">
-            {/* Voice editing card — concrete edit-this-mesh example */}
+            {/* Voice editing card — concrete edit-this-mesh example. The
+                prompt was chosen from the user's brief: a verb beginners
+                already know ("make ... hollow") applied to a familiar
+                primitive ("this box"). */}
             <div
               className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-emerald-500/40 transition-colors"
               data-testid="example-card-voice-edit"
@@ -437,16 +465,18 @@ export default function Landing() {
               <div className="w-10 h-10 rounded bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mb-3">
                 <Mic size={18} className="text-emerald-300" />
               </div>
-              <div className="text-[10px] uppercase tracking-widest text-emerald-300 font-semibold">Voice editing</div>
+              <div className="text-[10px] uppercase tracking-widest text-emerald-300 font-semibold">Voice editing · ForgeSlicer engine</div>
               <div className="mt-2 text-[15px] font-semibold text-white leading-snug">
-                &ldquo;Make this cylinder 20&nbsp;mm taller.&rdquo;
+                &ldquo;Make this box hollow with 2&nbsp;mm walls.&rdquo;
               </div>
               <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                Click the mic, say the change, watch it happen. Resize, rotate, move, and align with plain English — no dialog hunting.
+                Refine and modify what&apos;s already on the plate — shell, hollow, resize, rotate, align. Plain English maps to the same operations a CAD pro would set up by hand.
               </p>
             </div>
 
-            {/* Boolean-by-voice card — shows complex ops are accessible */}
+            {/* Boolean-by-voice card — the user's "add a 5mm keyring
+                hole" example fits perfectly here: a single sentence
+                produces a parametric subtract + drop on the host. */}
             <div
               className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-cyan-500/40 transition-colors"
               data-testid="example-card-voice-boolean"
@@ -454,29 +484,44 @@ export default function Landing() {
               <div className="w-10 h-10 rounded bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center mb-3">
                 <MessageSquare size={18} className="text-cyan-300" />
               </div>
-              <div className="text-[10px] uppercase tracking-widest text-cyan-300 font-semibold">Voice booleans</div>
+              <div className="text-[10px] uppercase tracking-widest text-cyan-300 font-semibold">Voice booleans · ForgeSlicer engine</div>
               <div className="mt-2 text-[15px] font-semibold text-white leading-snug">
-                &ldquo;Cut a hole through the centre.&rdquo;
+                &ldquo;Add a 5&nbsp;mm keyring hole.&rdquo;
               </div>
               <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                The same boolean subtract a CAD pro would set up — but spoken in one sentence. Holes, slots, embossed text, and unions all respond to natural prompts.
+                Holes, slots, embossed text, unions and intersections — all spoken in one sentence. The geometry-edit half of conversational design runs entirely on the ForgeSlicer engine; nothing leaves your tab.
               </p>
             </div>
 
-            {/* AI generation card — kicks off a fresh model from prompt */}
+            {/* AI generation card — Meshy.ai surface. Strengthens the
+                third-party attribution one more time so a visitor who
+                scans only this card still learns the relationship. */}
             <div
-              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-orange-500/40 transition-colors"
+              className="border border-slate-800 bg-slate-900/60 rounded-lg p-5 hover:border-fuchsia-500/40 transition-colors"
               data-testid="example-card-ai-prompt"
             >
-              <div className="w-10 h-10 rounded bg-orange-500/20 border border-orange-500/40 flex items-center justify-center mb-3">
-                <Wand2 size={18} className="text-orange-300" />
+              <div className="w-10 h-10 rounded bg-fuchsia-500/20 border border-fuchsia-500/40 flex items-center justify-center mb-3">
+                <Wand2 size={18} className="text-fuchsia-300" />
               </div>
-              <div className="text-[10px] uppercase tracking-widest text-orange-300 font-semibold">AI starter models · Meshy.ai</div>
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-fuchsia-300 font-semibold">
+                <span>Starter models</span>
+                <span className="text-slate-500">·</span>
+                <span>Meshy.ai (third-party)</span>
+              </div>
               <div className="mt-2 text-[15px] font-semibold text-white leading-snug">
-                &ldquo;Generate a low-poly fox keychain.&rdquo;
+                &ldquo;Create a simple phone stand.&rdquo;
               </div>
               <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                Type or speak a prompt; Meshy.ai returns a printable starter model in seconds. Refine it with primitives, booleans, or another voice command — your AI co-designer never gets tired of revisions.
+                A plain-language prompt returns a printable starter mesh from{" "}
+                <a
+                  href="https://www.meshy.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+                >
+                  Meshy.ai
+                </a>
+                {" "}in seconds. Once the mesh lands on the plate, ForgeSlicer&apos;s own tools refine and modify it — every voice edit, boolean, and slice happens locally.
               </p>
             </div>
           </div>
