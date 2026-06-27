@@ -26,6 +26,7 @@ from . import project_enclosure as _project_enclosure
 from . import spool_spacer as _spool_spacer
 from . import tool_holder as _tool_holder
 from . import vise_jaws as _vise_jaws
+from . import starters as _starters
 
 
 # Each template module contributes one entry.
@@ -39,6 +40,9 @@ _TEMPLATE_MODULES = [
     _spool_spacer,
     _tool_holder,
     _vise_jaws,
+    # Beginner starter templates — co-located in starters.py and
+    # expanded into 12 module-like entries by extending the list.
+    *_starters.STARTER_MODULES,
 ]
 
 # Built once at import time.

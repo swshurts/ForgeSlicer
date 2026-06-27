@@ -9,6 +9,7 @@ import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import LandingTemplates from "./LandingTemplates";
+import BeginnerStarters from "./BeginnerStarters";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "") + "/api";
 
@@ -314,7 +315,13 @@ export default function Landing() {
                 type="button"
                 data-testid="hero-cta-example-project"
                 onClick={() => {
-                  const el = document.querySelector('[data-testid="landing-templates"]');
+                  // Prefer the beginner-starter gallery — it's the
+                  // first thing first-timers should see. Fall back to
+                  // the intermediate templates if for some reason the
+                  // starters block isn't mounted (defensive).
+                  const el =
+                    document.querySelector('[data-testid="landing-beginner-starters"]') ||
+                    document.querySelector('[data-testid="landing-templates"]');
                   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
                 className="h-11 px-5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded flex items-center gap-2 border border-orange-500/40 hover:border-orange-500/70 transition-colors"
@@ -604,6 +611,8 @@ export default function Landing() {
           <Feature icon={Move3D} title="Precise Transforms" desc="Per-axis numeric position, rotation, scale. Snap-to-grid in mm or degrees. Build-plate bounds checking." accent="bg-emerald-500" />
           <Feature icon={Layers} title="STL · 3MF · GCODE" desc="Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own — one click, real production slicing." accent="bg-amber-500" />
         </div>
+
+        <BeginnerStarters />
 
         <LandingTemplates />
       </main>

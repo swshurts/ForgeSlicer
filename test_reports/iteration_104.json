@@ -1,0 +1,50 @@
+{
+  "summary": "Tested BeginnerStarters landing block + workspace starter-template flow. Landing UI renders correctly (all 12 cards, metadata pills, hero CTA scroll works). Backend POST /api/voice/expand-template returns 200 with non-empty steps for all 12 starter_* ids (verified via pytest). CRITICAL: workspace-side click flow is BROKEN — backend returns valid steps but the scene remains empty (0 objs in outliner) and banner is stuck at 'Loading \"X\"…' forever; the 'Loaded N steps' banner never appears. Root cause appears to be a useEffect double-invocation race in Workspace.jsx lines 752-801 (cancelled=true short-circuits after expandTemplate resolves but before executePlan runs). Also: review request claimed 'workspace works without login' — this is FALSE; /workspace is auth-gated.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "BeginnerStarters -> /workspace?template=<id> -> executePlan",
+        "issue": "Backend POST /api/voice/expand-template returns 200 with valid steps for starter_keychain/starter_replacement_knob/starter_organizer_tray, but the scene is never populated (Outliner shows '0 objs', Scene panel shows Components=0/Positive=0/Negative=0). The transient banner 'Loading \"<name>\"…' is set but never transitions to 'Loaded \"<name>\" — N steps.' even after 20s. Suspected cause: in Workspace.jsx useEffect [templateParam] (lines 752-801), the cleanup sets `cancelled=true`. If the effect re-runs (React.StrictMode double-mount in dev / preview, OR setSearchParams({}, {replace:true}) triggering a re-render before await resolves), the first invocation pops & removes the sessionStorage payload, awaits expandTemplate, then hits `if (cancelled) return;` BEFORE calling executePlan. The second invocation finds no sessionStorage payload and returns early (setSearchParams + return). Net effect: expandTemplate fires once (network log confirms 200) but executePlan is never called and the banner never updates. Reproduced for keychain, replacement-knob, organizer-tray.",
+        "affected_selectors": ["[data-testid=\"scene-count\"]", "[data-testid=\"scene-stats\"]", "starter-customize-*"]
+      },
+      {
+        "flow": "Auth gate on /workspace",
+        "issue": "Review request stated 'workspace works without login' but visiting /workspace?template=<id> without a session_token cookie shows the 'Sign in to access the workspace' gate and the starter template handler never mounts/runs. Either: (a) the workspace handler needs to run BEFORE auth gate (so starter mesh loads then prompts to save), OR (b) the BeginnerStarters cards should clearly indicate sign-in is required, OR (c) backend POST /api/voice/expand-template should be confirmed callable anonymously (currently appears guarded only by frontend route gating)."
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_starter_templates.py",
+    "/app/test_reports/pytest/starter_templates.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): Workspace.jsx lines 752-801 — guard executePlan so it runs even if the useEffect cleanup ran. Options: (1) move sessionStorage.removeItem AFTER executePlan completes so a second mount can re-pop it; (2) stash the popped payload in a useRef so a re-mount picks it up; (3) drop the `cancelled` short-circuit between expandTemplate and executePlan (only short-circuit on the final setImportBanner+setSearchParams). Easiest fix: read sessionStorage WITHOUT removing it, then remove only after `executePlan` resolves successfully.",
+    "CLARIFY: Either remove the auth gate for /workspace?template=<id> entry (so beginners can land + build before signup) OR update review request / BeginnerStarters copy to set the expectation that sign-in is required.",
+    "Verify: After fix, the transient banner should actually flip to 'Loaded \"Keychain\" — N steps.' and the Outliner Component count should reflect the steps (Keychain: cylinder + ring + text = several positives/negatives)."
+  ],
+  "critical_code_review_comments": [
+    "Workspace.jsx template handler reads+removes sessionStorage payload EAGERLY (line 760: sessionStorage.removeItem before await expandTemplate). Combined with the `cancelled` cleanup pattern, this is single-shot and silently swallows execution. Either persist the payload until executePlan resolves, or guard with a useRef-tracked single-fire flag.",
+    "The same useEffect calls setSearchParams({}, {replace:true}) in the finally block — this triggers a templateParam change which may re-fire the effect mid-flight depending on React version. Adding `if (!templateParam) return;` is brittle; better to use a useRef-based 'already-handled-this-template' guard.",
+    "BeginnerStarters.jsx launch() does navigate(`/workspace?template=${tpl.id}`) using the FRONTEND id (e.g. 'keychain'), not the backend template_id ('starter_keychain'). The handler relies on sessionStorage for the real id. If a user deep-links /workspace?template=keychain without the sessionStorage payload, the handler silently no-ops (line 768). Consider passing the backend id in the URL too, or showing a 'starter not found, picked from list?' message.",
+    "Backend starter templates return steps with {action: 'add', type: 'cube', modifier: 'positive', dims: {...}, position, rotation, tag, note} — confirmed matches executePlan's expected schema (step.action === 'add'). Schema match verified."
+  ],
+  "updated_files": [
+    "/app/tests/test_starter_templates.py (new pytest — 13 tests passing)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 pytest: all 12 starter_* expand-template calls return 200 + non-empty steps + valid action schema; unknown-id returns error)",
+    "frontend": "Landing UI 100% (12 cards render, all data-testids present, hero CTA scroll works). Workspace integration 0% (scene never populated despite backend 200) — CRITICAL FAIL"
+  },
+  "test_credentials": "Seeded test session: SESSION_TOKEN=st_test_1782519252598 (auto-seeded via mongosh per /app/memory/test_credentials.md). Used as cookie name 'session_token' on the preview domain to bypass auth gate.",
+  "seed_data_creation": "MongoDB user + user_sessions row seeded for the test session token above.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is rock-solid for all 12 starter templates. The failure is purely in Workspace.jsx template-handler useEffect — fix the cancelled/cleanup race, then re-run with: (1) cookie injection of session_token, (2) click starter-customize-keychain on /, (3) wait ~10s, (4) verify Outliner shows >0 objs AND banner reads 'Loaded ... — N steps.'. Pytest file at /app/tests/test_starter_templates.py covers backend regression — keep using it.",
+  "rca of the issue": "Workspace.jsx useEffect at lines 752-801 has a race: cleanup sets cancelled=true. When the effect double-invokes (React.StrictMode dev double-mount OR an early re-render from setSearchParams), the FIRST invocation has already done sessionStorage.removeItem('forgeslicer.launchTemplate') (line 760) so the SECOND invocation finds no payload and returns early. The FIRST invocation continues, awaits expandTemplate (returns 200 — confirmed in network log), then hits the `if (cancelled) return;` guard BEFORE calling executePlan(data.steps). Net result: expandTemplate is called, but executePlan is NEVER called, no objects are added to the scene, and the 'Loading...' banner is never replaced. Mitigation: move sessionStorage.removeItem to AFTER executePlan succeeds, OR remove the cancelled guard between expand and execute, OR use a useRef single-fire flag keyed on templateParam."
+}

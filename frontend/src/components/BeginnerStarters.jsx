@@ -58,6 +58,7 @@ const DIFFICULTY_STYLES = {
 const STARTERS = [
     {
         id: "keychain",
+        templateId: "starter_keychain",
         title: "Keychain",
         icon: KeyRound,
         accent: "from-orange-500/25 to-amber-500/10",
@@ -69,6 +70,7 @@ const STARTERS = [
     },
     {
         id: "phone-stand",
+        templateId: "starter_phone_stand",
         title: "Phone Stand",
         icon: Smartphone,
         accent: "from-cyan-500/25 to-blue-500/10",
@@ -80,6 +82,7 @@ const STARTERS = [
     },
     {
         id: "name-tag",
+        templateId: "starter_name_tag",
         title: "Name Tag",
         icon: Tag,
         accent: "from-emerald-500/25 to-green-500/10",
@@ -91,6 +94,7 @@ const STARTERS = [
     },
     {
         id: "plant-marker",
+        templateId: "starter_plant_marker",
         title: "Plant Marker",
         icon: Sprout,
         accent: "from-lime-500/25 to-emerald-500/10",
@@ -102,6 +106,7 @@ const STARTERS = [
     },
     {
         id: "cable-clip",
+        templateId: "starter_cable_clip",
         title: "Cable Clip",
         icon: Cable,
         accent: "from-indigo-500/25 to-violet-500/10",
@@ -113,6 +118,7 @@ const STARTERS = [
     },
     {
         id: "organizer-tray",
+        templateId: "starter_organizer_tray",
         title: "Mini Organizer Tray",
         icon: Inbox,
         accent: "from-amber-500/25 to-yellow-500/10",
@@ -124,6 +130,7 @@ const STARTERS = [
     },
     {
         id: "replacement-knob",
+        templateId: "starter_replacement_knob",
         title: "Replacement Knob",
         icon: Disc,
         accent: "from-rose-500/25 to-pink-500/10",
@@ -135,6 +142,7 @@ const STARTERS = [
     },
     {
         id: "simple-bracket",
+        templateId: "starter_simple_bracket",
         title: "Simple Bracket",
         icon: Triangle,
         accent: "from-teal-500/25 to-cyan-500/10",
@@ -146,6 +154,7 @@ const STARTERS = [
     },
     {
         id: "cookie-cutter",
+        templateId: "starter_cookie_cutter",
         title: "Cookie Cutter",
         icon: Cookie,
         accent: "from-orange-500/25 to-red-500/10",
@@ -157,6 +166,7 @@ const STARTERS = [
     },
     {
         id: "toy-wheel",
+        templateId: "starter_toy_wheel",
         title: "Toy Wheel",
         icon: CircleDot,
         accent: "from-violet-500/25 to-purple-500/10",
@@ -168,6 +178,7 @@ const STARTERS = [
     },
     {
         id: "desk-hook",
+        templateId: "starter_desk_hook",
         title: "Desk Hook",
         icon: Anchor,
         accent: "from-purple-500/25 to-fuchsia-500/10",
@@ -179,6 +190,7 @@ const STARTERS = [
     },
     {
         id: "wall-spacer",
+        templateId: "starter_wall_spacer",
         title: "Wall Spacer",
         icon: SquareIcon,
         accent: "from-slate-500/25 to-zinc-500/10",
@@ -263,24 +275,29 @@ export default function BeginnerStarters() {
     const navigate = useNavigate();
 
     const launch = (tpl) => {
-        // Stash the starter hint for the workspace to consume on mount.
-        // Until the workspace implements the starter-prompt handler,
-        // this is a no-op + graceful empty-workspace fallback — better
-        // than blocking the click while we wait for the backend wiring.
+        // Reuse the same plumbing the heavy LandingTemplates uses:
+        // stash {template_id, params, name} under
+        // `forgeslicer.launchTemplate`, then navigate to
+        // /workspace?template=<id>. The workspace's existing template
+        // handler pops the payload, calls expandTemplate(), and runs
+        // the resulting step list through executePlan — same path the
+        // voice pipeline uses, so the starter mesh lands in the scene
+        // ready to edit. Each starter passes an empty params object
+        // because the backend builders ship with first-print-friendly
+        // defaults; the user dials in dimensions from the workspace.
         try {
             sessionStorage.setItem(
-                "forgeslicer.starterTemplate",
+                "forgeslicer.launchTemplate",
                 JSON.stringify({
-                    starter_id: tpl.id,
-                    title: tpl.title,
-                    skills: tpl.skills,
-                    difficulty: tpl.difficulty,
+                    template_id: tpl.templateId,
+                    params: {},
+                    name: tpl.title,
                 }),
             );
         } catch (_) {
             // private-mode Safari etc — just navigate anyway.
         }
-        navigate(`/workspace?starter=${tpl.id}`);
+        navigate(`/workspace?template=${tpl.id}`);
     };
 
     return (
