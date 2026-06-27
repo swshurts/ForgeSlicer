@@ -27,7 +27,7 @@ export default function AuthCallback() {
     // Where to go after auth succeeds — back to the page that triggered the
     // login (gallery / workspace / profile etc.). Pulled from sessionStorage
     // set by startLogin() before the redirect.
-    const returnPath = popReturnPath("/workspace");
+    const returnPath = popReturnPath("/");
 
     // Strip the fragment immediately so a reload won't replay the exchange.
     window.history.replaceState(null, "", window.location.pathname + window.location.search);

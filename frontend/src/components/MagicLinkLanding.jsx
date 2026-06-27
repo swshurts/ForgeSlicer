@@ -27,7 +27,7 @@ export default function MagicLinkLanding() {
         setUser(user);
         toast.success(`Welcome${user?.name ? `, ${user.name.split(" ")[0]}` : ""}!`);
         setStatus("done");
-        navigate("/workspace", { replace: true });
+        navigate("/", { replace: true });
       } catch (err) {
         const detail = err?.response?.data?.detail || err.message;
         setError(typeof detail === "string" ? detail : "Magic link could not be used.");

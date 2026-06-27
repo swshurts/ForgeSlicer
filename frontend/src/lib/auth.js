@@ -19,9 +19,9 @@ const cfg = { withCredentials: true };
 const RETURN_PATH_KEY = "forgeslicer.auth.returnPath";
 
 export const setReturnPath = (path) => {
-  try { sessionStorage.setItem(RETURN_PATH_KEY, path || "/workspace"); } catch { /* private mode */ }
+  try { sessionStorage.setItem(RETURN_PATH_KEY, path || "/"); } catch { /* private mode */ }
 };
-export const popReturnPath = (fallback = "/workspace") => {
+export const popReturnPath = (fallback = "/") => {
   try {
     const v = sessionStorage.getItem(RETURN_PATH_KEY);
     sessionStorage.removeItem(RETURN_PATH_KEY);
@@ -93,9 +93,9 @@ export const authApi = {
 // from `window.location.origin` so the user comes back to the SAME host they
 // signed in from (preview vs production domains differ).
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-export const buildLoginUrl = (returnPath = "/workspace") => {
+export const buildLoginUrl = (returnPath = "/") => {
   // Persist returnPath so AuthCallback can route us back to where we started
-  // (not always /workspace) after the external OAuth round-trip.
+  // (not always /) after the external OAuth round-trip.
   setReturnPath(returnPath);
   // The OAuth provider only knows our origin — the path it sees is also the
   // path it appends "#session_id=…" to, so we use origin + returnPath as the
@@ -104,7 +104,7 @@ export const buildLoginUrl = (returnPath = "/workspace") => {
   return `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
 };
 
-export const startLogin = (returnPath = "/workspace") => {
+export const startLogin = (returnPath = "/") => {
   window.location.href = buildLoginUrl(returnPath);
 };
 

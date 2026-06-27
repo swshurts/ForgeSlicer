@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.0"
+PLAN_VERSION = "1.1"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -83,20 +83,30 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                 "Beginner Starters",
                 [
                     ("ONB-01",
-                     "Beginner Starters carousel renders 12 templates",
-                     "1. Open / in a private window. 2. Click 'Start designing'. 3. Observe the Beginner Starters strip.",
-                     "12 starter cards render with thumbnails, titles, and 'Open in editor' CTAs. No console errors.",
+                     "12 Beginner Starter cards render in a responsive grid below the landing hero",
+                     "1. Open / in a private window. 2. Scroll down past the hero until you reach the 'Beginner Starter Projects' section. 3. Count the cards.",
+                     "12 starter cards render in a responsive grid (2 cols on small, 3 on lg, 4 on xl). Each card shows an icon, title, difficulty pill, estimated print time, and skill tags. data-testid 'landing-beginner-starters' is present and 'landing-starters-grid' contains 12 children.",
                      "P0"),
                     ("ONB-02",
-                     "Opening a starter populates the canvas",
-                     "1. Click any starter (e.g. 'Phone Stand'). 2. Wait for the editor to mount.",
-                     "Canvas loads the starter geometry, scene tree shows the template's nodes, undo history is empty.",
+                     "Opening a starter populates the workspace with that starter's geometry",
+                     "1. From the Beginner Starters grid, click any card (e.g. 'Keychain'). 2. Wait for /workspace?template=<id> to mount.",
+                     "URL is /workspace?template=<id>; sessionStorage.forgeslicer.launchTemplate contains the payload; the starter mesh appears in the scene; the outliner shows the starter's nodes.",
                      "P0"),
                     ("ONB-03",
                      "Skip onboarding banner is dismissible & non-blocking",
-                     "1. Land on /. 2. Locate the bottom-right announcement banner. 3. Click the X.",
+                     "1. Land on /. 2. Locate the dismissible announcement banner in the bottom-right corner on product routes. 3. Click the X.",
                      "Banner closes, never reappears in the same session, no fullscreen modal interrupts work.",
                      "P1"),
+                    ("ONB-04",
+                     "Workspace tips toast cycles one tip at a time on entry",
+                     "1. Sign in. 2. Navigate to /workspace from the landing CTA. 3. Wait for the small bottom-right toast.",
+                     "A small dismissible 'tip of the day'-style toast appears (NOT a fullscreen popup) with the next unseen tip. Closing it advances the queue; reopening /workspace later shows the next tip. After all tips are seen, a 'That's all the tips for now.' toast fires once.",
+                     "P1"),
+                    ("ONB-05",
+                     "After creating an account, the user lands on the landing page (not the workspace)",
+                     "1. Go to /signin?mode=register. 2. Fill display name, email, password. 3. Click 'Create account'.",
+                     "After success, URL becomes '/' and the landing page renders with the user signed in (avatar visible in header). It MUST NOT auto-redirect to /workspace. Same expectation for Google sign-in and magic-link completion when no explicit ?return= was specified.",
+                     "P0"),
                 ],
             ),
             (
@@ -138,9 +148,14 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "Each primitive spawns at origin with sensible defaults; scene tree updates; gizmo attaches.",
                      "P0"),
                     ("PRIM-02",
-                     "Edit primitive parameters (dims, segments)",
-                     "1. Select a cylinder. 2. Open the Parameters panel. 3. Change radius, height, segments.",
-                     "Mesh regenerates live, no flicker, history step recorded.",
+                     "Edit a primitive's dimensions via the right-side Inspector (numeric fields)",
+                     "1. Select a cylinder by clicking it. 2. Open the right-side Inspector panel (RightPanel). 3. Edit Width / Depth / Height numeric inputs, then radius and segment count if exposed.",
+                     "Mesh regenerates live as you type (debounced), without flicker or selection loss. Each commit creates one undo step. The dimensions reflect back into the gizmo's bounding box.",
+                     "P0"),
+                    ("PRIM-02b",
+                     "Edit a primitive by dragging its TinkerCAD-style face handles directly",
+                     "1. Select a cube. 2. Grab one of the small colored squares on a face (cyan / magenta / yellow / etc). 3. Drag outward and release.",
+                     "The face moves along its normal in real time; opposite face stays put; final dimensions match the drag delta (±0.1 mm with snapping on). One undo step recorded for the whole drag.",
                      "P0"),
                     ("PRIM-03",
                      "Triangle primitive — equilateral default",
@@ -696,12 +711,18 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
       <tr><td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#1e293b;border:1px solid #334155;border-radius:12px;overflow:hidden;">
           <tr><td style="padding:28px 32px 0 32px;">
-            <h1 style="margin:0;color:#fb923c;font-size:22px;font-weight:700;letter-spacing:-0.5px;">ForgeSlicer Test Plan</h1>
+            <h1 style="margin:0;color:#fb923c;font-size:22px;font-weight:700;letter-spacing:-0.5px;">ForgeSlicer Test Plan v{PLAN_VERSION}</h1>
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>Attached is the comprehensive manual QA test plan for ForgeSlicer — covering primitives, Boolean operations, importers, RANSAC reverse engineering, AI / voice workflows, the community gallery, Learn lessons, Trust pages, slicer handoff, and cross-cutting quality bars.</p>
-            <p>Each test case has a stable ID, click-by-click steps, expected result, and a priority (P0 every release, P1 weekly, P2 on related changes).</p>
+            <p>Refreshed test plan based on your first pass. Changes since v1.0:</p>
+            <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
+              <li><b>ONB-01</b> rewritten — it's a responsive <b>grid below the hero</b>, not a carousel; reviewer scrolls down to see all 12 cards.</li>
+              <li><b>ONB-04</b> added — the "small welcome popup" you saw on /workspace is the <b>tips toast cycle</b>; now its own test case.</li>
+              <li><b>ONB-05</b> added — verifies the just-fixed bug: <b>post-signup must land on the landing page, not the workspace</b>. SignIn / AuthCallback / MagicLink all default to "/" now (Workspace's "sign in to save" prompt still passes ?return=/workspace explicitly so that flow still works).</li>
+              <li><b>PRIM-02</b> split into 2a (Inspector numeric edits via RightPanel) and 2b (TinkerCAD-style face-handle dragging — those colored squares in your screenshot).</li>
+            </ul>
+            <p>Same coverage shape as v1.0 — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting quality bars.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

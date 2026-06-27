@@ -282,7 +282,11 @@ export default function SignIn() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = new URLSearchParams(location.search);
-  const returnPath = params.get("return") || "/workspace";
+  // Default post-auth destination is the landing page (not the editor).
+  // Flows that need to come back to a specific surface (e.g. the "sign in
+  // to save your work" prompt from Workspace) pass `?return=/workspace`
+  // explicitly, so they keep working.
+  const returnPath = params.get("return") || "/";
   const initialMode = params.get("mode") === "register" ? "register" : "login";
   const [tab, setTab] = useState(params.get("tab") || "password");
   const [pwMode, setPwMode] = useState(initialMode);
