@@ -4220,3 +4220,19 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 ### Files touched
 - `frontend/src/components/SplashScreen.jsx` — rewritten as a banner + route guard.
 - `frontend/src/components/ReleaseNotesDialog.jsx` — added route guard + `/changelog` footer link.
+
+---
+
+## Implemented (2026-06-27)
+
+### Test Plan PDF emailed to stakeholder
+- ✅ New ops script `backend/scripts/send_test_plan.py` builds a 12-section / ~40-case manual QA Test Plan PDF with ReportLab (cover page, TOC, priority legend, per-area test tables, sign-off page).
+- ✅ Coverage: Onboarding & Auth, Primitives + Booleans, Importers (STL/OBJ/3MF/SVG/ZIP), RANSAC reverse engineering, AI/voice + Meshy + Text-on-Surface, Measurement/Grid/Snap, Community Gallery v2, Learn lessons, Trust/Privacy/Changelog, Slicer Handoff, SEO surfaces, cross-cutting quality bars.
+- ✅ Each test case has a stable ID (ONB-01 … QA-03), steps, expected result, and P0/P1/P2 priority.
+- ✅ Email dispatched via the existing Resend integration (`onboarding@resend.dev` sender) with the PDF attached.
+- ✅ Verified delivery: Resend accepted message id `555b49d8-2ff3-48cb-a165-052911700235` to `steve.shurts@gmail.com` (recipient normalized to lowercase to match Resend sandbox).
+- ✅ Local copy saved at `backend/scripts/ForgeSlicer-Test-Plan-v1.0.pdf` for the paper trail.
+
+### Files touched
+- `backend/scripts/send_test_plan.py` — new ReportLab + Resend ops script.
+- `backend/scripts/ForgeSlicer-Test-Plan-v1.0.pdf` — generated artifact (25.9 KB).
