@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -287,7 +287,7 @@ export default function Landing() {
               <span className="text-white font-semibold">AI assistance via Meshy.ai</span>, and{" "}
               <span className="text-white font-semibold">voice commands</span>. Say{" "}
               <em className="text-orange-200 not-italic">&ldquo;make this cylinder 20&nbsp;mm taller&rdquo;</em>{" "}
-              or generate a starter model from a text prompt — no CAD experience required. Then hand off to OrcaSlicer, Bambu Studio, or PrusaSlicer in a single click.
+              or generate a starter model from a text prompt — no CAD experience required. Slice in your browser, on our server&apos;s OrcaSlicer engine, or export STL / 3MF to your desktop slicer.
             </p>
             <div className="mt-7 flex flex-wrap gap-3" data-testid="hero-cta-row">
               {/* ─── Primary CTA ─────────────────────────────────────
@@ -588,7 +588,7 @@ export default function Landing() {
                 Beyond Tinkercad
               </div>
               <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                Outgrew Tinkercad&apos;s primitives but Fusion 360 feels like a 747 cockpit? ForgeSlicer is the middle floor — real booleans, precise transforms, and slicer handoff, wrapped in a &ldquo;just describe it&rdquo; interface.
+                Outgrew Tinkercad&apos;s primitives but Fusion 360 feels like a 747 cockpit? ForgeSlicer is the middle floor — real booleans, precise transforms, in-browser slicing, and an export to your favourite slicer, all wrapped in a &ldquo;just describe it&rdquo; interface.
               </p>
             </div>
           </div>
@@ -609,8 +609,113 @@ export default function Landing() {
           <Feature icon={Box} title="Primitive Library" desc="Cubes, spheres, cylinders, cones, tori — drop them in and edit dimensions numerically or with gizmos." accent="bg-orange-500" />
           <Feature icon={Combine} title="True Boolean Ops" desc="Union, subtract, intersect with three-bvh-csg. Positive & negative parts compose into a clean watertight mesh." accent="bg-cyan-500" />
           <Feature icon={Move3D} title="Precise Transforms" desc="Per-axis numeric position, rotation, scale. Snap-to-grid in mm or degrees. Build-plate bounds checking." accent="bg-emerald-500" />
-          <Feature icon={Layers} title="STL · 3MF · GCODE" desc="Hand off to OrcaSlicer, Bambu Studio, PrusaSlicer or your own — one click, real production slicing." accent="bg-amber-500" />
+          <Feature icon={Layers} title="Three Ways to Slice" desc="Slice in-browser for an instant preview, on our server's bundled OrcaSlicer engine for production G-code, or export STL / 3MF and open in your desktop slicer." accent="bg-amber-500" />
         </div>
+
+        {/* ─── From design to print ──────────────────────────────────
+            Honesty section. Earlier copy mixed "hand off to slicers"
+            with "integrated production slicing" — visitors couldn't
+            tell whether ForgeSlicer slices itself or just exports.
+            Truth: it does BOTH, plus a third desktop hand-off path.
+            This block lays out the 5 user-visible steps so a curious
+            visitor can see exactly where each capability lives. The
+            in-browser slicer and the server-side OrcaSlicer engine
+            both produce real G-code; the third branch is the export
+            path for users who prefer their existing desktop slicer
+            (which keeps OrcaSlicer / Bambu Studio / PrusaSlicer
+            workflows intact). */}
+        <section
+          data-testid="landing-design-to-print"
+          className="mt-24"
+          aria-labelledby="design-to-print-heading"
+        >
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full text-[10px] uppercase tracking-widest text-amber-300 font-semibold">
+              <Layers size={11} /> From design to print
+            </div>
+            <h2
+              id="design-to-print-heading"
+              className="mt-4 text-3xl sm:text-4xl font-bold tracking-tight"
+            >
+              The five-step path,{" "}
+              <span className="text-amber-400">no surprises.</span>
+            </h2>
+            <p className="mt-3 text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">
+              ForgeSlicer covers everything from blank canvas to printer SD card. Here&apos;s every step in plain English, and exactly which tools live where.
+            </p>
+          </div>
+
+          <ol className="grid gap-3 md:grid-cols-2 lg:grid-cols-5" data-testid="design-to-print-flow">
+            {[
+              { n: 1, icon: Pencil, title: "Design or import", desc: "Build with primitives + booleans, generate from a text/voice prompt, or import STL / OBJ / 3MF / SVG / ZIP." },
+              { n: 2, icon: Ruler, title: "Check fit", desc: "Live build-plate bounds, mm dimensions, printer profiles for Bambu / Prusa / Creality / Voron and more." },
+              { n: 3, icon: Download, title: "Export STL / 3MF", desc: "Watertight mesh repair (pymeshfix) runs on export. Multi-object 3MF preserves positives, negatives, and group hierarchy." },
+              { n: 4, icon: Slice, title: "Slice", desc: "Three options — full detail below." },
+              { n: 5, icon: Printer, title: "Print", desc: "Save the G-code to SD / USB / network, or your slicer pushes it to the printer directly." },
+            ].map((s) => {
+              const Icon = s.icon;
+              return (
+                <li
+                  key={s.n}
+                  data-testid={`design-to-print-step-${s.n}`}
+                  className="relative rounded-xl border border-slate-800 bg-slate-950/70 p-4 flex flex-col gap-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center justify-center">
+                      {s.n}
+                    </span>
+                    <Icon size={15} className="text-slate-300" />
+                    <div className="text-[13px] font-semibold text-white">{s.title}</div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">{s.desc}</p>
+                </li>
+              );
+            })}
+          </ol>
+
+          {/* ─── Three slicing paths, explicit ────────────────────────
+              Below the linear 5-step ribbon, the slice step (step 4)
+              fans out into the three actual routes. Each card calls
+              out exactly what runs WHERE, so a visitor can plan
+              their workflow before signing up. */}
+          <div className="mt-6 grid md:grid-cols-3 gap-3" data-testid="design-to-print-slicing-paths">
+            <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/[0.04] p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Cpu size={16} className="text-cyan-300" />
+                <div className="text-[13px] font-semibold text-white">In-browser slicer</div>
+                <span className="ml-auto text-[9px] uppercase tracking-widest text-cyan-300 font-semibold">default</span>
+              </div>
+              <p className="text-[11px] text-slate-300/90 leading-relaxed">
+                A built-in JavaScript engine runs entirely in your tab. Walls, infill, supports, layer preview — no upload, no waiting, no account required.
+              </p>
+            </div>
+            <div className="rounded-xl border border-orange-500/30 bg-orange-500/[0.04] p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <HardDrive size={16} className="text-orange-300" />
+                <div className="text-[13px] font-semibold text-white">Server-side OrcaSlicer</div>
+                <span className="ml-auto text-[9px] uppercase tracking-widest text-orange-300 font-semibold">opt-in</span>
+              </div>
+              <p className="text-[11px] text-slate-300/90 leading-relaxed">
+                Production-grade G-code from the real OrcaSlicer CLI on our server. AMS profiles, tree supports, ironing, calibrated retraction — picked from the Engine selector inside the workspace.
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Download size={16} className="text-emerald-300" />
+                <div className="text-[13px] font-semibold text-white">Open in your desktop slicer</div>
+                <span className="ml-auto text-[9px] uppercase tracking-widest text-emerald-300 font-semibold">export</span>
+              </div>
+              <p className="text-[11px] text-slate-300/90 leading-relaxed">
+                Export STL or 3MF and open in OrcaSlicer, Bambu Studio, PrusaSlicer, Cura — anywhere you already work. Custom-slicer deep-links (e.g.{" "}
+                <span className="font-mono text-emerald-200">orcaslicer://</span>) are supported too.
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-5 text-center text-[11px] text-slate-500 max-w-2xl mx-auto leading-relaxed">
+            All three paths share the same modelling workspace, the same printer profiles, and the same compatibility checks — pick whichever fits your hardware. You can switch engines per project without re-modelling.
+          </p>
+        </section>
 
         <BeginnerStarters />
 
@@ -618,7 +723,7 @@ export default function Landing() {
       </main>
 
       <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500 space-y-1.5">
-        <div>ForgeSlicer · A unified 3D-modeling + slicing playground. Mesh by your fingertips.</div>
+        <div>ForgeSlicer · Browser-based 3D modelling with built-in &amp; server-side slicing and one-click export to your desktop slicer.</div>
         <div className="text-[10px] text-slate-600">
           Part of the Forge Suite ·{" "}
           <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" onClick={openLithoForge} className="text-orange-400/80 hover:text-orange-300">
