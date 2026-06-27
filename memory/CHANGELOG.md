@@ -4123,3 +4123,33 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 
 ### Discoverability
 - All new attribution surfaces carry `data-testid` hooks (`landing-meshy-attribution`, `landing-meshy-link`, `ai-generate-meshy-attribution`, `help-ai-meshy-attribution`) for downstream automation / regression.
+
+---
+
+## Iter-105.36 (2026-06-27) — Learn section (8-lesson beginner curriculum)
+
+### What landed
+- **New routes** `/learn` (index) and `/learn/:slug` (lesson detail), both rendered by a single `Learn.jsx` component driven by `useParams`.
+- **8 lessons** in `learn/lessons.js` as a content data file (single source of truth — write one entry, both index card + detail page update). Each lesson has `{slug, title, summary, icon, accent, accentColor, minutes, sections[], recap, cta}`. Lessons:
+  1. **CAD basics in 4 minutes** — what CAD is, the three habits, why ForgeSlicer.
+  2. **STL · 3MF · OBJ · G-code** — when to use each, what's actually in them.
+  3. **Boolean operations** — union/subtract/intersect, why positives + negatives.
+  4. **Designing for FDM** — orientation, ≤ 45° overhangs, supports, hole orientation.
+  5. **Wall thickness** — 1.6 mm minimum, feature-by-feature numbers, test strategy.
+  6. **Tolerances & fit** — 0.15 mm push-fit, 0.25 mm sliding per side, 0.4 mm screw clearance.
+  7. **Top-10 beginner mistakes** — the 10 predictable design choices that fail first prints.
+  8. **Exporting to OrcaSlicer / Bambu Studio / PrusaSlicer** — STL vs 3MF, step-by-step for each slicer.
+- **Tone**: practical, beginner-friendly, concrete numbers (≥ 1.6 mm walls, 0.4 mm hole clearance, 45° overhang rule). Every lesson ends with a **"Remember this"** recap callout and an actionable **"Try it now"** CTA (workspace, gallery, or a starter — never just another lesson) plus an **"Up next"** lesson link.
+- **Header nav**: new `Learn` link on the Landing page (`landing-learn-link`).
+- **Homepage promo strip** (`landing-learn-promo`) between BeginnerStarters and LandingTemplates: emerald-tinted callout headline "New to 3D design? Eight short lessons get you printing.", a primary "Open the Learn section" CTA, a "Top-10 beginner mistakes" shortcut, and 6 individual lesson shortcut cards.
+- **Inline formatter** (`formatInline`) — turns `**bold**` and `*italic*` spans inside lesson body strings into real `<strong>` / `<em>` without a markdown engine. Keeps the data file pure JS strings.
+- **Graceful unknown slug** — `/learn/<anything-not-in-LESSONS_BY_SLUG>` shows a "Lesson not found" page with links to the index and the workspace (no hard 404, no crash).
+
+### Verified
+- iteration_107.json: **100% (7/7)** acceptance criteria pass. Index, deep-link, back-nav, unknown-slug fallback, homepage promo with all 6 shortcut cards, content correctness spot-checks for all 4 file formats + all 3 slicer names + bold formatting.
+
+### Files touched
+- `frontend/src/learn/lessons.js` (NEW)
+- `frontend/src/components/Learn.jsx` (NEW)
+- `frontend/src/App.js` — wired `/learn` + `/learn/:slug` routes.
+- `frontend/src/components/Landing.jsx` — Learn header link + Learn promo strip section.
