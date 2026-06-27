@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock } from "lucide-react";
+import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -72,6 +72,54 @@ function LandingTabBar({ activeTab, onChange }) {
 }
 
 const API = (process.env.REACT_APP_BACKEND_URL || "") + "/api";
+
+// ─── Start-tab accordion section ────────────────────────────────
+// iter-108.x — Steve flagged the Start tab as visually busy. Rather
+// than add a second nav row (sub-tabs), we collapse each of the five
+// content blocks into an accordion so the visitor can choose how much
+// to take in at once. Conversion-heavy sections (Design-by-
+// conversation + Beginner Starters) open by default; the three
+// middle blocks start collapsed and expand on click. State lives on
+// the parent so refreshing the page re-applies the smart defaults.
+function StartAccordionSection({ id, title, subtitle, isOpen, onToggle, children }) {
+  return (
+    <section
+      data-testid={`start-accordion-section-${id}`}
+      className="border-b border-slate-800 first:border-t mt-0"
+    >
+      <button
+        type="button"
+        data-testid={`start-accordion-toggle-${id}`}
+        aria-expanded={isOpen}
+        aria-controls={`start-accordion-body-${id}`}
+        onClick={() => onToggle(id)}
+        className="w-full flex items-center justify-between gap-4 py-5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 rounded"
+      >
+        <div className="flex-1 min-w-0">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white group-hover:text-orange-200 transition-colors">
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="mt-1 text-[13px] text-slate-400 leading-snug">{subtitle}</p>
+          )}
+        </div>
+        <ChevronDown
+          size={20}
+          className={`flex-shrink-0 text-slate-500 transition-transform duration-200 ${isOpen ? "rotate-180 text-orange-400" : ""}`}
+        />
+      </button>
+      {isOpen && (
+        <div
+          id={`start-accordion-body-${id}`}
+          data-testid={`start-accordion-body-${id}`}
+          className="pb-12 pt-2"
+        >
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
 
 function Feature({ icon: Icon, title, desc, accent }) {
   return (
@@ -246,6 +294,19 @@ export default function Landing() {
   // (the user opted out of URL-based deep links). Home tab contains
   // the hero block; the other tabs hold the marketing surfaces.
   const [activeTab, setActiveTab] = useState("home");
+  // iter-108.x — Start-tab accordion open-state. Two conversion-heavy
+  // sections open by default (design + starters); the middle three
+  // start collapsed. Each is toggled independently so the visitor
+  // can have several panels open simultaneously if they wish.
+  const [openStartSections, setOpenStartSections] = useState({
+    design: true,
+    audience: false,
+    features: false,
+    howitworks: false,
+    starters: true,
+  });
+  const toggleStartSection = (id) =>
+    setOpenStartSections((prev) => ({ ...prev, [id]: !prev[id] }));
   const { user } = useAuth();
 
   // Iter-99.2 — When the visitor is signed into ForgeSlicer, route the
@@ -497,7 +558,14 @@ export default function Landing() {
             can speak / type into the workspace today — beginner-
             friendly framing on purpose ("just say it" beats "open
             the Extrude dialog"). */}
-        <section className="mt-20" data-testid="landing-ai-voice-section">
+        <StartAccordionSection
+          id="design"
+          title="Design by Conversation"
+          subtitle="Voice + AI workflows so you can describe what you want instead of clicking through CAD menus."
+          isOpen={openStartSections.design}
+          onToggle={toggleStartSection}
+        >
+        <section className="mt-2" data-testid="landing-ai-voice-section">
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-[10px] uppercase tracking-widest text-emerald-300 font-semibold">
               <Mic size={11} /> Design by Conversation
@@ -612,16 +680,16 @@ export default function Landing() {
             ForgeSlicer&apos;s voice + AI features are built for hobbyists, students, and makers — bring an idea, leave with a print-ready file.
           </div>
         </section>
+        </StartAccordionSection>
 
-        {/* ─── Who is ForgeSlicer for? ──────────────────────────────
-            5 audience-segment cards. The personas come straight from
-            the user's brief — each card pairs a concrete user with a
-            benefit they actually care about, NOT a feature list.
-            Goal: a visitor sees themselves on the page within 5
-            seconds. Grid is 1 / 2 / 3 / 5 columns responsive — the
-            5-across only kicks in at xl+ so the cards stay readable
-            on laptops. */}
-        <section className="mt-24" data-testid="landing-audience-section">
+        <StartAccordionSection
+          id="audience"
+          title="Who ForgeSlicer is For"
+          subtitle="Five audience cards — find yourself in one of them."
+          isOpen={openStartSections.audience}
+          onToggle={toggleStartSection}
+        >
+        <section className="mt-2" data-testid="landing-audience-section">
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-[10px] uppercase tracking-widest text-cyan-300 font-semibold">
               <Sparkles size={11} /> Who ForgeSlicer is for
@@ -730,30 +798,34 @@ export default function Landing() {
             </Link>
           </div>
         </section>
+        </StartAccordionSection>
 
 
-        <div className="mt-24 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StartAccordionSection
+          id="features"
+          title="What It Does"
+          subtitle="The four headline capabilities — primitives, booleans, transforms, slicing."
+          isOpen={openStartSections.features}
+          onToggle={toggleStartSection}
+        >
+        <div className="mt-2 grid sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="landing-feature-grid">
           <Feature icon={Box} title="Primitive Library" desc="Cubes, spheres, cylinders, cones, tori — drop them in and edit dimensions numerically or with gizmos." accent="bg-orange-500" />
           <Feature icon={Combine} title="True Boolean Ops" desc="Union, subtract, intersect with three-bvh-csg. Positive & negative parts compose into a clean watertight mesh." accent="bg-cyan-500" />
           <Feature icon={Move3D} title="Precise Transforms" desc="Per-axis numeric position, rotation, scale. Snap-to-grid in mm or degrees. Build-plate bounds checking." accent="bg-emerald-500" />
           <Feature icon={Layers} title="Three Ways to Slice" desc="Slice in-browser for an instant preview, on our server's bundled OrcaSlicer engine for production G-code, or export STL / 3MF and open in your desktop slicer." accent="bg-amber-500" />
         </div>
+        </StartAccordionSection>
 
-        {/* ─── From design to print ──────────────────────────────────
-            Honesty section. Earlier copy mixed "hand off to slicers"
-            with "integrated production slicing" — visitors couldn't
-            tell whether ForgeSlicer slices itself or just exports.
-            Truth: it does BOTH, plus a third desktop hand-off path.
-            This block lays out the 5 user-visible steps so a curious
-            visitor can see exactly where each capability lives. The
-            in-browser slicer and the server-side OrcaSlicer engine
-            both produce real G-code; the third branch is the export
-            path for users who prefer their existing desktop slicer
-            (which keeps OrcaSlicer / Bambu Studio / PrusaSlicer
-            workflows intact). */}
+        <StartAccordionSection
+          id="howitworks"
+          title="How It Works"
+          subtitle="The five-step path from a fresh idea to a print-ready file."
+          isOpen={openStartSections.howitworks}
+          onToggle={toggleStartSection}
+        >
         <section
           data-testid="landing-design-to-print"
-          className="mt-24"
+          className="mt-2"
           aria-labelledby="design-to-print-heading"
         >
           <div className="text-center mb-10">
@@ -843,8 +915,17 @@ export default function Landing() {
             All three paths share the same modelling workspace, the same printer profiles, and the same compatibility checks — pick whichever fits your hardware. You can switch engines per project without re-modelling.
           </p>
         </section>
+        </StartAccordionSection>
 
+        <StartAccordionSection
+          id="starters"
+          title="Beginner Starter Projects"
+          subtitle="Twelve guided templates — pick one and you're modelling in under a minute."
+          isOpen={openStartSections.starters}
+          onToggle={toggleStartSection}
+        >
         <BeginnerStarters />
+        </StartAccordionSection>
 
         </>)}
 

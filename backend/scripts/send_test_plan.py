@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.11"
+PLAN_VERSION = "1.12"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -111,6 +111,11 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "Hero 'Try an Example Project' button switches to the Templates tab",
                      "1. On Home tab, locate the 'Try an Example Project' CTA in the hero. 2. Click it.",
                      "Templates tab becomes active (orange underline moves), the tabpanel swaps to show the 8-card 'Start with a finished part' grid, and the viewport scrolls to put the tab bar at the top. No console errors. Regression check: this used to be a no-op when the underlying scroll targets moved into other tabs.",
+                     "P0"),
+                    ("LAND-07",
+                     "Start tab content is structured as a 5-section accordion (no long scroll wall)",
+                     "1. Click the Start tab. 2. Inspect the layout.",
+                     "Five collapsible sections in order: 'Design by Conversation' (open by default) · 'Who ForgeSlicer is For' (collapsed) · 'What It Does' (collapsed) · 'How It Works' (collapsed) · 'Beginner Starter Projects' (open by default). Each header is clickable with a chevron that rotates 180° when open. Multiple sections can be open simultaneously. data-testid pattern: 'start-accordion-section-{id}' for headers, 'start-accordion-body-{id}' for the expanded body. Regression: the Start tab used to be a single long scroll concatenating all five blocks; Steve flagged it as too busy.",
                      "P0"),
                 ],
             ),
@@ -961,14 +966,14 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.11 patches today's four findings:</p>
+            <p>v1.12 ships <b>SEO-01 — the Start tab accordion</b>:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>TXT-04 — all new fonts were upside-down.</b> Root cause: opentype.js returns paths in PostScript convention (Y-down) while three.js typeface.json uses math convention (Y-up). My converter forgot to negate Y. Fixed in <code>scripts/ttf2typeface.js</code> and re-converted all 10 affected faces. Verified by inspecting ascender / descender Y signs in the regenerated JSON. <b>TXT-04</b> rewritten to lock the orientation down.</li>
-              <li><b>GAL-00 — clicking any non-owner design surfaced 'Offset is outside the bounds of the DataView'.</b> Root cause: the gallery had ~59 seed rows whose stl_base64 was 3 bytes of zeros — STLLoader threw trying to read the binary-STL header. Three-layer fix: (1) backend `/api/gallery/{id}/download` now returns 422 with an explicit detail string when the STL blob is too short; (2) GalleryPreviewDialog now surfaces that detail instead of the raw DataView error, and adds a client-side length check as defence-in-depth; (3) cleaned up the 59 dead rows from the gallery — only 12 real designs remain. Locked down as new <b>GAL-00</b> (P0).</li>
-              <li><b>TRUST-01 — ownership wording fixed.</b> Now states the creator-vs-exporter distinction explicitly: creators always own the design (regardless of sharing); exporters get a license bound by the creator's choice; substantial modifications make derivatives the modifier's work, subject to the original license. Updated on the landing Trust tab AND on the full /trust hub.</li>
-              <li><b>SEO-01 — Start page is too busy</b>. Acknowledged; I'm pinging you in a follow-up question to scope the sub-menu / accordion layout before refactoring (avoiding a big restructure on a hunch).</li>
+              <li>Start tab content is now <b>5 collapsible accordion sections</b> instead of one long scroll wall: Design by Conversation · Who ForgeSlicer is For · What It Does · How It Works · Beginner Starter Projects.</li>
+              <li>Smart defaults: <b>Design + Beginner Starters open</b> (the two highest-conversion blocks); the three middle blocks start collapsed so the page reads as a short menu instead of a wall of marketing text.</li>
+              <li>Multiple sections can be open simultaneously (you preferred end-user-friendliness over single-section-at-a-time enforcement).</li>
+              <li>Each header has a chevron that rotates 180° when open; data-testid hooks (<code>start-accordion-section-{id}</code> / <code>start-accordion-body-{id}</code>) so QA can drive it. Locked down as <b>LAND-07</b> (P0).</li>
             </ul>
-            <p>Carried over from v1.10: dim-mode grid lines, voice 'stop' regex, lithophane disambiguation, font-load resilience, 21-font dropdown, Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect, tips toast, Inspector vs face-handle editing.</p>
+            <p>Carried over from v1.11: TXT-04 upside-down fix, GAL-00 dead-row cleanup, TRUST-01 creator-vs-exporter wording, dim-mode grid lines, voice 'stop' regex, lithophane disambiguation, font-load resilience, 21-font dropdown, Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>
