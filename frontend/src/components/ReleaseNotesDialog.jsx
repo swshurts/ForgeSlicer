@@ -1,8 +1,22 @@
 import React, { useEffect, useState } from "react";
+import { useLocation, Link } from "react-router-dom";
 import { X, Sparkles, Plus, Wrench, Bug } from "lucide-react";
 import { RELEASE_NOTES, latestReleaseVersion } from "../lib/releaseNotes";
 
 const STORAGE_KEY = "forge.releaseNotes.seen";
+
+// Routes the release-notes auto-open is allowed to surface on.
+// Brand-new (and returning) visitors hitting the landing / SEO /
+// Learn / Trust pages should see the marketing copy + CTAs first,
+// never an update modal — so we only auto-open inside the product
+// itself. Manual opens via the topbar "What's new" pin work
+// everywhere.
+const ALLOWED_PATH_PREFIXES = ["/workspace", "/gallery", "/profile"];
+
+function isAllowedRoute(pathname) {
+    if (!pathname) return false;
+    return ALLOWED_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"));
+}
 
 /**
  * Release notes / changelog dialog.
@@ -23,11 +37,17 @@ const STORAGE_KEY = "forge.releaseNotes.seen";
  */
 export default function ReleaseNotesDialog() {
   const [open, setOpen] = useState(false);
+  const location = useLocation();
 
-  // Auto-show if the user has seen a previous version (= returning user
-  // who's been gone since the latest release).
+  // Auto-show if the user has seen a previous version (= returning
+  // user who's been gone since the latest release) AND they're on a
+  // route inside the product (workspace / gallery / profile). The
+  // route guard keeps the marketing landing, SEO landings, Learn
+  // lessons, and Trust pages free of update-modal interruption so
+  // first-time visitors can read the value proposition uninterrupted.
   useEffect(() => {
     try {
+      if (!isAllowedRoute(location.pathname)) return;
       const latest = latestReleaseVersion();
       const seen = window.localStorage.getItem(STORAGE_KEY) || "";
       if (seen && latest && seen !== latest) {
@@ -37,7 +57,7 @@ export default function ReleaseNotesDialog() {
     const onShow = () => setOpen(true);
     window.addEventListener("forgeslicer:show-release-notes", onShow);
     return () => window.removeEventListener("forgeslicer:show-release-notes", onShow);
-  }, []);
+  }, [location.pathname]);
 
   const handleClose = () => {
     setOpen(false);
@@ -81,9 +101,14 @@ export default function ReleaseNotesDialog() {
           </div>
         </div>
         <div className="px-6 py-3 border-t border-slate-800 flex items-center justify-between flex-shrink-0">
-          <span className="text-[10px] text-slate-500">
-            Showing {RELEASE_NOTES.length} release{RELEASE_NOTES.length === 1 ? "" : "s"} — newest first
-          </span>
+          <Link
+            to="/changelog"
+            data-testid="release-notes-changelog-link"
+            onClick={handleClose}
+            className="text-[11px] text-orange-300 hover:text-orange-200 font-semibold inline-flex items-center gap-0.5"
+          >
+            See the full /changelog page &rarr;
+          </Link>
           <button
             data-testid="release-notes-ok-btn"
             onClick={handleClose}

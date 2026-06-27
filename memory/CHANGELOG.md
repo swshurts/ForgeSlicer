@@ -4200,3 +4200,23 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
   - `frontend/src/components/Landing.jsx` — 4-column footer with Trust column; lucide `Shield` icon added.
   - `frontend/src/components/HelpDialog.jsx` — new TrustSection + index card + side-nav entry.
   - `frontend/src/components/dialogs/ShareDialog.jsx` — inline trust footer line under the publish button.
+
+---
+
+## Iter-105.38 (2026-06-27) — Announcement modal de-interruption
+
+### What landed
+- **`SplashScreen` refactored** from a fullscreen centred modal into a small bottom-right banner (≈ 384 px wide, dismissible).
+- **Auto-open is now route-gated** — fires only on `/workspace`, `/gallery`, `/profile/*`. The landing page, all 8 SEO landings, the Learn lessons, and the Trust pages are excluded so first-time visitors see the hero / CTAs / product visuals first, with zero update messaging on top.
+- **Banner links to the full `/changelog` page** ("Read full changelog →") rather than dumping inline release notes — keeps the surface tiny.
+- **Persistent dismissal** unchanged: `localStorage["forge.splash.seen"]` keyed on `splash-version`, so once dismissed for a given release a user never sees it again until a new version.
+- **30-second auto-dismiss removed** — banners are non-intrusive enough that auto-dismissal isn't needed; the user closes it when they want, identical to a normal toast.
+- **Manual re-open still works** via the `forgeslicer:show-splash` window event (topbar "What's new" pin).
+- **`ReleaseNotesDialog`** got the same route-guard: auto-open only fires on `/workspace`/`/gallery`/`/profile/*`, and its footer now has a "See the full /changelog page →" link instead of a bare item count.
+
+### Verified
+- Live smoke-tests on the preview URL: `/` shows hero + CTAs with NO splash and NO release-notes dialog (verified with `data-testid="splash-screen"` = null and `data-testid="release-notes-dialog"` = null). `/workspace` shows the small "What's new" banner with its dismiss button and `Read full changelog →` link to `/changelog`.
+
+### Files touched
+- `frontend/src/components/SplashScreen.jsx` — rewritten as a banner + route guard.
+- `frontend/src/components/ReleaseNotesDialog.jsx` — added route guard + `/changelog` footer link.
