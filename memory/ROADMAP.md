@@ -9,6 +9,8 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 ## 🔴 P0 — Blocking
 *(none open as of 2026-05-30 — iter 70 cleared rc -17, iter 71 cleared Cloudflare 524 via async-job pattern)*
 
+- **RANSAC Phase 4 & 5 — Replace-with-Primitives** (iter-105.32, queued 2026-06-27). API + dialog (Phases 1-3) shipped. Remaining: a sensitivity slider on `ReverseEngineerDialog.jsx`, plus a "Replace with Primitives" button that swaps the static mesh for editable parametric Three.js Box/Cylinder/Sphere meshes at the detected transforms (hide the original mesh, keep its STL as a fallback). Touches `dialogs/ReverseEngineerDialog.jsx` and the scene store.
+
 ## 🟡 P1 — Next features
 *(P1 cleared 2026-05-31 — iter 77 shipped cancel-slice, per-printer temps, and the bed-axis gizmo.)*
 - ~~Sweep MVP follow-ups~~ [DONE — iter 51]
@@ -23,6 +25,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 - ~~Tutorial coverage — Voice / Slicer-Compare / Gallery-Share PDFs~~ [DONE — iter 58]
 - ~~HelpDialog.jsx split~~ [DONE — iter 59, 771→515 lines]
 - **Save Assembly to Gallery silent-failure follow-up** — only acts if user reports it on prod with DevTools payload.
+- **First-click flake on `starter-customize-keychain`** (iter-105.32 testing report) — on a literal cold-load of `/`, the very first click on the keychain card sometimes does NOT fire `navigate(/workspace?template=keychain)`. Subsequent card clicks all work. Suspected cause: AuthContext or React-Router state still hydrating when the click fires. Investigate whether the AppRouter gate is rendering a placeholder that swallows the click, then either delay the cards until auth settles or pre-warm the route.
 
 ## 🔵 P3 — Experimental / future
 - ~~**"Resize to fit my bed" on Remix**~~ [DONE — iter 53]

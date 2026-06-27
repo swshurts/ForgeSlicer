@@ -3996,3 +3996,25 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 
 ### Files touched
 - `frontend/src/components/Landing.jsx` — hero CTA strip rewrite.
+
+---
+
+## Iter-105.32 (2026-06-27) — Beginner Starters end-to-end + Workspace useEffect race fix
+
+### What landed
+- **`BeginnerStarters` block wired into the landing page** above `LandingTemplates`. Renders 12 hand-picked first-print starters (Keychain, Phone Stand, Name Tag, Plant Marker, Cable Clip, Mini Organizer Tray, Replacement Knob, Simple Bracket, Cookie Cutter, Toy Wheel, Desk Hook, Wall Spacer) with difficulty pill, print-time clock, skill tags (resize / text / subtract / align / export), and an orange `Customize this` CTA per card.
+- **12 new backend voice-templates** (`backend/voice_templates/starters.py`) registered into the existing `TEMPLATES` registry. Each builder produces a real, printable step list (cubes / cylinders + boolean ops) — empty params fall back to first-printer-friendly defaults. End-to-end verified: `POST /api/voice/expand-template {template_id:"starter_keychain"}` → 200 → 4 steps → workspace renders a keychain disc with a ring hole.
+- **Workspace.jsx template-handler race fix**. The pre-existing `let cancelled = false` + cleanup pattern was being short-circuited by React StrictMode's double-mount (and by the `setSearchParams({})` in the finally block re-firing the effect). Net result before the fix: `expandTemplate` returned 200 but `executePlan` was never called → empty scene + stuck "Loading…" banner. Replaced with a `handledTemplateRef = useRef(null)` single-fire guard keyed on `templateParam`. The first mount runs to completion; the StrictMode second mount finds the ref already matches `templateParam` and returns immediately. The same fix also fixed the regression risk on existing intermediate templates (`tool_holder`, `pi4_wall`, etc.).
+- **Hero CTA scroll target updated** — `Try an Example Project` now prefers `landing-beginner-starters` (falls back to `landing-templates` if absent). Beginners get the gentlest possible first hop.
+
+### Verified
+- Backend pytest: 13/13 — all 12 starter_* ids return non-empty step lists with valid `{action:"add"|"boolean"|"group", ...}` schemas.
+- Frontend end-to-end (iteration_105.json): 4/5 starters tested (cable-clip 5 steps, replacement-knob 6 steps, organizer-tray 9 steps, tool-holder 11 steps regression) all flip the banner from `Loading "<name>"…` to `Loaded "<name>" — N steps.` within 1.5-2.5 s, and populate the scene with the final boolean-merged geometry.
+- Keychain card has a separate first-click-after-cold-load nav flake — moved to ROADMAP P2 (unrelated to the race-fix).
+
+### Files touched
+- `backend/voice_templates/starters.py` (NEW — 12 builders in one file via SimpleNamespace module-like wrappers, registered via `STARTER_MODULES` list)
+- `backend/voice_templates/__init__.py` — splat `STARTER_MODULES` into `_TEMPLATE_MODULES`
+- `frontend/src/components/BeginnerStarters.jsx` — added `templateId` field, switched `launch()` to the existing `forgeslicer.launchTemplate` plumbing
+- `frontend/src/components/Landing.jsx` — import + render `<BeginnerStarters />` above `<LandingTemplates />`; updated hero CTA scroll selector
+- `frontend/src/components/Workspace.jsx` — replaced `cancelled` cleanup with `handledTemplateRef` single-fire guard in the template-handler useEffect (lines ~746-816)
