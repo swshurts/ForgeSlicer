@@ -20,6 +20,7 @@ import Handoff from "@/components/Handoff";
 import Learn from "@/components/Learn";
 import SEOLanding from "@/components/SEOLanding";
 import { SEO_LANDING_SLUGS } from "@/seo/landings";
+import Trust from "@/components/Trust";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -63,6 +64,15 @@ function AppRouter() {
       {SEO_LANDING_SLUGS.map((slug) => (
         <Route key={slug} path={`/${slug}`} element={<SEOLanding routeSlug={slug} />} />
       ))}
+      {/* ─── Trust & transparency ──────────────────────────────
+          One hub + four dedicated routes share a single component
+          driven by the `view` prop. Each route adds its own meta
+          via useDocumentMeta so the SEO snippets are unique. */}
+      <Route path="/trust" element={<Trust view="hub" />} />
+      <Route path="/privacy" element={<Trust view="privacy" />} />
+      <Route path="/changelog" element={<Trust view="changelog" />} />
+      <Route path="/roadmap" element={<Trust view="roadmap" />} />
+      <Route path="/browser-support" element={<Trust view="browser-support" />} />
       <Route path="/signin" element={<SignIn />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />

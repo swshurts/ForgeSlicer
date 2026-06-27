@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen } from "lucide-react";
+import { Box, ChevronRight, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
@@ -845,13 +845,74 @@ export default function Landing() {
         <LandingCommunityStrip />
       </main>
 
-      <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500 space-y-1.5">
-        <div>ForgeSlicer · Browser-based 3D modelling with built-in &amp; server-side slicing and one-click export to your desktop slicer.</div>
-        <div className="text-[10px] text-slate-600">
-          Part of the Forge Suite ·{" "}
-          <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" onClick={openLithoForge} className="text-orange-400/80 hover:text-orange-300">
-            LithoForge
-          </a>{" "}for lithophanes &amp; multi-color prints
+      <footer className="border-t border-slate-800 py-10 px-6" data-testid="landing-footer">
+        <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-8 text-[12px]">
+          {/* Product column — keep ForgeSlicer's tagline first so the
+              footer leads with brand, not links. */}
+          <div className="md:col-span-1">
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/forgeslicer-logo.webp" alt="" width={20} height={20} className="rounded" />
+              <div className="text-[13px] font-bold text-white">ForgeSlicer</div>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Browser CAD + slicer for 3D printing. Free for the core toolkit. Private by default.
+            </p>
+            <div className="mt-3 text-[10px] text-slate-600">
+              Part of the Forge Suite ·{" "}
+              <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" onClick={openLithoForge} className="text-orange-400/80 hover:text-orange-300">
+                LithoForge
+              </a>{" "}for lithophanes &amp; multi-color prints
+            </div>
+          </div>
+
+          {/* Product column */}
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold mb-2">Product</div>
+            <ul className="space-y-1.5 text-slate-300">
+              <li><Link to="/workspace" className="hover:text-white">Workspace</Link></li>
+              <li><Link to="/gallery" className="hover:text-white">Public Gallery</Link></li>
+              <li><Link to="/learn" className="hover:text-white">Learn (8 lessons)</Link></li>
+              <li><Link to="/browser-cad" className="hover:text-white">Browser CAD</Link></li>
+              <li><Link to="/ai-3d-design" className="hover:text-white">AI 3D Design</Link></li>
+            </ul>
+          </div>
+
+          {/* Workflows column — surfaces the slicer-specific SEO
+              landings so the footer doubles as discovery. */}
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold mb-2">Workflows</div>
+            <ul className="space-y-1.5 text-slate-300">
+              <li><Link to="/orcaslicer-workflow" className="hover:text-white">OrcaSlicer</Link></li>
+              <li><Link to="/bambu-studio-workflow" className="hover:text-white">Bambu Studio</Link></li>
+              <li><Link to="/prusaslicer-workflow" className="hover:text-white">PrusaSlicer</Link></li>
+              <li><Link to="/edit-stl-online" className="hover:text-white">Edit STL Online</Link></li>
+              <li><Link to="/tinkercad-alternative" className="hover:text-white">TinkerCAD Alternative</Link></li>
+            </ul>
+          </div>
+
+          {/* Trust & transparency column — the credibility surface.
+              Six high-trust links arranged in priority order so the
+              first item a visitor sees is privacy, not contact. */}
+          <div data-testid="landing-footer-trust-column">
+            <div className="text-[10px] uppercase tracking-widest text-emerald-300 font-semibold mb-2 flex items-center gap-1">
+              <Shield size={11} /> Trust &amp; transparency
+            </div>
+            <ul className="space-y-1.5 text-slate-300">
+              <li><Link to="/privacy" data-testid="footer-trust-privacy" className="hover:text-white">Privacy &amp; data handling</Link></li>
+              <li><Link to="/roadmap" data-testid="footer-trust-roadmap" className="hover:text-white">Roadmap</Link></li>
+              <li><Link to="/changelog" data-testid="footer-trust-changelog" className="hover:text-white">Changelog</Link></li>
+              <li><Link to="/browser-support" data-testid="footer-trust-browser-support" className="hover:text-white">Browser support</Link></li>
+              <li><Link to="/trust#limits" data-testid="footer-trust-limits" className="hover:text-white">File size &amp; limits</Link></li>
+              <li>
+                <a href="mailto:support@forgeslicer.com" data-testid="footer-trust-contact" className="hover:text-white inline-flex items-center gap-1">
+                  Contact support
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className="mt-8 pt-4 border-t border-slate-900 max-w-6xl mx-auto text-center text-[10px] text-slate-600">
+          © 2026 ForgeSlicer · Private by default. You own your exports.
         </div>
       </footer>
     </div>

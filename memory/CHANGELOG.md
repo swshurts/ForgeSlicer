@@ -4153,3 +4153,50 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/Learn.jsx` (NEW)
 - `frontend/src/App.js` — wired `/learn` + `/learn/:slug` routes.
 - `frontend/src/components/Landing.jsx` — Learn header link + Learn promo strip section.
+
+---
+
+## Iter-105.37 (2026-06-27) — SEO landing pages + Trust & Transparency hub
+
+### What landed
+
+**SEO** (8 dedicated routes + per-route meta + sitemap):
+- `/tinkercad-alternative`, `/edit-stl-online`, `/ai-3d-design`, `/browser-cad`, `/3d-printing-cad`, `/orcaslicer-workflow`, `/bambu-studio-workflow`, `/prusaslicer-workflow` — each with unique `<title>`, `<meta description>`, keywords, canonical, and OG tags driven by `lib/useDocumentMeta.js`.
+- All eight share one data-driven `SEOLanding` component reading from `seo/landings.js` (hero + 4-feature cards + 3-step ribbon + optional comparison table + dual-CTA footer). New page = one entry in the data file.
+- Homepage `<title>`, description, keywords + OG tags rewritten to absorb the target search phrases ("online CAD for 3D printing", "browser CAD for 3D printing", "TinkerCAD alternative", "edit STL online", "STL editor online", "AI 3D design generator", "voice-controlled CAD", "create STL files online").
+- `public/sitemap.xml` (all routes incl. 8 SEO landings + 8 Learn lessons) and `public/robots.txt` shipped.
+
+**Trust & Transparency** (one hub + four dedicated routes):
+- `/trust` — hub page with 8 navigation cards + 4 anchored sections (file limits, known limitations, design ownership, support contact).
+- `/privacy` — 8 plain-English facts in a numbered list, prefixed with a 3-card guarantee strip (Private by default · You own your exports · No silent uploads).
+- `/changelog` — chronological release notes (newest first).
+- `/roadmap` — P0/P1/P2 items with In-progress/Planned/Backlog statuses.
+- `/browser-support` — full browser matrix (Chrome 110+, Firefox 115+, Safari 16+, Edge 110+, mobile = view-only) + technical requirements list (WebGL 2, WebAssembly, Web Speech API, etc.).
+- All five share `lib/trustContent.js` as the single source of truth; the hub teases content that the dedicated routes show in full.
+- Last-updated stamps on every page.
+
+**Wiring** (make trust easy to find):
+- **Landing footer** — restructured from a centred 2-line block to a 4-column footer with a dedicated **Trust & transparency** column (Privacy, Roadmap, Changelog, Browser support, File size & limits, Contact support). Microcopy at the very bottom: "© 2026 ForgeSlicer · Private by default. You own your exports."
+- **Help dialog** — new `Trust & Transparency` section in the side nav + Help index card. Renders a guarantee callout + 8 external deep-links to the trust pages.
+- **ShareDialog** — inline footer line under the Share button: *"Private by default. [contextual sentence based on whether you ticked Private]. You own your exports either way. Read more →"*. Surfaces the publishing decision in plain English at the exact moment the user decides.
+
+### Verified
+- Live smoke-tests on the preview URL: `/tinkercad-alternative`, `/trust`, `/privacy` all render with correct per-route meta (`document.title`, `meta description` confirmed via `eval_on_selector`). Trust hub shows 8 cards + 4 anchored sections + the support@forgeslicer.com link. Privacy page shows the 3-guarantee strip + 8 numbered facts. Landing footer has the Trust & transparency column with all 6 expected links.
+
+### Files touched
+- **SEO**:
+  - `frontend/src/lib/useDocumentMeta.js` (NEW)
+  - `frontend/src/seo/landings.js` (NEW — 8 landing page content blobs)
+  - `frontend/src/components/SEOLanding.jsx` (NEW)
+  - `frontend/public/sitemap.xml` (NEW)
+  - `frontend/public/robots.txt` (NEW)
+  - `frontend/public/index.html` — homepage title / description / keywords / OG rewritten with target search phrases.
+  - `frontend/src/App.js` — 8 SEO routes registered via `SEO_LANDING_SLUGS.map`.
+- **Trust**:
+  - `frontend/src/lib/trustContent.js` (NEW — single source of truth)
+  - `frontend/src/components/Trust.jsx` (NEW — one component, 5 views: hub / privacy / changelog / roadmap / browser-support)
+  - `frontend/src/App.js` — 5 Trust routes.
+- **Wiring**:
+  - `frontend/src/components/Landing.jsx` — 4-column footer with Trust column; lucide `Shield` icon added.
+  - `frontend/src/components/HelpDialog.jsx` — new TrustSection + index card + side-nav entry.
+  - `frontend/src/components/dialogs/ShareDialog.jsx` — inline trust footer line under the publish button.

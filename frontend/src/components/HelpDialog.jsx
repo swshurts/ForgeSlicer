@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   X, BookOpen, Rocket, Box, Plus, Move3D, Magnet, Combine, Mic, Globe,
   FileDown, Keyboard, Search, Library, Sliders, CircleHelp, Wrench, Sparkles, Scissors,
-  UserCircle, FileText, Lightbulb,
+  UserCircle, FileText, Lightbulb, Shield,
 } from "lucide-react";
 import { H, P, Code, Kbd, Step } from "./help/typography";
 import VoiceCommands from "./help/sections/VoiceCommands";
@@ -30,6 +30,7 @@ function Index({ onJump }) {
     { id: "ai",           icon: Sparkles,  title: "AI Generate",       desc: "Text/Image-to-3D via Meshy.ai (third-party). 13 free gens/month." },
     { id: "account",      icon: UserCircle,title: "Account & Sign-in", desc: "Three sign-in options, profile editor, per-field privacy." },
     { id: "shortcuts",    icon: Keyboard,  title: "Keyboard Shortcuts", desc: "Speed up the workflow." },
+    { id: "trust",        icon: Shield,    title: "Trust & Transparency", desc: "Privacy, roadmap, changelog, browser support, file limits, ownership, contact." },
   ];
   return (
     <div data-testid="help-index">
@@ -409,6 +410,59 @@ function Shortcuts() {
   );
 }
 
+// ─── TrustSection — inline summary + deep-links to /privacy etc ───
+// Why inline rather than just punting to the routes:
+//   Users opening Help expect answers in the dialog. A bare "click
+//   here for /privacy" reads like a deflection. We give the three
+//   key guarantees right here and then offer the full pages as
+//   "read more" follow-ups.
+function TrustSection() {
+  const links = [
+    { to: "/privacy", label: "Privacy & data handling", desc: "How we handle your designs, uploads, voice, and AI prompts." },
+    { to: "/roadmap", label: "Roadmap", desc: "What's in progress, planned, and on the backlog." },
+    { to: "/changelog", label: "Changelog", desc: "Every release in plain English, newest first." },
+    { to: "/browser-support", label: "Browser support", desc: "Chrome 110+ / Firefox 115+ / Safari 16+ / Edge 110+. Mobile is view-only." },
+    { to: "/trust#limits", label: "File size & limits", desc: "STL ≤ 100 MB · OBJ ≤ 50 MB · 3MF ≤ 80 MB · 200 primitives/scene." },
+    { to: "/trust#limitations", label: "Known limitations", desc: "What we don't ship yet — honest list, not marketing." },
+    { to: "/trust#ownership", label: "Design ownership", desc: "You own your exports. Published designs use a license you pick." },
+    { to: "/trust#contact", label: "Support & contact", desc: "support@forgeslicer.com — replies within 2 working days." },
+  ];
+  return (
+    <div data-testid="help-section-trust">
+      <H>Trust & Transparency</H>
+      <P>The credibility & product-status surface. Eight short pages covering everything from privacy to file limits to who you contact when something breaks.</P>
+
+      {/* Headline guarantees — same three lines that appear on
+          the /privacy page, mirrored here so visitors searching
+          Help for "private" or "ownership" land on the answer. */}
+      <div className="my-3 p-3 rounded border border-emerald-500/30 bg-emerald-500/[0.06]" data-testid="help-trust-guarantees">
+        <P className="text-[12px] text-emerald-200 font-semibold">
+          Private by default · You own your exports · Uploaded files are not made public unless you explicitly publish them.
+        </P>
+      </div>
+
+      <ul className="space-y-2">
+        {links.map((l) => (
+          <li key={l.to} className="rounded border border-slate-800 hover:border-orange-500/40 bg-slate-900/50 transition-colors">
+            <a
+              href={l.to}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block p-3"
+              data-testid={`help-trust-link-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
+            >
+              <div className="text-[13px] font-semibold text-white inline-flex items-center gap-1.5">
+                {l.label} <span className="text-orange-300">↗</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed mt-0.5">{l.desc}</p>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const SECTIONS = [
   { id: "index",      label: "Index",              icon: BookOpen,  Component: null },
   { id: "tutorials",  label: "Tutorials (PDF)",    icon: FileText,  Component: null /* rendered inline */ },
@@ -427,6 +481,7 @@ const SECTIONS = [
   { id: "ai",         label: "AI Generate",        icon: Sparkles,  Component: AIGenerate },
   { id: "account",    label: "Account & Sign-in",  icon: UserCircle, Component: Account },
   { id: "shortcuts",  label: "Keyboard Shortcuts", icon: Keyboard,  Component: Shortcuts },
+  { id: "trust",      label: "Trust & Transparency", icon: Shield,  Component: TrustSection },
 ];
 
 export default function HelpDialog({ open, onClose, onTryVoice }) {

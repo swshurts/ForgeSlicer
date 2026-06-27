@@ -268,6 +268,23 @@ export function ShareDialog({ open, onClose }) {
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
               {busy ? "Sharing..." : "Share Publicly"}
             </button>
+            {/* Trust footer — surfaces the privacy + ownership facts
+                directly inside the publish flow. Users decide whether
+                to publish based on what publishing means; this is
+                where they need that context, not buried in /privacy.
+                Note: the tone deliberately echoes the language used
+                on the /privacy page so users feel a consistent
+                narrative across the app. */}
+            <div className="mt-1 pt-3 border-t border-slate-800 text-[10px] text-slate-400 leading-relaxed" data-testid="share-trust-footer">
+              <span className="text-emerald-300 font-semibold">Private by default.</span>{" "}
+              {isPrivate
+                ? "This design will be saved to your library only — nobody else can see it."
+                : "Sharing publishes the design to the community Gallery; tick Private above to keep it in your library only. You own your exports either way."}
+              {" · "}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-orange-300 hover:text-orange-200 underline underline-offset-2">
+                Read more
+              </a>
+            </div>
             <p className="text-[10px] text-slate-500">
               Your design's STL is uploaded to the public gallery. A screenshot of the current viewport is captured as a preview.
             </p>
