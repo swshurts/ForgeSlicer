@@ -1,0 +1,47 @@
+{
+  "summary": "RETEST PASSED: The useRef single-fire guard fix in Workspace.jsx (lines ~764-811) resolves the StrictMode/setSearchParams double-invoke race from iteration 104. For all 4 starters that successfully navigated to /workspace (cable-clip, replacement-knob, organizer-tray) PLUS the regression target (landing-template-tool-holder), the banner correctly transitions 'Loading \"X\"…' → 'Loaded \"X\" — N steps.' within ~1.5-2.5s, AND the scene populates with the boolean-merged final geometry (Components: 1 / Positive: 1 after CSG subtraction — expected for these templates whose last step is a boolean merge). Tool-holder screenshot visually confirms real 3D mesh on the bed (rounded plate with 4 negative-cylinder holes). The ref-reset behaviour also works: clicking a DIFFERENT starter (cable-clip) after the previous keychain attempt loaded correctly — handledTemplateRef is properly keyed on templateParam so a new template_id triggers a fresh single-fire.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BeginnerStarters (starter-customize-keychain)",
+        "issue": "FLAKY: The very first 'Customize this' click after a fresh page navigation to / sometimes does not trigger react-router navigation. Click event registers (button receives it) but navigate(`/workspace?template=keychain`) appears not to fire — URL stays on /, no expand-template API call. Reproduced consistently on test 1 of every test run; subsequent clicks (cable-clip, replacement-knob, organizer-tray, tool-holder) on a SECOND visit to / from /workspace all navigate fine. Suspected cause: AuthContext is still loading (401 → 200 flip visible in console) when the click handler resolves, OR an unsettled React Router state during initial hydration. Workaround: a single warm-up navigation makes the keychain click reliable when picking a DIFFERENT card afterward, but keychain itself remains flaky on the literal first card-click after a cold load. Not a regression introduced by the iteration-105 fix; this is independent flake.",
+        "selector": "[data-testid=\"starter-customize-keychain\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_starter_templates.py",
+    "/app/test_reports/pytest/starter_templates.xml",
+    "/app/test_reports/iter105_keychain_pass.jpg",
+    "/app/test_reports/iter105_retest_keychain.jpg"
+  ],
+  "action_items": [
+    "OPTIONAL (low priority): investigate why the FIRST click on starter-customize-keychain on a cold landing-page load doesn't fire react-router navigate(). Likely an AuthContext-loading race in the AppRouter (gate may be still rendering a placeholder when the click fires) rather than a bug in BeginnerStarters.launch() itself, which looks correct.",
+    "Consider widening the import-banner auto-dismiss window from 4500ms to ~7000ms for the workspace's import banner so a tester (or user) glancing away doesn't miss the 'Loaded N steps' confirmation. Currently it fires and fades in ~1.5-2.5s + 4.5s timeout.",
+    "Consider adding data-testid=\"outliner-row-<id>\" on each outliner row in LeftPanel so future tests can count populated objects via DOM (currently outliner DOM has no testids — counts must be read from scene-stats text)."
+  ],
+  "critical_code_review_comments": [
+    "Fix verified: replacing the `let cancelled = false` cleanup pattern with `handledTemplateRef.current === templateParam` correctly prevents StrictMode's second mount from re-entering the effect. The first invocation now runs expandTemplate → executePlan → setProjectName → banner update → setSearchParams to completion without being short-circuited.",
+    "sessionStorage.removeItem still happens early (line ~774) but is now SAFE because the useRef guard returns the second mount BEFORE it tries to read sessionStorage. No payload-loss race remains.",
+    "setSearchParams({}, {replace:true}) in the finally block still triggers a re-render with templateParam=null, but the ref guard short-circuits the re-entry. Solid.",
+    "Minor: the ref is keyed on templateParam value, not on a unique-per-click sentinel. If a user navigates to /workspace?template=keychain TWICE in a single mount cycle without templateParam ever becoming null/different in between, the second visit would no-op. In practice setSearchParams({}) clears templateParam between visits so this is fine — but consider also wiring a reset when templateParam becomes null/empty for extra safety."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (no backend changes; previous pytest at /app/tests/test_starter_templates.py still passes 13/13)",
+    "frontend": "80% (4/5 starters PASS end-to-end with banner+scene; keychain has a separate flaky navigation issue unrelated to the iteration-105 fix)"
+  },
+  "test_credentials": "session_token=st_test_1782519621420 (freshly seeded for this iteration via /app/memory/test_credentials.md mongosh snippet; user.email=test.user.1782519621420@example.com).",
+  "seed_data_creation": "Seeded one user_sessions row + one users row in test_database with session_token st_test_1782519621420 (expires in 7d). No production data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The Workspace.jsx useEffect race is FIXED — confirmed by banner transitions ('Loading...' → 'Loaded X — N steps.') for cable-clip (5 steps), replacement-knob (6 steps), organizer-tray (9 steps), and tool-holder (11 steps, regression). All show expand-template called exactly once and the final scene populated (Components=1 after CSG boolean merge; tool-holder visually confirmed in /app/test_reports/iter105_keychain_pass.jpg). The keychain flake is a SEPARATE first-click-after-cold-load navigation issue — clicking it as the 2nd-or-later starter in a session works. Future testers: keep using /app/tests/test_starter_templates.py for backend regression, and inject session_token cookie before driving the UI.",
+  "rca of the issue": "Iteration 104 root cause: useEffect cleanup race in Workspace.jsx template handler. Iteration 105 fix (verified working): replaced `let cancelled = false`/cleanup pattern with `const handledTemplateRef = useRef(null)` + early-return guard `if (handledTemplateRef.current === templateParam) return;`. First mount sets the ref and runs to completion (sessionStorage pop → expandTemplate → executePlan → banner update). StrictMode second mount finds ref already equals templateParam and returns immediately — no race, no double-pop. The final setSearchParams({}) in the finally block sets templateParam to null which doesn't re-trigger because of the early `if (!templateParam) return;`. Mesh-build pipeline end-to-end works for all tested starters."
+}

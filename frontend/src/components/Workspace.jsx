@@ -744,14 +744,28 @@ export default function Workspace() {
   }, [addComponentParam]);
 
   // Launch a curated template — entry point used by the Landing-page
-  // "Project Templates" cards. The card stashes its template_id + params
-  // dict in sessionStorage and navigates to /workspace?template=<id>.
-  // We pop the payload, call expandTemplate to get a step list, then
-  // run it through the standard executePlan. Steps emit "add" / "boolean"
-  // operations which mutate the scene like any other voice plan.
+  // "Project Templates" cards AND the new BeginnerStarters block.
+  // The clicked card stashes its template_id + params dict in
+  // sessionStorage under `forgeslicer.launchTemplate` and navigates
+  // to /workspace?template=<id>. We pop the payload, call
+  // expandTemplate to get a step list, then run it through the
+  // standard executePlan. Steps emit "add" / "boolean" operations
+  // which mutate the scene like any other voice plan.
+  //
+  // Single-fire guard: this effect must NOT double-execute, because
+  // React StrictMode mounts effects twice in dev and setSearchParams
+  // in our finally{} can also re-trigger. Without a guard, the first
+  // invocation pops + removes the sessionStorage payload, but its
+  // `cancelled` cleanup kicks in (set by StrictMode unmount) before
+  // executePlan runs — net result: the mesh is NEVER added, and the
+  // banner is stuck at "Loading…". The useRef below is keyed on the
+  // current templateParam so each distinct template runs exactly
+  // once; navigating away and back with a new template id resets it.
+  const handledTemplateRef = React.useRef(null);
   useEffect(() => {
     if (!templateParam) return;
-    let cancelled = false;
+    if (handledTemplateRef.current === templateParam) return;
+    handledTemplateRef.current = templateParam;
     (async () => {
       let payload = null;
       try {
@@ -771,7 +785,6 @@ export default function Workspace() {
       try {
         setImportBanner({ kind: "info", message: `Loading "${payload.name || payload.template_id}"…` });
         const data = await expandTemplate(payload.template_id, payload.params || {});
-        if (cancelled) return;
         if (!data?.steps?.length) {
           setImportBanner({ kind: "err", message: `Template "${payload.template_id}" returned no steps` });
           setTimeout(() => setImportBanner(null), 4500);
@@ -779,7 +792,6 @@ export default function Workspace() {
           return;
         }
         const result = await executePlan(data.steps);
-        if (cancelled) return;
         setProjectName(payload.name || "Template");
         setImportBanner({
           kind: result.ok ? "ok" : "err",
@@ -789,14 +801,12 @@ export default function Workspace() {
         });
         setTimeout(() => setImportBanner(null), 4500);
       } catch (err) {
-        if (cancelled) return;
         setImportBanner({ kind: "err", message: `Could not load template: ${err.message || err}` });
         setTimeout(() => setImportBanner(null), 5000);
       } finally {
-        if (!cancelled) setSearchParams({}, { replace: true });
+        setSearchParams({}, { replace: true });
       }
     })();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam]);
 
