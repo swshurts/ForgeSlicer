@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.8"
+PLAN_VERSION = "1.9"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -348,10 +348,15 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "Each selection renders the corresponding typeface as a real extruded mesh — NOT a flat slab. While a newly-requested font is loading, the text temporarily renders in the default Helvetiker Regular (fallback) and swaps to the requested font once the typeface.json arrives. Browser console shows a one-line `[textGeometry] font 'X' loaded in Nms` breadcrumb on success or a `FAILED to load` warning on error (which then auto-purges the cache so a retry will re-fetch).",
                      "P0"),
                     ("TXT-02",
-                     "Inspector font dropdown lists 11 typefaces across 5 families",
-                     "1. Create a Text primitive. 2. Open the font dropdown.",
-                     "Dropdown shows 11 options in this order: Helvetiker Regular · Helvetiker Bold · Droid Sans Regular · Droid Sans Bold · Gentilis Regular · Gentilis Bold · Optimer Regular · Optimer Bold · Droid Serif Regular · Droid Serif Bold · Droid Sans Mono Regular. Selecting any of them renders real glyphs (no slab). First-fetch latency per font is ≤ 300 ms (largest face Gentilis Bold is ~635 KB).",
+                     "Inspector font dropdown lists 18 typefaces across 12 families, grouped by visual style",
+                     "1. Create a Text primitive. 2. Open the font dropdown and read top to bottom.",
+                     "Dropdown shows 18 options grouped as: SANS (Helvetiker R/B, Droid Sans R/B) → SERIF (Gentilis R/B, Optimer R/B, Droid Serif R/B) → MONO (Droid Sans Mono R) → SCRIPT/HANDWRITTEN (Pacifico, Lobster, Permanent Marker) → DISPLAY/COMIC (Bangers, Press Start 2P) → GOTHIC/BLACKLETTER (UnifrakturMaguntia, Pirata One). Selecting any of them renders real glyphs. First-fetch latency per font is ≤ 300 ms (largest face Gentilis Bold ~635 KB).",
                      "P0"),
+                    ("TXT-04",
+                     "Whimsical & Gothic faces render with the expected character (not as sans fallback)",
+                     "1. Create a Text primitive, type a short phrase. 2. Try in turn: Pacifico (curvy script) · Lobster (bold cursive) · Permanent Marker (hand-drawn) · Bangers (cartoon caps) · Press Start 2P (8-bit pixel blocks) · UnifrakturMaguntia (medieval blackletter) · Pirata One (modern blackletter).",
+                     "Each typeface looks distinctly different from Helvetiker — script faces show ligatures and slanted strokes, Press Start 2P shows pixel-block letterforms, UnifrakturMaguntia and Pirata One show recognisable blackletter strokes. None render as a slab or as Helvetiker Regular (which would indicate a load failure).",
+                     "P1"),
                     ("TXT-03",
                      "Switching from one loaded font to another swaps instantly (no slab flash)",
                      "1. Pick Droid Sans Regular — wait for swap. 2. Switch to Droid Sans Bold — wait. 3. Switch back to Droid Sans Regular.",
@@ -946,14 +951,17 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.8 ships the <b>font expansion</b> you green-lit:</p>
+            <p>v1.9 ships the whimsical + Gothic font batch you asked for:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>11 typefaces now live</b> in the Inspector's font dropdown (was 3), across 5 families: Helvetiker (R/B), Droid Sans (R/B), Gentilis (R/B), Optimer (R/B), Droid Serif (R/B), Droid Sans Mono (R). All sourced from the Three.js examples repo (MIT-licensed) so they're guaranteed to play nicely with TextGeometry.</li>
-              <li>All 11 verified loading from the preview URL in &lt; 300 ms each. Largest face (Gentilis Bold, 635 KB) is still well under a one-second budget.</li>
-              <li>New <b>TXT-02</b> (11-font list lockdown) and <b>TXT-03</b> (re-selecting a loaded font swaps instantly — no slab flash).</li>
+              <li><b>18 typefaces now in the dropdown</b> (was 11), grouped by visual style: Sans → Serif → Mono → Script/Handwritten → Display/Comic → Gothic/Blackletter.</li>
+              <li><b>Whimsical additions</b>: Pacifico (curvy script), Lobster (bold cursive), Permanent Marker (hand-drawn), Bangers (cartoon caps), Press Start 2P (8-bit pixel).</li>
+              <li><b>Gothic additions</b>: UnifrakturMaguntia (classic German blackletter) + Pirata One (modern blackletter display).</li>
+              <li>Built a reusable in-repo <b>TTF→typeface.json converter</b> at <code>scripts/ttf2typeface.js</code> (opentype.js-based, facetype.js-compatible output). When you want to add more fonts later, drop a .ttf into <code>scripts/ttf/</code> and run one line.</li>
+              <li>All 7 new faces are SIL OFL or Apache 2.0 licensed (Google Fonts originals) — credits in <code>/public/fonts/LICENSE.txt</code>.</li>
+              <li>New <b>TXT-04</b> (whimsical &amp; Gothic faces render with their expected character, not as a sans fallback) + <b>TXT-02</b> rewritten for the 18-font set.</li>
             </ul>
-            <p>If you want me to also wire up the <b>"upload your own .ttf / .otf"</b> path (opentype.js-based client-side converter) later, just say the word — that unlocks effectively unlimited fonts.</p>
-            <p>Carried over from v1.7: AI-01b voice 'stop' regex, AI-03 lithophane disambiguation, TXT-01 font-load resilience, Lexicon appendix, 6-tab landing, AUTH-05/06 sign-in timeout fix, LAND-06 example-project button, ONB-05 post-signup redirect, ONB-04 tips toast, PRIM-02a/2b Inspector vs face-handle editing.</p>
+            <p><b>Your "mystery font" image didn't come through</b> — it was stripped before I saw the message. Re-attach it whenever and I'll identify it and slot it into the whimsical group (or convert it from scratch if it's a paid/private face you can share the TTF for).</p>
+            <p>Carried over from v1.8: voice 'stop' regex (AI-01b), lithophane disambiguation (AI-03), font-load resilience (TXT-01), Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect, tips toast, Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

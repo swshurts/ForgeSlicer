@@ -11,3 +11,48 @@ This License becomes null and void to the extent applicable to Fonts or Font Sof
 The Font Software may be sold as part of a larger software package but no copy of one or more of the Font Software typefaces may be sold by itself.
 
 THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL MAGENTA OR PERSONS OR BODIES IN CHARGE OF ADMINISTRATION AND MAINTENANCE OF THE FONT SOFTWARE BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.
+
+================================================================================
+iter-108.x — Additional fonts bundled
+================================================================================
+
+Helvetiker (Regular, Bold)
+  © Magenta Ltd, license above. Bundled in three.js/examples/fonts.
+
+Droid Sans / Droid Sans Mono / Droid Serif (Regular, Bold variants)
+  Apache 2.0 License. Original: https://github.com/google/fonts/
+  Bundled in three.js/examples/fonts.
+
+Gentilis (Regular, Bold)
+  © Bitstream Inc., Bitstream Vera License (similar to OFL).
+  Bundled in three.js/examples/fonts.
+
+Optimer (Regular, Bold)
+  © URW++, free for personal/commercial use.
+  Bundled in three.js/examples/fonts.
+
+Pacifico — Vernon Adams · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/pacifico
+
+Lobster — Pablo Impallari, Igino Marini · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/lobster
+
+Bangers — Vernon Adams · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/bangers
+
+Permanent Marker — Font Diner · Apache License 2.0
+  Source: https://github.com/google/fonts/tree/main/apache/permanentmarker
+
+Press Start 2P — Cody "CodeMan38" Boisclair · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/pressstart2p
+
+UnifrakturMaguntia — Peter Wiegel, J. M. Solé · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/unifrakturmaguntia
+
+Pirata One — Rodrigo Fuenzalida · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/pirataone
+
+All fonts converted to Three.js typeface.json with the in-repo
+`scripts/ttf2typeface.js` utility (opentype.js-based), preserving the
+output shape produced by https://gero3.github.io/facetype.js/ so
+THREE.FontLoader parses them without modification.

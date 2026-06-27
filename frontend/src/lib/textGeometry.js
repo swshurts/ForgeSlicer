@@ -57,28 +57,41 @@ export const TEXT_DEFAULTS = {
     align: "center",                   // "left" | "center" | "right"
 };
 
-// Display labels for the inspector dropdown — grouped by family so the
-// dropdown reads naturally (sans-serif first, then serif, then mono).
-// All values must match a file in /public/fonts/<value>.typeface.json.
-// iter-108.x expansion: added Droid Sans (R/B), Droid Sans Mono, Droid
-// Serif (R/B), Gentilis (R/B) and Optimer Bold — bringing the
-// dropdown from 3 → 11 weights across 5 families. Source: three.js
-// official examples (MIT-licensed).
+// Display labels for the inspector dropdown — grouped by visual style
+// so the dropdown reads naturally (sans → serif → mono → script →
+// display → blackletter). All values must match a file in
+// /public/fonts/<value>.typeface.json. iter-108.x grew the dropdown
+// from 3 → 18 weights across 12 families. The handwritten / display
+// / Gothic faces were converted from Google Fonts TTFs by
+// `tools/ttf2typeface.js` (opentype.js-based) into facetype.js-shape
+// JSON so THREE.FontLoader picks them up unmodified. Original SIL OFL
+// / Apache 2 / Bitstream Vera licenses are credited in
+// /public/fonts/LICENSE.txt.
 export const TEXT_FONTS = [
-    // Sans-serif
-    { value: "helvetiker_regular",       label: "Helvetiker · Regular" },
-    { value: "helvetiker_bold",          label: "Helvetiker · Bold" },
-    { value: "droid_sans_regular",       label: "Droid Sans · Regular" },
-    { value: "droid_sans_bold",          label: "Droid Sans · Bold" },
-    { value: "gentilis_regular",         label: "Gentilis · Regular" },
-    { value: "gentilis_bold",            label: "Gentilis · Bold" },
-    // Serif
-    { value: "optimer_regular",          label: "Optimer · Regular" },
-    { value: "optimer_bold",             label: "Optimer · Bold" },
-    { value: "droid_serif_regular",      label: "Droid Serif · Regular" },
-    { value: "droid_serif_bold",         label: "Droid Serif · Bold" },
-    // Monospace
-    { value: "droid_sans_mono_regular",  label: "Droid Sans Mono · Regular" },
+    // ── Sans-serif ───────────────────────────────────────────────
+    { value: "helvetiker_regular",        label: "Helvetiker · Regular" },
+    { value: "helvetiker_bold",           label: "Helvetiker · Bold" },
+    { value: "droid_sans_regular",        label: "Droid Sans · Regular" },
+    { value: "droid_sans_bold",           label: "Droid Sans · Bold" },
+    // ── Serif ─────────────────────────────────────────────────────
+    { value: "gentilis_regular",          label: "Gentilis · Regular" },
+    { value: "gentilis_bold",             label: "Gentilis · Bold" },
+    { value: "optimer_regular",           label: "Optimer · Regular" },
+    { value: "optimer_bold",              label: "Optimer · Bold" },
+    { value: "droid_serif_regular",       label: "Droid Serif · Regular" },
+    { value: "droid_serif_bold",          label: "Droid Serif · Bold" },
+    // ── Monospace ─────────────────────────────────────────────────
+    { value: "droid_sans_mono_regular",   label: "Droid Sans Mono · Regular" },
+    // ── Script & Handwritten (whimsical) ──────────────────────────
+    { value: "pacifico_regular",          label: "Pacifico · Script" },
+    { value: "lobster_regular",           label: "Lobster · Script" },
+    { value: "permanent_marker_regular",  label: "Permanent Marker · Handwritten" },
+    // ── Display & Comic (whimsical) ───────────────────────────────
+    { value: "bangers_regular",           label: "Bangers · Comic" },
+    { value: "press_start_2p_regular",    label: "Press Start 2P · 8-bit Pixel" },
+    // ── Gothic / Blackletter ──────────────────────────────────────
+    { value: "unifraktur_maguntia_regular", label: "UnifrakturMaguntia · Gothic" },
+    { value: "pirata_one_regular",        label: "Pirata One · Gothic Display" },
 ];
 
 // Cache: family-id → Promise<Font>. Promises (not resolved Fonts) so
