@@ -1,0 +1,54 @@
+{
+  "summary": "Iter-106 Gallery community/discovery upgrade tested. All 7 backend pytest cases PASSED (taxonomy=10 cats in order; featured-creators returns Steve Shurts with required fields; category filter for tools+household 200; backfill produced non-misc categories on legacy items; POST /api/gallery accepts category+tags and normalises tags to lowercase). All 10 frontend acceptance criteria PASSED — Landing community strip with 4 verb cards + 4 community preview cards + working browse-all link to /gallery; Gallery page Featured Creators strip mounted, mode-explainer card mounted with required copy, 11 category chips (all + 10 taxonomy) wired correctly, Tools chip turns orange/active on click and filters grid to 1 tools item; gallery cards CTA reads 'Customize in ForgeSlicer'; deep-link ?preview=<id> auto-opens preview dialog with renamed CTA and navigates to /workspace?remix=<id> on click; ShareDialog (auth-gated, opened via session_token cookie) exposes share-category SELECT and share-tags INPUT.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "GalleryPreviewDialog",
+        "issue": "Primary CTA button text reads 'Customize in ForgeSlicerR' (trailing stray 'R' character after 'ForgeSlicer'). The dialog still functions and navigates correctly, but the visible label has an extra character — likely a typo or a misplaced span/icon character. Reproducible on /gallery?preview=<id>.",
+        "selector": "[data-testid=\"gallery-preview-replace-plate\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/gallery (and /workspace)",
+        "issues": [
+          "On first load the 'Auto theme is on' toast and a 'ForgeSlicer Announcement: New ways to sign in' modal both overlay the page simultaneously; the announcement modal blocks chip clicks until dismissed. Not iter-106-introduced but worth noting because it can hide the new community strip / chip row on first paint."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_gallery_taxonomy_iter106.py",
+    "/app/test_reports/pytest/iter106_results.xml"
+  ],
+  "action_items": [
+    "Fix the trailing 'R' in the GalleryPreviewDialog 'Customize in ForgeSlicer' button label (likely a stray character in JSX after the icon)."
+  ],
+  "critical_code_review_comments": [
+    "Taxonomy ids returned by /api/gallery/_meta/taxonomy match the documented 10 in exact order — good single source of truth.",
+    "Featured-creators payload includes the required {user_id,name,design_count,remix_count,source} contract and respects the 6-creator cap.",
+    "Category filter param is honoured server-side (verified tools filter returns only tools items).",
+    "Backfill heuristic is working — at least one legacy gallery item has a non-misc category populated on startup.",
+    "POST /api/gallery normalises tags to lowercase/dashed as advertised; category is persisted verbatim.",
+    "ShareDialog correctly exposes data-testid='share-category' and 'share-tags' for downstream automation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_gallery_taxonomy_iter106.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "100% (10/10 acceptance criteria — one cosmetic 'R' typo noted as LOW priority)"
+  },
+  "test_credentials": "Workspace tested with session_token cookie value 'st_test_1782519621420' on domain orca-cad-slice.preview.emergentagent.com (signed in as 'Test User'). Most tests do not require auth.",
+  "seed_data_creation": "Created one TEST_iter106_taxonomy_create gallery item via POST /api/gallery to verify normalisation; deleted via DELETE /api/gallery/<id> at the end of the run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend & frontend acceptance criteria for iter-106 are all met. Only outstanding item is the cosmetic 'Customize in ForgeSlicerR' trailing-R typo on the GalleryPreviewDialog CTA (selector [data-testid='gallery-preview-replace-plate']). Workspace auth: set cookie session_token=st_test_1782519621420 before navigating to /workspace. Gallery has 54 items; categories distributed across taxonomy by startup backfill. To get a remix-capable item id quickly: 'Window Vent Cross Section V4' id=4c32cf0c-e799-4f5f-a3d2-a736643db8e2 (category=household) has a valid STL and navigates cleanly to /workspace?remix=<id>. The 'Default Manifold' seed item has invalid/empty STL and triggers 'Offset is outside the bounds of the DataView' inside the preview viewer — use a different item if you need a working remix navigation. Two overlay banners (auto-theme toast + 'ForgeSlicer Announcement' modal) appear on first load and must be dismissed before chip clicks register.",
+  "rca of the issue": "Cosmetic 'ForgeSlicerR' typo: the gallery-preview-replace-plate button's textContent comes back as ' Customize in ForgeSlicerR'. Most likely a leftover character in /app/frontend/src/components/dialogs/GalleryPreviewDialog.jsx where the CTA label was renamed from 'Replace plate' to 'Customize in ForgeSlicer' — an unexpected trailing 'R' (possibly from the old 'Replace' fragment or a misplaced icon span) is concatenated after the new label. Fix: inspect the button's JSX children and remove the stray 'R'."
+}

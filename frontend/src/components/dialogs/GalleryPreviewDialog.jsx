@@ -342,7 +342,7 @@ export default function GalleryPreviewDialog({ item, open, onClose }) {
               title="Wipe the current build plate and load this design (R)"
               className="h-9 px-3 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded inline-flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <GitFork size={13} /> Replace plate
+              <GitFork size={13} /> Customize in ForgeSlicer
               <kbd className="ml-1 px-1 py-px text-[9px] font-mono rounded border border-orange-300/40 bg-orange-600/70 text-orange-50" aria-hidden="true">R</kbd>
             </button>
           </div>

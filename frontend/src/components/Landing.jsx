@@ -10,6 +10,7 @@ import UserMenu from "./UserMenu";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import LandingTemplates from "./LandingTemplates";
 import BeginnerStarters from "./BeginnerStarters";
+import LandingCommunityStrip from "./LandingCommunityStrip";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "") + "/api";
 
@@ -720,6 +721,8 @@ export default function Landing() {
         <BeginnerStarters />
 
         <LandingTemplates />
+
+        <LandingCommunityStrip />
       </main>
 
       <footer className="border-t border-slate-800 py-6 px-6 text-center text-xs text-slate-500 space-y-1.5">

@@ -24,6 +24,7 @@ import sso_bridge
 import admin as admin_module
 import orca_engine
 import orca_upstream
+import gallery_taxonomy
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
 from routes.custom_textures import build_custom_textures_router
@@ -1021,6 +1022,16 @@ class GalleryItemCreate(BaseModel):
     # fits their bed before downloading. Optional — legacy items don't
     # have it and will render without the chip.
     bbox_mm: Optional[dict] = None  # {"x": float, "y": float, "z": float}
+    # Shoppable category id from `gallery_taxonomy.CATEGORIES` (e.g.
+    # "household", "toys"). Free-text validation against the taxonomy
+    # set in the route handler so we can grow categories without a
+    # schema bump on every release.
+    category: str = "misc"
+    # Free-form tags — short keywords like "keychain", "outdoor",
+    # "bambu". Used for chip-style discovery in the Gallery UI. The
+    # route normalises (lower-case, dash-collapsed, ≤24 chars/tag, ≤8
+    # tags/item) so the index stays small.
+    tags: List[str] = []
 
 
 class GalleryItemMeta(BaseModel):
@@ -1046,6 +1057,13 @@ class GalleryItemMeta(BaseModel):
     manifold_verified: bool = False
     # Model extents in mm (X/Y/Z). Optional — None on legacy items.
     bbox_mm: Optional[dict] = None
+    # Discovery metadata — surfaced as chips on the Gallery card.
+    category: str = "misc"
+    tags: List[str] = []
+    # Whether this item has been editorially featured by an admin
+    # (hybrid creator-spotlight signal — combined with algorithmic
+    # remix-count ranking by /api/gallery/featured-creators).
+    is_featured: bool = False
 
 
 class CommunityPrinterCreate(BaseModel):
@@ -1095,6 +1113,20 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
     # Logged-in users get attribution from their profile name and own the
     # item; anonymous users keep the free-text author field.
     author = (user["name"] if user else (item.author or "Anonymous"))
+    # Validate category against the shared taxonomy. Unknown values
+    # fall back to "misc" rather than erroring — the client may be
+    # behind a deploy and shouldn't be punished for it.
+    category = item.category if gallery_taxonomy.is_valid_category(item.category) else "misc"
+    # Normalise tags: lower-case, dashed, dedup, capped at 8.
+    raw_tags = item.tags or []
+    seen, tags = set(), []
+    for raw in raw_tags:
+        t = gallery_taxonomy.normalise_tag(str(raw))
+        if t and t not in seen:
+            seen.add(t)
+            tags.append(t)
+        if len(tags) >= 8:
+            break
     doc = {
         "id": item_id,
         "name": item.name,
@@ -1117,29 +1149,14 @@ async def create_gallery_item(item: GalleryItemCreate, request: Request):
         "material": (item.material or "pla").strip().lower()[:20],
         "manifold_verified": bool(item.manifold_verified),
         "bbox_mm": item.bbox_mm if isinstance(item.bbox_mm, dict) else None,
+        "category": category,
+        "tags": tags,
+        "is_featured": False,
     }
     await db.gallery.insert_one(doc)
     if item.remix_of:
         await db.gallery.update_one({"id": item.remix_of}, {"$inc": {"remix_count": 1}})
-    return GalleryItemMeta(
-        id=item_id,
-        name=doc["name"],
-        author=doc["author"],
-        description=doc["description"],
-        triangle_count=doc["triangle_count"],
-        object_count=doc["object_count"],
-        thumbnail_base64=doc["thumbnail_base64"],
-        created_at=created_at,
-        downloads=0,
-        remix_of=item.remix_of,
-        remix_count=0,
-        user_id=doc["user_id"],
-        private=doc["private"],
-        license=doc["license"],
-        material=doc.get("material", "pla"),
-        manifold_verified=doc.get("manifold_verified", False),
-        bbox_mm=doc.get("bbox_mm"),
-    )
+    return _gallery_meta_from_doc(doc)
 
 
 def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
@@ -1167,11 +1184,21 @@ def _gallery_meta_from_doc(d: dict) -> GalleryItemMeta:
         material=d.get("material", "pla"),
         manifold_verified=bool(d.get("manifold_verified", False)),
         bbox_mm=d.get("bbox_mm") if isinstance(d.get("bbox_mm"), dict) else None,
+        category=d.get("category", "misc"),
+        tags=list(d.get("tags") or []),
+        is_featured=bool(d.get("is_featured", False)),
     )
 
 
 @api_router.get("/gallery", response_model=List[GalleryItemMeta])
-async def list_gallery(request: Request, material: Optional[str] = None, mine: bool = False):
+async def list_gallery(
+    request: Request,
+    material: Optional[str] = None,
+    mine: bool = False,
+    category: Optional[str] = None,
+    tag: Optional[str] = None,
+    limit: int = 500,
+):
     # Public listing — hide private items entirely. When `mine=true` the
     # caller wants their own designs (public + private) instead; we resolve
     # the user from the cookie and switch the query accordingly so users
@@ -1183,14 +1210,23 @@ async def list_gallery(request: Request, material: Optional[str] = None, mine: b
         query: dict = {"user_id": user["user_id"]}
     else:
         query = {"$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}]}
+    extra: list = []
     if material:
-        # Combine with the existing filter via $and so we don't lose it.
-        query = {"$and": [query, {"material": material.strip().lower()[:20]}]}
+        extra.append({"material": material.strip().lower()[:20]})
+    if category and gallery_taxonomy.is_valid_category(category):
+        extra.append({"category": category})
+    if tag:
+        t = gallery_taxonomy.normalise_tag(tag)
+        if t:
+            extra.append({"tags": t})
+    if extra:
+        # Combine with the visibility filter via $and so we don't lose it.
+        query = {"$and": [query, *extra]}
     cursor = db.gallery.find(
         query,
         {"_id": 0, "stl_base64": 0},
     ).sort("created_at", -1)
-    items = await cursor.to_list(500)
+    items = await cursor.to_list(max(1, min(500, int(limit))))
     return [_gallery_meta_from_doc(d) for d in items]
 
 
@@ -1253,6 +1289,129 @@ async def delete_gallery_item(item_id: str, request: Request):
             raise HTTPException(status_code=403, detail="Not your design")
     await db.gallery.delete_one({"id": item_id})
     return {"deleted": True, "id": item_id}
+
+
+# ---------- Gallery taxonomy ----------
+@api_router.get("/gallery/_meta/taxonomy")
+async def gallery_taxonomy_meta():
+    """Public taxonomy endpoint — single source of truth for the
+    category dropdown in ShareDialog + the chip row above the Gallery
+    grid. Returns ordered `{id, label}` pairs so the frontend doesn't
+    need to hard-code the list. Cache-friendly: the response is static
+    until a new category is added on the server."""
+    return {
+        "categories": [{"id": cid, "label": label} for cid, label in gallery_taxonomy.CATEGORIES],
+    }
+
+
+# ---------- Featured creators ----------
+@api_router.get("/gallery/_meta/featured-creators")
+async def featured_creators(limit: int = 6):
+    """Hybrid creator spotlight.
+
+    Selection logic:
+      1. Pull the manual editorial pool first — every user who owns at
+         least one public gallery item with `is_featured=True`. This is
+         the admin-curated lever (see admin set-featured endpoint).
+      2. Fill any remaining slots with the algorithmic leaders — top
+         authors by sum-of-remix-counts on their public designs in the
+         last 90 days, excluding anyone already in the manual pool.
+
+    Returns an ordered list of `{user_id, name, design_count,
+    remix_count, featured_thumb_b64}` items the frontend renders as a
+    horizontal card strip on the Gallery + Landing pages.
+    """
+    limit = max(1, min(20, int(limit)))
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(days=90)).isoformat()
+
+    # --- 1. Manual editorial picks ---
+    manual_cursor = db.gallery.aggregate([
+        {"$match": {"is_featured": True,
+                    "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+                    "user_id": {"$ne": None}}},
+        {"$group": {
+            "_id": "$user_id",
+            "name": {"$first": "$author"},
+            "design_count": {"$sum": 1},
+            "remix_count": {"$sum": {"$ifNull": ["$remix_count", 0]}},
+            "featured_thumb_b64": {"$first": "$thumbnail_base64"},
+        }},
+        {"$sort": {"remix_count": -1, "design_count": -1}},
+        {"$limit": limit},
+    ])
+    manual = await manual_cursor.to_list(limit)
+    out: list[dict] = [
+        {
+            "user_id": d["_id"],
+            "name": d.get("name") or "Maker",
+            "design_count": int(d.get("design_count") or 0),
+            "remix_count": int(d.get("remix_count") or 0),
+            "featured_thumb_b64": d.get("featured_thumb_b64") or "",
+            "source": "editorial",
+        }
+        for d in manual
+    ]
+
+    # --- 2. Algorithmic top-up ---
+    remaining = limit - len(out)
+    if remaining > 0:
+        excluded = {item["user_id"] for item in out}
+        algo_cursor = db.gallery.aggregate([
+            {"$match": {
+                "$or": [{"private": {"$ne": True}}, {"private": {"$exists": False}}],
+                "user_id": {"$ne": None, "$nin": list(excluded)},
+                "created_at": {"$gte": since},
+            }},
+            {"$group": {
+                "_id": "$user_id",
+                "name": {"$first": "$author"},
+                "design_count": {"$sum": 1},
+                "remix_count": {"$sum": {"$ifNull": ["$remix_count", 0]}},
+                "featured_thumb_b64": {"$first": "$thumbnail_base64"},
+            }},
+            # Sort by remix_count first (community-validated quality),
+            # then design_count (productivity), then take the top N.
+            {"$sort": {"remix_count": -1, "design_count": -1}},
+            {"$limit": remaining},
+        ])
+        algo = await algo_cursor.to_list(remaining)
+        out.extend(
+            {
+                "user_id": d["_id"],
+                "name": d.get("name") or "Maker",
+                "design_count": int(d.get("design_count") or 0),
+                "remix_count": int(d.get("remix_count") or 0),
+                "featured_thumb_b64": d.get("featured_thumb_b64") or "",
+                "source": "algorithmic",
+            }
+            for d in algo
+        )
+
+    return out
+
+
+# ---------- Admin: feature/unfeature a creator's flagship design ----------
+class FeaturedDesignRequest(BaseModel):
+    item_id: str
+    featured: bool = True
+
+
+@api_router.post("/admin/gallery/feature-design")
+async def admin_feature_design(req: FeaturedDesignRequest, request: Request):
+    """Admin lever for the editorial half of /featured-creators. Marks
+    a single gallery item as featured; any user who owns at least one
+    featured item shows up in the manual pool. We feature an *item*
+    rather than a user so admins can spotlight a specific viral design
+    (the thumbnail surfaces on the strip)."""
+    await _require_admin_for_upstream(request)
+    upd = await db.gallery.update_one(
+        {"id": req.item_id},
+        {"$set": {"is_featured": bool(req.featured)}},
+    )
+    if upd.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Gallery item not found")
+    return {"id": req.item_id, "is_featured": bool(req.featured)}
 
 
 # ---------- Community Printer Profiles ----------
@@ -2136,6 +2295,43 @@ async def ensure_auth_indexes():
         await admin_module.seed_super_admins(db)
     except Exception as e:  # noqa: BLE001
         logger.warning("Auth/admin bootstrap skipped: %s", e)
+
+
+@app.on_event("startup")
+async def backfill_gallery_categories():
+    """One-shot backfill — apply the gallery-taxonomy heuristics to
+    legacy items that were saved before the category/tags fields
+    existed. Idempotent: we only touch documents that have no category
+    set, so re-running this on every boot is safe and a fast no-op
+    once the database is fully tagged.
+
+    Why on startup vs. a script: the Mongo pod doesn't ship with a
+    persistent migration tool, and the heuristics live in the Python
+    code anyway. Folding the backfill into startup means a fresh
+    environment hydrates correctly without any operator action.
+
+    Cost: one indexed scan over `db.gallery` filtered on missing
+    `category`; one update per matched doc. Bounded to 5000 items per
+    run so a truly massive legacy table never blocks startup."""
+    try:
+        cursor = db.gallery.find(
+            {"category": {"$exists": False}},
+            {"_id": 0, "id": 1, "name": 1},
+        ).limit(5000)
+        touched = 0
+        async for doc in cursor:
+            cid = gallery_taxonomy.guess_category(doc.get("name"))
+            tags = gallery_taxonomy.guess_tags(doc.get("name"))
+            await db.gallery.update_one(
+                {"id": doc["id"]},
+                {"$set": {"category": cid, "tags": tags, "is_featured": False}},
+            )
+            touched += 1
+        if touched:
+            logger.info("gallery taxonomy backfill: tagged %d legacy item(s)", touched)
+    except Exception as exc:  # noqa: BLE001
+        # Backfill is best-effort: never block startup if the DB hiccups.
+        logger.warning("gallery taxonomy backfill skipped: %s", exc)
 
 
 @app.on_event("startup")

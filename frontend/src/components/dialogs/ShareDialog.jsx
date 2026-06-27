@@ -7,7 +7,7 @@ import { galleryApi } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { LICENSES, DEFAULT_LICENSE_ID, getLicense } from "../../lib/licenses";
 import { MATERIALS } from "../../lib/materials";
-import { X, Globe, CheckCircle2, Loader2, Lock, LogIn, Scale, Layers } from "lucide-react";
+import { X, Globe, CheckCircle2, Loader2, Lock, LogIn, Scale, Layers, Compass, Tag } from "lucide-react";
 
 export function ShareDialog({ open, onClose }) {
   const { user } = useAuth();
@@ -19,6 +19,15 @@ export function ShareDialog({ open, onClose }) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [licenseId, setLicenseId] = useState(DEFAULT_LICENSE_ID);
   const [materialId, setMaterialId] = useState("pla");
+  // Shoppable taxonomy — single category id, loaded from the backend
+  // so a new category becomes available without a frontend redeploy.
+  // "misc" is the default until the user picks one (matches backend).
+  const [categoryId, setCategoryId] = useState("misc");
+  const [taxonomy, setTaxonomy] = useState([]);
+  // Tags — free-text input where the user types space- or comma-
+  // separated keywords. Normalisation (lower-case, dashed, deduped,
+  // capped at 8) happens server-side; we just split and trim here.
+  const [tagsRaw, setTagsRaw] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // gallery item
   const [error, setError] = useState("");
@@ -36,9 +45,28 @@ export function ShareDialog({ open, onClose }) {
     setIsPrivate(false);
     setLicenseId(DEFAULT_LICENSE_ID);
     setMaterialId("pla");
+    setCategoryId("misc");
+    setTagsRaw("");
     setError("");
     setDone(null);
   }, [open, projectName]);
+
+  React.useEffect(() => {
+    // Load the taxonomy once when the dialog mounts. Cached in
+    // component state so the user can change category instantly
+    // without a roundtrip each time.
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { categories } = await galleryApi.taxonomy();
+        if (!cancelled) setTaxonomy(categories || []);
+      } catch (_) {
+        if (!cancelled) setTaxonomy([]);   // fall back to a hidden field
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
 
   if (!open) return null;
 
@@ -78,6 +106,10 @@ export function ShareDialog({ open, onClose }) {
         material: materialId,
         manifold_verified: !!manifoldVerified,
         bbox_mm: bbox || undefined,
+        category: categoryId,
+        // Server-side normalises; we just split + trim. Allow commas
+        // OR spaces as separators so a user can type either.
+        tags: tagsRaw.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean),
       });
       setDone(created);
     } catch (e) {
@@ -154,6 +186,40 @@ export function ShareDialog({ open, onClose }) {
                 ))}
               </select>
               <span className="text-[10px] text-slate-500">Helps other makers pick the right filament; defaults to PLA.</span>
+            </label>
+            <label className="flex flex-col gap-1" data-testid="share-category-field">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Compass size={10} className="text-orange-400" /> Category
+              </span>
+              <select
+                data-testid="share-category"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none"
+              >
+                {taxonomy.length > 0 ? (
+                  taxonomy.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))
+                ) : (
+                  <option value="misc">Misc</option>
+                )}
+              </select>
+              <span className="text-[10px] text-slate-500">Helps people browsing the Public Gallery find your design.</span>
+            </label>
+            <label className="flex flex-col gap-1" data-testid="share-tags-field">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Tag size={10} className="text-orange-400" /> Tags <span className="normal-case text-[9px] text-slate-500">(optional)</span>
+              </span>
+              <input
+                data-testid="share-tags"
+                value={tagsRaw}
+                onChange={(e) => setTagsRaw(e.target.value)}
+                placeholder="keychain, outdoor, bambu"
+                className="h-9 bg-slate-950 border border-slate-700 rounded text-sm text-white px-3 focus:border-orange-500 outline-none"
+                maxLength={200}
+              />
+              <span className="text-[10px] text-slate-500">Comma- or space-separated keywords. Up to 8.</span>
             </label>
             <label className="flex flex-col gap-1" data-testid="share-license-field">
               <span className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">

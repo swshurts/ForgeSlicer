@@ -67,10 +67,13 @@ async function fetchHeavyList(url, { params } = {}) {
 }
 
 export const galleryApi = {
-  list: async ({ material, mine } = {}) => {
+  list: async ({ material, mine, category, tag, limit } = {}) => {
     const params = {};
     if (material && material !== "all") params.material = material;
     if (mine) params.mine = true;
+    if (category && category !== "all") params.category = category;
+    if (tag) params.tag = tag;
+    if (limit) params.limit = limit;
     return fetchHeavyList(`${API}/gallery`, { params });
   },
   // Full record incl. the embedded project JSON (`data`) used by the
@@ -89,6 +92,20 @@ export const galleryApi = {
   delete: async (id) => {
     const { data } = await axios.delete(`${API}/gallery/${id}`);
     return data;
+  },
+  // Shared taxonomy — categories list comes from the backend so a
+  // new category becomes available without a frontend redeploy.
+  taxonomy: async () => {
+    const { data } = await axios.get(`${API}/gallery/_meta/taxonomy`);
+    return data;
+  },
+  // Featured creators strip — hybrid: editorial picks first, then
+  // algorithmic top-N by remix-count in the last 90 days.
+  featuredCreators: async ({ limit } = {}) => {
+    const params = {};
+    if (limit) params.limit = limit;
+    const { data } = await axios.get(`${API}/gallery/_meta/featured-creators`, { params });
+    return data || [];
   },
 };
 
