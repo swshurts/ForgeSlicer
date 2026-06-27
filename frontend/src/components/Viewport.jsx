@@ -815,6 +815,8 @@ function DesignPlate() {
 function BuildPlate() {
   const buildVolume = useScene((s) => s.buildVolume);
   const gridVisible = useScene((s) => s.gridVisible);
+  // Theme-aware grid colour (see Cartesian branch comment below).
+  const resolvedTheme = useTheme((s) => s.resolvedTheme);
   const { x, y, kinematics } = buildVolume;
 
   // Delta machines have a circular bed.
@@ -864,6 +866,19 @@ function BuildPlate() {
   // Cartesian (default) — square/rectangular bed on the XY plane at Z=0.
   // drei's <Grid> renders its lines in the XZ plane natively; rotate by
   // +90° about X so the grid lies in the XY plane (normal = +Z).
+  //
+  // iter-108.x — Theme-aware minor cell colour. Before this change the
+  // 5 mm cell colour was hard-coded to slate-700 (#334155) — which is
+  // *exactly* the Dim viewport background, so the minor grid lines
+  // vanished in Dim mode (only the 50 mm orange section lines stayed
+  // visible). Now picks a per-theme tone that keeps comfortable
+  // contrast against the bed mesh AND the surrounding canvas in every
+  // theme. Section lines (orange) are theme-independent — they look
+  // fine on all three backgrounds.
+  const cellColor =
+    resolvedTheme === "dim"   ? "#94A3B8" :   // slate-400 — bright enough to stand off slate-700 bg
+    resolvedTheme === "light" ? "#475569" :   // slate-600 — readable on the slate-200 page
+                                "#64748B";    // slate-500 — default dark theme
   return (
     <group>
       <mesh receiveShadow position={[0, 0, -0.05]}>
@@ -876,8 +891,8 @@ function BuildPlate() {
           position={[0, 0, 0]}
           rotation={[Math.PI / 2, 0, 0]}
           cellSize={5}
-          cellThickness={0.5}
-          cellColor="#334155"
+          cellThickness={0.6}
+          cellColor={cellColor}
           sectionSize={50}
           sectionThickness={1}
           sectionColor="#F97316"

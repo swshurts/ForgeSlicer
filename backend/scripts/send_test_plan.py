@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.9"
+PLAN_VERSION = "1.10"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -348,9 +348,9 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "Each selection renders the corresponding typeface as a real extruded mesh — NOT a flat slab. While a newly-requested font is loading, the text temporarily renders in the default Helvetiker Regular (fallback) and swaps to the requested font once the typeface.json arrives. Browser console shows a one-line `[textGeometry] font 'X' loaded in Nms` breadcrumb on success or a `FAILED to load` warning on error (which then auto-purges the cache so a retry will re-fetch).",
                      "P0"),
                     ("TXT-02",
-                     "Inspector font dropdown lists 18 typefaces across 12 families, grouped by visual style",
+                     "Inspector font dropdown lists 21 typefaces across 15 families, grouped by visual style",
                      "1. Create a Text primitive. 2. Open the font dropdown and read top to bottom.",
-                     "Dropdown shows 18 options grouped as: SANS (Helvetiker R/B, Droid Sans R/B) → SERIF (Gentilis R/B, Optimer R/B, Droid Serif R/B) → MONO (Droid Sans Mono R) → SCRIPT/HANDWRITTEN (Pacifico, Lobster, Permanent Marker) → DISPLAY/COMIC (Bangers, Press Start 2P) → GOTHIC/BLACKLETTER (UnifrakturMaguntia, Pirata One). Selecting any of them renders real glyphs. First-fetch latency per font is ≤ 300 ms (largest face Gentilis Bold ~635 KB).",
+                     "Dropdown shows 21 options grouped as: SANS (Helvetiker R/B, Droid Sans R/B) → SERIF (Gentilis R/B, Optimer R/B, Droid Serif R/B) → MONO (Droid Sans Mono R) → SCRIPT/HANDWRITTEN (Pacifico, Lobster, Permanent Marker, Knewave) → DISPLAY/COMIC (Bangers, Frijole, Bowlby One, Press Start 2P) → GOTHIC/BLACKLETTER (UnifrakturMaguntia, Pirata One). Selecting any of them renders real glyphs. First-fetch latency per font is ≤ 800 ms (largest face Frijole ~1.65 MB).",
                      "P0"),
                     ("TXT-04",
                      "Whimsical & Gothic faces render with the expected character (not as sans fallback)",
@@ -381,6 +381,11 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "Grid + snapping toggles",
                      "1. View menu → Toggle grid / Toggle snapping.",
                      "Grid renders at 10 mm; snapping locks transforms to 1 mm; toggles persist across reloads.",
+                     "P1"),
+                    ("MEAS-02b",
+                     "Build-plate minor grid lines stay legible in every theme (Dark / Dim / Light)",
+                     "1. Open /workspace. 2. Switch the toolbar theme through all three: Dark → Dim → Light. After each switch wait one second and inspect the build plate.",
+                     "Minor (5 mm) cell lines are visibly distinct from the bed surface in every theme — NOT invisible. Major (50 mm) orange section lines stay legible. Regression: in Dim mode the cell colour used to be slate-700 (#334155), which exactly matched the Dim viewport background and made the minor lines disappear.",
                      "P1"),
                 ],
             ),
@@ -951,17 +956,14 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.9 ships the whimsical + Gothic font batch you asked for:</p>
+            <p>v1.10 ships:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>18 typefaces now in the dropdown</b> (was 11), grouped by visual style: Sans → Serif → Mono → Script/Handwritten → Display/Comic → Gothic/Blackletter.</li>
-              <li><b>Whimsical additions</b>: Pacifico (curvy script), Lobster (bold cursive), Permanent Marker (hand-drawn), Bangers (cartoon caps), Press Start 2P (8-bit pixel).</li>
-              <li><b>Gothic additions</b>: UnifrakturMaguntia (classic German blackletter) + Pirata One (modern blackletter display).</li>
-              <li>Built a reusable in-repo <b>TTF→typeface.json converter</b> at <code>scripts/ttf2typeface.js</code> (opentype.js-based, facetype.js-compatible output). When you want to add more fonts later, drop a .ttf into <code>scripts/ttf/</code> and run one line.</li>
-              <li>All 7 new faces are SIL OFL or Apache 2.0 licensed (Google Fonts originals) — credits in <code>/public/fonts/LICENSE.txt</code>.</li>
-              <li>New <b>TXT-04</b> (whimsical &amp; Gothic faces render with their expected character, not as a sans fallback) + <b>TXT-02</b> rewritten for the 18-font set.</li>
+              <li><b>MEAS-02b — Dim-mode grid line bug.</b> Root cause: the minor grid lines were hard-coded to slate-700 (#334155), which is <em>exactly</em> the Dim theme's viewport background — so they disappeared. The cell colour is now <b>theme-aware</b>: slate-400 in Dim (bright enough to stand off the slate-700 background), slate-600 in Light, slate-500 in Dark. Major (50 mm) orange section lines untouched.</li>
+              <li><b>Mystery font identified (best guess).</b> The WHITE RABBIT sign uses a hand-lettered psychedelic-poster style — likely custom for the sign. The closest free Google Font with the same bold, hand-drawn, slightly wavy feel is <b>Knewave</b>, which I've added to the dropdown under SCRIPT/HANDWRITTEN. Also bundled <b>Frijole</b> (cartoon bold) and <b>Bowlby One</b> (bold display) so you have a wider whimsical palette to pick from.</li>
+              <li>Dropdown is now <b>21 typefaces · 15 families</b>. New: Knewave, Frijole, Bowlby One. <b>TXT-02</b> updated to lock the list down.</li>
             </ul>
-            <p><b>Your "mystery font" image didn't come through</b> — it was stripped before I saw the message. Re-attach it whenever and I'll identify it and slot it into the whimsical group (or convert it from scratch if it's a paid/private face you can share the TTF for).</p>
-            <p>Carried over from v1.8: voice 'stop' regex (AI-01b), lithophane disambiguation (AI-03), font-load resilience (TXT-01), Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect, tips toast, Inspector vs face-handle editing.</p>
+            <p>If none of those nail the "WHITE RABBIT" vibe, share the .ttf and I'll convert it on the spot via <code>scripts/ttf2typeface.js</code>.</p>
+            <p>Carried over from v1.9: 7 whimsical+Gothic fonts, voice 'stop' regex, lithophane disambiguation, font-load resilience, Lexicon appendix, 6-tab landing, sign-in timeout fix, post-signup redirect, tips toast, Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

@@ -56,3 +56,12 @@ All fonts converted to Three.js typeface.json with the in-repo
 `scripts/ttf2typeface.js` utility (opentype.js-based), preserving the
 output shape produced by https://gero3.github.io/facetype.js/ so
 THREE.FontLoader parses them without modification.
+
+Knewave — Tyler Finck · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/knewave
+
+Frijole — Robert Leuschke / TypeSETit · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/frijole
+
+Bowlby One — Vernon Adams · SIL Open Font License 1.1
+  Source: https://github.com/google/fonts/tree/main/ofl/bowlbyone

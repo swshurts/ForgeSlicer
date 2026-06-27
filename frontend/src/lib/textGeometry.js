@@ -86,8 +86,11 @@ export const TEXT_FONTS = [
     { value: "pacifico_regular",          label: "Pacifico · Script" },
     { value: "lobster_regular",           label: "Lobster · Script" },
     { value: "permanent_marker_regular",  label: "Permanent Marker · Handwritten" },
+    { value: "knewave_regular",           label: "Knewave · Hand-drawn Marker" },
     // ── Display & Comic (whimsical) ───────────────────────────────
     { value: "bangers_regular",           label: "Bangers · Comic" },
+    { value: "frijole_regular",           label: "Frijole · Cartoon Bold" },
+    { value: "bowlby_one_regular",        label: "Bowlby One · Bold Display" },
     { value: "press_start_2p_regular",    label: "Press Start 2P · 8-bit Pixel" },
     // ── Gothic / Blackletter ──────────────────────────────────────
     { value: "unifraktur_maguntia_regular", label: "UnifrakturMaguntia · Gothic" },
