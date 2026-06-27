@@ -7,7 +7,7 @@ as a single undo group.
 Step schemas — strict so the frontend can validate before running.
 
     {"action": "add",
-     "type": "cube"|"sphere"|"cylinder"|"cone"|"torus"|"polygon"|"circle"|"square2d"|"triangle",
+     "type": "cube"|"sphere"|"cylinder"|"cone"|"torus"|"polygon"|"circle"|"square2d"|"triangle"|"text",
      "modifier": "positive"|"negative",
      "dims": {...},                           # per primitive type
      "position": [x, y, z],                   # mm

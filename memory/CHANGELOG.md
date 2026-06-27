@@ -4018,3 +4018,40 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/BeginnerStarters.jsx` — added `templateId` field, switched `launch()` to the existing `forgeslicer.launchTemplate` plumbing
 - `frontend/src/components/Landing.jsx` — import + render `<BeginnerStarters />` above `<LandingTemplates />`; updated hero CTA scroll selector
 - `frontend/src/components/Workspace.jsx` — replaced `cancelled` cleanup with `handledTemplateRef` single-fire guard in the template-handler useEffect (lines ~746-816)
+
+---
+
+## Iter-105.33 (2026-06-27) — Text-on-Surface primitive (MVP / flat-face)
+
+### What landed
+- **`text` primitive — first-class type** on the same lifecycle as cube/sphere/cylinder/texture. Positive = emboss (union onto host), Negative = engrave (subtract from host) via the standard CSG pipeline. Editable through a dedicated Inspector block.
+- **Three bundled typeface fonts** in `/app/frontend/public/fonts/` (helvetiker_regular, helvetiker_bold, optimer_regular — all MIT, ~62-110 KB each, served as static assets). User can drop additional `.typeface.json` files into the same folder without rebuilding.
+- **Async font loader** (`lib/textGeometry.js`): memoised per-family `Font` cache, sync-accessible `getFontSync`, `onFontLoaded` listener so the Viewport re-builds the placeholder slab into real glyphs as soon as the font arrives. Default font is pre-fetched on workspace mount.
+- **Workspace toolbar button** (`add-text-positive-btn` / `add-text-negative-btn`) — added to the 3D primitive grid in LeftPanel between Sweep and Composites.
+- **Inspector controls** (`TextInspectorBlock` at `components/inspector/TextInspectorBlock.jsx`): full-width text input, font select (3 options), alignment, size, depth, bevel toggle + detail row.
+- **Backend voice-template support** — added `"text"` to the valid step `type` in `voice_templates/base.py`. Rewrote three Beginner Starters to actually emit text steps:
+  - `starter_keychain`: positive embossed text "Hi!" on the disc face
+  - `starter_name_tag`: positive embossed text "Your Name" on the plate
+  - `starter_plant_marker`: NEGATIVE engraved text "Basil" on the +Y tag face (rotated 90° around X so the extrusion direction matches the engraving axis)
+- All three starters now produce a single grouped mesh whose name reflects the boolean tree (e.g. `Cylinder \ Cylinder ∪ Text` for the keychain) — confirmed live by clicking the Keychain card and seeing the assembled mesh on the bed with the correct dims (Ø35 × 5.8 mm).
+
+### Verified
+- `add-text-positive-btn` clicks drop a real "Hello" mesh; the Inspector's `text-inspector-block` mounts and the size/depth/font inputs are all wired to `updateDims`.
+- Backend pytest 13/13 — all 12 starter templates still return valid step lists (the three with text steps emit the new `type:"text"` entries).
+- Keychain starter end-to-end: cold-load `/` → click `starter-customize-keychain` → workspace populates with the assembled mesh including the embossed legend.
+
+### Files touched
+- `frontend/public/fonts/{helvetiker_regular,helvetiker_bold,optimer_regular}.typeface.json` + `LICENSE.txt` (NEW)
+- `frontend/src/lib/textGeometry.js` (NEW — `TEXT_DEFAULTS`, `TEXT_FONTS`, `buildTextGeometry`, `getFontSync`, `onFontLoaded`, `preloadDefaultFont`)
+- `frontend/src/lib/primitiveDefaults.js` — registered `text:` in `PRIMITIVE_DEFAULTS` + halfH rule
+- `frontend/src/lib/geometry.js` — dispatch `text` to `buildTextGeometry`; include in the bbox-via-geometry path
+- `frontend/src/components/Viewport.jsx` — font-load tick in `SceneObject` so the placeholder slab swaps to real glyphs on font arrival
+- `frontend/src/components/LeftPanel.jsx` — `Text` button (Type icon) in PRIMS_3D
+- `frontend/src/components/RightPanel.jsx` — wired `TextInspectorBlock` + heuristic bbox for the selection halo
+- `frontend/src/components/inspector/TextInspectorBlock.jsx` (NEW)
+- `frontend/src/components/Workspace.jsx` — `preloadDefaultFont()` on mount
+- `backend/voice_templates/base.py` — `"text"` added to the step schema doc
+- `backend/voice_templates/starters.py` — keychain / name_tag / plant_marker emit real text steps
+
+### Known limits (filed in ROADMAP P2)
+- Flat-face only — text is positioned via gizmos and composed via boolean union/subtract. Curved-surface projection (text wrapping onto cylinder rims / spheres) is the planned follow-up; will require face picking + per-glyph raycast.

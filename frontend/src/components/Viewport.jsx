@@ -7,6 +7,7 @@ import { useScene } from "../lib/store";
 import { useTheme, VIEWPORT_BG } from "../lib/theme";
 import { buildGeometry, computeRotatedBBox } from "../lib/geometry";
 import { buildCubeGeometryWithFillets, hasActiveEdgeFillets } from "../lib/partialFillet";
+import { onFontLoaded } from "../lib/textGeometry";
 import { cubeEdgeEndpoints, cubeFaceQuads, cubeVertexPositions } from "../lib/edgeFaceMeta";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { nearestSnapPoint, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
@@ -41,6 +42,16 @@ function colorForObject(obj) {
 }
 
 function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, onContextMenu, scene }) {
+  // Font-load tick — when the text primitive's typeface.json arrives
+  // we bump this counter, which invalidates the `geom` useMemo below
+  // and rebuilds with real glyphs (instead of the placeholder slab
+  // returned by buildTextGeometry while the font was loading).
+  const [fontTick, setFontTick] = useState(0);
+  useEffect(() => {
+    if (obj.type !== "text") return undefined;
+    const unsubscribe = onFontLoaded(() => setFontTick((t) => t + 1));
+    return unsubscribe;
+  }, [obj.type]);
   const meshRef = useRef();
   // For sweep objects with `kind:"ref"` paths we have to invalidate the
   // memo whenever the SOURCE object's relevant fields change — depend
@@ -58,7 +69,7 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
   const geom = useMemo(
     () => buildGeometry(obj, scene),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [obj.type, JSON.stringify(obj.dims), refSig, JSON.stringify(obj.edgeFillets || null)]
+    [obj.type, JSON.stringify(obj.dims), refSig, JSON.stringify(obj.edgeFillets || null), fontTick]
   );
   // Async override: if this is a cube with per-edge fillets, the sync
   // path returned a SHARP cube as a placeholder. Kick off a Manifold-

@@ -19,6 +19,7 @@
 
 import { SWEEP_DEFAULTS } from "./sweepGeometry";
 import { TEXTURE_DEFAULTS } from "./textureGeometry";
+import { TEXT_DEFAULTS } from "./textGeometry";
 
 export const PRIMITIVE_DEFAULTS = {
   cube:     { dims: { x: 20, y: 20, z: 20 } },
@@ -89,6 +90,13 @@ export const PRIMITIVE_DEFAULTS = {
   //          the Texture Library dialog OR via the Inspector's
   //          TextureInspectorBlock once the object is selected.
   texture:  { dims: { ...TEXTURE_DEFAULTS } },
+  // ---- Text (v1.22, iter 105.33) ----
+  // text: extruded glyphs from a typeface.json font. Positive embosses
+  //       onto a host (or stands alone); negative engraves via the
+  //       standard CSG subtract pipeline. Editable via the Inspector's
+  //       TextInspectorBlock — change the string, font, size, depth,
+  //       bevel without rebuilding the object.
+  text:     { dims: { ...TEXT_DEFAULTS } },
 };
 
 // Monotonic counter used by `newId` to disambiguate objects created in
@@ -134,6 +142,12 @@ export const buildPrimitive = (type, modifier = "positive", overrides = {}) => {
     const depth = def.dims.depth ?? 0.8;
     const height = def.dims.height ?? 1.0;
     halfH = (depth + height) / 2;
+  }
+  else if (type === "text") {
+    // Text sits with its base at Z=0 and extrudes up to Z=depth.
+    // Half-height = depth/2 so the auto-drop pass places the
+    // centroid at depth/2 → base on the plate.
+    halfH = (def.dims.depth ?? 2) / 2;
   }
   else if (def.dims.h != null) halfH = def.dims.h / 2;
   else if (def.dims.z != null) halfH = def.dims.z / 2;

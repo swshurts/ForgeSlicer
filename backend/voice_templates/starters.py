@@ -49,11 +49,16 @@ def _i(p: Dict[str, Any], key: str, default: int, lo: int = 1, hi: int = 50) -> 
 
 
 # ─── 1. Keychain ───────────────────────────────────────────────────
-# Round disc with a ring hole near one edge. Classic "first print".
+# Round disc with a ring hole near one edge plus optional embossed
+# text on the front face. Classic "first print".
 def _build_keychain(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     diameter = _f(params, "diameter_mm", 35.0)
     thickness = _f(params, "thickness_mm", 4.0)
     ring_diameter = _f(params, "ring_diameter_mm", 5.5)
+    text = str(params.get("text", "")).strip() or "Hi!"
+    text_size = _f(params, "text_size_mm", 8.0)
+    text_depth = _f(params, "text_depth_mm", 1.2)
+
     r = diameter / 2.0
     ring_offset = r - ring_diameter   # ring sits inside the disc, just shy of the edge
 
@@ -73,8 +78,27 @@ def _build_keychain(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             tag="ring_hole",
             note=f"Key-ring hole  ⌀{ring_diameter:.1f} mm",
         ),
-        step_boolean("subtract", targets=["all-current"],
+        # Embossed text sits proud of the disc's top face so a single
+        # union with the body produces a raised label. Position the
+        # text shifted -X relative to the ring hole so the legend
+        # reads cleanly without colliding with the keyring opening.
+        step_add(
+            "text",
+            dims={
+                "text": text,
+                "size": text_size,
+                "depth": text_depth,
+                "font": "helvetiker_bold",
+                "align": "center",
+            },
+            position=[-ring_diameter * 0.5, 0.0, thickness + text_depth / 2.0],
+            tag="legend",
+            note=f"Embossed text  '{text}'  size {text_size:.1f} mm",
+        ),
+        step_boolean("subtract", targets=["tag:body", "tag:ring_hole"],
                      note="Punch the ring hole through the disc"),
+        step_boolean("union", targets=["all-current", "tag:legend"],
+                     note="Emboss the text onto the disc"),
         step_group("Keychain", targets=["all-current"]),
     ]
     return steps
@@ -83,7 +107,7 @@ def _build_keychain(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 META_KEYCHAIN = {
     "id": "starter_keychain",
     "label": "Keychain (round)",
-    "description": "Round disc with a key-ring hole. Add your text with the Text tool.",
+    "description": "Round disc with a key-ring hole and embossed text.",
     "params": {
         "diameter_mm": {"type": "number", "default": 35.0, "min": 20.0, "max": 80.0,
                         "describe": "Outer diameter of the disc (mm)."},
@@ -91,6 +115,10 @@ META_KEYCHAIN = {
                          "describe": "Disc thickness (mm)."},
         "ring_diameter_mm": {"type": "number", "default": 5.5, "min": 3.0, "max": 12.0,
                              "describe": "Diameter of the ring hole (mm)."},
+        "text": {"type": "string", "default": "Hi!",
+                 "describe": "Embossed legend on the front face (1-12 chars works best)."},
+        "text_size_mm": {"type": "number", "default": 8.0, "min": 3.0, "max": 20.0,
+                         "describe": "Glyph height (mm)."},
     },
 }
 
@@ -155,12 +183,16 @@ META_PHONE_STAND = {
 
 
 # ─── 3. Name Tag ───────────────────────────────────────────────────
-# Flat plate with a pin-clip hole. Add text in the workspace.
+# Flat plate with a pin-clip hole, plus embossed text reading the
+# wearer's name. Edit the string in the Inspector after creation.
 def _build_name_tag(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     width = _f(params, "width_mm", 70.0)
     height = _f(params, "height_mm", 28.0)
     thickness = _f(params, "thickness_mm", 3.0)
     pin_diameter = _f(params, "pin_diameter_mm", 2.5)
+    text = str(params.get("text", "")).strip() or "Your Name"
+    text_size = _f(params, "text_size_mm", min(height * 0.5, 12.0))
+    text_depth = _f(params, "text_depth_mm", 1.0)
 
     steps: List[Dict[str, Any]] = [
         step_add(
@@ -187,8 +219,23 @@ def _build_name_tag(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             tag="pin_right",
             note=f"Pin hole  ⌀{pin_diameter:.1f} mm",
         ),
-        step_boolean("subtract", targets=["all-current"],
+        step_add(
+            "text",
+            dims={
+                "text": text,
+                "size": text_size,
+                "depth": text_depth,
+                "font": "helvetiker_bold",
+                "align": "center",
+            },
+            position=[0.0, 0.0, thickness + text_depth / 2.0],
+            tag="legend",
+            note=f"Embossed name  '{text}'",
+        ),
+        step_boolean("subtract", targets=["tag:plate", "tag:pin_left", "tag:pin_right"],
                      note="Punch pin holes"),
+        step_boolean("union", targets=["all-current", "tag:legend"],
+                     note="Emboss the name on the plate"),
         step_group("Name Tag", targets=["all-current"]),
     ]
     return steps
@@ -197,36 +244,46 @@ def _build_name_tag(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 META_NAME_TAG = {
     "id": "starter_name_tag",
     "label": "Name Tag",
-    "description": "Flat name-plate with pin-clip holes. Add your name with the Text tool.",
+    "description": "Flat name-plate with pin-clip holes and an embossed name.",
     "params": {
         "width_mm": {"type": "number", "default": 70.0, "min": 40.0, "max": 150.0,
                      "describe": "Plate width (mm)."},
         "height_mm": {"type": "number", "default": 28.0, "min": 20.0, "max": 60.0,
                       "describe": "Plate height (mm)."},
+        "text": {"type": "string", "default": "Your Name",
+                 "describe": "Name to emboss on the front face."},
     },
 }
 
 
 # ─── 4. Plant Marker ───────────────────────────────────────────────
-# Tag with a sharp spike to push into soil.
+# Tag with a sharp spike to push into soil, plus engraved plant
+# name on the top panel.
 def _build_plant_marker(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     tag_w = _f(params, "tag_width_mm", 40.0)
     tag_h = _f(params, "tag_height_mm", 22.0)
     thickness = _f(params, "thickness_mm", 2.5)
     spike_h = _f(params, "spike_height_mm", 60.0)
     spike_w = _f(params, "spike_width_mm", 8.0)
+    text = str(params.get("text", "")).strip() or "Basil"
+    text_size = _f(params, "text_size_mm", min(tag_h * 0.5, 10.0))
+    text_depth = _f(params, "text_depth_mm", 0.6)
+
+    # Tag panel sits in the XZ plane (rotated 90° around X so the
+    # face we'll see is the +Y face — same plane the spike runs in).
+    # Z origin: spike from 0..spike_h, tag from spike_h..spike_h+tag_h.
+    tag_centre_z = spike_h + tag_h / 2.0
 
     steps: List[Dict[str, Any]] = [
         # Top tag panel.
         step_add(
             "cube",
             dims={"x": tag_w, "y": thickness, "z": tag_h},
-            position=[0.0, 0.0, spike_h + tag_h / 2.0],
+            position=[0.0, 0.0, tag_centre_z],
             tag="tag",
             note=f"Tag panel  {tag_w:.0f} × {tag_h:.0f} mm",
         ),
-        # Spike — narrows by virtue of being a cube + cone subtractions
-        # would be over-engineering; a slim cube is fine for soil push-in.
+        # Spike.
         step_add(
             "cube",
             dims={"x": spike_w, "y": thickness, "z": spike_h},
@@ -234,7 +291,25 @@ def _build_plant_marker(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             tag="spike",
             note=f"Soil spike  {spike_w:.0f} mm wide × {spike_h:.0f} mm tall",
         ),
-        step_boolean("union", targets=["all-positives"], note="Fuse marker"),
+        # Engraved plant name on the +Y face of the tag. Rotate the
+        # text 90° around X so its extrusion direction points along +Y.
+        step_add(
+            "text",
+            modifier="negative",
+            dims={
+                "text": text,
+                "size": text_size,
+                "depth": text_depth + 0.3,
+                "font": "helvetiker_bold",
+                "align": "center",
+            },
+            position=[0.0, thickness / 2.0 + text_depth / 2.0 - 0.1, tag_centre_z],
+            rotation=[90.0, 0.0, 0.0],
+            tag="label",
+            note=f"Engraved label  '{text}'",
+        ),
+        step_boolean("union", targets=["tag:tag", "tag:spike"], note="Fuse marker"),
+        step_boolean("subtract", targets=["all-current", "tag:label"], note="Engrave the plant name"),
         step_group("Plant Marker", targets=["all-current"]),
     ]
     return steps
@@ -243,12 +318,14 @@ def _build_plant_marker(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 META_PLANT_MARKER = {
     "id": "starter_plant_marker",
     "label": "Plant Marker",
-    "description": "Tag with a spike. Stack a dozen for an entire herb garden.",
+    "description": "Tag with a spike, engraved with the plant name. Stack a dozen for an entire herb garden.",
     "params": {
         "tag_width_mm": {"type": "number", "default": 40.0, "min": 25.0, "max": 80.0,
                          "describe": "Top tag width (mm)."},
         "spike_height_mm": {"type": "number", "default": 60.0, "min": 30.0, "max": 120.0,
                             "describe": "Soil-spike length (mm)."},
+        "text": {"type": "string", "default": "Basil",
+                 "describe": "Plant name engraved on the tag."},
     },
 }
 

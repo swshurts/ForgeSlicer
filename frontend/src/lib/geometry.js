@@ -3,6 +3,7 @@ import { mergeVertices, mergeGeometries } from "three/examples/jsm/utils/BufferG
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { buildSweepGeometry } from "./sweepGeometry";
 import { buildTextureGeometry } from "./textureGeometry";
+import { buildTextGeometry } from "./textGeometry";
 import {
   buildCylinderGeometryWithFillets,
   buildConeGeometryWithFillets,
@@ -462,6 +463,10 @@ export function buildGeometry(obj, scene = null) {
     return buildTextureGeometry(obj);
   }
 
+  if (t === "text") {
+    return buildTextGeometry(obj);
+  }
+
   if (t === "imported" && obj.geometry) {
     const g = new THREE.BufferGeometry();
     const verts = new Float32Array(obj.geometry.vertices);
@@ -571,7 +576,7 @@ export function getBaseSize(obj) {
   if (t === "imported" && obj.originalBbox) {
     return { x: obj.originalBbox.x, y: obj.originalBbox.y, z: obj.originalBbox.z };
   }
-  if (t === "sweep" || t === "texture") {
+  if (t === "sweep" || t === "texture" || t === "text") {
     // Compute from actual built geometry — sweep/texture extents depend
     // on the descriptor in non-trivial ways (path arc, twist, tiling).
     try {

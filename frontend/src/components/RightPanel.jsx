@@ -8,6 +8,7 @@ import { computeRotatedBBox } from "../lib/geometry";
 import { printersApi } from "../lib/api";
 import SplineInspectorBlock from "./SplineInspectorBlock";
 import SweepInspectorBlock from "./SweepInspectorBlock";
+import TextInspectorBlock from "./inspector/TextInspectorBlock";
 // Iter-105.20 — EdgeControls (fillet/chamfer UI) removed from Inspector
 // at user request. The component file at `./inspector/EdgeControls.jsx`
 // is preserved for future use should the slicer pipeline ever honour
@@ -590,6 +591,19 @@ function estimateHalfExtents(o) {
     const outerR = (d.r || 6) + (d.toothHeight || 1.2);
     return [outerR * s[0], outerR * s[1], (d.h || 30) / 2 * s[2]];
   }
+  if (o.type === "text") {
+    // Text bbox is data-dependent (font + glyphs) — approximate
+    // from the size value and string length. The accurate bbox is
+    // available via computeRotatedBBox once the geometry builds;
+    // this heuristic is only used for the selection halo so a
+    // slight over-estimate is fine and won't show through.
+    const size = d.size || 8;
+    const depth = d.depth || 2;
+    const length = String(d.text ?? "Hello").length || 1;
+    // Average glyph advance ~= 0.6 × size for Latin proportional fonts.
+    const halfW = (length * size * 0.6) / 2;
+    return [halfW * s[0], (size / 2) * s[1], (depth / 2) * s[2]];
+  }
   // sweep: approximate from path/profile. Accurate bbox lives in
   // computeRotatedBBox (geometry.js) — drop-to-bed uses that.
   if (o.type === "sweep") {
@@ -1080,6 +1094,10 @@ function Inspector() {
           kind (helix vs arc vs bezier vs sketched curve). */}
       {obj.type === "sweep" && (
         <SweepInspectorBlock obj={obj} updateDims={updateDims} />
+      )}
+
+      {obj.type === "text" && (
+        <TextInspectorBlock obj={obj} updateDims={updateDims} />
       )}
 
       {(obj.type === "circle" || obj.type === "square2d" || obj.type === "triangle" || obj.type === "polygon") && (

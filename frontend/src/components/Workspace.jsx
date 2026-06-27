@@ -25,6 +25,7 @@ import { getSaveBehavior } from "../lib/savePref";
 import { saveProjectJSON } from "../lib/exporters";
 import { pickNextUnseen, markSeen, tipProgress } from "../lib/tipsLibrary";
 import { reportSceneOversize } from "../lib/oversizeCheck";
+import { preloadDefaultFont } from "../lib/textGeometry";
 import SubdivideDialog from "./dialogs/SubdivideDialog";
 import PlanPreviewDialog from "./PlanPreviewDialog";
 import WorkspaceDropZone from "./WorkspaceDropZone";
@@ -65,6 +66,10 @@ export default function Workspace() {
   // Voice command may emit a "forgeslicer:open-dialog" event to open a named
   // dialog (e.g. user says "save as component").
   useEffect(() => {
+    // Pre-fetch the default text typeface so the very first "Add Text"
+    // click renders real glyphs instead of the placeholder slab.
+    // ~60 KB JSON, cached in the browser cache after this hop.
+    preloadDefaultFont();
     const handler = (e) => {
       const name = e?.detail?.name;
       if (name === "save_component") setSaveComponentOpen(true);

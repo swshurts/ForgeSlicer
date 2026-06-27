@@ -5,7 +5,7 @@ import {
   Box, Circle, Cylinder, Cone, Donut, Eye, EyeOff, Lock, Unlock,
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
-  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3,
+  Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3, Type,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -32,6 +32,11 @@ const PRIMS_3D = [
   { type: "spline", label: "Spline", icon: Cog },
   // ---- Sweep (1.18) — profile-along-path extrusion ----
   { type: "sweep", label: "Sweep", icon: Waves },
+  // ---- Text (1.22) — extruded glyphs ----
+  // Behaves like any other primitive: positive embosses, negative
+  // engraves (via the standard CSG subtract path). The Inspector
+  // exposes string / font / size / depth / bevel.
+  { type: "text", label: "Text", icon: Type },
 ];
 
 // 2D primitives — render as thin wafers; the user extrudes via the
