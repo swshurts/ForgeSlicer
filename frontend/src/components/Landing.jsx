@@ -23,6 +23,7 @@ import { PRIVACY_FACTS } from "../lib/trustContent";
 // explicitly opted out of URL-deep-linking) so refresh resets to
 // "start" — the right default for a marketing page.
 const LANDING_TABS = [
+  { id: "home", label: "Home", icon: Box },
   { id: "start", label: "Start", icon: Rocket },
   { id: "templates", label: "Templates", icon: LayoutGrid },
   { id: "gallery", label: "Gallery", icon: Globe },
@@ -241,9 +242,10 @@ export default function Landing() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [importError, setImportError] = useState("");
-  // iter-108 — Tabbed landing layout. Default to "start" on each load
-  // (the user opted out of URL-based deep links).
-  const [activeTab, setActiveTab] = useState("start");
+  // iter-108 — Tabbed landing layout. Default to "home" on each load
+  // (the user opted out of URL-based deep links). Home tab contains
+  // the hero block; the other tabs hold the marketing surfaces.
+  const [activeTab, setActiveTab] = useState("home");
   const { user } = useAuth();
 
   // Iter-99.2 — When the visitor is signed into ForgeSlicer, route the
@@ -335,7 +337,16 @@ export default function Landing() {
         <UserMenu returnPath="/workspace" />
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 pt-16 pb-24">
+      <main className="max-w-6xl mx-auto px-6 pt-10 pb-24">
+        <LandingTabBar activeTab={activeTab} onChange={setActiveTab} />
+
+        <div
+          role="tabpanel"
+          id={`landing-tabpanel-${activeTab}`}
+          aria-labelledby={`landing-tab-${activeTab}`}
+          data-testid={`landing-tabpanel-${activeTab}`}
+        >
+        {activeTab === "home" && (<>
         <SsoBridgeBanner />
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           <div>
@@ -473,14 +484,8 @@ export default function Landing() {
           </div>
         </div>
 
-        <LandingTabBar activeTab={activeTab} onChange={setActiveTab} />
+        </>)}
 
-        <div
-          role="tabpanel"
-          id={`landing-tabpanel-${activeTab}`}
-          aria-labelledby={`landing-tab-${activeTab}`}
-          data-testid={`landing-tabpanel-${activeTab}`}
-        >
         {activeTab === "start" && (<>
 
         {/* ─── Design-by-conversation section ──────────────────────

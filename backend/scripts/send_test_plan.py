@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.2"
+PLAN_VERSION = "1.3"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -83,24 +83,24 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                 "Landing tab bar (iter-108)",
                 [
                     ("LAND-01",
-                     "Landing tab bar shows 5 tabs in fixed order below the hero",
-                     "1. Open / in a private window. 2. Locate the row of tabs directly below the hero block and above the marketing sections.",
-                     "Exactly 5 tabs in this order: Start · Templates · Gallery · Learn · Trust. Each has an icon + label and a data-testid 'landing-tab-{id}'. The container has data-testid 'landing-tabbar'. The header and footer remain visible above and below.",
+                     "Landing tab bar shows 6 tabs in fixed order directly below the header",
+                     "1. Open / in a private window. 2. Locate the row of tabs at the top of the page (right under the site header).",
+                     "Exactly 6 tabs in this order: Home · Start · Templates · Gallery · Learn · Trust. Each has an icon + label and a data-testid 'landing-tab-{id}'. The container has data-testid 'landing-tabbar'. Site header is above, footer below.",
                      "P0"),
                     ("LAND-02",
-                     "Start is the default tab on every fresh load",
+                     "Home is the default tab on every fresh load",
                      "1. Open / in a private window. 2. Observe which tab is active before clicking anything.",
-                     "Start tab is selected (orange underline + orange text); active panel data-testid is 'landing-tabpanel-start'. The AI/voice, audience, feature grid, 5-step, and Beginner Starters sections all render.",
+                     "Home tab is selected (orange underline + orange text); active panel data-testid is 'landing-tabpanel-home'. The SsoBridge banner, hero headline 'Design. Speak. Slice. Print.', anvil image, CTA buttons, and stats row all render.",
                      "P0"),
                     ("LAND-03",
-                     "Each tab swaps the body content; hero stays pinned above",
-                     "1. Click Templates → Gallery → Learn → Trust → Start in turn.",
-                     "Each click swaps the tabpanel content within ~50 ms; only the content area below the tab bar changes. The hero (logo, headline, CTAs, anvil image) remains visible above the tab bar across all 5 tabs.",
+                     "Switching tabs swaps the entire body content",
+                     "1. Click each tab in turn: Home → Start → Templates → Gallery → Learn → Trust.",
+                     "Each click swaps the tabpanel content within ~50 ms. When NOT on Home, the hero is NOT visible. When NOT on Trust, the trust tab content is NOT visible. No console errors during the switch.",
                      "P0"),
                     ("LAND-04",
-                     "Tab state is session-only — refresh resets to Start",
+                     "Tab state is session-only — refresh resets to Home",
                      "1. Click Trust tab. 2. Hard refresh the page (Cmd-R / F5).",
-                     "After refresh, the URL stays '/', Start tab is selected again. No ?tab= query string is added or required.",
+                     "After refresh, the URL stays '/', Home tab is selected again. No ?tab= query string is added or required.",
                      "P1"),
                     ("LAND-05",
                      "Trust tab links route to the full Trust hub, Privacy, and Changelog",
@@ -745,12 +745,12 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>Refreshed test plan (v1.2) reflecting today's two changes:</p>
+            <p>Refreshed test plan (v1.3) reflects the latest landing rework:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>Bug fixed</b> — post-signup now lands on the landing page, not the workspace. Added <b>ONB-05</b> to lock the regression down.</li>
-              <li><b>Landing redesigned</b> as a 5-tab strip (Start · Templates · Gallery · Learn · Trust) below the hero. Header + hero + footer all unchanged. Added a new <b>Landing tab bar</b> area with <b>LAND-01 → LAND-05</b>.</li>
-              <li><b>ONB-01</b> updated — the Beginner Starters grid now lives inside the Start tab.</li>
-              <li>Older v1.1 changes retained: <b>ONB-04</b> workspace-tips toast, <b>PRIM-02a/2b</b> Inspector vs face-handle editing.</li>
+              <li>The hero block (anvil image, headline, CTAs, stats) now lives in its own <b>Home tab</b>, not pinned above the tabs. Default tab on load is <b>Home</b>.</li>
+              <li>Tab bar now sits directly under the site header — 6 tabs in order: <b>Home · Start · Templates · Gallery · Learn · Trust</b>.</li>
+              <li><b>LAND-01 through LAND-05</b> updated to lock down the 6-tab structure and the Home default.</li>
+              <li>Carried over from v1.2: <b>ONB-05</b> post-signup redirect, <b>ONB-04</b> workspace-tips toast, <b>ONB-01</b> Beginner Starters grid inside Start tab, <b>PRIM-02a/2b</b> Inspector vs face-handle editing.</li>
             </ul>
             <p>Same overall coverage shape — primitives, Booleans, importers, RANSAC, AI/voice, gallery, Learn, Trust, slicer handoff, SEO, cross-cutting quality bars.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
