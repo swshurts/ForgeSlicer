@@ -55,7 +55,7 @@ logger = logging.getLogger("forgeslicer.test_plan")
 # Structured as (Section Heading, [(Area, [test case rows])]) where a test
 # case row is (ID, Description, Steps, Expected, Priority).
 
-PLAN_VERSION = "1.6"
+PLAN_VERSION = "1.7"
 PLAN_DATE = datetime.now(timezone.utc).strftime("%B %d, %Y")
 APP_URL = os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
@@ -317,15 +317,20 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                      "1. Click mic. 2. Speak the command.",
                      "Whisper transcribes; GPT-5.2 returns JSON intent; cube of side 20 mm appears.",
                      "P0"),
+                    ("AI-01b",
+                     "Voice 'stop' / exit phrase reliably leaves go-mode on first try (Whisper artifacts tolerated)",
+                     "1. Enter voice go-mode. 2. Try each of these in turn: 'stop' · 'Stop please' · 'Okay stop' · 'Stop now' · 'Just stop' · 'I'm done' · 'cancel'. Pause and try 'stop the slicer' (must NOT exit).",
+                     "Each exit phrase ends go-mode within one utterance — no need to repeat. The non-exit phrase 'stop the slicer' is forwarded to runCommand() as a normal command (not treated as exit). Regression: the prior strict regex required exact-match utterances, so Whisper's hallucinated filler prefixes/suffixes caused 'stop' to be ignored several times before catching.",
+                     "P0"),
                     ("AI-02",
                      "Meshy AI: text → 3D",
                      "1. AI panel → 'Text to 3D'. 2. 'low-poly rocket'. 3. Submit.",
                      "Job polls Meshy; result mesh imports into the scene when ready; failure surfaces friendly toast.",
                      "P0"),
                     ("AI-03",
-                     "Meshy AI: image → 3D",
-                     "1. Upload an image to the AI panel. 2. Generate.",
-                     "Returns watertight mesh; preview thumbnail accurate.",
+                     "Meshy AI: image → 3D mesh (NOT a lithophane / heightmap)",
+                     "1. Open the AI tab in the Left Panel. 2. Click the orange 'AI 3D Mesh — Meshy.ai' button (icon: Sparkles). 3. Switch to the 'Image' sub-tab in the dialog. 4. Drop an image, generate. NOTE: do NOT click the teal 'Lithophane / 2.5D Relief' button below — that one produces a flat heightmap by design and is meant for lithophanes, signs, keychains.",
+                     "After Meshy completes, a real watertight 3D mesh imports into the scene (not a flat plate). The two AI tab buttons are visually distinct: orange Sparkles for Meshy 3D, teal ImageDown for Lithophane.",
                      "P1"),
                     ("AI-04",
                      "Meshy attribution copy",
@@ -338,9 +343,9 @@ SECTIONS: list[tuple[str, list[tuple[str, list[tuple[str, str, str, str, str]]]]
                 "Text on Surface",
                 [
                     ("TXT-01",
-                     "Text-on-surface MVP",
-                     "1. Select a flat face. 2. Tools → Text on surface. 3. Type 'Hi'. 4. Apply.",
-                     "Helvetiker text mesh extrudes onto the face; aligned to face normal; Boolean-union onto host.",
+                     "Text-on-surface MVP — every shipped font renders real glyphs (no placeholder slab)",
+                     "1. Workspace → 3D tab → 'Text' primitive. 2. With the text selected, open the Inspector's font dropdown and pick each of: Helvetiker Regular, Helvetiker Bold, Optimer Serif. 3. After each pick, wait 2 s.",
+                     "Each selection renders the corresponding typeface as a real extruded mesh — NOT a flat slab. While a newly-requested font is loading, the text temporarily renders in the default Helvetiker Regular (fallback) and swaps to the requested font once the typeface.json arrives. Browser console shows a one-line `[textGeometry] font 'X' loaded in Nms` breadcrumb on success or a `FAILED to load` warning on error (which then auto-purges the cache so a retry will re-fetch).",
                      "P0"),
                 ],
             ),
@@ -931,12 +936,14 @@ def send_email(pdf_bytes: bytes, to_email: str) -> str:
           </td></tr>
           <tr><td style="padding:16px 32px 0 32px;color:#cbd5e1;font-size:15px;line-height:1.55;">
             <p>Hey Steve,</p>
-            <p>v1.6 patches today's sign-in timeout bug:</p>
+            <p>v1.7 patches today's three findings:</p>
             <ul style="margin:0 0 12px 18px;padding:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-              <li><b>Bug fixed</b> — Google sign-in timing out at 45 s. Root cause: backend retry budget (4 × 15 s = 60 s worst case) could exceed the frontend axios ceiling (45 s) when upstream was slow, so axios cancelled the in-flight POST while the backend was still mid-retry. Tightened the per-attempt httpx timeout from 15 s → 7 s, so backend worst case is now 33.4 s — comfortably under the frontend's 45 s. Also added per-attempt timing logs so we can diagnose it instantly if it ever recurs.</li>
-              <li>New <b>AUTH-05</b> (Google sign-in must complete inside 45 s; network tab MUST NOT show '(canceled)' on POST /api/auth/session) and <b>AUTH-06</b> (backend logs per-attempt timing).</li>
+              <li><b>AI-01 — Voice "stop" reliability.</b> The exit-phrase regex now strips Whisper's typical hallucinated prefixes ("okay", "uh", "just", "please") and suffixes ("thank you", "you") and accepts natural variants ("Stop now", "Stop please", "I'm done", "Just stop"). Verified with 22-case unit harness. Locked down as new <b>AI-01b</b> (P0). Long-form commands like "stop the slicer" still pass through to runCommand() — no false positives.</li>
+              <li><b>AI-03 — Lithophane confusion.</b> The two AI-tab buttons that looked identical (orange Sparkles) are now visually distinct: <b>orange Sparkles → AI 3D Mesh (Meshy.ai)</b>, <b>teal ImageDown → Lithophane / 2.5D Relief</b>. Labels and tooltips state the difference explicitly. <b>AI-03</b> test case rewritten with the new naming + a sharp warning not to click the lithophane button when expecting a 3D mesh.</li>
+              <li><b>TXT-01 — Helvetiker Bold / Optimer fell through to the placeholder slab.</b> Hardened the font loader: requested font that hasn't loaded yet now temporarily renders with the default font (Helvetiker Regular) instead of a confusing slab, and swaps to the real face once the typeface.json arrives. Failed loads now auto-purge from the cache so a retry actually retries. Added console breadcrumbs (`[textGeometry] font 'X' loaded in Nms`) so the next time a font misbehaves we can see exactly what happened. <b>TXT-01</b> rewritten to verify all three shipped fonts render real glyphs.</li>
             </ul>
-            <p>Carried over from v1.5: the Lexicon appendix, the 6-tab landing (Home default), the post-signup redirect fix (ONB-05), LAND-06 'Try an Example Project' tab switch, the workspace-tips toast (ONB-04), PRIM-02a/2b Inspector vs face-handle editing.</p>
+            <p>About font expansion (your "is that the best we can do?" question): noted as option 4d — stay at 3 for now, fix the bug first. When you're ready, I have curated 10–15 popular faces + an upload-your-own .ttf path lined up.</p>
+            <p>Carried over from v1.6: the Lexicon appendix, 6-tab landing (Home default), AUTH-05/06 sign-in timeout fix, LAND-06 'Try an Example Project' tab switch, ONB-05 post-signup redirect, ONB-04 tips toast, PRIM-02a/2b Inspector vs face-handle editing.</p>
             <p>Test environment: <a href="{APP_URL}" style="color:#fb923c;">{APP_URL}</a>.</p>
             <p style="color:#94a3b8;font-size:12px;">Version {PLAN_VERSION} · Generated {PLAN_DATE}</p>
           </td></tr>

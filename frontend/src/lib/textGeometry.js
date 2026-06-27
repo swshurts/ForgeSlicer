@@ -84,26 +84,58 @@ export function onFontLoaded(fn) {
 }
 
 /** Returns the resolved Font for `family` if loaded; otherwise null
- *  and triggers an async load in the background. */
+ *  and triggers an async load in the background.
+ *
+ *  iter-108.x — Resilience pass after Steve hit a case where Helvetiker
+ *  Bold and Optimer downloaded successfully (200 OK, valid JSON) but
+ *  the placeholder slab never swapped to real glyphs. Two robustness
+ *  changes:
+ *   1. On FontLoader error, REMOVE the family from `_fontCache` so a
+ *      future call retries instead of being stuck on the rejected
+ *      Promise.
+ *   2. Always notify listeners on success AND failure so the Viewport
+ *      can rebuild the geometry (real font if loaded, default-font
+ *      fallback if failed — never the placeholder slab).
+ *   3. Console.info/warn breadcrumbs so a tester can spot which family
+ *      is mis-behaving from the browser console without us shipping
+ *      a debug build.
+ */
 export function getFontSync(family) {
     if (_fontReady.has(family)) return _fontReady.get(family);
     if (!_fontCache.has(family)) {
         const loader = new FontLoader();
         const url = `/fonts/${family}.typeface.json`;
+        const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
         const p = new Promise((resolve, reject) => {
             loader.load(
                 url,
                 (font) => {
                     _fontReady.set(family, font);
+                    const dt = ((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0) | 0;
+                    console.info(`[textGeometry] font '${family}' loaded in ${dt}ms; notifying ${_fontListeners.size} listener(s)`);
                     _fontListeners.forEach((fn) => {
                         try { fn(family); } catch (_) { /* noop */ }
                     });
                     resolve(font);
                 },
                 undefined,
-                (err) => reject(err),
+                (err) => {
+                    // Wipe the cache entry so the next call can retry.
+                    _fontCache.delete(family);
+                    console.warn(`[textGeometry] font '${family}' FAILED to load`, err);
+                    // Still notify listeners — Viewport will re-render and
+                    // buildTextGeometry's default-font fallback will kick in
+                    // so the user sees real text instead of a frozen slab.
+                    _fontListeners.forEach((fn) => {
+                        try { fn(family); } catch (_) { /* noop */ }
+                    });
+                    reject(err);
+                },
             );
         });
+        // Swallow unhandled rejections so the browser doesn't spam them
+        // (we already log a warn above; downstream code does not await).
+        p.catch(() => {});
         _fontCache.set(family, p);
     }
     return null;
@@ -126,12 +158,22 @@ export function buildTextGeometry(obj) {
     const d = { ...TEXT_DEFAULTS, ...(obj?.dims || {}) };
     const text = String(d.text ?? "").length ? String(d.text) : " ";
 
-    const font = getFontSync(d.font || TEXT_DEFAULTS.font);
+    const requested = d.font || TEXT_DEFAULTS.font;
+    let font = getFontSync(requested);
+    // iter-108.x — If the requested font isn't loaded yet, fall back to
+    // the default font (which Workspace.jsx preloads at boot, so it's
+    // virtually always ready). The user sees real glyphs immediately
+    // instead of a confusing slab, and the Viewport's onFontLoaded
+    // listener swaps in the requested font the moment it arrives. The
+    // legacy BoxGeometry placeholder is reserved for the genuinely
+    // unlucky first-paint where even the default font hasn't loaded.
+    if (!font && requested !== TEXT_DEFAULTS.font) {
+        font = getFontSync(TEXT_DEFAULTS.font);
+    }
     if (!font) {
-        // Placeholder — small slab so booleans don't go off the rails
-        // before the font arrives. Once the font loads, the
-        // onFontLoaded callback bumps the geom-cache key in Viewport
-        // and this rebuilds with the real glyphs.
+        // Last-resort placeholder — small slab so booleans don't go off
+        // the rails before any font arrives. Subsequent renders will
+        // pick up the real font via the onFontLoaded mechanism.
         const ph = new THREE.BoxGeometry(d.size * Math.max(text.length, 1) * 0.6, d.size, d.depth);
         ph.translate(0, 0, d.depth / 2);
         return ph;
