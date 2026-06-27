@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ForgeSlicer sitemap. Lists every public, SEO-relevant URL the
+     site exposes. Crawl frequency hints reflect how often each
+     surface actually changes:
+       - Homepage + SEO landings: monthly (copy is stable)
+       - Learn lessons: monthly (educational content, low churn)
+       - Workspace + Gallery: weekly (heavy SPA, but indexable)
+     priority is left at the defaults that match each tier's value
+     for organic discovery. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+    <!-- ── Top-level ─────────────────────────────────────────── -->
+    <url>
+        <loc>https://forgeslicer.com/</loc>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>https://forgeslicer.com/workspace</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>
+    </url>
+    <url>
+        <loc>https://forgeslicer.com/gallery</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- ── Learn section (8 lessons) ─────────────────────────── -->
+    <url>
+        <loc>https://forgeslicer.com/learn</loc>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url><loc>https://forgeslicer.com/learn/cad-basics</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/file-types</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/boolean-operations</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/designing-printable-parts</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/wall-thickness</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/tolerances</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/common-mistakes</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+    <url><loc>https://forgeslicer.com/learn/exporting-to-slicers</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+
+    <!-- ── Dedicated SEO landing pages (8 routes) ────────────── -->
+    <url><loc>https://forgeslicer.com/tinkercad-alternative</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/edit-stl-online</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/ai-3d-design</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/browser-cad</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/3d-printing-cad</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/orcaslicer-workflow</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/bambu-studio-workflow</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+    <url><loc>https://forgeslicer.com/prusaslicer-workflow</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+
+</urlset>

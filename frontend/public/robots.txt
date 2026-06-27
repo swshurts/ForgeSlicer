@@ -1,0 +1,13 @@
+# ForgeSlicer robots policy.
+# All crawlers welcome. /workspace and /gallery are heavy SPA routes
+# but still indexable — server-rendered tags + meta on /learn and
+# the eight /SEO landing pages give Google useful snippets.
+
+User-agent: *
+Allow: /
+
+# Don't index transient deep-link state.
+Disallow: /workspace?
+Disallow: /gallery?preview=
+
+Sitemap: https://forgeslicer.com/sitemap.xml

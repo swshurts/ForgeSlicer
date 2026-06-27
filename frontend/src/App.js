@@ -18,6 +18,8 @@ import BillingSuccessPage from "@/components/BillingSuccessPage";
 import SsoAccept from "@/components/SsoAccept";
 import Handoff from "@/components/Handoff";
 import Learn from "@/components/Learn";
+import SEOLanding from "@/components/SEOLanding";
+import { SEO_LANDING_SLUGS } from "@/seo/landings";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -51,6 +53,16 @@ function AppRouter() {
       <Route path="/gallery" element={<Gallery />} />
       <Route path="/learn" element={<Learn />} />
       <Route path="/learn/:slug" element={<Learn />} />
+      {/* ─── Dedicated SEO landing pages ─────────────────────────
+          Eight focused pages targeting high-intent search terms.
+          All eight share the SEOLanding component, which reads its
+          content from src/seo/landings.js by the :slug param. The
+          /:slug-style routes are explicit (not a wildcard) so the
+          router doesn't accidentally swallow future top-level URLs
+          like /pricing or /blog. */}
+      {SEO_LANDING_SLUGS.map((slug) => (
+        <Route key={slug} path={`/${slug}`} element={<SEOLanding routeSlug={slug} />} />
+      ))}
       <Route path="/signin" element={<SignIn />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
