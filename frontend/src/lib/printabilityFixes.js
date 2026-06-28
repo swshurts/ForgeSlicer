@@ -194,7 +194,15 @@ export async function runFix(finding, fixId) {
                 toast.error("This part has zero extent — can't scale.");
                 return;
             }
-            const factor = Math.max(1, SAFE_PRINT_MIN_MM / shortest);
+            if (shortest >= SAFE_PRINT_MIN_MM) {
+                // No-op — already above the safe minimum. Surface the
+                // finding by silencing it so the user isn't pestered
+                // again, instead of pretending we did work.
+                usePrintability.getState().silence(finding.id);
+                toast.info(`Already ${shortest.toFixed(2)} mm — above the ${SAFE_PRINT_MIN_MM} mm safe minimum.`);
+                return;
+            }
+            const factor = SAFE_PRINT_MIN_MM / shortest;
             const sc = obj.scale || [1, 1, 1];
             useScene.getState().updateObject(obj.id, {
                 scale: [sc[0] * factor, sc[1] * factor, sc[2] * factor],

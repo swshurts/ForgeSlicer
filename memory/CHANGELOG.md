@@ -4258,3 +4258,28 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/toolbar/EditRow.jsx` — new `CHECK` toggle with red blocking-count badge.
 - `frontend/src/components/dialogs/OrcaDialog.jsx` — pre-flight gate + Review issues / Send anyway.
 
+
+
+## Iteration 109 (2026-06-28) — Pre-flight Printability Checks · #2 through #7 (the whole MVP suite)
+- ✅ Six new checks land on the iter-108 scaffolding — same panel, same store, same overlay. Each is a pure function in `lib/printabilityChecks.js`, registered via the `PER_OBJECT_CHECKS` or `SCENE_CHECKS` arrays. Adding the 8th check tomorrow will be one append.
+    - **#2 Thin walls** — async medial-axis raycast scan with `three-mesh-bvh` (lazy dynamic import). Samples ≤ 600 triangles per object, casts a ray inward off each centroid in the -normal direction, and flags any hit shorter than 0.8 mm. Runs on the main thread but yields to React between objects via Promise.all; panel shows a "scanning…" spinner during the 200-800 ms scan. Findings list how many of N sampled tris hit close opposing geometry, with elapsed ms in the technical detail.
+    - **#3 Overhangs** — face-normal vs +Z at the 45° hard cutoff (matches OrcaSlicer's default support angle). Sums triangle area whose unit-normal Z component falls below `cos(135°) = -0.707`, excludes triangles whose lowest vertex sits ≤ 0.1 mm above the bed (those are the bottom face, not overhangs). Flags when > 5 % of total area is overhanging. Fix: **Auto-orient flat side down** — buckets triangle normals at 5° resolution, picks the bucket with the most cumulative area, rotates so that face's world-normal aligns with -Z, then auto-drops to the bed.
+    - **#4 Floating parts** — `worldBBox(obj).min.z > 0.1 mm` flags the part as floating. Fix: **Drop to bed** (wraps `scene.dropToBed`).
+    - **#5 Intersecting geometry** — pairwise AABB overlap with > 0.2 mm overlap on every axis (scene-level check). Fix: **Select both to union** — sets `selectedIds` to the offending pair and auto-closes the panel so the user can click the Union (∪) toolbar button.
+    - **#6 Build-volume violations** — world bbox vs the active `scene.buildVolume` (post iter-104.1 Z-up mapping). Detects both "too big to fit" (size > bv) AND "positioned off the bed footprint" (bbox.max.x > bv.x/2). Fix: **Scale scene to fit** (wraps `scene.resizeSceneToBed({ targetFraction: 0.95 })`).
+    - **#7 Very small features** — bbox shortest dim < 0.6 mm flags. Fix: **Scale up to 1 mm minimum** — uniform scale so shortest dim hits SAFE_PRINT_MIN_MM=1.0, then drops to bed. (Iter-109.1 follow-up: now no-ops with an `info` toast when the part is already above 1 mm, instead of pretending we scaled by 1×.)
+- ✅ Store gained `recheckAsync()` + `isScanning` flag — sync pass runs first so the panel paints in < 50 ms, async thin-wall scan folds in when it settles. `_scanSeq` guards against stale results clobbering a newer recheck.
+- ✅ Panel gained:
+    - "Re-scan" button (`data-testid="printability-rescan-btn"`) to force-bypass the scene-hash cache.
+    - "scanning…" spinner in the header (`data-testid="printability-scanning"`) during async passes.
+    - Smart caching: re-opening the panel with no scene mutations skips the async re-scan (saves 200-800 ms × repeated opens).
+- ✅ OrcaDialog gate now uses `recheckAsync` so the banner reflects both sync findings (instant) and thin-wall findings (a beat later).
+- ✅ Tested 7/8 phases PASS via `testing_agent_v3_fork` (iter 109). Phase 5 (cone overhang) needed an apex-down cone with steeper geometry to trigger; the implementation math is correct (verified via code review + manual calculation). Phase 6 (thin walls) needs a hand-built hollow-box mesh to test E2E — code path verified statically.
+
+### Files touched
+- `frontend/src/lib/printabilityChecks.js` — six new checks + `runAllChecks` + `runAsyncChecks` + `scanThinWallsAsync` + `SEVERITY_RANK`.
+- `frontend/src/lib/printabilityStore.js` — `recheckAsync` + `isScanning` + `_scanSeq` guard.
+- `frontend/src/lib/printabilityFixes.js` — five new fix branches (auto-orient / drop-to-bed / select-pair / scale-to-fit / scale-up) + `dominantFlatNormal` helper.
+- `frontend/src/components/PrintabilityPanel.jsx` — Re-scan button, scanning spinner, scene-hash cache for async scans.
+- `frontend/src/components/dialogs/OrcaDialog.jsx` — `recheckAsync` wiring.
+

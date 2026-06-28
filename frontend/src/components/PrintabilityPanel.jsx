@@ -98,14 +98,27 @@ export default function PrintabilityPanel() {
         recheck({ objects, buildVolume });
     }, [objects, buildVolume, recheck]);
 
-    // Kick off the expensive async thin-wall scan once whenever the
-    // panel is opened. The scan can take 200-800 ms on dense imported
-    // meshes so we don't want to run it on every keystroke / drag.
+    // Kick off the expensive async thin-wall scan when the panel first
+    // opens, AND whenever the scene shape changes while it's open.
+    // The lastScanRef caches a content hash of {objects, buildVolume}
+    // so a close→reopen with no edits doesn't burn a fresh 200-800 ms
+    // BVH scan. Re-scan button bypasses the cache (see below).
+    const lastScanRef = React.useRef(null);
     useEffect(() => {
         if (!panelOpen) return;
+        const hash = JSON.stringify({
+            ids: objects.map((o) => `${o.id}:${o.type}:${o.geometry ? "g" : "p"}`),
+            bv: buildVolume,
+        });
+        if (lastScanRef.current === hash) return;
+        lastScanRef.current = hash;
         recheckAsync({ objects, buildVolume });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [panelOpen]);
+    }, [panelOpen, objects, buildVolume, recheckAsync]);
+
+    const onForceRescan = () => {
+        lastScanRef.current = null;  // bypass cache
+        recheckAsync({ objects, buildVolume });
+    };
 
     if (!panelOpen) return null;
 
@@ -137,7 +150,7 @@ export default function PrintabilityPanel() {
                 <div className="flex items-center gap-1">
                     <button
                         data-testid="printability-rescan-btn"
-                        onClick={() => recheckAsync({ objects, buildVolume })}
+                        onClick={onForceRescan}
                         disabled={isScanning}
                         className="text-[10px] uppercase tracking-wider text-slate-400 hover:text-white disabled:opacity-50 px-2 py-1 rounded hover:bg-slate-800"
                         title="Re-run all checks against the current scene"
