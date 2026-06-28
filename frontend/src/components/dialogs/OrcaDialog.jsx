@@ -53,7 +53,7 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
   // PrintabilityPanel render). `proceedAnyway` is one-shot — re-opening
   // the dialog re-arms the gate.
   const buildVolume = useScene((s) => s.buildVolume);
-  const recheckPrintability = usePrintability((s) => s.recheck);
+  const recheckPrintability = usePrintability((s) => s.recheckAsync);
   const setPrintabilityPanelOpen = usePrintability((s) => s.setPanelOpen);
   const printabilityFindings = usePrintability((s) => s.findings);
   const willFailFindings = printabilityFindings.filter((f) => f.severity === "will-fail");
@@ -61,6 +61,10 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
 
   useEffect(() => {
     if (!open) return;
+    // recheckAsync returns a promise but we don't await — the dialog
+    // re-renders when the store updates `findings`, so the banner
+    // appears as soon as the sync pass finds blocking issues, and
+    // updates again when the thin-wall scan settles.
     recheckPrintability({ objects, buildVolume });
     setProceedAnyway(false);
   }, [open, objects, buildVolume, recheckPrintability]);

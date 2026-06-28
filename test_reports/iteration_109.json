@@ -1,0 +1,32 @@
+{
+  "summary": "Pre-flight Printability Checks iter-109 (Checks #2-#7 + integration regression) tested end-to-end in the live workspace via a seeded session_token. Phase 0 empty-state regression, Phase 1 floating-parts → drop-to-bed, Phase 2 build-volume → scale-to-fit, Phase 3 small-feature → scale-up, Phase 4 intersecting → select-pair (with panel auto-close), Phase 7 toolbar badge count, and Phase 8 OrcaDialog block-banner + disabled download + Review-issues button — ALL PASS. Phase 5 (overhangs on a primitive cone) did NOT produce a finding because ForgeSlicer's primitive 'cone' renders apex-UP (slant normals tilt outward+up, no downward triangles) — the test spec was geometrically incorrect; the implementation is right. Phase 6 (async thin-wall scan) was skipped per spec — needs a hand-built hollow-box imported STL, which is non-trivial from a black-box harness; thin-wall code path was code-reviewed instead.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Workspace top bar", "issues": ["Stale 'voice-quota exceeded' toast (left-over from a prior session) overlapped the top of the Printability panel and the Send-to-OrcaSlicer button area; pre-existing UX clutter, NOT introduced by iter-109."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_109.json"],
+  "action_items": [
+    "Spec/QA only: re-issuing the Phase 5 manual recipe should use a cone with rotation [180,0,0] (apex pointing DOWN) — only then are the slant normals downward-facing. Today's implementation correctly returns no finding for an apex-up cone because its slant has nz>0.",
+    "Phase 6 thin-wall async check has no easy black-box trigger; consider adding a /admin or window helper to spawn a hollow-box mesh for testing, or a tiny .stl fixture importable via drag-and-drop in the workspace.",
+    "Per iter-108 follow-up still open: `printabilityStore.js` previously had a dead `blockingCount` getter — confirm it's gone in this iteration's diff."
+  ],
+  "critical_code_review_comments": [
+    "printabilityChecks.js `checkOverhangs` uses `cosLimit = cos(180-45°) = -0.707` and compares `nz < cosLimit`. That correctly captures triangles whose outward unit normals point at least 45° below horizontal. Good.",
+    "printabilityFixes.js `scale-up` computes `factor = Math.max(1, SAFE_PRINT_MIN_MM / shortest)`. For shortest≥1mm the factor is exactly 1 (no-op) yet the toast still claims 'Scaled up by 1.00× to 1 mm minimum'. Add an early-return + 'Already above 1 mm' toast for clarity.",
+    "printabilityStore.js `recheckAsync` runs sync THEN async, but the panel `useEffect` calls `recheckAsync` whenever `panelOpen` flips true. This DOES re-trigger an async scan on every reopen — contradicting the perf note in the spec. If preserving cached results matters, gate the effect on `!hasScannedThisScene` flag or last-scene-hash.",
+    "PrintabilityPanel.jsx `useEffect([panelOpen])` carries an `eslint-disable react-hooks/exhaustive-deps` to silence stale-closure warnings on `objects/buildVolume/recheckAsync`. Acceptable for now but means the scan uses the *initial* scene snapshot when the panel opens — newer mutations between sync and async passes are guarded by `_scanSeq` so this is safe.",
+    "OrcaDialog gate auto-recheck is correctly wired; banner appears within the spec's ~500ms budget on the test scene."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "7/8 phases verified PASS, 1 phase (overhangs/cone) is a spec error, 1 phase (thin-walls) skipped per request"},
+  "test_credentials": "Re-seeded fresh session_token=st_test_1782618980396 in test_database (user: test.printability.<ts>@example.com) — prior st_test_nfudltnz7mcm7552 returned 401, has expired. Cookie domain orca-cad-slice.preview.emergentagent.com.",
+  "seed_data_creation": "All test geometry was created in-browser via window.__forgeStore.getState().addPrimitive('cube'|'cone',...) + updateObject({dims, position, scale, rotation}) and cleaned up with removeObject. No persistent scene data left.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "1) window.__forgeStore is exposed in /workspace ONLY (not on the marketing /). 2) Store API: addPrimitive(type,modifier)→id, updateObject(id, patch), removeObject(id), dropToBed(id), resizeSceneToBed({targetFraction}), clearScene(). 3) Auto-drop-on-add can be disabled via setAutoDropNew(false). 4) For Phase 5, use rotation:[180,0,0] on a cone to force apex-down so overhangs trigger. 5) Testid patterns: printability-finding-{checkId}-{firstAffectedObjId}; printability-fix-{fixId}-{finding.id}. Note that finding.id for intersect is `intersect-${aId}-${bId}` so the fix testid becomes `printability-fix-select-pair-intersect-{aId}-{bId}`. 6) Re-scan testid is printability-rescan-btn; OrcaDialog testids: orca-printability-block, orca-download-btn, orca-printability-review-btn; toolbar badge: printability-toggle-badge.",
+  "rca of the issue": "Phase 5 'no overhang finding on primitive cone' — RCA: ConeGeometry has apex at +Y → after geometry.js rotateX(π/2) the apex is +Z (point-up). Slant outward normals therefore have nz ≈ +sin(atan(r/h)) > 0, never below cos(180-45°)=-0.707. The overhang check (correctly) returns null. The test spec's claim that 'point-up cone produces ~100% downward-facing triangles' is geometrically inverted; a point-DOWN cone (rotation [180,0,0]) is what would trigger this check. Implementation is correct, spec needs to be updated."
+}
