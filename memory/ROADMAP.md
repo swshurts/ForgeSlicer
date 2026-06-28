@@ -9,7 +9,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 ## 🔴 P0 — Blocking
 *(none open as of 2026-05-30 — iter 70 cleared rc -17, iter 71 cleared Cloudflare 524 via async-job pattern)*
 
-- **RANSAC Phase 4 & 5 — Replace-with-Primitives** ~~(iter-105.32, queued 2026-06-27)~~ [PARTIALLY DONE — iter 110 shipped Phase 4 'Replace with primitives' button]. Remaining Phase 5: a sensitivity slider on `ReverseEngineerDialog.jsx` so the user can re-trigger RANSAC with a different eps_frac value if the default detection misses a primitive. Touches `dialogs/ReverseEngineerDialog.jsx` and the `eps_frac` query param of `/api/mesh/segment`.
+- **RANSAC Phase 4 & 5 — Replace-with-Primitives** ~~(iter-105.32, queued 2026-06-27)~~ [DONE — iter 110 shipped Phase 4 'Replace with primitives', iter 111 shipped Phase 5 sensitivity slider]. The ReverseEngineerDialog now has a live ε slider (0.05% - 2.0% of bbox-diagonal, default 0.2%) and a "Re-run with ε = N%" button that re-segments at the chosen tolerance.
 
 ## 🟡 P1 — Next features
 *(P1 cleared 2026-05-31 — iter 77 shipped cancel-slice, per-printer temps, and the bed-axis gizmo.)*

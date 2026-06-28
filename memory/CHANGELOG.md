@@ -4299,3 +4299,18 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — exported `primitivesToSceneObjects(primitives)` helper, added `eulerToAlignZ(axis)` math + `bboxSize(bbox)` helper, wired `onReplaceWithPrimitives` handler and the "Replace with primitives" footer button.
 
 
+
+
+## Iteration 111 (2026-06-28) — Beginner CAD batch · Today (Hole dialog + Tolerance + RANSAC Phase 5 + iPad delete)
+- ✅ **iPad-friendly Delete in Inspector** — added a red Delete button to the 3-column action row (Drop / Lay Flat / Delete). Prompts via `window.confirm()` if the selected object is part of a group, silent for ungrouped objects. data-testid `inspector-delete-btn`.
+- ✅ **Tolerance helper** — new `ToleranceHelper` widget renders only when the selected object is a negative cylinder/cone. Five named fits (Press / Tight / Slip / Running / Loose Clearance) nudge `dims.r` by HALF the named diametral clearance.
+- ✅ **Hole/Countersink dialog** — `HoleDialog.jsx`. Nine metric+imperial presets (M3, M4, M5, M6, M8 / #4, #6, #8, #10) with ISO 7045 / ASME B18.6.3 clearance dims baked in. Countersink toggle off → single negative cylinder; on → grouped 2-part countersink. Customise disclosure for power-user overrides.
+- ✅ **RANSAC Phase 5 — sensitivity slider** — live ε slider (0.05% - 2.0%, default 0.2%) + "Re-run with ε = N%" button; pending vs committed state avoids hammering the backend.
+- ✅ Tested 10/10 PASS via `testing_agent_v3_fork` (iter 111).
+
+### Files touched
+- `frontend/src/components/RightPanel.jsx` — 3-button action row + `ToleranceHelper`.
+- `frontend/src/components/dialogs/HoleDialog.jsx` — NEW.
+- `frontend/src/components/LeftPanel.jsx` — `HoleButton` + dialog mount.
+- `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — sensitivity slider + `runScan` helper.
+
