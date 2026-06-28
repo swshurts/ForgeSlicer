@@ -4314,3 +4314,29 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/LeftPanel.jsx` — `HoleButton` + dialog mount.
 - `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — sensitivity slider + `runScan` helper.
 
+
+## Iteration 111.1 (2026-06-28) — RANSAC Phase 4 bug-fix
+User reported: imported an STL of a corner-riser bracket, RANSAC detected 9 planes, 0 cylinders, 0 spheres. Clicking "Replace with primitives" dropped 9 identical "Plane (RE 20×20 mm)" cubes all stacked at the world origin — completely unusable.
+
+### Root cause
+Three bugs in `primitivesToSceneObjects`:
+1. **bbox parser shape mismatch** — the backend returns `bbox: [[xmin,ymin,zmin], [xmax,ymax,zmax]]` (array of two arrays). My code was checking `bbox.min` / `bbox.max` as object properties, which evaluated to undefined, returned null, and fell through to the default 20×20.
+2. **Plane centroid lookup** — planes have NO `params.center` (they have `params.normal` + `params.d`). My code read `p.params?.center` for all primitive types — undefined for planes. The correct field is `p.centroid` at the primitive's TOP level. Same for spheres/cylinders as a fallback.
+3. **No source→world transform applied** — every centroid + bbox + axis was placed in the SOURCE STL coordinate system. The imported scene object may have non-trivial position/rotation/scale; without applying its local→world matrix every replacement primitive landed at the wrong absolute position (typically world origin if drop-to-bed had moved the source up).
+
+### Fix
+- Rewrote `bboxSize` to parse the array form. Returns null on unexpected shapes so the fallback path still works.
+- Plane / sphere / cylinder all now read `p.centroid` as the primary source coordinate (the API guarantees it on every primitive).
+- New `localToWorldMatrix(sourceObj)` helper composes a Three.js Matrix4 from the imported object's position/rotation/scale. Every centroid runs through it via `applyMatrix4`; every axis/normal runs through the rotation-only sibling so unit-vectors stay unit.
+- Plane extents now sorted ascending — the smallest is always the normal-ish axis (inliers lie ON the plane so spread along that axis is tiny), so we use the top two as in-plane width × length and floor the thin axis at 0.5 mm so the resulting slab is visible.
+- Added an "all-planes" honest warning in the dialog footer hint when every detected primitive is a plane — the user sees the warning BEFORE clicking Replace, not after.
+
+### Refactor
+Extracted the pure conversion math to `/app/frontend/src/lib/ransacReplace.js` so it can be unit-tested without dragging in the React tree (CRA Jest can't transform the axios ESM in `api.js` which the dialog transitively imports). Added a unit test suite at `/app/frontend/src/__tests__/reverseEngineerPhase4.test.js` with 5 tests covering plane/sphere/cylinder parsing, the source→world transform application, and the malformed-bbox fallback. All 5 pass.
+
+### Files touched
+- `frontend/src/lib/ransacReplace.js` — NEW. Self-contained pure helpers (no api / store / lib imports beyond `three`).
+- `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — removed local helpers, imports from `ransacReplace.js`, added the all-planes hint banner, passes `obj` into `primitivesToSceneObjects`.
+- `frontend/src/__tests__/reverseEngineerPhase4.test.js` — NEW. 5 regression tests.
+
+
