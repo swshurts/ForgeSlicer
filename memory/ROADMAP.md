@@ -9,7 +9,7 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 ## 🔴 P0 — Blocking
 *(none open as of 2026-05-30 — iter 70 cleared rc -17, iter 71 cleared Cloudflare 524 via async-job pattern)*
 
-- **RANSAC Phase 4 & 5 — Replace-with-Primitives** ~~(iter-105.32, queued 2026-06-27)~~ [DONE — iter 110 shipped Phase 4 'Replace with primitives', iter 111 shipped Phase 5 sensitivity slider]. The ReverseEngineerDialog now has a live ε slider (0.05% - 2.0% of bbox-diagonal, default 0.2%) and a "Re-run with ε = N%" button that re-segments at the chosen tolerance.
+- ~~**RANSAC Phase 4 & 5 — Replace-with-Primitives**~~ **REMOVED iter-111.4.** The RANSAC primitive detection (planes / cylinders / spheres) shipped in iter-105 / iter-110 / iter-111 produced segmentation results that weren't actionable enough to justify the UI — planes don't form usable solids on overlay, mechanical-part detection rates were too low, and the dialog confused beginners. Frontend dialog + helper modules deleted; backend `/api/mesh/segment` route + scripts decommissioned. The non-manifold repair path stays — it's the part of "Reverse Engineer" that actually helps users.
 
 ## 🟡 P1 — Next features
 *(P1 cleared 2026-05-31 — iter 77 shipped cancel-slice, per-printer temps, and the bed-axis gizmo.)*

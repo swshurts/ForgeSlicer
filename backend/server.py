@@ -31,7 +31,6 @@ from routes.user_printers import build_user_printers_router
 from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
 from routes.mesh_repair import build_mesh_repair_router
-from routes.mesh_segment import build_mesh_segment_router
 from routes.exports import build_exports_router
 from routes.release import build_release_router
 from routes.shared_printers import build_shared_printers_router, build_publish_router, build_shared_printer_admin_router
@@ -546,12 +545,6 @@ api_router.include_router(build_litho_inbox_router(db, get_current_user))
 # the Repair Mesh button on the Imported Inspector to rescue
 # non-manifold AI / photogrammetry meshes before Boolean ops.
 api_router.include_router(build_mesh_repair_router(get_current_user))
-
-# RANSAC-based primitive segmentation for the "Reverse Engineer" flow.
-# /api/mesh/segment accepts an STL and returns a list of detected
-# geometric primitives (planes today; cylinders/spheres/cones to follow)
-# that the frontend can offer to swap in for the static triangle mesh.
-api_router.include_router(build_mesh_segment_router(get_current_user))
 
 # Slicer-handoff staging. /api/exports/handoff lets the workspace push
 # the just-built 3MF to a short-lived public URL so the desktop slicer

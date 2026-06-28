@@ -4381,3 +4381,31 @@ The overlay was indiscriminate — it dropped every detected primitive on top of
 - `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — rewrote `onReplaceWithPrimitives`; dynamic-imports `computeRotatedBBox` + `buildPrimitive` for the planes-only fallback to keep the dialog's module graph small.
 
 
+
+## Iteration 111.4 (2026-06-28) — Reverse Engineer decommissioned
+User feedback: "The reverse engineering button is not returning any useful information. Let's get rid of it and proceed from there."
+
+After three iteration attempts (Replace → Overlay → Planes-only-skip), the RANSAC detection still couldn't reconstruct anything more useful than the source mesh itself. The right call was to remove the feature rather than keep iterating on a low-ROI surface.
+
+### Removed
+- **Frontend**:
+    - `/app/frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — deleted.
+    - `/app/frontend/src/lib/ransacReplace.js` — deleted (pure helpers).
+    - `/app/frontend/src/lib/meshSegmentApi.js` — deleted (API client).
+    - `/app/frontend/src/__tests__/reverseEngineerPhase4.test.js` — deleted (5 unit tests).
+    - `RightPanel.jsx` — removed the import, state hook, button + help text, and dialog mount from the Inspector's imported-mesh-tools block. Also removed the now-unused `Sparkles` icon import.
+- **Backend**:
+    - `/app/backend/routes/mesh_segment.py` — deleted.
+    - `/app/backend/tests/test_segment_*.py` — deleted (cube + edges + phase2 + phase3 fixtures).
+    - `backend/server.py` — removed `build_mesh_segment_router` import + registration.
+
+### Verified
+- Backend restarts cleanly with no import errors.
+- Frontend compiles cleanly (only pre-existing escape-entity lint warnings unrelated to this change).
+- Smoke screenshot: Inspector still renders with all other actions (Drop / Lay Flat / Delete / Tolerance helper). Reverse-Engineer button no longer present anywhere in the UI.
+
+### Kept
+- Imported-mesh **Repair** (PyMeshFix) — this is the actually-useful feature in that Inspector block and stays.
+- Pre-flight printability checks (which DO produce actionable findings).
+
+
