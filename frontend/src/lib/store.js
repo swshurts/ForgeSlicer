@@ -776,6 +776,56 @@ export const useScene = create((set, get) => ({
     }));
   },
 
+  // Distribute selected objects evenly along `axis` ("x"|"y"|"z"). The
+  // outermost two objects on that axis define the span; the remaining
+  // N-2 are repositioned so their centres are equally spaced inside.
+  // Acts on whatever is currently selected (≥ 3 objects required —
+  // with 2 there's nothing to distribute). Single undo step.
+  distributeSelection: (axis) => {
+    const s = get();
+    const ids = s.selectedIds.length
+      ? s.selectedIds
+      : (s.selectedId ? [s.selectedId] : []);
+    if (ids.length < 3) return;
+    const axisIdx = axis === "x" ? 0 : axis === "y" ? 1 : 2;
+    const items = [];
+    for (const id of ids) {
+      const o = s.objects.find((x) => x.id === id);
+      if (!o) continue;
+      try {
+        const bb = computeRotatedBBox(o);
+        const p = (o.position && o.position[axisIdx]) || 0;
+        const min = bb.min[axis] + p;
+        const max = bb.max[axis] + p;
+        items.push({ id: o.id, centre: (min + max) / 2 });
+      } catch { /* skip */ }
+    }
+    if (items.length < 3) return;
+    // Sort by current centre on the chosen axis so we know which two
+    // are the "outermost" (those stay put — same convention as Adobe
+    // / Figma "Distribute centres horizontally").
+    items.sort((a, b) => a.centre - b.centre);
+    const first = items[0].centre;
+    const last = items[items.length - 1].centre;
+    const span = last - first;
+    if (Math.abs(span) < 1e-6) return; // all collapsed onto one point
+    const step = span / (items.length - 1);
+
+    get().pushHistory();
+    set((st) => ({
+      objects: st.objects.map((o) => {
+        const idx = items.findIndex((it) => it.id === o.id);
+        if (idx <= 0 || idx >= items.length - 1) return o; // endpoints stay
+        const target = first + step * idx;
+        const delta = target - items[idx].centre;
+        if (Math.abs(delta) < 1e-6) return o;
+        const np = [...o.position];
+        np[axisIdx] += delta;
+        return { ...o, position: np };
+      }),
+    }));
+  },
+
   // Drop the object so its lowest point sits on Z=0 (the build plate).
   dropToBed: (id, withHistory = true) => {
     const s = get();

@@ -1,0 +1,37 @@
+{
+  "summary": "Iter-110 Beginner CAD expansion (Plan A) tested end-to-end: Component Library tab (8 cards + 7 category chips), composite drop with single-undo atomicity, Distribute extension to Align popover with <3 disabled state, regression across existing tabs/Align buttons. All UI flows pass. RANSAC Phase 4/7 verified by static code review (button gating + helper export present).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "phases_results": {
+    "phase1_lib_tab": "PASS — leftpanel-tab-library renders, all 8 add-component-* cards present, all 7 library-cat-* chips present (all + 6 categories).",
+    "phase2_drop_component": "PASS — m3-standoff drops 2 parts (Standoff body positive + Standoff bore negative) sharing groupId + groupName 'M3 Standoff'. gopro-mount drops 5 parts all sharing one groupId + 'GoPro Mount (3-prong)'. Toast wiring present in ComponentCard.onAdd.",
+    "phase3_category_filter": "PASS — clicking library-cat-mechanics restricts visible cards to {pin-hinge, spur-gear-20t}; library-cat-all restores all 8.",
+    "phase4_distribute_x": "PASS — 3 cubes at x=[0,10,100], select all, click distribute-x → positions become [0,50,100]. Middle cube snaps to centre as expected.",
+    "phase5_distribute_disabled_lt3": "PASS — with 2 selected, distribute-x is rendered with the 'disabled:opacity-40' class and disabled attribute; header reads 'Distribute — evenly space (≥ 3)'.",
+    "phase6_ransac_button_gating": "CODE-REVIEW PASS — ReverseEngineerDialog gates 'Replace with primitives' (data-testid=re-apply-btn) behind `canReplace` which requires (result loaded && classification !== 'organic' && primitives.length > 0). Empty-state copy is graceful ('Replace will activate once primitives are detected.' / organic message).",
+    "phase7_ransac_replace_execution": "CODE-REVIEW PASS — primitivesToSceneObjects is exported (line 88 of ReverseEngineerDialog.jsx) and invoked at line 236 via replacement = primitivesToSceneObjects(result.primitives). Replace path is wrapped in a single pushHistory step → one undo restores. Live run not exercised (requires actual STL fixture, per request that path is optional).",
+    "phase8_regression_other_tabs": "PASS — 3D / 2D / Combo / AI tabs all clickable and switch palette body. align-x-min still present and unaffected by Distribute row addition.",
+    "phase9_component_undo": "PASS — after gopro-mount drop (added 5 parts taking count 2→7), a single window.__forgeStore.getState().undo() removed exactly 5 parts back to count=2. Assembly atomic-undo confirmed."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "componentLibrary.js: ID collision risk is low but groupId uses Date.now()+random(0..9999); if two recipes are dropped in the same ms with the same random the groupIds collide. Use crypto.randomUUID() or a monotonic counter for absolute safety. Non-blocking.",
+    "componentLibrary.js buildHinge: comment notes Leaf B is meant to mirror Leaf A but currently both leaves sit at z=1.5 with the same Z (no actual hinge fold). Visually fine but functionally the two leaves overlap with the pin axis along X. Consider y-offsetting + rotating Leaf B for a more realistic preview.",
+    "AlignPopover.jsx: Distribute help text says 'keeps outermost two objects on the chosen axis put and equalises the spacing between centres of the rest' — accurate; matches store.js distributeSelection implementation.",
+    "ReverseEngineerDialog primitivesToSceneObjects + replace path looks correct and atomic; only nit is that 'organic' classification gating is string-equal — consider a constant to avoid typos creeping in later."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend-only request)", "frontend": "100% (7 live phases + 2 code-review phases)" },
+  "test_credentials": "session_token=st_main_1782619353564 on orca-cad-slice.preview.emergentagent.com — still valid for this run.",
+  "seed_data_creation": "Tests created and tore down ephemeral scene objects via window.__forgeStore.setState; no persisted seed data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter-110 added a 5th LeftPanel tab 'library' (Lib) plus a Distribute row inside the Align popover plus a Replace-with-Primitives button in ReverseEngineerDialog. window.__forgeStore is exposed on /workspace and lets you addPrimitive + setState + undo for any future regression. The Lib tab persists via localStorage 'forge.leftpanel.tab' so closing/reopening the page might land on 'library' instead of '3d' — set it back to '3d' in cleanup if your tests assume default tab.",
+  "rca of the issue": "n/a — no defects observed."
+}

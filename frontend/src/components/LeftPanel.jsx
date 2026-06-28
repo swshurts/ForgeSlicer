@@ -6,6 +6,7 @@ import {
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
   Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3, Type, Box as BoxIcon, ImageDown,
+  Boxes,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -14,6 +15,7 @@ import HardwareLibraryDialog from "./dialogs/HardwareLibraryDialog";
 import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
 import DesignChatDialog from "./dialogs/DesignChatDialog";
 import { MessageCircle } from "lucide-react";
+import { COMPONENTS, COMPONENT_CATEGORIES } from "../lib/componentLibrary";
 
 const PRIMS_3D = [
   { type: "cube", label: "Cube", icon: Box },
@@ -382,6 +384,7 @@ export default function LeftPanel() {
     { id: "3d",         label: "3D",    icon: Box,       title: "3D primitives — cube, sphere, cylinder, cone, torus" },
     { id: "2d",         label: "2D",    icon: SquareIcon, title: "2D shapes — extrude in the inspector to give them depth" },
     { id: "composites", label: "Combo", icon: Pill,      title: "Pre-built composite assemblies (slots etc.)" },
+    { id: "library",    label: "Lib",   icon: Boxes,     title: "Component Library — reusable parts (standoffs, brackets, hinges, gears)" },
     { id: "ai",         label: "AI",    icon: Sparkles,  title: "AI generation — text or image to 3D mesh" },
   ];
 
@@ -416,6 +419,7 @@ export default function LeftPanel() {
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} />}
+        {tab === "library" && <TabLibrary />}
         {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} />}
       </div>
 
@@ -531,6 +535,104 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
       </div>
       <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
         Tip — composites are pre-grouped assemblies. Ungroup any of them to fine-tune individual members.
+      </p>
+    </>
+  );
+}
+
+// ---- iter-110 — Component Library tab ----
+// Drops curated parametric components (standoffs, brackets, hinges,
+// gears, …) into the scene as a single grouped assembly. Each recipe
+// lives in `lib/componentLibrary.js`; this tab just renders the
+// registry. Click a card → recipe builds 1-N primitives, all sharing
+// a fresh groupId so the user moves them as one and can ungroup any
+// time to fine-tune individual members.
+function ComponentCard({ component }) {
+  const Icon = component.icon || Boxes;
+  const onAdd = () => {
+    try {
+      const objs = component.build();
+      if (!objs || objs.length === 0) {
+        toast.warning(`"${component.name}" returned no parts.`);
+        return;
+      }
+      // Splice as one atomic op so a single undo removes the entire
+      // assembly. `pushHistory` + `set` mirrors what addPrimitive does
+      // internally; we can't reuse addPrimitive directly because it
+      // builds the descriptor itself — our recipes hand us finished
+      // descriptors already.
+      useScene.getState().pushHistory();
+      useScene.setState((st) => ({
+        objects: [...st.objects, ...objs],
+        selectedId: objs[0].id,
+        selectedIds: objs.map((o) => o.id),
+      }));
+      toast.success(`Dropped "${component.name}" — ${objs.length} part${objs.length === 1 ? "" : "s"}, grouped.`);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("[ComponentLibrary] build failed", e);
+      toast.error(`Couldn't build ${component.name}: ${e.message || e}`);
+    }
+  };
+  return (
+    <button
+      data-testid={`add-component-${component.id}`}
+      onClick={onAdd}
+      title={component.blurb}
+      className="group flex items-start gap-2 p-2.5 rounded-md border border-slate-700 hover:border-emerald-400 hover:bg-emerald-500/5 text-left transition-colors"
+    >
+      <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 bg-slate-800 group-hover:bg-emerald-500/15 text-emerald-400">
+        <Icon size={17} strokeWidth={1.6} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-semibold text-slate-200 truncate">{component.name}</div>
+        <div className="text-[10px] text-slate-500 leading-snug line-clamp-2">{component.blurb}</div>
+      </div>
+    </button>
+  );
+}
+
+function TabLibrary() {
+  const [selectedCat, setSelectedCat] = useState("all");
+  const filtered = selectedCat === "all"
+    ? COMPONENTS
+    : COMPONENTS.filter((c) => c.category === selectedCat);
+  const cats = [{ id: "all", label: "All" }, ...COMPONENT_CATEGORIES];
+
+  return (
+    <>
+      <SectionHeader
+        icon={Boxes}
+        accent="text-emerald-400"
+        label="Component Library"
+        right={<span className="text-[9px] uppercase tracking-wider text-slate-500" title="Click to drop into the scene. Each component is parametric — edit any dimension in the Inspector after.">parametric</span>}
+      />
+      {/* Category filter */}
+      <div className="px-3 pt-2 pb-1 flex flex-wrap gap-1" data-testid="library-cat-filter">
+        {cats.map((c) => (
+          <button
+            key={c.id}
+            data-testid={`library-cat-${c.id}`}
+            onClick={() => setSelectedCat(c.id)}
+            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+              selectedCat === c.id
+                ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
+                : "bg-slate-800/40 border-slate-700 text-slate-400 hover:text-white hover:border-slate-500"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-1.5 p-3" data-testid="library-grid">
+        {filtered.length === 0 ? (
+          <p className="text-[11px] text-slate-500 italic p-2">No components in this category yet.</p>
+        ) : (
+          filtered.map((c) => <ComponentCard key={c.id} component={c} />)
+        )}
+      </div>
+      <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
+        Tip — every dimension stays editable after the drop. Resize, recolour, ungroup, mix &amp; match into custom assemblies.
       </p>
     </>
   );
