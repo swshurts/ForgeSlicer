@@ -28,9 +28,14 @@ const P = (type, overrides = {}) => buildPrimitive(type, overrides.modifier || "
 
 // Group every part of a composite under one id so the user moves /
 // rotates the whole thing as a unit. The user can right-click →
-// Ungroup any time to fine-tune individual members.
+// Ungroup any time to fine-tune individual members. crypto.randomUUID
+// gives us collision-free ids even when two recipes are dropped in
+// the same millisecond.
 function group(name, parts) {
-  const groupId = `cmp-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+  const rid = (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const groupId = `cmp-${rid}`;
   return parts.map((p) => ({ ...p, groupId, groupName: name }));
 }
 

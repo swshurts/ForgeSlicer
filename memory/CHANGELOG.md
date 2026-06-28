@@ -4283,3 +4283,19 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 - `frontend/src/components/PrintabilityPanel.jsx` — Re-scan button, scanning spinner, scene-hash cache for async scans.
 - `frontend/src/components/dialogs/OrcaDialog.jsx` — `recheckAsync` wiring.
 
+
+## Iteration 110 (2026-06-28) — Beginner CAD expansion · Plan A (RANSAC Phase 4 + Distribute + Component Library)
+- ✅ **RANSAC Phase 4 — "Replace with primitives"** — new green CTA in `ReverseEngineerDialog.jsx` footer (data-testid `re-apply-btn`) swaps the source imported mesh for editable parametric Box / Cylinder / Sphere primitives at the detected transforms. Sphere keeps its centre; Cylinder is aligned to the detected axis via `eulerToAlignZ(axis)`; Plane materialises as a 1 mm-thick Box sized from the inlier bbox. Single `replaceObjects([id], [...])` op so one undo restores the original. Button is gated behind `classification !== "organic"` so we don't tempt users to "reconstruct" a sculpture.
+- ✅ **Distribute** — extension to the existing `AlignPopover.jsx` (Align was already shipped in iter-65). New `distributeSelection(axis)` store action sorts items by axis centre, holds the outermost two fixed, and equalises the spacing between centres of the rest. UI: 3 new icon buttons inside a "Distribute — evenly space (N)" row, disabled (with help tooltip) until ≥ 3 objects selected.
+- ✅ **Component Library tab** — new "Lib" tab in the LeftPanel sitting between Combo and AI. 8 parametric component recipes shipped: M3 Standoff, 608 Bearing Seat, GoPro Mount (3-prong), L Wall Bracket, Cable Clip (6 mm), Pin Hinge (40 mm), Spur Gear (20T), Control Knob (24 mm). Each recipe is a `build()` function returning an Array<sceneObject> already grouped via `crypto.randomUUID()`-derived groupId so the user moves them as one unit and can ungroup any time. Category filter chips (All / Fasteners / Bearings / Brackets / Cable mgmt / Mechanics / Controls) narrow the grid.
+- ✅ Atomic-undo on component drop: a single `pushHistory()` covers the multi-part insert so Ctrl+Z removes the entire assembly in one step (verified iter-110 phase 9).
+- ✅ Tested 9/9 phases via `testing_agent_v3_fork` (iter 110) — 7 live phases PASS, 2 RANSAC phases code-review PASS (button gating + helper export verified; live STL fixture optional). Addressed code-review nit inline (`groupId` now uses `crypto.randomUUID()` to eliminate collision risk).
+
+### Files touched
+- `frontend/src/lib/componentLibrary.js` — new file. 8 recipe functions + COMPONENT_CATEGORIES + COMPONENTS registry + `group()` helper.
+- `frontend/src/lib/store.js` — added `distributeSelection(axis)` action.
+- `frontend/src/components/popovers/AlignPopover.jsx` — added DISTRIBUTE row with 3 axis buttons + Lucide icons + disabled state.
+- `frontend/src/components/LeftPanel.jsx` — added `library` tab + new `TabLibrary` + `ComponentCard` body components + category filter state.
+- `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — exported `primitivesToSceneObjects(primitives)` helper, added `eulerToAlignZ(axis)` math + `bboxSize(bbox)` helper, wired `onReplaceWithPrimitives` handler and the "Replace with primitives" footer button.
+
+
