@@ -4364,3 +4364,20 @@ User chose option (c) from the post-iter-111.1 review: instead of destructively 
 - Smoke test confirmed: ghosted cube renders as faded wireframe with the editable cylinder primitive visible on top; clicking Restore returns it to a full opaque orange cube.
 
 
+
+## Iteration 111.3 (2026-06-28) — RANSAC Phase 4 Overlay polish
+User report: the overlay mode dropped 9 thin plane slabs that visually interfered with the ghost mesh — "Not good...".
+
+### Root cause
+The overlay was indiscriminate — it dropped every detected primitive on top of the ghost. Planes don't form usable solids (they're disconnected thin slabs), and at N=9 they obscure the ghost rather than acting as references.
+
+### Fix
+- **Skip planes in the overlay output.** Only cylinders + spheres are dropped on top of the ghost (they ARE useful editable replacements).
+- **Planes-only fallback** — if the detector finds zero cylinders/spheres, drop a single Box sized to the source mesh's world bbox as an "approx solid" starting block. The user chips away with Cut + negative cylinders.
+- Footer hint updated to explain the new behavior in both cases.
+- Toast wording cites how many planes were skipped so the user knows nothing was forgotten.
+
+### Files touched
+- `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — rewrote `onReplaceWithPrimitives`; dynamic-imports `computeRotatedBBox` + `buildPrimitive` for the planes-only fallback to keep the dialog's module graph small.
+
+

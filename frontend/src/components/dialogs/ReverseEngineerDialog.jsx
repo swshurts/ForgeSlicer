@@ -161,36 +161,87 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
   const [applying, setApplying] = useState(false);
   const onReplaceWithPrimitives = async () => {
     if (!result || !obj) return;
-    const replacement = primitivesToSceneObjects(result.primitives, obj);
+
+    // iter-111.3 — clean up the overlay output. The previous version
+    // dropped every detected primitive (including N thin plane slabs)
+    // on top of the ghost — which looked great in screenshots of
+    // mechanical parts but, on planes-only meshes, the 9 floating
+    // slabs interfered visually with the ghost and the user couldn't
+    // see what was happening. New behaviour:
+    //
+    //   • Planes are NEVER overlaid as N thin slabs (they don't form
+    //     usable solids and they obscure the ghost reference).
+    //   • If the detector found CYLINDERS or SPHERES, overlay just
+    //     those — they're proper editable replacements that beginners
+    //     can manipulate without losing the ghost as scaffolding.
+    //   • If the result is PLANES-ONLY, drop a single Box sized to
+    //     the source mesh's world bbox as a "starting block". The
+    //     user chips away with negative cylinders / Cut tools.
+    const useful = result.primitives.filter(
+      (p) => p.type === "cylinder" || p.type === "sphere",
+    );
+    let replacement = primitivesToSceneObjects(useful, obj);
+    let fallbackUsed = false;
     if (replacement.length === 0) {
-      toast.warning("Nothing replaceable — the detector returned no actionable primitives.");
-      return;
+      // Planes-only — drop one bbox-approximation Box. We grab the
+      // source object's CURRENT world bbox (not the source-frame
+      // mesh extents) so the starting block sits exactly where the
+      // ghosted mesh appears on the bed.
+      try {
+        const { computeRotatedBBox } = await import("../../lib/geometry");
+        const bb = computeRotatedBBox(obj);
+        const sx = Math.max(1, bb.max.x - bb.min.x);
+        const sy = Math.max(1, bb.max.y - bb.min.y);
+        const sz = Math.max(1, bb.max.z - bb.min.z);
+        const pos = obj.position || [0, 0, 0];
+        const cx = pos[0] + (bb.max.x + bb.min.x) / 2;
+        const cy = pos[1] + (bb.max.y + bb.min.y) / 2;
+        const cz = pos[2] + (bb.max.z + bb.min.z) / 2;
+        const { buildPrimitive } = await import("../../lib/primitiveDefaults");
+        replacement = [
+          buildPrimitive("cube", "positive", {
+            name: `${obj.name || "Source"} (approx solid)`,
+            dims: { x: sx, y: sy, z: sz },
+            position: [cx, cy, cz],
+          }),
+        ];
+        fallbackUsed = true;
+      } catch (e) {
+        toast.error(`Couldn't build approximation Box: ${e.message || e}`);
+        return;
+      }
     }
+
     setApplying(true);
     try {
-      // One atomic op so a single undo both un-ghosts the source AND
-      // removes the added primitives. We pushHistory ourselves rather
-      // than calling separate updateObject + addObjects (each of
-      // which would push its own history entry).
       const store = useScene.getState();
       store.pushHistory();
       useScene.setState((st) => ({
         objects: [
-          // Ghost + lock the source. Preserve its colorIndex etc.
           ...st.objects.map((o) =>
             o.id === obj.id ? { ...o, ghosted: true, locked: true } : o,
           ),
-          // Drop the new primitives on top.
           ...replacement,
         ],
         selectedId: replacement[0].id,
         selectedIds: replacement.map((r) => r.id),
       }));
-      const summary = [];
-      if (grouped.cylinder) summary.push(`${grouped.cylinder} cylinder${grouped.cylinder === 1 ? "" : "s"}`);
-      if (grouped.sphere)   summary.push(`${grouped.sphere} sphere${grouped.sphere === 1 ? "" : "s"}`);
-      if (grouped.plane)    summary.push(`${grouped.plane} plane${grouped.plane === 1 ? "" : "s"}`);
-      toast.success(`Overlaid ${summary.join(" · ")} on "${obj.name || "mesh"}" — source is now a faded reference. Undo to remove, or restore from the Inspector.`);
+
+      if (fallbackUsed) {
+        toast.success(
+          `No editable primitives — dropped one source-sized Box approximation. Chip away with Cut & negative cylinders. Source kept as a faded reference.`,
+        );
+      } else {
+        const cyls = useful.filter((p) => p.type === "cylinder").length;
+        const sphs = useful.filter((p) => p.type === "sphere").length;
+        const summary = [];
+        if (cyls) summary.push(`${cyls} cylinder${cyls === 1 ? "" : "s"}`);
+        if (sphs) summary.push(`${sphs} sphere${sphs === 1 ? "" : "s"}`);
+        const skipped = result.primitives.length - useful.length;
+        toast.success(
+          `Overlaid ${summary.join(" · ")} on "${obj.name || "mesh"}" — ${skipped} plane${skipped === 1 ? "" : "s"} skipped (not useful as overlay). Source is now a faded reference.`,
+        );
+      }
       onClose();
     } catch (e) {
       toast.error(`Overlay failed: ${e.message || e}`);
@@ -420,10 +471,10 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
             >
               {allPlanes ? (
                 <>
-                  <span className="text-amber-300 font-semibold">⚠ Planes-only result.</span> The source mesh stays as a faded reference and {result.primitives.length} thin slabs land on top — useful as a starting layout, not a full reconstruction. Undo removes the primitives; Inspector → Restore un-ghosts the source.
+                  <span className="text-amber-300 font-semibold">Planes-only result.</span> Overlay drops a single source-sized Box approximation on top of the ghost — a starting block you can chip away with Cut + negative cylinders. Inspector → Restore un-ghosts the source.
                 </>
               ) : (
-                <>Phase 4 — overlays editable Box / Cylinder / Sphere primitives over the source mesh. The source becomes a faded reference you can re-enable later.</>
+                <>Overlay drops editable Cylinder + Sphere primitives over the source (planes are skipped — they don&apos;t form usable solids). The source becomes a faded reference you can re-enable later.</>
               )}
             </span>
           ) : (
