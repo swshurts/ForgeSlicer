@@ -4340,3 +4340,27 @@ Extracted the pure conversion math to `/app/frontend/src/lib/ransacReplace.js` s
 - `frontend/src/__tests__/reverseEngineerPhase4.test.js` — NEW. 5 regression tests.
 
 
+
+## Iteration 111.2 (2026-06-28) — RANSAC Phase 4 → "Overlay" mode
+User chose option (c) from the post-iter-111.1 review: instead of destructively replacing the imported mesh, keep it as a faded reference and drop the detected primitives ON TOP. The rationale — when a planes-only RANSAC reconstruction is approximate, the source mesh still has value as visual scaffolding while the user manually swaps in editable replacements.
+
+### Changes
+- **Ghost flag on objects** — `obj.ghosted: true` causes the viewport material to render with `opacity: 0.18`, neutral grey colour, no depth-write, and a grey edge highlight. Combined with `obj.locked: true` so the source can't be accidentally clicked or transformed while ghosted.
+- **Dialog re-wired** — `onReplaceWithPrimitives` no longer calls `replaceObjects` (which deletes the source). It now:
+    1. Patches the source with `{ ghosted: true, locked: true }`.
+    2. Appends the detected primitives.
+    3. Pushes ONE history entry so a single undo both un-ghosts the source AND removes the primitives.
+- **CTA label** changed to "Overlay with primitives" (was "Replace with primitives") to communicate the non-destructive intent.
+- **Footer hint** updated for both the general and planes-only cases to mention that the source becomes a faded reference + that Inspector → Restore un-ghosts it.
+- **Inspector "Restore from ghost" button** — appears only when the selected object is ghosted (data-testid `restore-from-ghost-btn`). One click clears both flags and returns the object to a normal opaque mesh.
+
+### Files touched
+- `frontend/src/components/dialogs/ReverseEngineerDialog.jsx` — rewrote `onReplaceWithPrimitives`; updated CTA label + footer hint.
+- `frontend/src/components/Viewport.jsx` — material reads `obj.ghosted` to apply faded styling + grey edge highlight; skips the white selection ring while ghosted.
+- `frontend/src/components/RightPanel.jsx` — "Restore from ghost" button under the Drop / Lay Flat / Delete row.
+
+### Verified
+- 5/5 existing RANSAC Phase 4 unit tests still pass.
+- Smoke test confirmed: ghosted cube renders as faded wireframe with the editable cylinder primitive visible on top; clicking Restore returns it to a full opaque orange cube.
+
+

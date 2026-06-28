@@ -149,12 +149,15 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
     return counts;
   }, [result]);
 
-  // ---- iter-110 — Phase 4: "Replace with primitives" ---------------
-  // Convert each detected primitive into an editable scene object via
-  // the existing parametric primitive system, then remove the source
-  // imported mesh. The replacement is geometric, not topological —
-  // organic shapes will lose detail, which is why the dialog only
-  // surfaces this CTA when classification ≠ "organic".
+  // ---- iter-110 — Phase 4: "Overlay with primitives" ---------------
+  // Approach (c) — keep the source mesh in the scene as a faded
+  // "ghost" reference, drop the detected primitives ON TOP. This is
+  // non-destructive: the user can roll the ghost back to a normal
+  // mesh from the Inspector, or undo to remove the primitives
+  // entirely. Iter-111.2 — changed from `replaceObjects` to
+  // ghost+add after the planes-only result showed that an
+  // immediately-destructive Replace is too lossy when the
+  // reconstruction is only a starting layout.
   const [applying, setApplying] = useState(false);
   const onReplaceWithPrimitives = async () => {
     if (!result || !obj) return;
@@ -165,16 +168,32 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
     }
     setApplying(true);
     try {
-      // One atomic op so a single undo restores the imported mesh.
-      useScene.getState().replaceObjects([obj.id], replacement);
+      // One atomic op so a single undo both un-ghosts the source AND
+      // removes the added primitives. We pushHistory ourselves rather
+      // than calling separate updateObject + addObjects (each of
+      // which would push its own history entry).
+      const store = useScene.getState();
+      store.pushHistory();
+      useScene.setState((st) => ({
+        objects: [
+          // Ghost + lock the source. Preserve its colorIndex etc.
+          ...st.objects.map((o) =>
+            o.id === obj.id ? { ...o, ghosted: true, locked: true } : o,
+          ),
+          // Drop the new primitives on top.
+          ...replacement,
+        ],
+        selectedId: replacement[0].id,
+        selectedIds: replacement.map((r) => r.id),
+      }));
       const summary = [];
       if (grouped.cylinder) summary.push(`${grouped.cylinder} cylinder${grouped.cylinder === 1 ? "" : "s"}`);
       if (grouped.sphere)   summary.push(`${grouped.sphere} sphere${grouped.sphere === 1 ? "" : "s"}`);
       if (grouped.plane)    summary.push(`${grouped.plane} plane${grouped.plane === 1 ? "" : "s"}`);
-      toast.success(`Replaced "${obj.name || "mesh"}" with ${summary.join(" · ")} — fully editable now.`);
+      toast.success(`Overlaid ${summary.join(" · ")} on "${obj.name || "mesh"}" — source is now a faded reference. Undo to remove, or restore from the Inspector.`);
       onClose();
     } catch (e) {
-      toast.error(`Replace failed: ${e.message || e}`);
+      toast.error(`Overlay failed: ${e.message || e}`);
     } finally {
       setApplying(false);
     }
@@ -401,10 +420,10 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
             >
               {allPlanes ? (
                 <>
-                  <span className="text-amber-300 font-semibold">⚠ Planes-only result.</span> Replace will drop {result.primitives.length} thin slabs at the detected face positions — useful as a starting layout, but it won&apos;t look like the source mesh. Undo restores the original.
+                  <span className="text-amber-300 font-semibold">⚠ Planes-only result.</span> The source mesh stays as a faded reference and {result.primitives.length} thin slabs land on top — useful as a starting layout, not a full reconstruction. Undo removes the primitives; Inspector → Restore un-ghosts the source.
                 </>
               ) : (
-                <>Phase 4 — replace the imported mesh with editable Box / Cylinder / Sphere primitives. Undo restores the source mesh.</>
+                <>Phase 4 — overlays editable Box / Cylinder / Sphere primitives over the source mesh. The source becomes a faded reference you can re-enable later.</>
               )}
             </span>
           ) : (
@@ -423,7 +442,7 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
                 className="h-8 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-[12px] font-semibold rounded border border-emerald-400/40 inline-flex items-center gap-1.5"
               >
                 {applying ? <Loader2 size={12} className="animate-spin" /> : <Replace size={12} />}
-                Replace with primitives
+                Overlay with primitives
               </button>
             )}
             <button

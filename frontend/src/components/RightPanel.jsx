@@ -15,7 +15,7 @@ import TextInspectorBlock from "./inspector/TextInspectorBlock";
 // per-edge geometry in the modifier-mesh carve.
 import AutoSaveSection from "./inspector/AutoSaveSection";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2, Sparkles } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2, Sparkles, Eye } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
@@ -811,12 +811,7 @@ function Inspector() {
         >
           <Layers size={13} /> Lay Flat
         </button>
-        {/* iPad-friendly delete — Backspace/Delete keys aren't reachable
-            from a tablet, and the outliner trash icon is tiny. A top-level
-            Inspector delete makes single-object removal a one-tap action
-            on any device. Confirms via window.confirm only if the object
-            is part of a group (the rest of the assembly stays) so an
-            accidental tap doesn't nuke 5 things at once. */}
+        {/* iPad-friendly delete — same as ⌫ on desktop. */}
         <button
           data-testid="inspector-delete-btn"
           onClick={() => {
@@ -834,6 +829,22 @@ function Inspector() {
           <Trash2 size={13} /> Delete
         </button>
       </div>
+
+      {/* iter-111.2 — Restore-from-ghost. Surfaces when the object is
+          flagged as ghosted (by RANSAC Phase 4's overlay flow) so the
+          user can promote it back to a normal interactive mesh.
+          Clearing the flag also unlocks it (so clicks register again
+          and it stops fading through other geometry). */}
+      {obj.ghosted && (
+        <button
+          data-testid="restore-from-ghost-btn"
+          onClick={() => updateObject(obj.id, { ghosted: false, locked: false })}
+          className="h-8 w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-emerald-400/40"
+          title="Promote this ghosted reference back to a normal opaque mesh"
+        >
+          <Eye size={13} /> Restore from ghost
+        </button>
+      )}
 
       {/* iter-111 — Tolerance helper. Only meaningful for NEGATIVE
           cylinders / cones (the holes / bores that need clearance for

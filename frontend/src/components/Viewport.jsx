@@ -134,13 +134,15 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
       userData={{ id: obj.id }}
     >
       <meshStandardMaterial
-        color={color}
+        color={obj.ghosted ? "#64748b" : color}
         roughness={0.55}
         metalness={0.05}
-        transparent={obj.modifier === "negative"}
-        opacity={obj.modifier === "negative" ? 0.55 : 1}
+        transparent={obj.modifier === "negative" || obj.ghosted}
+        opacity={obj.ghosted ? 0.18 : (obj.modifier === "negative" ? 0.55 : 1)}
+        depthWrite={!obj.ghosted}
       />
-      {isSelected && <Edges threshold={20} color="#FFFFFF" scale={1.001} />}
+      {isSelected && !obj.ghosted && <Edges threshold={20} color="#FFFFFF" scale={1.001} />}
+      {obj.ghosted && <Edges threshold={20} color="#94a3b8" scale={1.001} />}
     </mesh>
   );
 }
