@@ -169,6 +169,71 @@ function Section({ title, icon: Icon, children, testid, accent = "text-slate-500
   );
 }
 
+// iter-111 — Tolerance helper.
+//
+// A common beginner mistake: design a 3 mm peg + 3 mm hole and wonder
+// why the print won't fit together. Every printer has nozzle drag,
+// shrinkage, and ringing that adds ~0.1-0.3 mm of slop. The "right"
+// hole isn't the nominal dimension — it's the nominal + a clearance
+// allowance picked from a named fit class.
+//
+// This widget surfaces those named fits as a dropdown for any selected
+// NEGATIVE cylinder / cone (the bore in a press-fit / running-fit
+// assembly). Clicking a fit nudges `dims.r` by HALF the named clearance
+// (because radius doubles into diameter) so the resulting bore matches
+// the named-fit table. Same logic as the inspector's other numeric
+// nudges — wraps `updateDims` so it joins the existing undo stack.
+const TOLERANCE_PRESETS = [
+  { id: "press",   label: "Press fit",    delta: -0.05, blurb: "Interference fit — needs a hammer / arbor press. For permanent pins, knurled inserts." },
+  { id: "tight",   label: "Tight fit",    delta:  0.05, blurb: "Hand-press fit — won't slip, won't rotate. Good for dowel pins, locating pegs." },
+  { id: "slip",    label: "Slip fit",     delta:  0.1,  blurb: "Slides by hand, won't rattle. Good for removable pegs, bolt-through holes." },
+  { id: "running", label: "Running fit",  delta:  0.2,  blurb: "Free-running — for rotating shafts, sliding rods, hinge pins." },
+  { id: "loose",   label: "Loose clear.", delta:  0.4,  blurb: "Lots of slop — for cable pass-throughs, sloppy alignment, paint clearance." },
+];
+
+function ToleranceHelper({ obj, updateDims }) {
+  const baseR = (obj.dims && obj.dims.r) ?? 0;
+  const applyFit = (preset) => {
+    const newR = Math.max(0.05, baseR + preset.delta / 2);
+    updateDims(obj.id, { r: newR });
+  };
+  return (
+    <div
+      data-testid="tolerance-helper"
+      className="border border-cyan-500/30 bg-cyan-500/5 rounded-md p-2 space-y-1.5"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold">
+          Tolerance · clearance fit
+        </span>
+        <span className="text-[10px] text-slate-500 font-mono">
+          ⌀ {(baseR * 2).toFixed(2)} mm
+        </span>
+      </div>
+      <p className="text-[10px] text-slate-400 leading-snug">
+        Pick a fit class — radius nudges by half the named clearance so the bore matches a real-world tolerance table.
+      </p>
+      <div className="grid grid-cols-1 gap-1">
+        {TOLERANCE_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            data-testid={`tolerance-${preset.id}`}
+            onClick={() => applyFit(preset)}
+            title={preset.blurb}
+            className="flex items-center justify-between text-[11px] px-2 py-1 rounded border border-slate-700 hover:border-cyan-400 hover:bg-cyan-500/10 text-left transition-colors"
+          >
+            <span className="text-slate-200 font-medium">{preset.label}</span>
+            <span className="text-cyan-300/80 font-mono text-[10px]">
+              {preset.delta > 0 ? "+" : ""}{preset.delta.toFixed(2)} mm clr
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 // Group printers by brand for the select (built-ins + community)
 function printerOptions(community) {
   const byBrand = {};
@@ -634,6 +699,7 @@ function Inspector() {
   const dropToBed = useScene((s) => s.dropToBed);
   const layFlatSelection = useScene((s) => s.layFlatSelection);
   const setColorIndex = useScene((s) => s.setColorIndex);
+  const removeObject = useScene((s) => s.removeObject);
 
   // Repair Mesh — POSTs the host's STL to /api/mesh/repair, MeshLab
   // closes holes / fixes non-manifold edges / vertices, repaired STL
@@ -728,14 +794,14 @@ function Inspector() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-3 gap-1.5">
         <button
           data-testid="drop-to-bed-btn"
           onClick={() => dropToBed(obj.id)}
           className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-slate-700"
           title="Drop object so its lowest point sits on Y=0"
         >
-          <ArrowDownToLine size={13} /> Drop to Bed
+          <ArrowDownToLine size={13} /> Drop
         </button>
         <button
           data-testid="lay-flat-btn"
@@ -745,7 +811,38 @@ function Inspector() {
         >
           <Layers size={13} /> Lay Flat
         </button>
+        {/* iPad-friendly delete — Backspace/Delete keys aren't reachable
+            from a tablet, and the outliner trash icon is tiny. A top-level
+            Inspector delete makes single-object removal a one-tap action
+            on any device. Confirms via window.confirm only if the object
+            is part of a group (the rest of the assembly stays) so an
+            accidental tap doesn't nuke 5 things at once. */}
+        <button
+          data-testid="inspector-delete-btn"
+          onClick={() => {
+            if (obj.groupId) {
+              const ok = window.confirm(
+                `Delete "${obj.name}" from "${obj.groupName || "group"}"? The rest of the group stays.`,
+              );
+              if (!ok) return;
+            }
+            removeObject(obj.id);
+          }}
+          className="h-8 bg-red-600/90 hover:bg-red-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-red-400/40"
+          title="Delete this object (iPad-friendly — same as ⌫ on desktop)"
+        >
+          <Trash2 size={13} /> Delete
+        </button>
       </div>
+
+      {/* iter-111 — Tolerance helper. Only meaningful for NEGATIVE
+          cylinders / cones (the holes / bores that need clearance for
+          a press / running / loose fit). Nudges `dims.r` by the named
+          delta and surfaces the resulting clearance in the tooltip so
+          beginners can pick a fit without knowing the numbers. */}
+      {(obj.modifier === "negative" && (obj.type === "cylinder" || obj.type === "cone")) && (
+        <ToleranceHelper obj={obj} updateDims={updateDims} />
+      )}
 
       {obj.type === "imported" && obj.geometry && (
         <div className="space-y-1.5" data-testid="repair-mesh-block">

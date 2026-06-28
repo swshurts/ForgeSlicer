@@ -14,6 +14,7 @@ import PhotoToPlaneDialog from "./dialogs/PhotoToPlaneDialog";
 import HardwareLibraryDialog from "./dialogs/HardwareLibraryDialog";
 import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
 import DesignChatDialog from "./dialogs/DesignChatDialog";
+import HoleDialog from "./dialogs/HoleDialog";
 import { MessageCircle } from "lucide-react";
 import { COMPONENTS, COMPONENT_CATEGORIES } from "../lib/componentLibrary";
 
@@ -181,7 +182,8 @@ function TextureLibraryButton({ onOpenTextureLib }) {
 
 // Countersink macro — drops a pre-grouped negative bore + negative
 // chamfered cup so subtracting from a host produces a flush-head
-// fastener hole in one click.
+// fastener hole in one click. The legacy 1-click drop stays for power
+// users; the iter-111 HoleButton opens a richer preset dialog.
 function CountersinkButton() {
   const addCountersink = useScene((s) => s.addCountersink);
   return (
@@ -193,6 +195,22 @@ function CountersinkButton() {
     >
       <CircleDashed size={18} strokeWidth={1.8} />
       <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Countersink ⌀</span>
+    </button>
+  );
+}
+
+// iter-111 — opens the rich Hole/Countersink dialog (M3 / M4 / … presets,
+// metric + imperial, with/without countersink, custom override).
+function HoleButton({ onOpen }) {
+  return (
+    <button
+      data-testid="add-hole-dialog-btn"
+      onClick={onOpen}
+      className="group flex flex-col items-center justify-center gap-1 h-16 rounded-md border border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400 transition-all"
+      title="Hole / Countersink dialog — pick a thread size (M3 / M4 / M5 / M6 / M8 or #4-#10) and get the right clearance + head dims baked in."
+    >
+      <CircleDashed size={18} strokeWidth={1.8} className="text-cyan-300" />
+      <span className="text-[10px] uppercase tracking-wide font-medium text-slate-300">Hole / CS ⌀</span>
     </button>
   );
 }
@@ -349,6 +367,7 @@ export default function LeftPanel() {
   const [aiOpen, setAiOpen] = useState(false);
   const [photoPlaneOpen, setPhotoPlaneOpen] = useState(false);
   const [designChatOpen, setDesignChatOpen] = useState(false);
+  const [holeDialogOpen, setHoleDialogOpen] = useState(false);
   // Hardware library dialog state lives here (instead of being lifted
   // to Workspace) because nothing outside LeftPanel needs to coordinate
   // with it — it just overlays the viewport when open, and the only
@@ -418,7 +437,7 @@ export default function LeftPanel() {
       <div className="overflow-y-auto flex-shrink-0" style={{ maxHeight: "55%" }}>
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
-        {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} />}
+        {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} onOpenHoleDialog={() => setHoleDialogOpen(true)} />}
         {tab === "library" && <TabLibrary />}
         {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} />}
       </div>
@@ -446,6 +465,7 @@ export default function LeftPanel() {
       <PhotoToPlaneDialog open={photoPlaneOpen} onClose={() => setPhotoPlaneOpen(false)} />
       <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
       <DesignChatDialog open={designChatOpen} onClose={() => setDesignChatOpen(false)} />
+      <HoleDialog open={holeDialogOpen} onClose={() => setHoleDialogOpen(false)} />
       <TextureLibraryDialog
         open={textureLibraryOpen}
         targetObjectId={textureLibraryTargetId}
@@ -514,7 +534,7 @@ function Tab2D() {
   );
 }
 
-function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
+function TabComposites({ onOpenHardwareLib, onOpenTextureLib, onOpenHoleDialog }) {
   return (
     <>
       <SectionHeader
@@ -529,6 +549,7 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib }) {
         <FastenerPairButton />
         <HardwareLibraryButton onOpenHardwareLib={onOpenHardwareLib} />
         <TextureLibraryButton onOpenTextureLib={onOpenTextureLib} />
+        <HoleButton onOpen={onOpenHoleDialog} />
         <CountersinkButton />
         <HexPocketButton />
         <GussetButton />

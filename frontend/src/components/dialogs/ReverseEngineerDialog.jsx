@@ -185,30 +185,38 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  // iter-111 — Phase 5 sensitivity slider. epsFracPct is the RANSAC
+  // inlier tolerance as a fraction of the mesh bbox-diagonal,
+  // displayed as a percent (0.2% = the API default, 0.05%-2.0%
+  // clamped). Smaller = stricter fits, fewer false-positives but the
+  // detector misses noisy surfaces. Larger = looser fits, picks up
+  // more primitives but accepts sloppier matches.
+  const DEFAULT_EPS_FRAC_PCT = 0.2;
+  const [epsFracPct, setEpsFracPct] = useState(DEFAULT_EPS_FRAC_PCT);
+  const [pendingEpsFracPct, setPendingEpsFracPct] = useState(DEFAULT_EPS_FRAC_PCT);
 
-  useEffect(() => {
-    if (!open || !obj) return;
-    let cancelled = false;
+  const runScan = React.useCallback(async (epsPct) => {
+    if (!obj) return;
     setBusy(true);
     setError(null);
     setResult(null);
-    (async () => {
-      try {
-        const r = await segmentImportedObject(obj);
-        if (!cancelled) setResult(r);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message || String(err));
-          toast.error(`Reverse-Engineer failed: ${err.message || err}`);
-        }
-      } finally {
-        if (!cancelled) setBusy(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, obj]);
+    try {
+      const r = await segmentImportedObject(obj, { epsFrac: epsPct / 100 });
+      setResult(r);
+      setEpsFracPct(epsPct);
+    } catch (err) {
+      setError(err.message || String(err));
+      toast.error(`Reverse-Engineer failed: ${err.message || err}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [obj]);
+
+  useEffect(() => {
+    if (!open || !obj) return;
+    setPendingEpsFracPct(DEFAULT_EPS_FRAC_PCT);
+    runScan(DEFAULT_EPS_FRAC_PCT);
+  }, [open, obj, runScan]);
 
   const classification = useMemo(() => {
     if (!result) return null;
@@ -390,6 +398,50 @@ export default function ReverseEngineerDialog({ open, onClose, obj }) {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* iter-111 — Phase 5 sensitivity slider. Live-edits
+                  `pendingEpsFracPct`; the "Re-run" button commits it
+                  and re-triggers segmentation. Splitting pending vs
+                  committed avoids hammering the backend on every
+                  micro-slider-twitch. */}
+              <div
+                data-testid="re-sensitivity"
+                className="mx-5 mt-3 p-3 rounded border border-slate-800 bg-slate-900/40"
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+                    Sensitivity
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    ε = {pendingEpsFracPct.toFixed(2)}% of bbox-diagonal
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  data-testid="re-sensitivity-slider"
+                  min="0.05"
+                  max="2.0"
+                  step="0.05"
+                  value={pendingEpsFracPct}
+                  onChange={(e) => setPendingEpsFracPct(parseFloat(e.target.value))}
+                  className="w-full mt-2 accent-orange-500"
+                />
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[9px] text-slate-500">stricter (fewer primitives)</span>
+                  <span className="text-[9px] text-slate-500">looser (more primitives)</span>
+                </div>
+                {Math.abs(pendingEpsFracPct - epsFracPct) > 0.001 && (
+                  <button
+                    data-testid="re-rescan-btn"
+                    onClick={() => runScan(pendingEpsFracPct)}
+                    disabled={busy}
+                    className="mt-2 w-full h-7 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 text-white text-[11px] font-semibold rounded inline-flex items-center justify-center gap-1.5"
+                  >
+                    {busy && <Loader2 size={11} className="animate-spin" />}
+                    Re-run with ε = {pendingEpsFracPct.toFixed(2)}%
+                  </button>
+                )}
               </div>
 
               {/* Primitive list */}
