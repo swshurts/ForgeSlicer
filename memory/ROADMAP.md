@@ -13,6 +13,16 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 
 ## 🟡 P1 — Next features
 *(P1 cleared 2026-05-31 — iter 77 shipped cancel-slice, per-printer temps, and the bed-axis gizmo.)*
+
+- **Beginner CAD toolset expansion** (filed 2026-06-27 from Steve's stakeholder review). The goal is to lift the modelling surface to the level a TinkerCAD user would expect at first sight. Every tool below must ship beginner-friendly: clear lucide icon, one-line description, numeric inputs in mm, one contextual help example ("e.g. fillet a 2 mm corner for a soft edge"), and a sensible default that "just works" if the user touches nothing.
+    - **Fillet / round edges** — pick edges via raycast → enter radius (default 1 mm) → preview ghost mesh before commit. Internally a swept ball-radius offset; reuses the manifold engine for the boolean.
+    - **Chamfer** — same UX as fillet but produces a 45° (or user-set angle) bevel instead of a curve. Default 0.5 mm chamfer. Share the edge-pick widget with fillet.
+    - **Dedicated Hole / Countersink tool** — single dialog with diameter + depth + optional countersink head (angle + larger dia). Spawns a tagged negative primitive. Presets: M3/M4/M5/M6 clearance + #4/#6/#8/#10 imperial. Sits beside the existing primitive palette in LeftPanel.
+    - **Align / Distribute** — multi-select two-plus objects → align (left / centre / right on X, Y, or Z) and distribute (equal spacing). Toolbar icon + keyboard shortcut. Inspired by Figma/Illustrator semantics — these are the muscle-memory commands beginners try first.
+    - **Measurement / ruler tools** — extend MEAS-01: snap-to-vertex / edge-midpoint / face-centre, persistent measurement labels (toggle visibility per measurement), unit toggle (mm / inch / cm). Already partly anchored — finish the snap + persistent panel.
+    - **Tolerance / clearance helper** — small dropdown that maps a fit name ("press fit", "running fit", "loose clearance") to a clearance value, then nudges a selected hole/peg pair by that amount. Built on top of the existing primitive picker + measurement.
+    - **Snap-to-face placement** — drop or paste an object → it auto-orients to the nearest face under the cursor (face normal becomes the object's +Z), with an optional clip-to-face-bbox toggle. Lets a beginner stick a label on a phone-case back without learning the rotation gizmo.
+    - **Reusable component library** — a third LeftPanel tab ("Library") with curated parts: M-series screws (heads + nuts), pegs / dowels, hinges (butt + piano), hooks (S + J), brackets (L + T + corner), text labels with the new fonts, common cutouts (USB-A / USB-C / 3.5 mm jack / wall switch box / DIN-rail clip). Each library item is a parametric composite — open it, tweak the exposed parameter (length, thread pitch, hinge width…), drop it into the scene.
 - ~~Sweep MVP follow-ups~~ [DONE — iter 51]
 - ~~Fastener Pair macro~~ [DONE — iter 48]
 - ~~Texture v2 patterns + apply-to-face + UNC/UNF imperial fasteners~~ [DONE — iter 50]
