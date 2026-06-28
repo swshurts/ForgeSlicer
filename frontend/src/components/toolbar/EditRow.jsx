@@ -13,9 +13,10 @@ import {
   PlusSquare, MinusSquare, Combine, Move3D, RotateCw, Scale3D,
   Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor,
   MapPin, Maximize, Copy, FlipHorizontal2, Scissors, Sliders,
-  Settings2, AlignCenter,
+  Settings2, AlignCenter, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
+import { usePrintability } from "../../lib/printabilityStore";
 import { IconBtn, Divider, TabPillButton } from "./ToolbarUI";
 import AddPrimitiveButton from "./AddPrimitiveButton";
 import SketchButton from "./SketchButton";
@@ -205,6 +206,50 @@ export default function EditRow({
         variant="green"
         onClick={() => togglePopover("slicer")}
       />
+
+      {/* Pre-flight printability — checks the scene for non-manifold
+          geometry / open holes / flipped normals before the user
+          ships a doomed file to the slicer. Badge shows the count of
+          "will fail" findings. */}
+      <PrintabilityToggle />
     </div>
+  );
+}
+
+function PrintabilityToggle() {
+  const panelOpen = usePrintability((s) => s.panelOpen);
+  const setPanelOpen = usePrintability((s) => s.setPanelOpen);
+  const blockingCount = usePrintability((s) =>
+    s.findings.filter((f) => f.severity === "will-fail").length,
+  );
+  return (
+    <button
+      type="button"
+      data-testid="printability-toggle-btn"
+      onClick={() => setPanelOpen(!panelOpen)}
+      title={
+        blockingCount > 0
+          ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} — open Printability check`
+          : "Check my print — pre-flight printability checks"
+      }
+      className={`h-8 px-2.5 ml-1 inline-flex items-center gap-1.5 rounded border text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+        panelOpen
+          ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
+          : blockingCount > 0
+            ? "bg-red-500/10 border-red-500/50 text-red-300 hover:bg-red-500/20"
+            : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+      }`}
+    >
+      {blockingCount > 0 ? <ShieldAlert size={12} /> : <ShieldCheck size={12} />}
+      Check
+      {blockingCount > 0 && (
+        <span
+          data-testid="printability-toggle-badge"
+          className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold"
+        >
+          {blockingCount}
+        </span>
+      )}
+    </button>
   );
 }

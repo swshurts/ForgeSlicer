@@ -1,0 +1,34 @@
+{
+  "summary": "Pre-flight Printability Checks (Check #1 — non-manifold) MVP tested end-to-end in workspace. Toolbar CHECK button, right-rail panel, empty state, programmatic non-manifold injection, finding row, details disclosure, silence, silence persistence, repair, OrcaDialog gate (red banner + disabled download + Send-anyway), and primitive-cube manifold sanity all PASS. Repair API call succeeds and clears the finding from the panel, though the success toast variant returned `warning` (not `success`) on the synthetic 3-triangle open tetra because the mesh-repair backend flagged `watertight=false || windingConsistent=false` after the repair pass. The Review-issues path was not explicitly clicked (the test exercised Send-anyway instead), but the testid + handler exist in code (`orca-printability-review-btn`).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/mesh/repair", "issue": "On a pathological 3-tri open tetrahedron the repair returns stats with watertight=false / windingConsistent=false, so the panel-side toast lands on 'Repair partially completed' instead of 'Repair complete · N tris · X.Xs'. Real STL imports (e.g. a cube with one tri removed) should hit the success path — this is a synthetic-data artifact only."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Workspace top bar", "issues": ["After clicking Send-to-OrcaSlicer a 'What's New' changelog popover (iter-105.x feature) overlapped the right side of the screen on a fresh session. Not introduced by this iteration — just noting it as visual clutter that hid part of the Printability panel during the OrcaDialog phase."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: tweak the toast UX so when stats.watertight=true && stats.windingConsistent=false (or vice-versa) the toast still says 'Repair complete' with a small subtitle about residual quality, rather than landing on the generic 'partially completed' warning. Today's MVP is acceptable.",
+    "Consider exercising the 'orca-printability-review-btn' path in a follow-up smoke pass; the wiring (open panel + close dialog) reads correct in code but wasn't physically clicked."
+  ],
+  "critical_code_review_comments": [
+    "printabilityStore.js exposes `get blockingCount()` via Zustand `create` callback — Zustand stores don't honor JS getters on the state object (they're treated as plain fields once set). The toolbar correctly recomputes from `s.findings.filter(...)`, but `usePrintability((s) => s.blockingCount)` would return undefined. Recommend removing the dead getter or converting to a regular function `getBlockingCount: () => ...`.",
+    "printabilityChecks.js — `edgeDir.set(key, dir)` overwrites the first half-edge direction on every shared edge, but the value is never read; only `edgeSign` is consulted. The `edgeDir` Map is dead code and can be deleted to save allocations on large meshes.",
+    "printabilityChecks.js — the `(highlight clipped to ${5000} segs)` interpolation uses an inline literal instead of the `MAX_HIGHLIGHT` parameter, so changing the default would silently make the user-facing text lie. Minor.",
+    "Repair button keying `printability-fix-repair-${finding.id}` is robust, but the finding row's testid uses `affectedObjectIds[0]` which can collide if a future check ever produces multiple findings of the same checkId on the same object. Suffix with finding.id for forward-compat."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "100% on tested flows (10/10 phases)"},
+  "test_credentials": "Seeded a new session_token=st_test_print_1782616660814 in /test_database (user: test.printability.<ts>@example.com). Pre-existing st_test_test_1782616550019 also valid.",
+  "seed_data_creation": "Mongo: db.users + db.user_sessions row for printability tester. Programmatically injected `open_tetra.stl` (3-tri open tetrahedron) into the scene via window.__forgeStore.getState().addImportedMesh(...) — vertices=[0,0,0, 1,0,0, 0,1,0, 0,0,0, 1,0,0, 0,0,1, 0,0,0, 0,1,0, 0,0,1].",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All ten testids landed (printability-toggle-btn, printability-toggle-badge, printability-panel, printability-panel-close, printability-empty-state, printability-finding-non-manifold-<objid>, printability-fix-repair-<findingid>, printability-fix-silence-<findingid>, printability-details-toggle-<findingid>, orca-printability-block, orca-printability-override-btn, orca-printability-review-btn, orca-download-btn). Non-manifold injection via window.__forgeStore is reliable. For repair-success-toast verification, use a less degenerate mesh — e.g. a cube with one face removed (10 verts, 10 tris) — which the backend can fully heal."
+}

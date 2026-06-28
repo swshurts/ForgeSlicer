@@ -30,6 +30,7 @@ import SubdivideDialog from "./dialogs/SubdivideDialog";
 import PlanPreviewDialog from "./PlanPreviewDialog";
 import WorkspaceDropZone from "./WorkspaceDropZone";
 import LithoInboxWatcher from "./LithoInboxWatcher";
+import PrintabilityPanel from "./PrintabilityPanel";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -870,6 +871,7 @@ export default function Workspace() {
       <ProjectExplorerDialog open={projectExplorerOpen} onClose={() => setProjectExplorerOpen(false)} />
       <WorkspaceDropZone />
       <LithoInboxWatcher />
+      <PrintabilityPanel />
       <SubdivideDialog
         open={subdivideTargetId !== null}
         objectId={subdivideTargetId}

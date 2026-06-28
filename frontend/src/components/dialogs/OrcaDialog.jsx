@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useScene } from "../../lib/store";
+import { usePrintability } from "../../lib/printabilityStore";
 import { downloadBlob } from "../../lib/exporters";
 import { export3MFBytesAsync } from "../../lib/workerClient";
 import {
   getAllSlicers, getPreferredSlicer, setPreferredSlicerId,
   launchSlicer, stageHandoff,
 } from "../../lib/customSlicers";
-import { X, Loader2, Printer, Download, Star, Settings, CheckCircle2, AlertCircle, Copy } from "lucide-react";
+import { X, Loader2, Printer, Download, Star, Settings, CheckCircle2, AlertCircle, Copy, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import CustomSlicersDialog from "./CustomSlicersDialog";
 
@@ -44,6 +45,25 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
     return prefer?.id || "orcaslicer";
   });
   const [manageOpen, setManageOpen] = useState(false);
+
+  // Iter-108 — pre-flight printability gate. When the dialog opens we
+  // re-run the checks against the current scene + buildVolume so the
+  // "Will fail" banner reflects what the user is ACTUALLY about to
+  // ship to the slicer (not whatever was cached from the last
+  // PrintabilityPanel render). `proceedAnyway` is one-shot — re-opening
+  // the dialog re-arms the gate.
+  const buildVolume = useScene((s) => s.buildVolume);
+  const recheckPrintability = usePrintability((s) => s.recheck);
+  const setPrintabilityPanelOpen = usePrintability((s) => s.setPanelOpen);
+  const printabilityFindings = usePrintability((s) => s.findings);
+  const willFailFindings = printabilityFindings.filter((f) => f.severity === "will-fail");
+  const [proceedAnyway, setProceedAnyway] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    recheckPrintability({ objects, buildVolume });
+    setProceedAnyway(false);
+  }, [open, objects, buildVolume, recheckPrintability]);
 
   // When the dialog opens, refresh the slicer list (the user may have
   // added a custom one since the last open) and reset transient state.
@@ -286,12 +306,58 @@ export function OrcaDialog({ open, onClose, targetSlicer }) {
           <button
             data-testid="orca-download-btn"
             onClick={handleDownload}
-            disabled={busy || objects.length === 0 || !slicer}
+            disabled={busy || objects.length === 0 || !slicer || (willFailFindings.length > 0 && !proceedAnyway)}
             className="h-10 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-700 text-white font-semibold rounded flex items-center justify-center gap-2"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             {downloaded ? "Download & launch again" : `Download 3MF and launch ${slicer?.name || "slicer"}`}
           </button>
+
+          {/* Iter-108 — pre-flight printability gate. Blocks the send
+              when one or more checks flagged "Will fail" findings, so
+              users don't ship a doomed file to the slicer. The user
+              can still override with "Send anyway" once they've read
+              the warning. Clicking "Review issues" opens the
+              right-rail panel so they can see exactly which parts
+              are unprintable. */}
+          {willFailFindings.length > 0 && !proceedAnyway && (
+            <div
+              data-testid="orca-printability-block"
+              className="bg-red-500/10 border border-red-500/40 rounded p-3 text-[12px] text-red-100 space-y-2"
+            >
+              <div className="flex items-start gap-2">
+                <ShieldAlert size={14} className="mt-0.5 flex-shrink-0 text-red-300" />
+                <div className="flex-1">
+                  <p className="font-semibold text-red-200">
+                    {willFailFindings.length} blocking issue{willFailFindings.length === 1 ? "" : "s"} — this print is likely to fail.
+                  </p>
+                  <p className="mt-1 text-[11px] text-red-100/90 leading-snug">
+                    {willFailFindings[0].title}
+                    {willFailFindings.length > 1 && (
+                      <span className="text-red-300/80"> · plus {willFailFindings.length - 1} more</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  data-testid="orca-printability-review-btn"
+                  onClick={() => { setPrintabilityPanelOpen(true); onClose(); }}
+                  className="flex-1 h-8 bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-100 text-[11px] font-semibold rounded"
+                >
+                  Review issues
+                </button>
+                <button
+                  data-testid="orca-printability-override-btn"
+                  onClick={() => setProceedAnyway(true)}
+                  className="h-8 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] rounded"
+                  title="I know what I'm doing — send to the slicer anyway"
+                >
+                  Send anyway
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Post-launch feedback strip. */}
           {launchState === "likely" && (

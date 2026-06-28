@@ -15,6 +15,7 @@ import ContextMenu from "./ContextMenu";
 import { MeasurementsLayer } from "./viewport/MeasurementsOverlay";
 import { ComponentDimensionsLayer } from "./viewport/ComponentDimensionsOverlay";
 import { RulerAnchorLayer, PinnedRulerLayer } from "./viewport/RulerLayers";
+import PrintabilityOverlay from "./PrintabilityOverlay";
 
 const POSITIVE_COLOR = "#F97316";
 const NEGATIVE_COLOR = "#06B6D4";
@@ -1540,6 +1541,7 @@ export default function Viewport() {
         <ComponentDimensionsLayer />
         <RulerAnchorLayer />
         <PinnedRulerLayer />
+        <PrintabilityOverlay />
         <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />
         <FrameBboxListener />
