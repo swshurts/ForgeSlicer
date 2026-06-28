@@ -47,10 +47,4 @@ export const usePrintability = create((set, get) => ({
             hoveredFindingId: null,
         });
     },
-
-    /** Count of "will-fail" findings — drives the toolbar badge + the
-     *  ExportDialog / slicer gate. */
-    get blockingCount() {
-        return get().findings.filter((f) => f.severity === "will-fail").length;
-    },
 }));

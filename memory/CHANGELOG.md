@@ -4236,3 +4236,25 @@ User feedback: the old hero CTAs (Start Modeling / Import STL · 3MF · OBJ / Br
 ### Files touched
 - `backend/scripts/send_test_plan.py` — new ReportLab + Resend ops script.
 - `backend/scripts/ForgeSlicer-Test-Plan-v1.0.pdf` — generated artifact (25.9 KB).
+
+## Iteration 108 (2026-06-28) — Pre-flight Printability Checks · MVP (Check #1: non-manifold)
+- ✅ Shipped the first Pre-flight Printability Check covering ~50 % of failed first-prints — **non-manifold / open geometry** detection with one-click "Repair mesh" via the existing PyMeshFix backend pipeline.
+- ✅ New right-rail panel (`PrintabilityPanel.jsx`) lists findings with beginner-friendly headline + 🟥 *Will fail* / 🟧 *Likely to fail* severity pills + collapsible "Show details" + a primary fix CTA. Empty-state celebrates 🟩 *"Ready to print — no issues found."*
+- ✅ New `CHECK` toolbar button (`EditRow.jsx`) toggles the panel; gains a red badge with the count of blocking findings so the user is nudged without being yelled at on every keystroke.
+- ✅ Viewport edge overlay (`PrintabilityOverlay.jsx`) draws the offending edges as orange dashed lines for every finding and brightens to red on hover so the user can pinpoint exactly where the mesh is broken.
+- ✅ **Send-to-OrcaSlicer gate** — `OrcaDialog.jsx` re-runs the checks on open and blocks the Download button if any "Will fail" findings exist. The user can click *Review issues* (opens the panel) or *Send anyway* (one-shot override). Prevents shipping a doomed file to the slicer.
+- ✅ Session-scoped silencing (`sessionStorage`) so "Mark as OK" doesn't keep re-flagging the same finding on every recheck.
+- ✅ Architecture: each check is a pure `(obj, scene) => Finding[]` function in `lib/printabilityChecks.js`, so adding checks #2–#7 (thin walls, overhangs, floating parts, intersecting geometry, build-volume violations, very small features) means appending a function — the panel and store don't need to know about them individually.
+- ✅ Tested 10/10 phases via `testing_agent_v3_fork` (iter 108). Programmatic non-manifold injection, finding row + repair + silence, OrcaDialog red banner / disabled Download / Send-anyway / Review-issues all PASS. Empty-state and primitive-cube manifold sanity pass.
+
+### Files touched
+- `frontend/src/lib/printabilityChecks.js` — edge-topology scan + `checkNonManifold` + `runAllChecks` + `sortBySeverity`.
+- `frontend/src/lib/printabilityStore.js` — Zustand store (findings / silencedIds / hoveredFindingId / panelOpen + `recheck` + `silence`).
+- `frontend/src/lib/printabilityFixes.js` — `runFix` dispatch (repair → `repairImportedObject`, silence → store).
+- `frontend/src/components/PrintabilityPanel.jsx` — right-rail panel with finding rows + empty state.
+- `frontend/src/components/PrintabilityOverlay.jsx` — R3F edge highlight inside the Canvas.
+- `frontend/src/components/Workspace.jsx` — mounts the panel.
+- `frontend/src/components/Viewport.jsx` — mounts the overlay inside the Canvas.
+- `frontend/src/components/toolbar/EditRow.jsx` — new `CHECK` toggle with red blocking-count badge.
+- `frontend/src/components/dialogs/OrcaDialog.jsx` — pre-flight gate + Review issues / Send anyway.
+

@@ -13,8 +13,7 @@ const SEV_LIKELY = "likely-fail";
  *  large meshes don't melt the viewport). */
 function scanEdgeTopology(vertices, indices, MAX_HIGHLIGHT = 5000) {
     const edgeCount = new Map(); // canonical "a:b" → count
-    const edgeDir = new Map();   // canonical "a:b" → first half-edge direction (+1 a<b, -1 a>b)
-    const edgeSign = new Map();  // canonical "a:b" → sum of directions (detects same-side double-share)
+    const edgeSign = new Map();  // canonical "a:b" → sum of half-edge directions (detects same-side double-share)
     const offendingKeys = [];
 
     const n = indices ? indices.length : (vertices.length / 3);
@@ -28,7 +27,6 @@ function scanEdgeTopology(vertices, indices, MAX_HIGHLIGHT = 5000) {
             const key = `${lo}:${hi}`;
             edgeCount.set(key, (edgeCount.get(key) || 0) + 1);
             const dir = u < v ? +1 : -1;
-            edgeDir.set(key, dir);
             edgeSign.set(key, (edgeSign.get(key) || 0) + dir);
         }
     }
@@ -76,6 +74,7 @@ function scanEdgeTopology(vertices, indices, MAX_HIGHLIGHT = 5000) {
 /** Check #1 — non-manifold / open geometry. Only runs on imported
  *  meshes (parametric / composite objects are manifold by construction
  *  via the Manifold-3D booleans). Returns 0 or 1 Finding per object. */
+const MAX_HIGHLIGHT_SEGS = 5000;
 export function checkNonManifold(obj) {
     if (!obj || obj.type !== "imported" || !obj.geometry) return null;
     const v = obj.geometry.vertices;
@@ -83,7 +82,7 @@ export function checkNonManifold(obj) {
     if (!v || v.length === 0) return null;
 
     const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
-    const r = scanEdgeTopology(v, i);
+    const r = scanEdgeTopology(v, i, MAX_HIGHLIGHT_SEGS);
     const dt = ((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0) | 0;
 
     const hardFault = r.openEdges > 0 || r.tJunctions > 0;
@@ -100,7 +99,7 @@ export function checkNonManifold(obj) {
     if (r.flippedNormals > 0) bits.push(`${r.flippedNormals} flipped-normal candidate${r.flippedNormals === 1 ? "" : "s"}`);
     const technicalDetail =
         `${bits.join(" · ")} across ${r.totalEdges} edges` +
-        (r.truncated ? ` (highlight clipped to ${5000} segs)` : "") +
+        (r.truncated ? ` (highlight clipped to ${MAX_HIGHLIGHT_SEGS} segs)` : "") +
         ` · scan ${dt} ms`;
 
     return {
