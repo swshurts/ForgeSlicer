@@ -247,11 +247,7 @@ export function SelectionDimLabels() {
       const inset = Math.max(10, 0.3 * Math.max(sizeX, sizeY, sizeZ));
       return {
         sizeX, sizeY, sizeZ,
-        // Front-left-bottom corner — anchor for the POSITION chips.
-        // Mirrors the "X/Y/Z = N.NN" labels TinkerCAD attaches to the
-        // selection's near corner relative to the workplane / ruler
-        // origin.
-        cornerFLB: [minX, minY, minZ],
+        minX, maxX, minY, maxY, minZ, maxZ,
         // Dimension-chip anchors (on the bbox edges) and floating
         // chip positions (offset).
         anchorW: [(minX + maxX) / 2, minY, minZ],
@@ -276,10 +272,35 @@ export function SelectionDimLabels() {
   const editableZ = isAxisEditable(obj, "z");
 
   // Origin for position chips — ruler origin if active, else world.
+  // Iter-114.4: pin the position chips to whichever of the 8 bbox
+  // corners is CLOSEST to the ruler origin in screen distance. That
+  // way placing the ruler on the right side of a part shows readings
+  // at the right corner; placing it behind shows readings at the back
+  // corner. Far more useful than always front-left-bottom.
   const origin = workplaneRuler?.active ? workplaneRuler.origin : [0, 0, 0];
-  const cornerX = bboxData.cornerFLB[0] - origin[0];
-  const cornerY = bboxData.cornerFLB[1] - origin[1];
-  const cornerZ = bboxData.cornerFLB[2] - origin[2];
+  // 8 candidate corners.
+  const corners = [
+    [bboxData.minX, bboxData.minY, bboxData.minZ],
+    [bboxData.maxX, bboxData.minY, bboxData.minZ],
+    [bboxData.minX, bboxData.maxY, bboxData.minZ],
+    [bboxData.maxX, bboxData.maxY, bboxData.minZ],
+    [bboxData.minX, bboxData.minY, bboxData.maxZ],
+    [bboxData.maxX, bboxData.minY, bboxData.maxZ],
+    [bboxData.minX, bboxData.maxY, bboxData.maxZ],
+    [bboxData.maxX, bboxData.maxY, bboxData.maxZ],
+  ];
+  let bestCorner = corners[0];
+  let bestD = Infinity;
+  for (const c of corners) {
+    const dx = c[0] - origin[0];
+    const dy = c[1] - origin[1];
+    const dz = c[2] - origin[2];
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bestD) { bestD = d; bestCorner = c; }
+  }
+  const cornerX = bestCorner[0] - origin[0];
+  const cornerY = bestCorner[1] - origin[1];
+  const cornerZ = bestCorner[2] - origin[2];
 
   return (
     <group renderOrder={999}>
@@ -330,7 +351,7 @@ export function SelectionDimLabels() {
         axis="x"
         worldMm={cornerX}
         color={COLOR_X}
-        position={bboxData.cornerFLB}
+        position={bestCorner}
         screenOffset={{ x: -54, y: -2 }}
         unitSystem={unitSystem}
         testid="pos-chip-x"
@@ -339,7 +360,7 @@ export function SelectionDimLabels() {
         axis="y"
         worldMm={cornerY}
         color={COLOR_Y}
-        position={bboxData.cornerFLB}
+        position={bestCorner}
         screenOffset={{ x: -54, y: 16 }}
         unitSystem={unitSystem}
         testid="pos-chip-y"
@@ -348,7 +369,7 @@ export function SelectionDimLabels() {
         axis="z"
         worldMm={cornerZ}
         color={COLOR_Z}
-        position={bboxData.cornerFLB}
+        position={bestCorner}
         screenOffset={{ x: -54, y: 34 }}
         unitSystem={unitSystem}
         testid="pos-chip-z"

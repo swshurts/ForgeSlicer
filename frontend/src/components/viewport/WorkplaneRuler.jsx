@@ -105,66 +105,80 @@ export function WorkplaneRuler() {
     } catch { /* ignore */ }
   }
 
-  // Tick marks every 10mm along each arm.
+  // Tick marks every 10mm along each arm. Bidirectional — produce
+  // negative-direction ticks too so the user can read offsets either
+  // side of the origin (iter-114.4 — fixes "ruler arms point away
+  // from the part when placed off to the side").
   const ticks = [];
   for (let i = 1; i <= Math.floor(RULER_LEN / 10); i += 1) {
     ticks.push(i * 10);
+    ticks.push(-i * 10);
   }
 
   return (
     <group>
-      {/* +X arm — rose */}
+      {/* X arm — rose. Bidirectional so users can place the ruler on
+          either side of a part and still get a meaningful reading. */}
       <Line
-        points={[[ox, oy, 0.05], [ox + RULER_LEN, oy, 0.05]]}
+        points={[[ox - RULER_LEN, oy, 0.05], [ox + RULER_LEN, oy, 0.05]]}
         color={COLOR_X}
         lineWidth={2}
         depthTest={false}
       />
-      {/* +Y arm — emerald */}
+      {/* Y arm — emerald, bidirectional. */}
       <Line
-        points={[[ox, oy, 0.05], [ox, oy + RULER_LEN, 0.05]]}
+        points={[[ox, oy - RULER_LEN, 0.05], [ox, oy + RULER_LEN, 0.05]]}
         color={COLOR_Y}
         lineWidth={2}
         depthTest={false}
       />
-      {/* X-tick marks */}
+      {/* X-tick marks (both directions) */}
       {ticks.map((t) => (
         <Line
           key={`tx-${t}`}
           points={[
-            [ox + t, oy - (t % 50 === 0 ? 5 : 2.5), 0.05],
-            [ox + t, oy + (t % 50 === 0 ? 5 : 2.5), 0.05],
+            [ox + t, oy - (Math.abs(t) % 50 === 0 ? 5 : 2.5), 0.05],
+            [ox + t, oy + (Math.abs(t) % 50 === 0 ? 5 : 2.5), 0.05],
           ]}
           color={COLOR_X}
-          lineWidth={t % 50 === 0 ? 1.4 : 0.8}
-          opacity={t % 50 === 0 ? 0.9 : 0.5}
+          lineWidth={Math.abs(t) % 50 === 0 ? 1.4 : 0.8}
+          opacity={Math.abs(t) % 50 === 0 ? 0.9 : 0.5}
           transparent
           depthTest={false}
         />
       ))}
-      {/* Y-tick marks */}
+      {/* Y-tick marks (both directions) */}
       {ticks.map((t) => (
         <Line
           key={`ty-${t}`}
           points={[
-            [ox - (t % 50 === 0 ? 5 : 2.5), oy + t, 0.05],
-            [ox + (t % 50 === 0 ? 5 : 2.5), oy + t, 0.05],
+            [ox - (Math.abs(t) % 50 === 0 ? 5 : 2.5), oy + t, 0.05],
+            [ox + (Math.abs(t) % 50 === 0 ? 5 : 2.5), oy + t, 0.05],
           ]}
           color={COLOR_Y}
-          lineWidth={t % 50 === 0 ? 1.4 : 0.8}
-          opacity={t % 50 === 0 ? 0.9 : 0.5}
+          lineWidth={Math.abs(t) % 50 === 0 ? 1.4 : 0.8}
+          opacity={Math.abs(t) % 50 === 0 ? 0.9 : 0.5}
           transparent
           depthTest={false}
         />
       ))}
-      {/* Axis end labels */}
+      {/* Axis end labels — +X, -X, +Y, -Y (iter-114.4 bidirectional). */}
       <Html position={[ox + RULER_LEN + 4, oy, 0.05]} center zIndexRange={[60, 0]} sprite={false}>
         <div
           data-testid="workplane-ruler-x-label"
           className="px-1 py-0.5 rounded bg-black/70 font-mono text-[9px] font-bold select-none"
           style={{ pointerEvents: "none", color: COLOR_X }}
         >
-          X · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
+          +X · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
+        </div>
+      </Html>
+      <Html position={[ox - RULER_LEN - 4, oy, 0.05]} center zIndexRange={[60, 0]} sprite={false}>
+        <div
+          data-testid="workplane-ruler-x-neg-label"
+          className="px-1 py-0.5 rounded bg-black/70 font-mono text-[9px] font-bold select-none"
+          style={{ pointerEvents: "none", color: COLOR_X }}
+        >
+          -X · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
         </div>
       </Html>
       <Html position={[ox, oy + RULER_LEN + 4, 0.05]} center zIndexRange={[60, 0]} sprite={false}>
@@ -173,7 +187,16 @@ export function WorkplaneRuler() {
           className="px-1 py-0.5 rounded bg-black/70 font-mono text-[9px] font-bold select-none"
           style={{ pointerEvents: "none", color: COLOR_Y }}
         >
-          Y · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
+          +Y · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
+        </div>
+      </Html>
+      <Html position={[ox, oy - RULER_LEN - 4, 0.05]} center zIndexRange={[60, 0]} sprite={false}>
+        <div
+          data-testid="workplane-ruler-y-neg-label"
+          className="px-1 py-0.5 rounded bg-black/70 font-mono text-[9px] font-bold select-none"
+          style={{ pointerEvents: "none", color: COLOR_Y }}
+        >
+          -Y · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
         </div>
       </Html>
       {/* Origin sphere — draggable */}
