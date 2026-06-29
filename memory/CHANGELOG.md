@@ -4411,6 +4411,33 @@ After three iteration attempts (Replace → Overlay → Planes-only-skip), the R
 
 ## Iteration 113 (2026-02-28) — Measurement v2 Phase 2: TinkerCAD-parity widgets
 
+## Iteration 114 (2026-02-28) — Triangle flexibility, Mesh Fillet/Chamfer, RightPanel refactor
+
+User asked for three items in a single batch: (P1) configurable triangle, (P1) fillet/chamfer on imported meshes, (P2) RightPanel breakdown. Plus, post-deploy on iPad, the Workplane Ruler / Snap-to-Face buttons were unrecognisable as icon-only IconBtns → converted to labeled TabPillButtons reading "RULER" / "SNAP".
+
+### Added
+- **Configurable 2D Triangle primitive** — `buildShape2D` + `computeBboxLocal` in `lib/geometry.js` now accept `dims.base`, `dims.height`, and `dims.apexShift` (instead of just a single `r` circumradius). Defaults: base=30 mm, height=26 mm, apexShift=0 mm. Legacy r-based scenes continue to work via the same backward-compat branch (geometry derives base = r·√3, height = r·1.5). The Inspector exposes the three new fields under `dim-tri-base` / `dim-tri-height` / `dim-tri-apex-shift` with a helper line explaining how apex shift turns the isoceles triangle into a right triangle. The Inspector clears any stale `r` field on every commit so the new dims always win.
+- **Mesh Fillet / Chamfer for imported meshes** (`/app/frontend/src/lib/meshFillet.js`, ~155 lines). Uses Manifold-3D's `minkowskiSum` / `minkowskiDifference` to apply a true rolling-ball fillet via the well-known morphological open/close pair (`M ⊕ B ⊖ B` for outer / convex edges, `M ⊖ B ⊕ B` for inner / concave). Supports three scopes (`outer`, `inner`, `full`), two modes (`round` with a smooth sphere kernel, `chamfer` with a 4-segment polyhedron for flat micro-bevels), and an `AbortSignal` checked between every Minkowski op. New store action `replaceImportedGeometry(id, vertices, indices)` updates `obj.geometry`, recomputes `originalBbox` from the new verts so dim-label edits keep working, and pushes a history snapshot.
+- **MeshFilletDialog** (`/app/frontend/src/components/dialogs/MeshFilletDialog.jsx`, ~220 lines). Modal with mode toggle (round / chamfer), scope toggle (outer / inner / full), radius slider (0.1–5 mm, suggested as 5 % of smallest mesh dim), live "Processing…" spinner, AbortController-backed cancel. Surfaces toast messages on success / failure / cancellation.
+- **iPad visibility fix** (`/app/frontend/src/components/toolbar/EditRow.jsx`): converted Workplane Ruler and Snap-to-Face from IconBtn (32×32 px) into labeled TabPillButtons reading **RULER** and **SNAP**. Reported by user as "the workplane ruler is not available" on iPad — the buttons were rendered at x=683/720 but the MoveDiagonal/Target glyphs didn't read as their feature names on touch screens. Verified at 1194×834 (iPad-Pro 11"): RULER pill at x=683 width=78 px, SNAP pill at x=765 width=71 px.
+
+### Refactored
+- `RightPanel.jsx` shrunk from 1506 → 1294 lines (-212). Extractions:
+  - `/app/frontend/src/components/inspector/Shape2DControls.jsx` (~160 lines) — circle/square2d/triangle/polygon dim controls and `ExtrudePresets`. NumberField is passed in as a prop so the new file doesn't need to know about RightPanel's internal toolkit.
+  - `/app/frontend/src/components/inspector/MeshImportTools.jsx` (~100 lines) — the Repair Mesh + Fillet Mesh button cluster + dialog mount, owning its own `repairBusy` / `meshFilletOpen` state so the Inspector no longer needs them.
+
+### Verified
+- `testing_agent_v3_fork` iter-114: **100 % PASS** on every in-scope check (triangle add / dims / resize / apex shift, cube + cylinder + sphere Inspector regression, extrude presets, workplane ruler still toggles, snap-to-face mode + banner). MeshFilletDialog opening logic verified by static code review since no STL fixture was spawned; all required testids present and AbortController wired.
+
+### Files touched
+- New: `lib/meshFillet.js`, `components/dialogs/MeshFilletDialog.jsx`, `components/inspector/Shape2DControls.jsx`, `components/inspector/MeshImportTools.jsx`.
+- Edited: `lib/geometry.js` (triangle dims), `lib/primitiveDefaults.js` (triangle defaults), `lib/store.js` (replaceImportedGeometry), `components/RightPanel.jsx` (refactor — extracted blocks + replaced with subcomponents), `components/toolbar/EditRow.jsx` (RULER/SNAP pill buttons).
+
+### Future
+- The testing agent flagged `ProfileSection` (~250 lines, printer/filament/community picker) and the giant `Inspector` dim switchboard (~270 lines, lines 1100–1230 of RightPanel) as remaining extraction candidates. The fillet `applyMeshFillet` checks the AbortSignal between Minkowski ops only — true mid-op cancellation requires Manifold-3d to expose a cancellation token, which it currently doesn't.
+
+
+
 User asked for the experience to "be as close to TinkerCAD as possible" (handoff confirmation). Shipped the three missing pieces that, together with the iter-112 mm/in toggle, brings ForgeSlicer's measurement surface to TinkerCAD parity.
 
 ### Added
