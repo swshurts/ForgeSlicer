@@ -633,6 +633,36 @@ export const useScene = create((set, get) => ({
     return obj.id;
   },
 
+  // Iter-114 — Replace the geometry of an imported mesh in place
+  // (used by the Fillet/Chamfer dialog). Recomputes `originalBbox`
+  // from the new vertices so dim-label edits keep working. Pushes a
+  // history snapshot so the user can undo a botched fillet pass.
+  replaceImportedGeometry: (id, vertices, indices) => {
+    const obj = get().objects.find((o) => o.id === id);
+    if (!obj || obj.type !== "imported") return;
+    get().pushHistory();
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < vertices.length; i += 3) {
+      const x = vertices[i], y = vertices[i + 1], z = vertices[i + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    const bb = {
+      x: Number.isFinite(maxX - minX) ? maxX - minX : (obj.originalBbox?.x ?? 0),
+      y: Number.isFinite(maxY - minY) ? maxY - minY : (obj.originalBbox?.y ?? 0),
+      z: Number.isFinite(maxZ - minZ) ? maxZ - minZ : (obj.originalBbox?.z ?? 0),
+    };
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        o.id === id
+          ? { ...o, geometry: { vertices, indices }, originalBbox: bb, csgVersion: (o.csgVersion || 0) + 1 }
+          : o,
+      ),
+    }));
+  },
+
   addRawObject: (obj) => {
     get().pushHistory();
     let withId = { ...obj, id: obj.id || newId(obj.type || "mesh") };

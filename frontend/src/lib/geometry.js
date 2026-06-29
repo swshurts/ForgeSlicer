@@ -121,13 +121,32 @@ function buildLatheCone(r, h, edgeRadius, segments, edgeStyle) {
 function buildShape2D(type, d) {
   const shape = new THREE.Shape();
   if (type === "triangle") {
-    const r = d.r || 12;
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
-      const x = Math.cos(a) * r, y = Math.sin(a) * r;
-      if (i === 0) shape.moveTo(x, y);
-      else shape.lineTo(x, y);
+    // Configurable triangle (iter-114). Supports base + height + apex
+    // shift so users can build right / isoceles / scalene triangles
+    // from one primitive. Legacy r-based scenes still work: if base &
+    // height are absent we fall back to the original equilateral
+    // formula (base = r·√3, height = r·1.5) for backwards compat.
+    let base, height, apexShift;
+    if (d.base != null || d.height != null) {
+      base = Math.max(0.1, d.base ?? 20);
+      height = Math.max(0.1, d.height ?? 17.3);
+      apexShift = d.apexShift ?? 0;
+    } else {
+      const r = d.r || 12;
+      base = r * Math.sqrt(3);
+      height = r * 1.5;
+      apexShift = 0;
     }
+    // Centroid at origin. Centroid of any triangle is the average of
+    // the three vertices, so we place vertices so they sum to zero.
+    // Base sits along Y = -height/3, apex at Y = +2·height/3.
+    const bx = base / 2;
+    const by = -height / 3;
+    const ax = apexShift;
+    const ay = (2 * height) / 3;
+    shape.moveTo(-bx, by);
+    shape.lineTo(bx, by);
+    shape.lineTo(ax, ay);
     shape.closePath();
   } else if (type === "polygon") {
     const r = d.r || 12;
@@ -554,6 +573,17 @@ export function getBaseSize(obj) {
     return { x: s, y: s, z: d.h || 1 };
   }
   if (t === "triangle") {
+    // Match buildShape2D — new dims (base/height/apexShift) win when
+    // present, else legacy r-based equilateral derivation.
+    if (d.base != null || d.height != null) {
+      const base = Math.max(0.1, d.base ?? 20);
+      const height = Math.max(0.1, d.height ?? 17.3);
+      const apexShift = d.apexShift ?? 0;
+      // X-extent is max(|base|, |apexShift| + base/2 + apex offset).
+      const xMin = Math.min(-base / 2, apexShift);
+      const xMax = Math.max(base / 2, apexShift);
+      return { x: xMax - xMin, y: height, z: d.h || 1 };
+    }
     const r = d.r || 12;
     return { x: r * Math.sqrt(3), y: r * 1.5, z: d.h || 1 };
   }

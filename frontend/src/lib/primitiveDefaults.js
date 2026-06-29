@@ -72,7 +72,7 @@ export const PRIMITIVE_DEFAULTS = {
   // bumping h to whatever depth the user wants.
   circle:   { dims: { r: 10, h: 1 } },
   square2d: { dims: { side: 20, h: 1 } },
-  triangle: { dims: { r: 12, h: 1 } },
+  triangle: { dims: { base: 30, height: 26, apexShift: 0, h: 1 } },
   polygon:  { dims: { r: 12, sides: 6, h: 1 } },
   // ---- Sweep (v1.18, iter 46) ----
   // sweep: extrudes a 2D profile along a 3D path so the profile stays

@@ -1,0 +1,38 @@
+{
+  "summary": "Frontend-only regression for iter-114 (Triangle base/height/apexShift, MeshFilletDialog UI, RightPanel refactor). All visible UI flows pass. Mesh Fillet dialog tested via static code review only (no STL fixture spawned).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iter114_final.jpg"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RightPanel.jsx still ~1300 lines after the iter-114 extraction; PRD goal of 'splitting ~1500 line files' partially met. ProfileSection (printer/filament/community picker, ~250 lines) and the Inspector dimension switchboard remain inline candidates for a future pass.",
+    "Spec wording bug (non-blocking): the test instruction's formula `max(base, base/2 + apexShift + base/2)` overstates the actual triangle bbox width. The geometry's bbox is `max(base/2, apexShift) - min(-base/2, apexShift)`, which with base=60/apexShift=15 = 60 (NOT 75). Observed W=60 is geometrically correct; recommend updating the test rubric.",
+    "MeshFilletDialog: long Manifold Minkowski (10-60 s) blocks main thread; AbortController is wired but `applyMeshFillet` must honour `signal` cooperatively for cancel to be responsive. Verify in next iteration with a real STL.",
+    "MeshImportTools is rendered only when `obj.geometry` truthy; for imported objects whose geometry failed to deserialise from a saved project, Repair/Fillet buttons silently disappear. Consider a friendly placeholder."
+  ],
+  "test_results": {
+    "triangle_add": "PASS — add-primitive-triangle creates triangle, Inspector shows shape2d-controls",
+    "triangle_dims": "PASS — dim-tri-base=30, dim-tri-height=26, dim-tri-apex-shift=0; helper text 'isoceles · +half base = right triangle' visible",
+    "triangle_resize": "PASS — base 30→60 makes dim-label-w read 'W60.0mm'",
+    "triangle_apex": "PASS — apex 0→15 keeps height=26; W stayed at 60 (geometrically correct because |apex|=15 < base/2=30 so apex doesn't widen the bbox)",
+    "cube_regression": "PASS — dim-x/y/z + dim-label-w/d/h all present",
+    "cylinder_regression": "PASS — dim-d, dim-h present",
+    "sphere_regression": "PASS — dim-d present",
+    "extrude_presets": "PASS — extrude-preset-1 and extrude-preset-5 present on Triangle",
+    "workplane_ruler": "PASS — workplane-ruler-toggle-btn present, not disabled, clickable",
+    "place_on_face": "PASS — place-on-face-toggle-btn present, not disabled, place-on-face-hint banner appears after click",
+    "mesh_fillet_dialog": "SKIPPED (no STL fixture) — static code review of MeshFilletDialog.jsx confirms all required testids (mesh-fillet-mode-round/chamfer, mesh-fillet-scope-outer/inner/full, mesh-fillet-radius-slider, mesh-fillet-run-btn, mesh-fillet-cancel-btn), AbortController wiring, and graceful close. MeshImportTools.jsx exposes the fillet-mesh-btn next to repair-mesh-btn for imported objects."
+  },
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% of in-scope checks"},
+  "test_credentials": "session_token=st_iter114_1782699840835 (Steve Shurts, super-admin) — used via cookie injection, accepted",
+  "seed_data_creation": "None — added 4 transient primitives (triangle/cube/cylinder/sphere) into a fresh /workspace session; no persistence",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Workspace is reached via /workspace (NOT /). The Add menu is opened via a button with title attribute containing 'Add' (no direct data-testid on the menu trigger — adding `data-testid=add-shape-menu` to that toolbar button would simplify future automation). Triangle Inspector controls render under data-testid='shape2d-controls' with the three new fields dim-tri-base, dim-tri-height, dim-tri-apex-shift. Apex bbox-width semantics: width = max(base/2, apexShift) - min(-base/2, apexShift), so apex within ±base/2 leaves W=base. MeshFilletDialog cannot be opened without an imported mesh; the dialog itself is wired via MeshImportTools rendered inside Inspector when obj.type==='imported' && obj.geometry.",
+  "rca of the issue": "n/a — no bugs found in scope"
+}

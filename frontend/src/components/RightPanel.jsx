@@ -14,8 +14,10 @@ import TextInspectorBlock from "./inspector/TextInspectorBlock";
 // is preserved for future use should the slicer pipeline ever honour
 // per-edge geometry in the modifier-mesh carve.
 import AutoSaveSection from "./inspector/AutoSaveSection";
+import MeshImportTools from "./inspector/MeshImportTools";
+import { Shape2DControls } from "./inspector/Shape2DControls";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Wrench, Loader2, Eye } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Loader2, Eye } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
@@ -722,12 +724,6 @@ function Inspector() {
   const unitSystem = useScene((s) => s.unitSystem);
   const removeObject = useScene((s) => s.removeObject);
 
-  // Repair Mesh — POSTs the host's STL to /api/mesh/repair, MeshLab
-  // closes holes / fixes non-manifold edges / vertices, repaired STL
-  // comes back and we swap obj.geometry in place. Hook lives ABOVE the
-  // early return because hooks must be called in the same order every
-  // render — moving it below the `if (!obj) return` violates rules-of-hooks.
-  const [repairBusy, setRepairBusy] = useState(false);
   // Reverse-Engineer was removed in iter-111.4 — the RANSAC output
   // wasn't actionable enough to justify the UI. See CHANGELOG iter-111.4.
   const obj = objects.find((o) => o.id === selectedId);
@@ -738,41 +734,6 @@ function Inspector() {
       </Section>
     );
   }
-
-  const handleRepairMesh = async () => {
-    if (repairBusy || obj.type !== "imported" || !obj.geometry) return;
-    setRepairBusy(true);
-    const t0 = performance.now();
-    try {
-      const { update, stats } = await repairImportedObject(obj);
-      updateObject(obj.id, update);
-
-      const totalElapsed = ((performance.now() - t0) / 1000).toFixed(1);
-      const { inputTris, outputTris, elapsedSec, watertight, windingConsistent } = stats;
-      // Surface the manifold status — this is the metric that actually
-      // determines whether downstream booleans will succeed. A "repair"
-      // that doesn't yield a watertight mesh is a half-fix and the user
-      // needs to know so they don't keep retrying the same boolean.
-      if (watertight && windingConsistent) {
-        toast.success(
-          `Mesh repaired & watertight — ${inputTris | 0} → ${outputTris | 0} tris (MeshFix ${elapsedSec.toFixed(1)}s, total ${totalElapsed}s)`,
-          { duration: 6000 }
-        );
-      } else {
-        const issues = [];
-        if (!watertight) issues.push("still has open edges");
-        if (!windingConsistent) issues.push("inconsistent face winding");
-        toast.warning(
-          `Mesh partially repaired — ${inputTris | 0} → ${outputTris | 0} tris, but ${issues.join(" and ")}. Boolean cuts may still drop. Try simplifying the mesh first.`,
-          { duration: 10000 }
-        );
-      }
-    } catch (err) {
-      toast.error(`Repair failed: ${err.message || err}`, { duration: 6000 });
-    } finally {
-      setRepairBusy(false);
-    }
-  };
 
   return (
     <Section title={`Inspector — ${obj.type}`} icon={Sliders} testid="inspector">
@@ -873,21 +834,7 @@ function Inspector() {
       )}
 
       {obj.type === "imported" && obj.geometry && (
-        <div className="space-y-1.5" data-testid="repair-mesh-block">
-          <button
-            data-testid="repair-mesh-btn"
-            onClick={handleRepairMesh}
-            disabled={repairBusy}
-            className="w-full h-8 bg-emerald-600/90 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-emerald-400/40"
-            title="Repair this mesh via MeshLab (same engine as Microsoft 3D Builder). Closes holes, fixes non-manifold edges & vertices, removes duplicates. Use when STL Preview warned that a Boolean cut was dropped because the host is non-manifold. Typical round-trip: 5–20 seconds."
-          >
-            {repairBusy ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
-            {repairBusy ? "Repairing via MeshLab…" : "Repair Mesh"}
-          </button>
-          <p className="text-[10px] text-slate-500 leading-snug">
-            Server-side MeshLab repair. Closes hairline holes, fixes non-manifold edges and vertices, and removes duplicate geometry. Use this when STL Preview reports a dropped Boolean cut.
-          </p>
-        </div>
+        <MeshImportTools obj={obj} />
       )}
 
       {obj.modifier !== "negative" && (
@@ -1210,7 +1157,7 @@ function Inspector() {
       )}
 
       {(obj.type === "circle" || obj.type === "square2d" || obj.type === "triangle" || obj.type === "polygon") && (
-        <Shape2DControls obj={obj} updateDims={updateDims} />
+        <Shape2DControls obj={obj} updateDims={updateDims} NumberField={NumberField} />
       )}
 
       {/* Reverse-Engineer was removed in iter-111.4 — see CHANGELOG. */}
@@ -1224,118 +1171,10 @@ function Inspector() {
 // {edgeStyle, edgeRadius}; the other modes write per-edge entries into
 // obj.edgeFillets, consumed by the partial-fillet engine.
 
-// ---------- 2D shape controls: dims + slider/number sides + Extrude ----------
-function Shape2DControls({ obj, updateDims }) {
-  const d = obj.dims || {};
-  const unitSystem = useScene((s) => s.unitSystem);
-  const is2D = (d.h || 1) <= 1.01; // visually "still a 2D sketch"
-  return (
-    <div className="space-y-2" data-testid="shape2d-controls">
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
-          <span>2D Dimensions ({unitSystem})</span>
-          <span
-            className={`text-[9px] normal-case px-1.5 py-0.5 rounded ${is2D ? "bg-purple-500/20 text-purple-300" : "bg-orange-500/20 text-orange-300"}`}
-            title={is2D ? "Currently a 2D sketch — set Extrude depth below" : "Already extruded"}
-          >
-            {is2D ? "2D sketch" : `extruded ${unitSystem === "in" ? (((d.h || 1) / 25.4).toFixed(3) + " in") : (((d.h || 1).toFixed(1)) + " mm")}`}
-          </span>
-        </div>
-        {obj.type === "circle" && (
-          <div className="grid grid-cols-1 gap-2">
-            <NumberField testid="dim2d-r" label="Radius" value={d.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
-          </div>
-        )}
-        {obj.type === "square2d" && (
-          <div className="grid grid-cols-1 gap-2">
-            <NumberField testid="dim2d-side" label="Side" value={d.side} onChange={(v) => updateDims(obj.id, { side: v })} step={0.5} min={0.1} />
-          </div>
-        )}
-        {obj.type === "triangle" && (
-          <div className="grid grid-cols-1 gap-2">
-            <NumberField testid="dim2d-r" label="Circumradius" value={d.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
-          </div>
-        )}
-        {obj.type === "polygon" && (
-          <div className="space-y-2">
-            <NumberField testid="dim2d-r" label="Circumradius" value={d.r} onChange={(v) => updateDims(obj.id, { r: v })} step={0.5} min={0.1} />
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Sides</span>
-                <span data-testid="polygon-sides-readout" className="text-[10px] font-mono text-orange-400">{d.sides | 0}</span>
-              </div>
-              <input
-                data-testid="polygon-sides-slider"
-                type="range"
-                min={3}
-                max={24}
-                step={1}
-                value={d.sides | 0}
-                onChange={(e) => updateDims(obj.id, { sides: parseInt(e.target.value, 10) })}
-                className="w-full accent-orange-500"
-              />
-              <div className="mt-1">
-                <NumberField
-                  testid="polygon-sides-input"
-                  label=""
-                  value={d.sides | 0}
-                  onChange={(v) => updateDims(obj.id, { sides: Math.max(3, Math.min(24, Math.round(v))) })}
-                  step={1}
-                  min={3}
-                  suffix="sides"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      <ExtrudePresets obj={obj} updateDims={updateDims} />
-    </div>
-  );
-}
+// ---------- 2D shape controls + ExtrudePresets ----------
+// Extracted to /components/inspector/Shape2DControls.jsx in iter-114 as
+// part of the RightPanel breakdown. See that file for the implementation.
 
-function ExtrudePresets({ obj, updateDims }) {
-  const dropToBed = useScene((s) => s.dropToBed);
-  const apply = (mm) => {
-    updateDims(obj.id, { h: mm });
-    // After extruding upward, keep the bottom flush with the bed.
-    setTimeout(() => dropToBed(obj.id, false), 0);
-  };
-  const presets = [1, 5, 10, 20];
-  return (
-    <div data-testid="extrude-controls" className="bg-slate-950/60 border border-purple-500/40 rounded p-2 space-y-2">
-      <div className="text-[10px] uppercase tracking-wider text-purple-300 font-semibold flex items-center justify-between">
-        <span>Extrude to depth</span>
-        <span className="text-[9px] normal-case text-slate-500">turns 2D → 3D</span>
-      </div>
-      <div className="grid grid-cols-4 gap-1">
-        {presets.map((mm) => (
-          <button
-            key={mm}
-            data-testid={`extrude-preset-${mm}`}
-            onClick={() => apply(mm)}
-            className={`h-7 text-[10px] font-mono rounded border ${
-              Math.abs((obj.dims.h || 0) - mm) < 0.01
-                ? "border-orange-500 bg-orange-500/15 text-orange-300"
-                : "border-slate-700 bg-slate-900 text-slate-300 hover:border-orange-500/50"
-            }`}
-          >
-            {mm}mm
-          </button>
-        ))}
-      </div>
-      <NumberField
-        testid="extrude-custom-input"
-        label="Custom depth"
-        value={obj.dims.h}
-        onChange={(v) => v > 0 && apply(v)}
-        step={0.5}
-        min={0.1}
-        suffix="mm"
-      />
-    </div>
-  );
-}
 
 function StatsSection() {
   const objects = useScene((s) => s.objects);
