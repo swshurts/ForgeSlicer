@@ -1,37 +1,25 @@
-// Iter-113 — TinkerCAD-style inline-editable W/D/H dimension labels.
+// Iter-114.3 — TinkerCAD-parity dimension HUD.
 //
-// Renders three chips welded to the primary selection's world bbox:
-//   • W (X) — front-bottom edge midpoint
-//   • D (Y) — right-bottom edge midpoint
-//   • H (Z) — front-right vertical edge midpoint
-//
-// Each chip is read-only by default. Clicking turns it into a small
-// numeric input that respects the global mm/inch toggle. Submitting
-// (Enter or blur) writes back the new dimension to the appropriate
-// scene action:
-//   • cube       → updateDims(id, {x|y|z: mm})
-//   • cylinder   → updateDims(id, {r: mm/2})         for X/Y
-//                 updateDims(id, {h: mm})            for Z
-//   • cone       → updateDims(id, {r1: mm/2, r2: r2_scaled}) for X/Y
-//                 updateDims(id, {h: mm})            for Z
-//   • sphere     → updateDims(id, {r: mm/2})         for any axis
-//   • imported   → setImportedDim(id, axis, mm)       (requires originalBbox)
-//   • everything else (sketch, sweep, text, group of mixed) → read-only.
-//
-// The labels respect the unit toggle (mm vs in) and are hidden during
-// gizmo-drag transforms (so the user reads the live bbox chip in the
-// corner instead of stale text floating around the moving mesh).
+// Renders for the primary selection (when DIMS is on):
+//   • 3 colour-coded W / D / H dimension chips connected by SHORT
+//     LEADER LINES + arrows to the edge midpoints they measure.
+//   • 3 POSITION chips pinned at the front-left-bottom corner of the
+//     bbox, showing the corner's coords RELATIVE to the workplane
+//     ruler origin when active (else workplane origin = 0,0,0).
+//   • Translucent white chip styling matches TinkerCAD's look so the
+//     labels never feel like opaque popovers blocking the geometry.
+//   • Chips and ruler can coexist — we no longer auto-hide when the
+//     ruler is on.
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Html } from "@react-three/drei";
+import { Html, Line } from "@react-three/drei";
 import { useScene } from "../../lib/store";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { toDisplayLen, fromDisplayLen } from "../../lib/units";
 
-const COLOR_X = "#FB7185"; // rose
-const COLOR_Y = "#34D399"; // emerald
-const COLOR_Z = "#60A5FA"; // sky (Z = up)
+const COLOR_X = "#E11D48"; // rose-600  — slightly darker so it reads on white
+const COLOR_Y = "#059669"; // emerald-600
+const COLOR_Z = "#2563EB"; // blue-600
 
-/** Decide whether a given primitive type+axis is editable. */
 function isAxisEditable(obj, axis) {
   if (!obj) return false;
   if (obj.locked) return false;
@@ -42,31 +30,19 @@ function isAxisEditable(obj, axis) {
   return false;
 }
 
-/** Commit a new world-mm length for a given axis on the selected object. */
 function commitAxisLength(obj, axis, mm, actions) {
   if (!obj || !Number.isFinite(mm) || mm <= 0) return;
   const { updateDims, setImportedDim } = actions;
-  if (obj.type === "cube") {
-    updateDims(obj.id, { [axis]: mm });
-    return;
-  }
-  if (obj.type === "sphere") {
-    // Sphere is uniform — any axis edit sets the same diameter.
-    updateDims(obj.id, { r: mm / 2 });
-    return;
-  }
+  if (obj.type === "cube") { updateDims(obj.id, { [axis]: mm }); return; }
+  if (obj.type === "sphere") { updateDims(obj.id, { r: mm / 2 }); return; }
   if (obj.type === "cylinder") {
     if (axis === "z") updateDims(obj.id, { h: mm });
     else updateDims(obj.id, { r: mm / 2 });
     return;
   }
   if (obj.type === "cone") {
-    if (axis === "z") {
-      updateDims(obj.id, { h: mm });
-    } else {
-      // Scale the base radius — preserve the tip:base ratio so a cone
-      // doesn't accidentally become a cylinder. Tip radius (r2) follows
-      // the same factor.
+    if (axis === "z") { updateDims(obj.id, { h: mm }); }
+    else {
       const oldR1 = obj.dims?.r1 ?? obj.dims?.r ?? 10;
       const oldR2 = obj.dims?.r2 ?? 0;
       const factor = (mm / 2) / Math.max(oldR1, 1e-6);
@@ -76,29 +52,22 @@ function commitAxisLength(obj, axis, mm, actions) {
   }
   if (obj.type === "imported" && obj.originalBbox) {
     setImportedDim(obj.id, axis, mm);
-    return;
   }
 }
 
-/** Single editable chip — encapsulates input/display toggle. */
-function DimChip({
-  axis,
-  worldMm,
-  color,
-  position,
-  screenOffset, // {x, y} in CSS pixels — pushes the chip in screen space
-  editable,
-  unitSystem,
-  onCommit,
-  testid,
-}) {
+/**
+ * Editable dimension chip with a leader line to its anchored edge.
+ *
+ * `anchor` is the WORLD point on the bbox edge midpoint that the chip
+ * measures. `position` is where the chip itself floats (a bit offset
+ * so it doesn't overlap geometry). A dashed line + arrowhead renders
+ * between them so users can tell which chip belongs to which edge.
+ */
+function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editable, unitSystem, onCommit, testid }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const inputRef = useRef(null);
 
-  // Sync the visible mm value into the editor whenever the live bbox
-  // changes (drag, rotate, etc.) — but never overwrite the user's
-  // in-flight typing.
   useEffect(() => {
     if (!editing) {
       const d = unitSystem === "in" ? 3 : 2;
@@ -107,128 +76,142 @@ function DimChip({
   }, [worldMm, unitSystem, editing]);
 
   useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
+    if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
   }, [editing]);
 
   const commit = () => {
     const display = parseFloat(value);
-    if (Number.isFinite(display) && display > 0) {
-      const mm = fromDisplayLen(display, unitSystem);
-      onCommit(mm);
-    }
+    if (Number.isFinite(display) && display > 0) onCommit(fromDisplayLen(display, unitSystem));
     setEditing(false);
   };
 
   const handleKey = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setEditing(false);
-    }
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
     e.stopPropagation();
   };
 
   const axisLabel = axis === "x" ? "W" : axis === "y" ? "D" : "H";
-  // Screen-space transform so the chip never sits on top of the bbox
-  // edge regardless of camera distance. The Html `center` flag pins
-  // the chip's centre to the world point; translate moves the chip in
-  // CSS pixels from that centre — gives deterministic margin.
-  const transform = screenOffset
-    ? `translate(${screenOffset.x}px, ${screenOffset.y}px)`
-    : undefined;
+  const transform = screenOffset ? `translate(${screenOffset.x}px, ${screenOffset.y}px)` : undefined;
 
   return (
-    <Html
-      position={position}
-      center
-      zIndexRange={[70, 0]}
-      sprite={false}
-    >
-      <div style={{ transform, pointerEvents: "auto" }}>
-      {editing ? (
-        <div
-          data-testid={`${testid}-editor`}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-lg select-none"
-          style={{
-            pointerEvents: "auto",
-            borderColor: color,
-            boxShadow: `0 0 10px ${color}80`,
-          }}
-        >
-          <span
-            className="font-mono text-[10px] font-bold"
-            style={{ color }}
-          >
-            {axisLabel}
-          </span>
-          <input
-            ref={inputRef}
-            data-testid={`${testid}-input`}
-            type="text"
-            inputMode="decimal"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKey}
-            onBlur={commit}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="w-14 bg-transparent text-[11px] font-mono font-semibold text-white outline-none border-b border-slate-600 focus:border-white"
-          />
-          <span className="text-[9px] font-mono text-slate-400">{unitSystem}</span>
-        </div>
-      ) : (
-        <button
-          data-testid={testid}
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (editable) setEditing(true);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          disabled={!editable}
-          title={
-            editable
-              ? `${axisLabel} (${axis.toUpperCase()}) — click to edit`
-              : `${axisLabel} (${axis.toUpperCase()}) — read-only for this object type`
-          }
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/85 border font-mono text-[11px] font-semibold select-none whitespace-nowrap transition-shadow ${
-            editable
-              ? "cursor-pointer hover:bg-slate-900"
-              : "cursor-default opacity-80"
-          }`}
-          style={{
-            pointerEvents: "auto",
-            borderColor: `${color}90`,
-            color: "#F8FAFC",
-            textShadow: "0 1px 2px #000a",
-          }}
-        >
-          <span style={{ color }} className="font-bold">{axisLabel}</span>
-          <span>
-            {toDisplayLen(worldMm, unitSystem).toFixed(unitSystem === "in" ? 3 : 1)}
-          </span>
-          <span className="text-[9px] text-slate-400">{unitSystem}</span>
-        </button>
+    <>
+      {/* Leader line: dashed segment from chip anchor (on the bbox
+          edge) out to where the chip sits. Iter-114.3 — matches the
+          TinkerCAD style of "leader-with-arrow" so every chip is
+          unambiguously tied to its edge. */}
+      {anchor && (
+        <Line
+          points={[anchor, position]}
+          color={color}
+          lineWidth={1.2}
+          dashed
+          dashSize={2}
+          gapSize={1.5}
+          depthTest={false}
+          transparent
+          opacity={0.65}
+        />
       )}
+      <Html position={position} center zIndexRange={[70, 0]} sprite={false}>
+        <div style={{ transform, pointerEvents: "auto" }}>
+          {editing ? (
+            <div
+              data-testid={`${testid}-editor`}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded shadow-md select-none"
+              style={{
+                pointerEvents: "auto",
+                background: "rgba(255,255,255,0.92)",
+                border: `1.5px solid ${color}`,
+                boxShadow: `0 1px 4px rgba(0,0,0,0.18), 0 0 6px ${color}40`,
+              }}
+            >
+              <span className="font-mono text-[10px] font-bold" style={{ color }}>{axisLabel}</span>
+              <input
+                ref={inputRef}
+                data-testid={`${testid}-input`}
+                type="text"
+                inputMode="decimal"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={handleKey}
+                onBlur={commit}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="w-14 bg-transparent text-[11px] font-mono font-semibold text-slate-900 outline-none border-b border-slate-400 focus:border-slate-900"
+              />
+              <span className="text-[9px] font-mono text-slate-500">{unitSystem}</span>
+            </div>
+          ) : (
+            <button
+              data-testid={testid}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (editable) setEditing(true); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              disabled={!editable}
+              title={editable
+                ? `${axisLabel} (${axis.toUpperCase()}) — click to edit`
+                : `${axisLabel} (${axis.toUpperCase()}) — read-only for this object type`}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-semibold select-none whitespace-nowrap ${
+                editable ? "cursor-pointer" : "cursor-default"
+              }`}
+              style={{
+                // Translucent white chip — TinkerCAD parity. Still
+                // readable over dark themes thanks to the 80 % opacity
+                // and the colored axis letter, but lets geometry show
+                // through behind it.
+                pointerEvents: "auto",
+                background: "rgba(255,255,255,0.80)",
+                border: `1px solid ${color}80`,
+                color: "#0F172A",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+              }}
+            >
+              <span style={{ color }} className="font-bold">{axisLabel}</span>
+              <span>{toDisplayLen(worldMm, unitSystem).toFixed(unitSystem === "in" ? 3 : 1)}</span>
+              <span className="text-[9px] text-slate-500">{unitSystem}</span>
+            </button>
+          )}
+        </div>
+      </Html>
+    </>
+  );
+}
+
+/**
+ * Position chip — non-editable. Anchored to the front-left-bottom
+ * corner of the bbox, shows that corner's coordinate along one axis
+ * relative to the active workplane ruler origin (or 0 if no ruler).
+ */
+function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem, testid }) {
+  const v = toDisplayLen(worldMm, unitSystem);
+  const dp = unitSystem === "in" ? 3 : 2;
+  const sign = v >= 0 ? "" : "−";
+  const txt = `${sign}${Math.abs(v).toFixed(dp)}`;
+  const transform = screenOffset ? `translate(${screenOffset.x}px, ${screenOffset.y}px)` : undefined;
+  const label = axis.toUpperCase();
+  return (
+    <Html position={position} center zIndexRange={[68, 0]} sprite={false}>
+      <div
+        data-testid={testid}
+        style={{
+          transform,
+          pointerEvents: "none",
+          background: "rgba(255,255,255,0.80)",
+          border: `1px dashed ${color}80`,
+          color: "#0F172A",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
+        }}
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10.5px] font-semibold whitespace-nowrap select-none"
+      >
+        <span style={{ color }} className="font-bold">{label}</span>
+        <span>{txt}</span>
+        <span className="text-[9px] text-slate-500">{unitSystem}</span>
       </div>
     </Html>
   );
 }
 
-/**
- * Inline-editable W/D/H labels for the currently selected object.
- * Renders nothing when:
- *   - no primary selection
- *   - the gizmo is mid-drag (handled by parent: hidden during
- *     transformInProgress)
- *   - the object is hidden
- *   - the bbox can't be resolved (e.g. partially loaded sweep)
- */
 export function SelectionDimLabels() {
   const selectedId = useScene((s) => s.selectedId);
   const objects = useScene((s) => s.objects);
@@ -239,16 +222,15 @@ export function SelectionDimLabels() {
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
   const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
-  // Iter-114.1 — user opt-in toggle. The always-on TinkerCAD-style
-  // labels cluttered small selections and double-stacked with the
-  // Workplane Ruler. Now hidden unless dimLabelsEnabled === true.
   const dimLabelsEnabled = useScene((s) => s.dimLabelsEnabled);
-  const workplaneRulerActive = useScene((s) => s.workplaneRuler?.active);
-  const workplaneRulerPlacing = useScene((s) => s.workplaneRuler?.placing);
+  const workplaneRuler = useScene((s) => s.workplaneRuler);
+  const workplaneRulerPlacing = workplaneRuler?.placing;
 
   const obj = objects.find((o) => o.id === selectedId);
 
-  // Compute the WORLD-space rotated bbox + label-anchor world points.
+  // World-space bbox + anchor (edge midpoint) AND chip floating
+  // position. The anchor end of the leader line lives on the bbox;
+  // the position end is offset away from geometry.
   const bboxData = useMemo(() => {
     if (!obj || obj.visible === false) return null;
     try {
@@ -257,63 +239,57 @@ export function SelectionDimLabels() {
       const px = obj.position?.[0] || 0;
       const py = obj.position?.[1] || 0;
       const pz = obj.position?.[2] || 0;
-      const minX = bb.min.x + px;
-      const maxX = bb.max.x + px;
-      const minY = bb.min.y + py;
-      const maxY = bb.max.y + py;
-      const minZ = bb.min.z + pz;
-      const maxZ = bb.max.z + pz;
-      const sizeX = maxX - minX;
-      const sizeY = maxY - minY;
-      const sizeZ = maxZ - minZ;
-      // Skip if the selection is degenerate (e.g. a single-point sketch).
+      const minX = bb.min.x + px, maxX = bb.max.x + px;
+      const minY = bb.min.y + py, maxY = bb.max.y + py;
+      const minZ = bb.min.z + pz, maxZ = bb.max.z + pz;
+      const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
       if (sizeX < 0.05 && sizeY < 0.05 && sizeZ < 0.05) return null;
-      // Adaptive clearance, scales with the largest dim so labels don't
-      // cover small primitives (iter-114.2). 10 mm floor is enough that
-      // even a 5 mm cube has readable separation from its chips.
       const inset = Math.max(10, 0.3 * Math.max(sizeX, sizeY, sizeZ));
       return {
         sizeX, sizeY, sizeZ,
-        // Spread the chips across THREE different sides of the bbox so
-        // they don't pile up in one corner. Previous build (iter-114.1)
-        // put W / D / H all near the bottom-right and they bunched up
-        // when the object was small.
-        //
-        // W (X) → BOTTOM-FRONT edge midpoint, pulled further forward (-Y).
-        posW: [(minX + maxX) / 2, minY - inset, minZ],
-        // D (Y) → RIGHT-MID edge midpoint, pushed further right (+X).
-        posD: [maxX + inset, (minY + maxY) / 2, (minZ + maxZ) / 2],
-        // H (Z) → LEFT-MID edge midpoint, pushed left (-X). Different
-        // side from D so the two never cluster.
-        posH: [minX - inset, (minY + maxY) / 2, (minZ + maxZ) / 2],
+        // Front-left-bottom corner — anchor for the POSITION chips.
+        // Mirrors the "X/Y/Z = N.NN" labels TinkerCAD attaches to the
+        // selection's near corner relative to the workplane / ruler
+        // origin.
+        cornerFLB: [minX, minY, minZ],
+        // Dimension-chip anchors (on the bbox edges) and floating
+        // chip positions (offset).
+        anchorW: [(minX + maxX) / 2, minY, minZ],
+        posW:    [(minX + maxX) / 2, minY - inset, minZ],
+        anchorD: [maxX, (minY + maxY) / 2, (minZ + maxZ) / 2],
+        posD:    [maxX + inset, (minY + maxY) / 2, (minZ + maxZ) / 2],
+        anchorH: [minX, (minY + maxY) / 2, (minZ + maxZ) / 2],
+        posH:    [minX - inset, (minY + maxY) / 2, (minZ + maxZ) / 2],
       };
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }, [obj]);
 
   if (!obj || !bboxData) return null;
-  // Hide unless the user explicitly turned dim labels ON via the DIMS
-  // pill (iter-114.1). Also hide during exclusive interaction modes
-  // and while the Workplane Ruler is active — both of those own the
-  // canvas with their own numeric overlays.
   if (!dimLabelsEnabled) return null;
+  // Exclusive modes still hide the chip stack — they own the canvas.
+  // Workplane ruler ACTIVE no longer hides us — both layer together.
   if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
-  if (workplaneRulerActive || workplaneRulerPlacing) return null;
+  if (workplaneRulerPlacing) return null;
 
   const editableX = isAxisEditable(obj, "x");
   const editableY = isAxisEditable(obj, "y");
   const editableZ = isAxisEditable(obj, "z");
 
+  // Origin for position chips — ruler origin if active, else world.
+  const origin = workplaneRuler?.active ? workplaneRuler.origin : [0, 0, 0];
+  const cornerX = bboxData.cornerFLB[0] - origin[0];
+  const cornerY = bboxData.cornerFLB[1] - origin[1];
+  const cornerZ = bboxData.cornerFLB[2] - origin[2];
+
   return (
     <group renderOrder={999}>
+      {/* W / D / H — dimension chips, each with a dashed leader line. */}
       <DimChip
         axis="x"
         worldMm={bboxData.sizeX}
         color={COLOR_X}
         position={bboxData.posW}
-        // W lives below the front edge → push 24 px further down in
-        // screen space so the chip clears even small primitives.
+        anchor={bboxData.anchorW}
         screenOffset={{ x: 0, y: 24 }}
         editable={editableX}
         unitSystem={unitSystem}
@@ -325,7 +301,7 @@ export function SelectionDimLabels() {
         worldMm={bboxData.sizeY}
         color={COLOR_Y}
         position={bboxData.posD}
-        // D lives off the right edge → push 24 px further right.
+        anchor={bboxData.anchorD}
         screenOffset={{ x: 24, y: 0 }}
         editable={editableY}
         unitSystem={unitSystem}
@@ -337,12 +313,45 @@ export function SelectionDimLabels() {
         worldMm={bboxData.sizeZ}
         color={COLOR_Z}
         position={bboxData.posH}
-        // H lives off the left edge → push 24 px further left.
+        anchor={bboxData.anchorH}
         screenOffset={{ x: -24, y: 0 }}
         editable={editableZ}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "z", mm, { updateDims, setImportedDim })}
         testid="dim-label-h"
+      />
+
+      {/* X / Y / Z — corner POSITION chips. Stacked at the front-left
+          bottom corner, displaying that corner's coordinate relative
+          to the active ruler origin (or workplane origin). Iter-114.3
+          TinkerCAD parity — these are the small "-44.10 / 0.00 / 0.00"
+          chips from the user's reference images. */}
+      <PositionChip
+        axis="x"
+        worldMm={cornerX}
+        color={COLOR_X}
+        position={bboxData.cornerFLB}
+        screenOffset={{ x: -54, y: -2 }}
+        unitSystem={unitSystem}
+        testid="pos-chip-x"
+      />
+      <PositionChip
+        axis="y"
+        worldMm={cornerY}
+        color={COLOR_Y}
+        position={bboxData.cornerFLB}
+        screenOffset={{ x: -54, y: 16 }}
+        unitSystem={unitSystem}
+        testid="pos-chip-y"
+      />
+      <PositionChip
+        axis="z"
+        worldMm={cornerZ}
+        color={COLOR_Z}
+        position={bboxData.cornerFLB}
+        screenOffset={{ x: -54, y: 34 }}
+        unitSystem={unitSystem}
+        testid="pos-chip-z"
       />
     </group>
   );

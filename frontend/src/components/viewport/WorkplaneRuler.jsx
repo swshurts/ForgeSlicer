@@ -217,73 +217,25 @@ export function WorkplaneRuler() {
         </div>
       </Html>
 
-      {/* === Selection delta chips === */}
+      {/* Selection-relative Δ chips (iter-113) — REPLACED by the
+          corner-pinned PositionChips in SelectionDimLabels.jsx as of
+          iter-114.3. The new chips read X/Y/Z = N.NN at the front-
+          left-bottom corner of the selected bbox (TinkerCAD parity),
+          which is unambiguous when multiple parts share the scene.
+          Kept the dashed reference line below so the user can SEE
+          which selection the ruler is currently anchoring to. */}
       {selDeltas && (
-        <group>
-          {/* Dashed reference line origin → target centre */}
-          <Line
-            points={[[ox, oy, 0.05], [selDeltas.targetX, selDeltas.targetY, selDeltas.targetZ]]}
-            color="#94A3B8"
-            lineWidth={1}
-            dashed
-            dashSize={3}
-            gapSize={2}
-            depthTest={false}
-            opacity={0.5}
-            transparent
-          />
-          {Math.abs(selDeltas.dx) > 0.05 && (
-            <Html
-              position={[(ox + selDeltas.targetX) / 2, oy - 7, 0.05]}
-              center
-              zIndexRange={[70, 0]}
-              sprite={false}
-            >
-              <div
-                data-testid="workplane-ruler-dx"
-                className="px-1.5 py-0.5 rounded bg-slate-950/90 border font-mono text-[10px] font-semibold whitespace-nowrap select-none"
-                style={{ pointerEvents: "none", borderColor: `${COLOR_X}80`, color: "#F8FAFC" }}
-              >
-                <span style={{ color: COLOR_X, marginRight: 4 }}>ΔX</span>
-                {fmtSigned(selDeltas.dx, unitSystem)}
-              </div>
-            </Html>
-          )}
-          {Math.abs(selDeltas.dy) > 0.05 && (
-            <Html
-              position={[selDeltas.targetX + 6, (oy + selDeltas.targetY) / 2, 0.05]}
-              center
-              zIndexRange={[70, 0]}
-              sprite={false}
-            >
-              <div
-                data-testid="workplane-ruler-dy"
-                className="px-1.5 py-0.5 rounded bg-slate-950/90 border font-mono text-[10px] font-semibold whitespace-nowrap select-none"
-                style={{ pointerEvents: "none", borderColor: `${COLOR_Y}80`, color: "#F8FAFC" }}
-              >
-                <span style={{ color: COLOR_Y, marginRight: 4 }}>ΔY</span>
-                {fmtSigned(selDeltas.dy, unitSystem)}
-              </div>
-            </Html>
-          )}
-          {Math.abs(selDeltas.dz) > 0.05 && (
-            <Html
-              position={[selDeltas.targetX, selDeltas.targetY, selDeltas.dz / 2]}
-              center
-              zIndexRange={[70, 0]}
-              sprite={false}
-            >
-              <div
-                data-testid="workplane-ruler-dz"
-                className="px-1.5 py-0.5 rounded bg-slate-950/90 border font-mono text-[10px] font-semibold whitespace-nowrap select-none"
-                style={{ pointerEvents: "none", borderColor: `${COLOR_Z}80`, color: "#F8FAFC" }}
-              >
-                <span style={{ color: COLOR_Z, marginRight: 4 }}>ΔZ</span>
-                {fmtSigned(selDeltas.dz, unitSystem)}
-              </div>
-            </Html>
-          )}
-        </group>
+        <Line
+          points={[[ox, oy, 0.05], [selDeltas.targetX, selDeltas.targetY, selDeltas.targetZ]]}
+          color="#94A3B8"
+          lineWidth={1}
+          dashed
+          dashSize={3}
+          gapSize={2}
+          depthTest={false}
+          opacity={0.45}
+          transparent
+        />
       )}
     </group>
   );
