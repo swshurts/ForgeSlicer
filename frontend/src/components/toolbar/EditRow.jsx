@@ -174,30 +174,36 @@ export default function EditRow({
       >
         <Anchor size={16} />
       </IconBtn>
-      <IconBtn
-        active={workplaneRulerActive}
+      {/* Iter-113 — TinkerCAD-style draggable workplane ruler and
+          snap-to-face placement are shipped as PILL buttons with
+          explicit labels (RULER / SNAP) rather than icon-only chips.
+          Iter-114 testing on iPad showed users couldn't recognise the
+          MoveDiagonal / Target glyphs at 32 px on touchscreens; pill
+          buttons with text are unmistakable. */}
+      <TabPillButton
         testid="workplane-ruler-toggle-btn"
+        icon={MoveDiagonal}
+        label="Ruler"
+        title="Workplane Ruler — drops a draggable TinkerCAD-style ruler at the bed origin. Drag the white sphere to reposition."
+        active={workplaneRulerActive}
         onClick={() => {
           if (workplaneRulerActive) removeWorkplaneRuler();
           else placeWorkplaneRuler([0, 0, 0]);
         }}
-        title="Workplane Ruler — drops a draggable TinkerCAD-style ruler at the bed origin. Drag the white sphere to reposition."
-      >
-        <MoveDiagonal size={16} />
-      </IconBtn>
-      <IconBtn
-        active={placeOnFaceMode}
-        disabled={!selectedId}
+      />
+      <TabPillButton
         testid="place-on-face-toggle-btn"
-        onClick={() => setPlaceOnFaceMode(!placeOnFaceMode)}
+        icon={Target}
+        label="Snap"
         title={
           selectedId
             ? "Snap-to-Face — click any face on another object and the selected part will land flat on it"
             : "Snap-to-Face (select an object first)"
         }
-      >
-        <Target size={16} />
-      </IconBtn>
+        active={placeOnFaceMode}
+        disabled={!selectedId}
+        onClick={() => setPlaceOnFaceMode(!placeOnFaceMode)}
+      />
 
       <Divider />
 
