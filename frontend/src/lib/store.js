@@ -146,20 +146,32 @@ export const useScene = create((set, get) => ({
   // selections and never gets cascade-cleared on object removal.
   workplaneRuler: {
     active: false,
-    origin: [0, 0, 0], // world-mm; Z always rests on 0 (the build plate).
+    // Iter-114.2 — `placing` is true while the user has clicked RULER
+    // but not yet committed a click in the viewport. While in this
+    // mode the next click anywhere on the workplane or on any visible
+    // face / vertex / edge-midpoint sets the ruler's origin and flips
+    // the ruler `active`. Lets users place the ruler exactly where
+    // they want (TinkerCAD parity) instead of always landing at world
+    // origin.
+    placing: false,
+    origin: [0, 0, 0],
   },
   setWorkplaneRuler: (patch) => set((s) => ({
     workplaneRuler: { ...s.workplaneRuler, ...patch },
+  })),
+  enterWorkplaneRulerPlacing: () => set(() => ({
+    workplaneRuler: { active: false, placing: true, origin: [0, 0, 0] },
   })),
   placeWorkplaneRuler: (origin) => set((s) => ({
     workplaneRuler: {
       ...s.workplaneRuler,
       active: true,
+      placing: false,
       origin: Array.isArray(origin) && origin.length === 3 ? origin : [0, 0, 0],
     },
   })),
   removeWorkplaneRuler: () => set((s) => ({
-    workplaneRuler: { ...s.workplaneRuler, active: false },
+    workplaneRuler: { ...s.workplaneRuler, active: false, placing: false },
   })),
 
   // ---- Snap-to-face placement (iter-113) ----

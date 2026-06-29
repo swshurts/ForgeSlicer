@@ -45,7 +45,7 @@ function colorForObject(obj) {
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 
-function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, placeOnFaceMode, onPlaceFaceHit, onContextMenu, scene }) {
+function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, placeOnFaceMode, onPlaceFaceHit, workplaneRulerPlacing, onWorkplaneRulerPlace, onContextMenu, scene }) {
   // Font-load tick — when the text primitive's typeface.json arrives
   // we bump this counter, which invalidates the `geom` useMemo below
   // and rebuilds with real glyphs (instead of the placeholder slab
@@ -121,12 +121,18 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
           onMeasureHit([e.point.x, e.point.y, e.point.z], obj.id);
         } else if (rulerMode) {
           onRulerHit([e.point.x, e.point.y, e.point.z], obj.id);
+        } else if (workplaneRulerPlacing && onWorkplaneRulerPlace) {
+          // Iter-114.2 — clicking an object face in ruler placement
+          // mode drops the ruler origin AT THE CLICK POINT. The
+          // handler tries to snap to the nearest vertex / edge-mid /
+          // face-centre via `nearestSnapPoint`; falls back to raw hit
+          // if no snap candidate within the picker radius.
+          onWorkplaneRulerPlace(
+            { x: e.point.x, y: e.point.y, z: e.point.z },
+            obj.id,
+          );
         } else if (placeOnFaceMode && onPlaceFaceHit) {
-          // Iter-113 — snap-to-face placement. Pass the world hit
-          // point + WORLD-space face normal so the handler can
-          // teleport the currently-selected object onto this face.
-          // R3F's `e.face.normal` is in MESH-local space; we transform
-          // it through the mesh's world matrix to world coords.
+          // Iter-113 — snap-to-face placement.
           const worldNormal = new THREE.Vector3().copy(e.face.normal)
             .transformDirection(e.object.matrixWorld)
             .normalize();
@@ -178,14 +184,15 @@ function SubElementPickOverlay({ obj }) {
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
   const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
+  const workplaneRulerPlacing = useScene((s) => s.workplaneRuler?.placing);
   const filletMap = obj.edgeFillets || {};
   const [hoverId, setHoverId] = useState(null);
 
   if (subSelectMode === "object") return null;
   // Other interactive modes own the pointer — hide our picker so clicks
   // don't get swallowed before they reach the measure / ruler / cut /
-  // snap-to-face pointer handlers on the underlying SceneObject mesh.
-  if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
+  // snap-to-face / ruler-place pointer handlers on the underlying mesh.
+  if (measureMode || rulerMode || cutMode || placeOnFaceMode || workplaneRulerPlacing) return null;
   if (!["cube", "cylinder", "cone"].includes(obj.type)) return null;
 
   const onPick = (kind, id) => (e) => {
@@ -1324,6 +1331,12 @@ export default function Viewport() {
   const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
   const setPlaceOnFaceMode = useScene((s) => s.setPlaceOnFaceMode);
   const updateObject = useScene((s) => s.updateObject);
+  // Iter-114.2 — Workplane ruler placement. While `placing` is true,
+  // the next click anywhere in the scene (workplane or face) drops
+  // the ruler origin at that point. Snaps to the nearest snap point
+  // on the clicked object via `nearestSnapPoint`.
+  const workplaneRulerPlacing = useScene((s) => s.workplaneRuler?.placing);
+  const placeWorkplaneRuler = useScene((s) => s.placeWorkplaneRuler);
   // Canvas background tracks the global UI theme so the 3D scene
   // doesn't sit on a slate-800 island when the user picks Light/Dim.
   // Uses the *resolved* theme (concrete dark/dim/light) so "system"
@@ -1479,6 +1492,12 @@ export default function Viewport() {
           SNAP TO FACE — click any face on another object to land the selection on it (Esc to cancel)
         </div>
       )}
+      {workplaneRulerPlacing && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-orange-500/40 rounded text-[11px] font-mono text-orange-300 pointer-events-none flex items-center gap-2" data-testid="workplane-ruler-placing-hint">
+          <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+          PLACE RULER — click anywhere on the bed, or on any face / edge / vertex of an object (Esc to cancel)
+        </div>
+      )}
       {marqueeOverlayActive && (
         <div
           data-testid="marquee-hint"
@@ -1570,12 +1589,47 @@ export default function Viewport() {
               // Single-shot: exit the mode after a successful placement.
               setPlaceOnFaceMode(false);
             }}
+            workplaneRulerPlacing={workplaneRulerPlacing}
+            onWorkplaneRulerPlace={(hitPoint, hitObjId) => {
+              // Iter-114.2 — snap-to-snap-point on the clicked object's
+              // 27-point grid (8 corners + 12 edge midpoints + 6 face
+              // centres + 1 centre). Fallback: raw click point. The
+              // anchor-ruler infrastructure (nearestSnapPoint) already
+              // implements this picker; we reuse it for consistency.
+              const obj = useScene.getState().objects.find((x) => x.id === hitObjId);
+              let origin = [hitPoint.x, hitPoint.y, hitPoint.z];
+              if (obj) {
+                try {
+                  const snap = nearestSnapPoint(obj, hitPoint);
+                  if (snap) origin = [snap.x, snap.y, snap.z];
+                } catch { /* fallback to raw hit */ }
+              }
+              placeWorkplaneRuler(origin);
+            }}
             onContextMenu={handleContextMenu}
             scene={{ objects }}
           />
         ))}
 
-        {!measureMode && !rulerMode && !placeOnFaceMode && <SelectedTransform />}
+        {/* Iter-114.2 — invisible workplane catch-plane. Renders only
+            while the user is in ruler-placement mode and clicks on
+            the BED (no object underneath). Bounded to the build
+            volume so clicks outside still hit `onPointerMissed`. */}
+        {workplaneRulerPlacing && (
+          <mesh
+            data-testid="workplane-ruler-placer-plane"
+            position={[0, 0, 0.01]}
+            onClick={(e) => {
+              e.stopPropagation();
+              placeWorkplaneRuler([e.point.x, e.point.y, 0]);
+            }}
+          >
+            <planeGeometry args={[buildVolume.x * 2, buildVolume.y * 2]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        )}
+
+        {!measureMode && !rulerMode && !placeOnFaceMode && !workplaneRulerPlacing && <SelectedTransform />}
         {/* Sub-element pick overlay: rendered ONLY for the currently-
             primary-selected object, and only when subSelectMode != "object".
             The overlay attaches its own click handlers so sub-pick clicks

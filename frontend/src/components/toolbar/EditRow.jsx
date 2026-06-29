@@ -59,7 +59,8 @@ export default function EditRow({
   // from the anchor ruler above: this one is a persistent reference
   // origin on the bed, the anchor ruler is a two-click measurement.
   const workplaneRulerActive = useScene((s) => s.workplaneRuler?.active);
-  const placeWorkplaneRuler = useScene((s) => s.placeWorkplaneRuler);
+  const workplaneRulerPlacing = useScene((s) => s.workplaneRuler?.placing);
+  const enterWorkplaneRulerPlacing = useScene((s) => s.enterWorkplaneRulerPlacing);
   const removeWorkplaneRuler = useScene((s) => s.removeWorkplaneRuler);
   // Iter-113 — Snap-to-face placement (TinkerCAD-style "drop on top
   // of that"). Single-shot: turns itself off once the user clicks a
@@ -189,11 +190,23 @@ export default function EditRow({
         testid="workplane-ruler-toggle-btn"
         icon={MoveDiagonal}
         label="Ruler"
-        title="Workplane Ruler — drops a draggable TinkerCAD-style ruler at the bed origin. Drag the white sphere to reposition."
-        active={workplaneRulerActive}
+        title={
+          workplaneRulerActive
+            ? "Remove the workplane ruler"
+            : workplaneRulerPlacing
+              ? "Cancel placement — click anywhere on the bed or a face / edge / vertex to drop the ruler"
+              : "Workplane Ruler — click then pick any point in the scene (bed, face, edge, vertex) to drop the TinkerCAD-style ruler there. Drag the white sphere afterwards to fine-tune."
+        }
+        active={workplaneRulerActive || workplaneRulerPlacing}
         onClick={() => {
-          if (workplaneRulerActive) removeWorkplaneRuler();
-          else placeWorkplaneRuler([0, 0, 0]);
+          if (workplaneRulerActive || workplaneRulerPlacing) {
+            // ON / placing → OFF.
+            removeWorkplaneRuler();
+          } else {
+            // OFF → enter placement; the next click in the viewport
+            // commits the origin via Viewport's placement handler.
+            enterWorkplaneRulerPlacing();
+          }
         }}
       />
       <TabPillButton

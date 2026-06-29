@@ -86,6 +86,7 @@ function DimChip({
   worldMm,
   color,
   position,
+  screenOffset, // {x, y} in CSS pixels — pushes the chip in screen space
   editable,
   unitSystem,
   onCommit,
@@ -133,6 +134,13 @@ function DimChip({
   };
 
   const axisLabel = axis === "x" ? "W" : axis === "y" ? "D" : "H";
+  // Screen-space transform so the chip never sits on top of the bbox
+  // edge regardless of camera distance. The Html `center` flag pins
+  // the chip's centre to the world point; translate moves the chip in
+  // CSS pixels from that centre — gives deterministic margin.
+  const transform = screenOffset
+    ? `translate(${screenOffset.x}px, ${screenOffset.y}px)`
+    : undefined;
 
   return (
     <Html
@@ -141,6 +149,7 @@ function DimChip({
       zIndexRange={[70, 0]}
       sprite={false}
     >
+      <div style={{ transform, pointerEvents: "auto" }}>
       {editing ? (
         <div
           data-testid={`${testid}-editor`}
@@ -206,6 +215,7 @@ function DimChip({
           <span className="text-[9px] text-slate-400">{unitSystem}</span>
         </button>
       )}
+      </div>
     </Html>
   );
 }
@@ -234,6 +244,7 @@ export function SelectionDimLabels() {
   // Workplane Ruler. Now hidden unless dimLabelsEnabled === true.
   const dimLabelsEnabled = useScene((s) => s.dimLabelsEnabled);
   const workplaneRulerActive = useScene((s) => s.workplaneRuler?.active);
+  const workplaneRulerPlacing = useScene((s) => s.workplaneRuler?.placing);
 
   const obj = objects.find((o) => o.id === selectedId);
 
@@ -257,16 +268,24 @@ export function SelectionDimLabels() {
       const sizeZ = maxZ - minZ;
       // Skip if the selection is degenerate (e.g. a single-point sketch).
       if (sizeX < 0.05 && sizeY < 0.05 && sizeZ < 0.05) return null;
-      // Slight inset so the chip doesn't collide with the bbox edge line.
-      const inset = 2.5;
+      // Adaptive clearance, scales with the largest dim so labels don't
+      // cover small primitives (iter-114.2). 10 mm floor is enough that
+      // even a 5 mm cube has readable separation from its chips.
+      const inset = Math.max(10, 0.3 * Math.max(sizeX, sizeY, sizeZ));
       return {
         sizeX, sizeY, sizeZ,
-        // W (X) label — front-bottom edge midpoint, pulled forward in Y.
+        // Spread the chips across THREE different sides of the bbox so
+        // they don't pile up in one corner. Previous build (iter-114.1)
+        // put W / D / H all near the bottom-right and they bunched up
+        // when the object was small.
+        //
+        // W (X) → BOTTOM-FRONT edge midpoint, pulled further forward (-Y).
         posW: [(minX + maxX) / 2, minY - inset, minZ],
-        // D (Y) label — right-bottom edge midpoint, pushed right in X.
-        posD: [maxX + inset, (minY + maxY) / 2, minZ],
-        // H (Z) label — front-right vertical edge midpoint.
-        posH: [maxX + inset, minY - inset, (minZ + maxZ) / 2],
+        // D (Y) → RIGHT-MID edge midpoint, pushed further right (+X).
+        posD: [maxX + inset, (minY + maxY) / 2, (minZ + maxZ) / 2],
+        // H (Z) → LEFT-MID edge midpoint, pushed left (-X). Different
+        // side from D so the two never cluster.
+        posH: [minX - inset, (minY + maxY) / 2, (minZ + maxZ) / 2],
       };
     } catch {
       return null;
@@ -280,7 +299,7 @@ export function SelectionDimLabels() {
   // canvas with their own numeric overlays.
   if (!dimLabelsEnabled) return null;
   if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
-  if (workplaneRulerActive) return null;
+  if (workplaneRulerActive || workplaneRulerPlacing) return null;
 
   const editableX = isAxisEditable(obj, "x");
   const editableY = isAxisEditable(obj, "y");
@@ -293,6 +312,9 @@ export function SelectionDimLabels() {
         worldMm={bboxData.sizeX}
         color={COLOR_X}
         position={bboxData.posW}
+        // W lives below the front edge → push 24 px further down in
+        // screen space so the chip clears even small primitives.
+        screenOffset={{ x: 0, y: 24 }}
         editable={editableX}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "x", mm, { updateDims, setImportedDim })}
@@ -303,6 +325,8 @@ export function SelectionDimLabels() {
         worldMm={bboxData.sizeY}
         color={COLOR_Y}
         position={bboxData.posD}
+        // D lives off the right edge → push 24 px further right.
+        screenOffset={{ x: 24, y: 0 }}
         editable={editableY}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "y", mm, { updateDims, setImportedDim })}
@@ -313,6 +337,8 @@ export function SelectionDimLabels() {
         worldMm={bboxData.sizeZ}
         color={COLOR_Z}
         position={bboxData.posH}
+        // H lives off the left edge → push 24 px further left.
+        screenOffset={{ x: -24, y: 0 }}
         editable={editableZ}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "z", mm, { updateDims, setImportedDim })}

@@ -50,12 +50,9 @@ export function useToolbarShortcuts() {
       } else if (e.key.toLowerCase() === "m") {
         s.setMeasureMode(!s.measureMode);
       } else if (e.key === "Escape") {
-        // Cleanup keyboard escape: dismiss anchor first, then pending
-        // dimension pick, then snap-to-face mode, then drop selection.
-        // We bail out of only ONE layer per Esc press so the user can
-        // step back through.
         if (s.rulerAnchor) { s.clearRulerAnchor(); }
         else if (s.pendingDimensionFromId) { s.clearPendingComponentDimension(); }
+        else if (s.workplaneRuler?.placing) { s.removeWorkplaneRuler(); }
         else if (s.placeOnFaceMode) { s.setPlaceOnFaceMode(false); }
         else if (s.measureMode) { s.setMeasureMode(false); }
       } else if (e.key.toLowerCase() === "g") {
