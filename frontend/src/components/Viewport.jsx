@@ -11,10 +11,13 @@ import { onFontLoaded } from "../lib/textGeometry";
 import { cubeEdgeEndpoints, cubeFaceQuads, cubeVertexPositions } from "../lib/edgeFaceMeta";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
 import { nearestSnapPoint, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
+import { computePlaceOnFace } from "../lib/placeOnFace";
 import ContextMenu from "./ContextMenu";
 import { MeasurementsLayer } from "./viewport/MeasurementsOverlay";
 import { ComponentDimensionsLayer } from "./viewport/ComponentDimensionsOverlay";
 import { RulerAnchorLayer, PinnedRulerLayer } from "./viewport/RulerLayers";
+import { SelectionDimLabels } from "./viewport/SelectionDimLabels";
+import { WorkplaneRuler } from "./viewport/WorkplaneRuler";
 import PrintabilityOverlay from "./PrintabilityOverlay";
 
 const POSITIVE_COLOR = "#F97316";
@@ -42,7 +45,7 @@ function colorForObject(obj) {
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 
-function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, onContextMenu, scene }) {
+function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, placeOnFaceMode, onPlaceFaceHit, onContextMenu, scene }) {
   // Font-load tick — when the text primitive's typeface.json arrives
   // we bump this counter, which invalidates the `geom` useMemo below
   // and rebuilds with real glyphs (instead of the placeholder slab
@@ -118,6 +121,20 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
           onMeasureHit([e.point.x, e.point.y, e.point.z], obj.id);
         } else if (rulerMode) {
           onRulerHit([e.point.x, e.point.y, e.point.z], obj.id);
+        } else if (placeOnFaceMode && onPlaceFaceHit) {
+          // Iter-113 — snap-to-face placement. Pass the world hit
+          // point + WORLD-space face normal so the handler can
+          // teleport the currently-selected object onto this face.
+          // R3F's `e.face.normal` is in MESH-local space; we transform
+          // it through the mesh's world matrix to world coords.
+          const worldNormal = new THREE.Vector3().copy(e.face.normal)
+            .transformDirection(e.object.matrixWorld)
+            .normalize();
+          onPlaceFaceHit(
+            { x: e.point.x, y: e.point.y, z: e.point.z },
+            { x: worldNormal.x, y: worldNormal.y, z: worldNormal.z },
+            obj.id,
+          );
         } else {
           const ne = e.nativeEvent || {};
           const mode = ne.ctrlKey || ne.metaKey ? "toggle" : ne.shiftKey ? "add" : null;
@@ -160,14 +177,15 @@ function SubElementPickOverlay({ obj }) {
   const measureMode = useScene((s) => s.measureMode);
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
+  const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
   const filletMap = obj.edgeFillets || {};
   const [hoverId, setHoverId] = useState(null);
 
   if (subSelectMode === "object") return null;
   // Other interactive modes own the pointer — hide our picker so clicks
-  // don't get swallowed before they reach the measure / ruler / cut
-  // pointer handlers on the underlying SceneObject mesh.
-  if (measureMode || rulerMode || cutMode) return null;
+  // don't get swallowed before they reach the measure / ruler / cut /
+  // snap-to-face pointer handlers on the underlying SceneObject mesh.
+  if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
   if (!["cube", "cylinder", "cone"].includes(obj.type)) return null;
 
   const onPick = (kind, id) => (e) => {
@@ -968,6 +986,7 @@ function PendingMarker({ pt }) {
 function BBoxChip() {
   const selectedId = useScene((s) => s.selectedId);
   const objects = useScene((s) => s.objects);
+  const unitSystem = useScene((s) => s.unitSystem);
   const obj = objects.find((o) => o.id === selectedId);
   if (!obj || !obj.visible) return null;
   let size = null;
@@ -989,7 +1008,11 @@ function BBoxChip() {
     >
       <span className="text-slate-500">SIZE</span>
       <span data-testid="bbox-size-label">
-        {size.x.toFixed(1)} × {size.y.toFixed(1)} × {size.z.toFixed(1)} mm
+        {(() => {
+          const dp = unitSystem === "in" ? 3 : 1;
+          const f = unitSystem === "in" ? 1 / 25.4 : 1;
+          return `${(size.x * f).toFixed(dp)} × ${(size.y * f).toFixed(dp)} × ${(size.z * f).toFixed(dp)} ${unitSystem}`;
+        })()}
       </span>
       <span className="text-slate-600">·</span>
       <span className="text-slate-400">{obj.name}</span>
@@ -1297,6 +1320,10 @@ export default function Viewport() {
   const rulerMode = useScene((s) => s.rulerMode);
   const setRulerAnchor = useScene((s) => s.setRulerAnchor);
   const setRulerTarget = useScene((s) => s.setRulerTarget);
+  // Iter-113 — Snap-to-face placement mode.
+  const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
+  const setPlaceOnFaceMode = useScene((s) => s.setPlaceOnFaceMode);
+  const updateObject = useScene((s) => s.updateObject);
   // Canvas background tracks the global UI theme so the 3D scene
   // doesn't sit on a slate-800 island when the user picks Light/Dim.
   // Uses the *resolved* theme (concrete dark/dim/light) so "system"
@@ -1446,6 +1473,12 @@ export default function Viewport() {
           )}
         </div>
       )}
+      {placeOnFaceMode && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-fuchsia-500/40 rounded text-[11px] font-mono text-fuchsia-300 pointer-events-none flex items-center gap-2" data-testid="place-on-face-hint">
+          <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse" />
+          SNAP TO FACE — click any face on another object to land the selection on it (Esc to cancel)
+        </div>
+      )}
       {marqueeOverlayActive && (
         <div
           data-testid="marquee-hint"
@@ -1524,12 +1557,25 @@ export default function Viewport() {
               }
               setRulerTarget(snapRecord);
             }}
+            placeOnFaceMode={placeOnFaceMode}
+            onPlaceFaceHit={(hitPoint, worldNormal, hitObjId) => {
+              // Compute placement against the CURRENTLY-selected object —
+              // not the clicked target. The clicked face IS the surface
+              // we're snapping ONTO. Refuse to place an object on itself.
+              const sel = useScene.getState().objects.find((x) => x.id === selectedId);
+              if (!sel || sel.id === hitObjId) return;
+              const patch = computePlaceOnFace(sel, hitPoint, worldNormal);
+              if (!patch) return;
+              updateObject(sel.id, patch);
+              // Single-shot: exit the mode after a successful placement.
+              setPlaceOnFaceMode(false);
+            }}
             onContextMenu={handleContextMenu}
             scene={{ objects }}
           />
         ))}
 
-        {!measureMode && !rulerMode && <SelectedTransform />}
+        {!measureMode && !rulerMode && !placeOnFaceMode && <SelectedTransform />}
         {/* Sub-element pick overlay: rendered ONLY for the currently-
             primary-selected object, and only when subSelectMode != "object".
             The overlay attaches its own click handlers so sub-pick clicks
@@ -1543,6 +1589,8 @@ export default function Viewport() {
         <ComponentDimensionsLayer />
         <RulerAnchorLayer />
         <PinnedRulerLayer />
+        <SelectionDimLabels />
+        <WorkplaneRuler />
         <PrintabilityOverlay />
         <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />

@@ -54,6 +54,14 @@ export const useScene = create((set, get) => ({
   transformMode: "translate",
   snapEnabled: true,
   snapTranslate: 1,
+  // iter-112 — Display unit system. Storage is always mm; this only
+  // controls how dimensions / measurements / readouts are SHOWN to
+  // the user and how their typed inputs are interpreted. Hydrated
+  // from localStorage so the choice persists across reloads.
+  unitSystem: (() => {
+    try { return localStorage.getItem("forgeslicer.unitSystem") === "in" ? "in" : "mm"; }
+    catch { return "mm"; }
+  })(),
   snapRotate: 15,
   snapScale: 0.1,
   gridVisible: true,
@@ -128,6 +136,41 @@ export const useScene = create((set, get) => ({
   autoDropNew: typeof window !== "undefined" && window.localStorage
     ? window.localStorage.getItem("forge.autoDropNew") !== "false"
     : true,
+
+  // ---- TinkerCAD-style workplane ruler (iter-113) ----
+  // A draggable L-shaped reference widget the user drops onto the
+  // workplane at Z=0. When active, the viewport shows signed ΔX/ΔY/ΔZ
+  // chips from the ruler's origin to the bounding-box centre of the
+  // selected object — exactly like the blue ruler in TinkerCAD. Lives
+  // outside the per-object measurement system so it persists across
+  // selections and never gets cascade-cleared on object removal.
+  workplaneRuler: {
+    active: false,
+    origin: [0, 0, 0], // world-mm; Z always rests on 0 (the build plate).
+  },
+  setWorkplaneRuler: (patch) => set((s) => ({
+    workplaneRuler: { ...s.workplaneRuler, ...patch },
+  })),
+  placeWorkplaneRuler: (origin) => set((s) => ({
+    workplaneRuler: {
+      ...s.workplaneRuler,
+      active: true,
+      origin: Array.isArray(origin) && origin.length === 3 ? origin : [0, 0, 0],
+    },
+  })),
+  removeWorkplaneRuler: () => set((s) => ({
+    workplaneRuler: { ...s.workplaneRuler, active: false },
+  })),
+
+  // ---- Snap-to-face placement (iter-113) ----
+  // When ON, the next pointer-click on any face of any visible object
+  // teleports the CURRENT primary selection so its base sits flat on
+  // that face — auto-rotating so the selection's local +Z aligns with
+  // the face's world normal. Single-shot: turns itself off after one
+  // successful placement. Used for TinkerCAD-style "drop this on top
+  // of that" assembly building.
+  placeOnFaceMode: false,
+  setPlaceOnFaceMode: (on) => set({ placeOnFaceMode: !!on }),
 
   // ---- measurement ----
   measureMode: false,
@@ -1367,6 +1410,13 @@ export const useScene = create((set, get) => ({
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapEnabled: (v) => set({ snapEnabled: v }),
   setSnapTranslate: (v) => set({ snapTranslate: Math.max(0.001, Number(v) || 0) }),
+  // iter-112 — unit-system toggle. Persists via localStorage so the
+  // user's last choice survives a reload.
+  setUnitSystem: (system) => {
+    const next = system === "in" ? "in" : "mm";
+    try { localStorage.setItem("forgeslicer.unitSystem", next); } catch { /* noop */ }
+    set({ unitSystem: next });
+  },
   setSnapRotate: (v) => set({ snapRotate: Math.max(0.1, Number(v) || 0) }),
   setSnapScale: (v) => set({ snapScale: Math.max(0.001, Number(v) || 0) }),
   setGridVisible: (v) => set({ gridVisible: v }),

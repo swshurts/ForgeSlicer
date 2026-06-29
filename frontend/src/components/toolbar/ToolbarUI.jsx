@@ -7,15 +7,16 @@
 // same data-testid handling.
 import React from "react";
 
-export function IconBtn({ active, onClick, title, testid, children, danger, success }) {
+export function IconBtn({ active, onClick, title, testid, children, danger, success, disabled }) {
   const base = "h-8 w-8 rounded flex items-center justify-center border transition-colors";
   let cls = base;
-  if (active) cls += " bg-orange-500/20 border-orange-500/60 text-orange-300";
+  if (disabled) cls += " bg-slate-900 border-slate-800 text-slate-500 opacity-40 cursor-not-allowed";
+  else if (active) cls += " bg-orange-500/20 border-orange-500/60 text-orange-300";
   else if (danger) cls += " bg-slate-900 border-slate-800 text-red-400 hover:bg-red-500/10";
   else if (success) cls += " bg-green-500/20 border-green-500/60 text-green-300 hover:bg-green-500/30";
   else cls += " bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white";
   return (
-    <button data-testid={testid} className={cls} onClick={onClick} title={title}>
+    <button data-testid={testid} className={cls} onClick={onClick} title={title} disabled={disabled}>
       {children}
     </button>
   );

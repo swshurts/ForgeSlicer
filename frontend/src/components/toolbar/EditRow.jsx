@@ -11,7 +11,7 @@
 import React from "react";
 import {
   PlusSquare, MinusSquare, Combine, Move3D, RotateCw, Scale3D,
-  Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor,
+  Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor, MoveDiagonal, Target,
   MapPin, Maximize, Copy, FlipHorizontal2, Scissors, Sliders,
   Settings2, AlignCenter, ShieldCheck, ShieldAlert,
 } from "lucide-react";
@@ -55,6 +55,18 @@ export default function EditRow({
   const rulerMode = useScene((s) => s.rulerMode);
   const setRulerMode = useScene((s) => s.setRulerMode);
   const clearRulerAnchor = useScene((s) => s.clearRulerAnchor);
+  // Iter-113 — TinkerCAD-style draggable workplane ruler. Independent
+  // from the anchor ruler above: this one is a persistent reference
+  // origin on the bed, the anchor ruler is a two-click measurement.
+  const workplaneRulerActive = useScene((s) => s.workplaneRuler?.active);
+  const placeWorkplaneRuler = useScene((s) => s.placeWorkplaneRuler);
+  const removeWorkplaneRuler = useScene((s) => s.removeWorkplaneRuler);
+  // Iter-113 — Snap-to-face placement (TinkerCAD-style "drop on top
+  // of that"). Single-shot: turns itself off once the user clicks a
+  // target face. Disabled when nothing is selected since the placer
+  // has nothing to teleport.
+  const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
+  const setPlaceOnFaceMode = useScene((s) => s.setPlaceOnFaceMode);
 
   // Single source of truth for the seven popover buttons. Adding a new
   // popover means adding one entry here + a render case in TopToolbar.
@@ -161,6 +173,30 @@ export default function EditRow({
         title="Anchor Ruler — click an object to drop a 0-point on the bed, then read offsets to other parts"
       >
         <Anchor size={16} />
+      </IconBtn>
+      <IconBtn
+        active={workplaneRulerActive}
+        testid="workplane-ruler-toggle-btn"
+        onClick={() => {
+          if (workplaneRulerActive) removeWorkplaneRuler();
+          else placeWorkplaneRuler([0, 0, 0]);
+        }}
+        title="Workplane Ruler — drops a draggable TinkerCAD-style ruler at the bed origin. Drag the white sphere to reposition."
+      >
+        <MoveDiagonal size={16} />
+      </IconBtn>
+      <IconBtn
+        active={placeOnFaceMode}
+        disabled={!selectedId}
+        testid="place-on-face-toggle-btn"
+        onClick={() => setPlaceOnFaceMode(!placeOnFaceMode)}
+        title={
+          selectedId
+            ? "Snap-to-Face — click any face on another object and the selected part will land flat on it"
+            : "Snap-to-Face (select an object first)"
+        }
+      >
+        <Target size={16} />
       </IconBtn>
 
       <Divider />

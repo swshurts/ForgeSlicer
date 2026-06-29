@@ -129,7 +129,27 @@ function PrinterPicker({ groups, value, onChange, currentLabel, testid = "printe
   );
 }
 
-function NumberField({ label, hint, value, onChange, step = 1, min, max, testid, suffix }) {
+// iter-112 — NumberField gains an optional `inUnit` prop. When set to
+// "length" it reads/writes mm via the store internally but
+// displays + parses against the user's selected unit system (mm or
+// inches). All non-length fields (segments, rotation degrees,
+// twist counts, etc.) pass no `inUnit` and stay raw numbers.
+function NumberField({ label, hint, value, onChange, step = 1, min, max, testid, suffix, inUnit }) {
+  const unitSystem = useScene((s) => s.unitSystem);
+  const isLength = inUnit === "length";
+  const displayValue = isLength ? (Number.isFinite(value) ? value / (unitSystem === "in" ? 25.4 : 1) : 0) : value;
+  // For inches we relax the step so the user can dial in 0.001"
+  // (~0.025 mm) precision — finer than the printer can resolve, but
+  // expected by US workshops. mm step stays at the caller's default.
+  const effectiveStep = isLength && unitSystem === "in" ? Math.max(0.001, step / 25.4) : step;
+  const effectiveMin  = isLength && unitSystem === "in" && Number.isFinite(min) ? min / 25.4 : min;
+  const effectiveMax  = isLength && unitSystem === "in" && Number.isFinite(max) ? max / 25.4 : max;
+  const effectiveSuffix = isLength ? (suffix || unitSystem) : suffix;
+  const handleChange = (e) => {
+    const n = parseFloat(e.target.value || "0");
+    if (!isLength) { onChange(n); return; }
+    onChange(unitSystem === "in" ? n * 25.4 : n);
+  };
   return (
     <label className="flex flex-col gap-1">
       <span
@@ -143,14 +163,14 @@ function NumberField({ label, hint, value, onChange, step = 1, min, max, testid,
         <input
           data-testid={testid}
           type="number"
-          step={step}
-          min={min}
-          max={max}
-          value={Number.isFinite(value) ? value : 0}
-          onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
+          step={effectiveStep}
+          min={effectiveMin}
+          max={effectiveMax}
+          value={Number.isFinite(displayValue) ? displayValue : 0}
+          onChange={handleChange}
           className="h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 pr-7 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none font-mono"
         />
-        {suffix && <span className="absolute right-2 text-[10px] text-slate-500 font-mono">{suffix}</span>}
+        {effectiveSuffix && <span className="absolute right-2 text-[10px] text-slate-500 font-mono">{effectiveSuffix}</span>}
       </div>
     </label>
   );
@@ -698,6 +718,8 @@ function Inspector() {
   const dropToBed = useScene((s) => s.dropToBed);
   const layFlatSelection = useScene((s) => s.layFlatSelection);
   const setColorIndex = useScene((s) => s.setColorIndex);
+  // iter-112 — used in dimension section headers ("Dimensions (mm/in)").
+  const unitSystem = useScene((s) => s.unitSystem);
   const removeObject = useScene((s) => s.removeObject);
 
   // Repair Mesh — POSTs the host's STL to /api/mesh/repair, MeshLab
@@ -943,15 +965,15 @@ function Inspector() {
       {obj.type === "cube" && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
-            <span>Dimensions (mm)</span>
+            <span>Dimensions ({unitSystem})</span>
             <span className="text-[9px] text-slate-500 normal-case font-normal" title="X = right (width), Y = forward (depth), Z = up (height)">
               X · Y · Z
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <NumberField testid="dim-x" label="X" hint="width" value={obj.dims.x} onChange={(v) => updateDims(obj.id, { x: v })} step={1} min={0.1} />
-            <NumberField testid="dim-y" label="Y" hint="depth" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
-            <NumberField testid="dim-z" label="Z" hint="height" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
+            <NumberField inUnit="length" testid="dim-x" label="X" hint="width" value={obj.dims.x} onChange={(v) => updateDims(obj.id, { x: v })} step={1} min={0.1} />
+            <NumberField inUnit="length" testid="dim-y" label="Y" hint="depth" value={obj.dims.y} onChange={(v) => updateDims(obj.id, { y: v })} step={1} min={0.1} />
+            <NumberField inUnit="length" testid="dim-z" label="Z" hint="height" value={obj.dims.z} onChange={(v) => updateDims(obj.id, { z: v })} step={1} min={0.1} />
           </div>
           {/* Iter-105.20 — Edge fillet/chamfer controls removed at user
               request. Reason: the modifier-mesh 3MF export pipeline
@@ -966,7 +988,7 @@ function Inspector() {
       )}
       {(obj.type === "sphere" || obj.type === "cylinder" || obj.type === "cone") && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           {/* Cone with explicit top/bottom radii (e.g. a countersink
               taper) gets a TWO-radius editor so the Inspector matches
               what the geometry actually uses. Falls through to the
@@ -991,7 +1013,7 @@ function Inspector() {
                 step={0.5}
                 min={0.1}
               />
-              <NumberField testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
+              <NumberField inUnit="length" testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
@@ -1007,7 +1029,7 @@ function Inspector() {
                 min={0.1}
               />
               {obj.type !== "sphere" && (
-                <NumberField testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
+                <NumberField inUnit="length" testid="dim-h" label="Height" value={obj.dims.h} onChange={(v) => updateDims(obj.id, { h: v })} step={0.5} min={0.1} />
               )}
             </div>
           )}
@@ -1051,7 +1073,7 @@ function Inspector() {
       )}
       {obj.type === "torus" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           <div className="grid grid-cols-2 gap-2">
             <NumberField
               testid="dim-d"
@@ -1060,7 +1082,7 @@ function Inspector() {
               onChange={(v) => updateDims(obj.id, { r: Math.max(0.05, v / 2) })}
               step={0.5}
             />
-            <NumberField testid="dim-tube" label="Tube ⌀" value={(obj.dims.tube || 0) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.05, v / 2) })} step={0.2} />
+            <NumberField inUnit="length" testid="dim-tube" label="Tube ⌀" value={(obj.dims.tube || 0) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.05, v / 2) })} step={0.2} />
           </div>
         </div>
       )}
@@ -1070,11 +1092,11 @@ function Inspector() {
           number of segments is left at the safe 96 default. */}
       {obj.type === "helix" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField testid="dim-helix-r" label="Radius" value={obj.dims.r || 12} onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v) })} step={0.5} />
-            <NumberField testid="dim-helix-tube" label="Tube ⌀" value={(obj.dims.tube || 2) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.1, v / 2) })} step={0.2} />
-            <NumberField testid="dim-helix-pitch" label="Pitch" value={obj.dims.pitch || 6} onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.5, v) })} step={0.5} suffix="mm/turn" />
+            <NumberField inUnit="length" testid="dim-helix-r" label="Radius" value={obj.dims.r || 12} onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v) })} step={0.5} />
+            <NumberField inUnit="length" testid="dim-helix-tube" label="Tube ⌀" value={(obj.dims.tube || 2) * 2} onChange={(v) => updateDims(obj.id, { tube: Math.max(0.1, v / 2) })} step={0.2} />
+            <NumberField inUnit="length" testid="dim-helix-pitch" label="Pitch" value={obj.dims.pitch || 6} onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.5, v) })} step={0.5} suffix="mm/turn" />
             <NumberField testid="dim-helix-turns" label="Turns" value={obj.dims.turns || 4} onChange={(v) => updateDims(obj.id, { turns: Math.max(0.25, v) })} step={0.25} />
           </div>
           <div className="mt-1 text-[10px] text-slate-500">
@@ -1087,11 +1109,11 @@ function Inspector() {
           R and inner R; clamped so wall < R to keep a real interior. */}
       {obj.type === "pipe" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField testid="dim-pipe-d" label="Outer ⌀" value={(obj.dims.r || 12) * 2} onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })} step={0.5} />
-            <NumberField testid="dim-pipe-wall" label="Wall" value={obj.dims.wall || 2} onChange={(v) => updateDims(obj.id, { wall: Math.max(0.2, Math.min((obj.dims.r || 12) - 0.1, v)) })} step={0.2} />
-            <NumberField testid="dim-pipe-h" label="Height" value={obj.dims.h || 30} onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })} step={1} />
+            <NumberField inUnit="length" testid="dim-pipe-d" label="Outer ⌀" value={(obj.dims.r || 12) * 2} onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })} step={0.5} />
+            <NumberField inUnit="length" testid="dim-pipe-wall" label="Wall" value={obj.dims.wall || 2} onChange={(v) => updateDims(obj.id, { wall: Math.max(0.2, Math.min((obj.dims.r || 12) - 0.1, v)) })} step={0.2} />
+            <NumberField inUnit="length" testid="dim-pipe-h" label="Height" value={obj.dims.h || 30} onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })} step={1} />
           </div>
           <div className="mt-1 text-[10px] text-slate-500">
             Inner ⌀ = {(((obj.dims.r || 12) - (obj.dims.wall || 2)) * 2).toFixed(1)} mm.
@@ -1102,11 +1124,11 @@ function Inspector() {
       {/* Wedge — same XYZ as a cube; the geometry is a ramp. */}
       {obj.type === "wedge" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           <div className="grid grid-cols-3 gap-2">
-            <NumberField testid="dim-wedge-x" label="Length (X)" value={obj.dims.x || 24} onChange={(v) => updateDims(obj.id, { x: Math.max(0.5, v) })} step={1} />
-            <NumberField testid="dim-wedge-y" label="Height (Y)" value={obj.dims.y || 16} onChange={(v) => updateDims(obj.id, { y: Math.max(0.5, v) })} step={1} />
-            <NumberField testid="dim-wedge-z" label="Depth (Z)" value={obj.dims.z || 24} onChange={(v) => updateDims(obj.id, { z: Math.max(0.5, v) })} step={1} />
+            <NumberField inUnit="length" testid="dim-wedge-x" label="Length (X)" value={obj.dims.x || 24} onChange={(v) => updateDims(obj.id, { x: Math.max(0.5, v) })} step={1} />
+            <NumberField inUnit="length" testid="dim-wedge-y" label="Height (Y)" value={obj.dims.y || 16} onChange={(v) => updateDims(obj.id, { y: Math.max(0.5, v) })} step={1} />
+            <NumberField inUnit="length" testid="dim-wedge-z" label="Depth (Z)" value={obj.dims.z || 24} onChange={(v) => updateDims(obj.id, { z: Math.max(0.5, v) })} step={1} />
           </div>
           <div className="mt-1 text-[10px] text-slate-500">
             Ramps from y=0 at +z to y={(obj.dims.y || 16).toFixed(1)} at −z.
@@ -1120,13 +1142,13 @@ function Inspector() {
           bolt sits flat on the bed head-down. */}
       {obj.type === "bolt" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField testid="dim-bolt-r"     label="Thread ⌀ (M)" value={(obj.dims.r || 5) * 2}      onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })}            step={1} />
-            <NumberField testid="dim-bolt-pitch" label="Pitch"        value={obj.dims.pitch || 1.5}      onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.25, v) })}          step={0.25} suffix="mm/turn" />
-            <NumberField testid="dim-bolt-h"     label="Shank"        value={obj.dims.h || 20}           onChange={(v) => updateDims(obj.id, { h: Math.max(1, v) })}                 step={1} />
-            <NumberField testid="dim-bolt-headD" label="Head ⌀"       value={(obj.dims.headR || 8) * 2}  onChange={(v) => updateDims(obj.id, { headR: Math.max(1, v / 2) })}         step={1} />
-            <NumberField testid="dim-bolt-headH" label="Head height"  value={obj.dims.headH || 4}        onChange={(v) => updateDims(obj.id, { headH: Math.max(0.5, v) })}           step={0.5} />
+            <NumberField inUnit="length" testid="dim-bolt-r"     label="Thread ⌀ (M)" value={(obj.dims.r || 5) * 2}      onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })}            step={1} />
+            <NumberField inUnit="length" testid="dim-bolt-pitch" label="Pitch"        value={obj.dims.pitch || 1.5}      onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.25, v) })}          step={0.25} suffix="mm/turn" />
+            <NumberField inUnit="length" testid="dim-bolt-h"     label="Shank"        value={obj.dims.h || 20}           onChange={(v) => updateDims(obj.id, { h: Math.max(1, v) })}                 step={1} />
+            <NumberField inUnit="length" testid="dim-bolt-headD" label="Head ⌀"       value={(obj.dims.headR || 8) * 2}  onChange={(v) => updateDims(obj.id, { headR: Math.max(1, v / 2) })}         step={1} />
+            <NumberField inUnit="length" testid="dim-bolt-headH" label="Head height"  value={obj.dims.headH || 4}        onChange={(v) => updateDims(obj.id, { headH: Math.max(0.5, v) })}           step={0.5} />
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
             <label className="flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer">
@@ -1151,12 +1173,12 @@ function Inspector() {
           across-flats radius (so AF wrench size = 2 × flatR). */}
       {obj.type === "nut" && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions (mm)</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Dimensions ({unitSystem})</div>
           <div className="grid grid-cols-2 gap-2">
-            <NumberField testid="dim-nut-r"     label="Thread ⌀ (M)" value={(obj.dims.r || 5) * 2}     onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })}     step={1} />
-            <NumberField testid="dim-nut-pitch" label="Pitch"        value={obj.dims.pitch || 1.5}     onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.25, v) })}   step={0.25} suffix="mm/turn" />
-            <NumberField testid="dim-nut-h"     label="Height"       value={obj.dims.h || 5}           onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })}        step={0.5} />
-            <NumberField testid="dim-nut-flatR" label="A/F width"    value={(obj.dims.flatR || 8) * 2} onChange={(v) => updateDims(obj.id, { flatR: Math.max(1, v / 2) })}  step={1} suffix="mm" />
+            <NumberField inUnit="length" testid="dim-nut-r"     label="Thread ⌀ (M)" value={(obj.dims.r || 5) * 2}     onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v / 2) })}     step={1} />
+            <NumberField inUnit="length" testid="dim-nut-pitch" label="Pitch"        value={obj.dims.pitch || 1.5}     onChange={(v) => updateDims(obj.id, { pitch: Math.max(0.25, v) })}   step={0.25} suffix="mm/turn" />
+            <NumberField inUnit="length" testid="dim-nut-h"     label="Height"       value={obj.dims.h || 5}           onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })}        step={0.5} />
+            <NumberField inUnit="length" testid="dim-nut-flatR" label="A/F width"    value={(obj.dims.flatR || 8) * 2} onChange={(v) => updateDims(obj.id, { flatR: Math.max(1, v / 2) })}  step={1} suffix="mm" />
           </div>
           <div className="mt-1 text-[10px] text-slate-500 leading-snug">
             Pitch must match the mating bolt. Add a negative cylinder &amp; Boolean-subtract for a real bore.
@@ -1205,17 +1227,18 @@ function Inspector() {
 // ---------- 2D shape controls: dims + slider/number sides + Extrude ----------
 function Shape2DControls({ obj, updateDims }) {
   const d = obj.dims || {};
+  const unitSystem = useScene((s) => s.unitSystem);
   const is2D = (d.h || 1) <= 1.01; // visually "still a 2D sketch"
   return (
     <div className="space-y-2" data-testid="shape2d-controls">
       <div>
         <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center justify-between">
-          <span>2D Dimensions (mm)</span>
+          <span>2D Dimensions ({unitSystem})</span>
           <span
             className={`text-[9px] normal-case px-1.5 py-0.5 rounded ${is2D ? "bg-purple-500/20 text-purple-300" : "bg-orange-500/20 text-orange-300"}`}
             title={is2D ? "Currently a 2D sketch — set Extrude depth below" : "Already extruded"}
           >
-            {is2D ? "2D sketch" : `extruded ${(d.h || 1).toFixed(1)}mm`}
+            {is2D ? "2D sketch" : `extruded ${unitSystem === "in" ? (((d.h || 1) / 25.4).toFixed(3) + " in") : (((d.h || 1).toFixed(1)) + " mm")}`}
           </span>
         </div>
         {obj.type === "circle" && (

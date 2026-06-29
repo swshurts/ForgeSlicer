@@ -1,0 +1,46 @@
+{
+  "summary": "Iter-113 — TinkerCAD-parity Measurement v2 Phase 2 tested via live Playwright on /workspace. PASS for: inline-editable W/D/H labels, edit→commit, mm/in unit toggle reformat, Workplane Ruler toggle/origin/x/y/remove, ΔZ delta chip when ruler+selection, place-on-face toggle + SNAP-TO-FACE banner + Escape clear. One-shot snap teleport (Test #8) could NOT be conclusively verified via synthetic canvas click — see notes below. Code path is wired correctly; manual interactive verification recommended.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "phases_results": {
+    "T1_inline_dim_labels_present": "PASS — After adding a cube and selecting it, three labels render in the 3D viewport: data-testid=dim-label-w / dim-label-d / dim-label-h. Each reads '20.0 mm' for the default cube (texts: 'W\\n20.0\\nmm', 'D\\n20.0\\nmm', 'H\\n20.0\\nmm').",
+    "T2_dim_label_edit_commit": "PASS — Clicking dim-label-w swaps it for dim-label-w-input wrapped in dim-label-w-editor. Typing '40' + Enter updates cube dims.x = 40. bbox-size-label reads '40.0 × 20.0 × 20.0 mm' afterwards.",
+    "T3_unit_toggle_relabels": "PASS — The unit toggle has data-testid 'units-toggle' (not 'unit-system-toggle-in-btn' as the brief speculated — see Action Items). Clicking flips unitSystem mm→in. dim-label-w then reads 'W\\n0.787\\nin' (20mm → 0.787in correct). Underlying cube dims unchanged (x:20,y:20,z:20).",
+    "T4_workplane_ruler_toggle_on": "PASS — Clicking data-testid=workplane-ruler-toggle-btn activates the ruler. workplane-ruler-origin-label, workplane-ruler-x-label, workplane-ruler-y-label, and workplane-ruler-remove all render. Store workplaneRuler.active = true.",
+    "T5_ruler_delta_chips": "PASS — With ruler on and cube selected at position [0,0,10], only workplane-ruler-dz renders (dx and dy correctly suppressed since both are 0). dz chip reads 'ΔZ+10.0 mm'.",
+    "T6_ruler_remove": "PASS — Clicking workplane-ruler-remove sets workplaneRuler.active=false and removes origin/x/y/dz labels from DOM. Toggle button click also removes (verified during a separate run).",
+    "T7_snap_to_face_mode_toggle_and_escape": "PASS — With a cube selected, clicking place-on-face-toggle-btn sets placeOnFaceMode=true and renders place-on-face-hint banner with full text 'SNAP TO FACE — click any face on another object to land the selection on it (Esc to cancel)' (contains 'SNAP TO FACE'). Pressing Escape clears placeOnFaceMode and removes the banner.",
+    "T8_snap_one_shot_teleport": "INCONCLUSIVE — Synthetic playwright clicks at multiple positions over cube #1 (after positioning cube1 at [0,0,10] and cube2 at [60,0,10]) consistently failed to reach the cube mesh through R3F's raycaster — selection was cleared instead and cube2 stayed at z=10. Tried 5 different screen-coordinate clicks across cube1's projected bbox without a hit. CODE REVIEW PASS: Viewport.jsx onPlaceFaceHit (line 1561) early-returns when sel.id === hitObjId, calls computePlaceOnFace(sel, hitPoint, worldNormal), and on a non-null patch calls updateObject(sel.id, patch) and setPlaceOnFaceMode(false) (single-shot). placeOnFace.js correctly (a) builds q from local +Z onto world N, (b) projects all 8 bbox corners onto N to find the lowest extent, (c) shifts so the bottom-face centre coincides with the hit point. Maths is correct; for a top-face hit (N=+Z), Cube2 should land with its bottom at z=20 → centre z = 30. Recommend manual interactive verification — this code path is hard to exercise via Playwright without dev tooling that exposes the R3F camera + ray directly.",
+    "T_regression_no_console_errors": "PASS — No new console errors during the run. Only pre-existing WebGL GPU stall warnings (cosmetic, unchanged from iter-111).",
+    "T_overlay_gating": "PASS — SelectionDimLabels and WorkplaneRuler both short-circuit when measureMode || rulerMode || cutMode are active; SelectionDimLabels additionally hides during placeOnFaceMode. Verified by code review — overlays don't fight each other."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Minor (docs): the brief mentioned testid 'unit-system-toggle-in-btn' but the actual implementation in StatusBar.jsx uses data-testid='units-toggle' (single button that round-trips mm↔in). Either update the testid to match the spec, or update the spec/docs to reference 'units-toggle'.",
+    "Optional (testability): expose a small dev hook on window (e.g. window.__forgeR3F = { camera, scene }) so future Playwright tests can drive snap-to-face by projecting a world point to NDC and dispatching a real raycast. Today, R3F raycasting cannot be reliably triggered from synthetic page.mouse.click because we have no way to compute screen-space coords for an arbitrary world point in the test."
+  ],
+  "critical_code_review_comments": [
+    "SelectionDimLabels.jsx: chip positions use the WORLD-space rotated bbox via computeRotatedBBox(obj) + obj.position offsets — handles rotated objects correctly. Inset of 2.5mm keeps the chips off the bbox edge line so they don't z-fight. Read-only path for unsupported types (sketch/sweep/text/imported-without-originalBbox) gracefully disables the input — good.",
+    "SelectionDimLabels.jsx commitAxisLength: cone branch scales r2 by the same factor as r1 to preserve tip:base ratio — nice touch, avoids accidentally turning a cone into a cylinder. Sphere uniformly sets r = mm/2 on any axis — correct since a sphere has only one degree of freedom.",
+    "WorkplaneRuler.jsx onOriginPointerMove uses gl.domElement.setPointerCapture for stable drag tracking and raycasts against a Z=0 plane via THREE.Plane — robust. force(n=>n+1) re-render trigger could be replaced with relying on store updates, but it's functional and isolated.",
+    "WorkplaneRuler.jsx renders a dashed reference line from origin to selection bbox centre, plus 10mm tick marks with 50mm major lines (1.4 px) and 10mm minor (0.8 px). Tick generation is O(n=12) — trivial cost. depthTest={false} keeps the ruler legible behind objects — appropriate.",
+    "placeOnFace.js: rotation quaternion is built via setFromUnitVectors(+Z, N) which has a corner case when N is exactly -Z (q becomes identity * 180° flip and Euler decomposition can pick any axis). Worth a defensive 'if N.z < -0.999 use a known rotation [180,0,0]' branch — currently three.js handles it by flipping around an arbitrary perpendicular which may yield a non-deterministic Euler. Not blocking, just a polish item if users start snapping onto bed-side faces of overhanging parts.",
+    "EditRow.jsx: place-on-face-toggle-btn is correctly disabled={!selectedId} so the button is greyed out before a selection exists. Tooltip text changes accordingly — good UX.",
+    "Viewport.jsx onPlaceFaceHit early-returns on sel.id === hitObjId — prevents the user from snapping an object onto its own face which would produce a no-op or NaN. Correct.",
+    "Viewport.jsx line 1578: SelectedTransform gizmo is hidden when measureMode || rulerMode || placeOnFaceMode — prevents the gizmo from intercepting clicks during the snap workflow. Confirmed visually in screenshots.",
+    "Loose end: hint banner uses pointer-events-none so it doesn't block the canvas click — verified in second test run (canvas click reached the workplane through the banner)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend-only request)", "frontend": "7/8 live phases PASS, 1/8 (snap teleport) inconclusive via synthetic click — code path verified by review" },
+  "test_credentials": "session_token=st_iter113_1782695720363 on orca-cad-slice.preview.emergentagent.com — used and still valid.",
+  "seed_data_creation": "Test scene objects (1-2 cubes) created via top toolbar add-primitive-btn + primitive-menu-cube and positioned via window.__forgeStore.setState. No persisted seed data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter-113 adds three TinkerCAD-parity widgets in /app/frontend/src/components/viewport/ (SelectionDimLabels.jsx, WorkplaneRuler.jsx) and one math helper (/app/frontend/src/lib/placeOnFace.js). New testids: dim-label-{w,d,h} (+ -input/-editor variants), workplane-ruler-{origin,x,y}-label, workplane-ruler-remove, workplane-ruler-d{x,y,z}, place-on-face-toggle-btn, place-on-face-hint, workplane-ruler-toggle-btn. Anchor ruler (ruler-anchor-mode-btn) remains a SEPARATE two-click measurement tool — do not conflate. The mm/in toggle in StatusBar uses testid 'units-toggle' (NOT 'unit-system-toggle-in-btn'). To exercise snap-to-face placement reliably you need either (a) a dev hook exposing R3F camera/ray, or (b) manual interactive testing.",
+  "rca of the issue": "n/a — no defects observed. The Test 8 inconclusive result is a testbed limitation (synthetic Playwright clicks cannot drive R3F raycaster reliably without scene-coords), not a product defect."
+}

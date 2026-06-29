@@ -19,9 +19,11 @@ import React, { useMemo } from "react";
 import * as THREE from "three";
 import { Html, Line } from "@react-three/drei";
 import { useScene } from "../../lib/store";
+import { formatLen } from "../../lib/units";
 
 export function MeasurementLine({ measurement, onRemove }) {
   const { a, b, id } = measurement;
+  const unitSystem = useScene((s) => s.unitSystem);
   const points = useMemo(() => [
     new THREE.Vector3(a[0], a[1], a[2]),
     new THREE.Vector3(b[0], b[1], b[2]),
@@ -85,7 +87,7 @@ export function MeasurementLine({ measurement, onRemove }) {
           className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-950 border border-green-500/70 text-green-300 text-sm font-mono rounded-md shadow-lg whitespace-nowrap select-none"
           style={{ pointerEvents: "auto" }}
         >
-          <span className="font-bold tracking-tight">{dist.toFixed(2)} mm</span>
+          <span className="font-bold tracking-tight">{formatLen(dist, unitSystem)}</span>
           <button
             data-testid={`measurement-close-${id}`}
             onClick={(e) => { e.stopPropagation(); onRemove(id); }}

@@ -16,10 +16,22 @@ import * as THREE from "three";
 import { Html, Line } from "@react-three/drei";
 import { useScene } from "../../lib/store";
 import { computeComponentDimension, fmtSignedMm } from "../../lib/componentDimensions";
+import { formatLen, toDisplayLen } from "../../lib/units";
+
+// Unit-aware sign formatter — mirrors `fmtSignedMm` but converts to
+// the user's display unit first.
+function fmtSigned(mm, unitSystem) {
+  if (unitSystem === "in") {
+    const v = toDisplayLen(mm, "in");
+    return `${v >= 0 ? "+" : ""}${v.toFixed(3)} in`;
+  }
+  return fmtSignedMm(mm);
+}
 
 export function ComponentDimensionLine({ dim, objects, onRemove }) {
   const a = objects.find((o) => o.id === dim.objIdA);
   const b = objects.find((o) => o.id === dim.objIdB);
+  const unitSystem = useScene((s) => s.unitSystem);
   const d = useMemo(() => computeComponentDimension(a, b), [a, b]);
   // Hook order MUST be stable: keep every hook call above any early-return.
   // `points` is a cheap derivation from `d` so we compute it
@@ -59,14 +71,14 @@ export function ComponentDimensionLine({ dim, objects, onRemove }) {
               {(a?.name || "?")} ↔ {(b?.name || "?")}
             </span>
             <span className="font-bold tracking-tight text-white">
-              {d.distance.toFixed(2)} mm
+              {formatLen(d.distance, unitSystem)}
             </span>
             <span className="text-[9.5px] text-slate-400">
-              <span data-testid={`component-dim-dx-${dim.id}`}>ΔX {fmtSignedMm(d.delta[0])}</span>
+              <span data-testid={`component-dim-dx-${dim.id}`}>ΔX {fmtSigned(d.delta[0], unitSystem)}</span>
               {" · "}
-              <span data-testid={`component-dim-dy-${dim.id}`}>ΔY {fmtSignedMm(d.delta[1])}</span>
+              <span data-testid={`component-dim-dy-${dim.id}`}>ΔY {fmtSigned(d.delta[1], unitSystem)}</span>
               {" · "}
-              <span data-testid={`component-dim-dz-${dim.id}`}>ΔZ {fmtSignedMm(d.delta[2])}</span>
+              <span data-testid={`component-dim-dz-${dim.id}`}>ΔZ {fmtSigned(d.delta[2], unitSystem)}</span>
             </span>
           </div>
           <button
