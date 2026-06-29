@@ -172,6 +172,27 @@ export const useScene = create((set, get) => ({
   placeOnFaceMode: false,
   setPlaceOnFaceMode: (on) => set({ placeOnFaceMode: !!on }),
 
+  // ---- Inline W/D/H dimension labels (iter-114.1) ----
+  // OFF by default. User reported the always-on labels covered small
+  // selections (e.g. a 30×26×5 mm triangle) and clashed with the
+  // workplane ruler's delta chips. Now a toolbar toggle (DIMS pill)
+  // controls visibility — clean canvas by default, opt-in inline
+  // editing for users who want TinkerCAD-style numeric tags.
+  // Persisted to localStorage so power users who like them on keep
+  // them on across sessions.
+  dimLabelsEnabled: (() => {
+    try {
+      const v = typeof localStorage !== "undefined"
+        ? localStorage.getItem("forge.dimLabelsEnabled")
+        : null;
+      return v === "1";
+    } catch { return false; }
+  })(),
+  setDimLabelsEnabled: (on) => {
+    try { localStorage.setItem("forge.dimLabelsEnabled", on ? "1" : "0"); } catch { /* noop */ }
+    set({ dimLabelsEnabled: !!on });
+  },
+
   // ---- measurement ----
   measureMode: false,
   measurements: [], // [{id, a:[x,y,z], b:[x,y,z], objIdA, objIdB}]

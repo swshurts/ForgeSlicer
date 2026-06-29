@@ -229,6 +229,11 @@ export function SelectionDimLabels() {
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
   const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
+  // Iter-114.1 — user opt-in toggle. The always-on TinkerCAD-style
+  // labels cluttered small selections and double-stacked with the
+  // Workplane Ruler. Now hidden unless dimLabelsEnabled === true.
+  const dimLabelsEnabled = useScene((s) => s.dimLabelsEnabled);
+  const workplaneRulerActive = useScene((s) => s.workplaneRuler?.active);
 
   const obj = objects.find((o) => o.id === selectedId);
 
@@ -269,9 +274,13 @@ export function SelectionDimLabels() {
   }, [obj]);
 
   if (!obj || !bboxData) return null;
-  // Hide during exclusive interaction modes — those overlays own the
-  // visual surface and our labels would clutter the read.
+  // Hide unless the user explicitly turned dim labels ON via the DIMS
+  // pill (iter-114.1). Also hide during exclusive interaction modes
+  // and while the Workplane Ruler is active — both of those own the
+  // canvas with their own numeric overlays.
+  if (!dimLabelsEnabled) return null;
   if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
+  if (workplaneRulerActive) return null;
 
   const editableX = isAxisEditable(obj, "x");
   const editableY = isAxisEditable(obj, "y");

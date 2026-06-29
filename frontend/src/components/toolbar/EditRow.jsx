@@ -11,7 +11,7 @@
 import React from "react";
 import {
   PlusSquare, MinusSquare, Combine, Move3D, RotateCw, Scale3D,
-  Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor, MoveDiagonal, Target,
+  Magnet, Grid3x3, Undo2, Redo2, Ruler, Anchor, MoveDiagonal, Target, Tag,
   MapPin, Maximize, Copy, FlipHorizontal2, Scissors, Sliders,
   Settings2, AlignCenter, ShieldCheck, ShieldAlert,
 } from "lucide-react";
@@ -67,6 +67,11 @@ export default function EditRow({
   // has nothing to teleport.
   const placeOnFaceMode = useScene((s) => s.placeOnFaceMode);
   const setPlaceOnFaceMode = useScene((s) => s.setPlaceOnFaceMode);
+  // Iter-114.1 — toggle for inline W/D/H labels (`SelectionDimLabels`).
+  // OFF by default; persisted via store/localStorage. User reported
+  // the always-on labels clobbered small primitives.
+  const dimLabelsEnabled = useScene((s) => s.dimLabelsEnabled);
+  const setDimLabelsEnabled = useScene((s) => s.setDimLabelsEnabled);
 
   // Single source of truth for the seven popover buttons. Adding a new
   // popover means adding one entry here + a render case in TopToolbar.
@@ -203,6 +208,18 @@ export default function EditRow({
         active={placeOnFaceMode}
         disabled={!selectedId}
         onClick={() => setPlaceOnFaceMode(!placeOnFaceMode)}
+      />
+      <TabPillButton
+        testid="dim-labels-toggle-btn"
+        icon={Tag}
+        label="Dims"
+        title={
+          dimLabelsEnabled
+            ? "Hide inline W/D/H dimension labels on the selected object"
+            : "Show inline W/D/H dimension labels on the selected object (click a chip to edit that dimension)"
+        }
+        active={dimLabelsEnabled}
+        onClick={() => setDimLabelsEnabled(!dimLabelsEnabled)}
       />
 
       <Divider />
