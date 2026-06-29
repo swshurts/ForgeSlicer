@@ -4409,3 +4409,23 @@ After three iteration attempts (Replace → Overlay → Planes-only-skip), the R
 - Pre-flight printability checks (which DO produce actionable findings).
 
 
+## Iteration 113 (2026-02-28) — Measurement v2 Phase 2: TinkerCAD-parity widgets
+
+User asked for the experience to "be as close to TinkerCAD as possible" (handoff confirmation). Shipped the three missing pieces that, together with the iter-112 mm/in toggle, brings ForgeSlicer's measurement surface to TinkerCAD parity.
+
+### Added
+- **Inline-editable W/D/H dimension labels** (`/app/frontend/src/components/viewport/SelectionDimLabels.jsx`, ~270 lines). Three colour-coded chips weld to the selected object's world bbox at the edge midpoints — `W` (rose, X), `D` (emerald, Y), `H` (sky-blue, Z = up). Clicking a chip swaps it for a numeric input that respects the global mm/in toggle; Enter or blur commits the new dimension via the appropriate scene action (`updateDims` for primitives, `setImportedDim` for imported meshes). Cone-axis edits scale `r1` and `r2` proportionally so the cone doesn't accidentally become a cylinder.
+- **Workplane Ruler** (`/app/frontend/src/components/viewport/WorkplaneRuler.jsx`, ~290 lines). A persistent, draggable TinkerCAD-style L-shaped reference widget that sits on the build plate. Two perpendicular arrows (X = rose, Y = emerald) extend 120 mm from the origin with 10 mm tick marks (50 mm majors). A white draggable sphere lets the user reposition the origin by raycasting against the Z = 0 plane. When an object is selected, signed ΔX / ΔY / ΔZ chips appear, plus a dashed reference line origin → selection centre. New `workplaneRuler` slice in `store.js` (`active`, `origin[3]`, plus `setWorkplaneRuler` / `placeWorkplaneRuler` / `removeWorkplaneRuler` actions).
+- **Snap-to-face placement** (`/app/frontend/src/lib/placeOnFace.js`, ~110 lines). When the new `place-on-face-toggle-btn` toolbar mode is active, the next click on any other object's face teleports the current selection so its base lands flat on that face. Algorithm: build a quaternion that rotates local +Z to the world face normal, project all 8 rotated-bbox corners onto the normal to find the bottom extent, translate so that bottom centre coincides with the click point. Defensive branch for N ≈ -Z that picks a deterministic [180°, 0, 0] rotation. Single-shot — the mode auto-disables after a successful placement. Math sanity verified by inline node check (top-face hit → [0,0,30], side-face hit → [20,0,10] — both pass for a default 20 mm cube hitting another 20 mm cube).
+- New toolbar buttons in `EditRow.jsx` — `workplane-ruler-toggle-btn` (MoveDiagonal icon) and `place-on-face-toggle-btn` (Target icon, disabled when no selection). `IconBtn` extended with a `disabled` prop.
+- Hint banner `place-on-face-hint` slides into the viewport top-centre while the mode is active; Escape now also dismisses placeOnFaceMode (added to `useToolbarShortcuts.js`).
+
+### Verified
+- `testing_agent_v3_fork` (iter-113.json): 7/8 PASS — inline labels present, edit→commit (20→40 → bbox-size-label updates), mm/in toggle reformats labels without changing dims, workplane ruler activate / origin / X-Y labels / remove, ΔZ delta chip with selection, snap-to-face mode + Escape clear. T8 one-shot teleport inconclusive via synthetic Playwright clicks (R3F raycaster limitation) but code path verified by review + sanity-checked math.
+- All four exclusive interaction modes (`measureMode`, `rulerMode`, `cutMode`, `placeOnFaceMode`) correctly hide each other's overlays — no conflict.
+
+### Files touched
+- New: `frontend/src/components/viewport/SelectionDimLabels.jsx`, `frontend/src/components/viewport/WorkplaneRuler.jsx`, `frontend/src/lib/placeOnFace.js`.
+- Edited: `frontend/src/lib/store.js` (workplaneRuler slice + placeOnFaceMode), `frontend/src/components/Viewport.jsx` (mount overlays + SceneObject onClick branch + SelectedTransform hidden during placeOnFace + SubElementPickOverlay early-return), `frontend/src/components/toolbar/EditRow.jsx` (toolbar buttons), `frontend/src/components/toolbar/ToolbarUI.jsx` (IconBtn disabled prop), `frontend/src/components/toolbar/useToolbarShortcuts.js` (Esc handler), `frontend/src/components/viewport/SelectionDimLabels.jsx` (placeOnFaceMode gating).
+
+

@@ -40,10 +40,20 @@ export function computePlaceOnFace(obj, hitPoint, worldNormal) {
   };
 
   // Quaternion that rotates local +Z onto N.
-  const q = new THREE.Quaternion().setFromUnitVectors(
-    new THREE.Vector3(0, 0, 1),
-    N,
-  );
+  // Corner case: when N is (nearly) -Z, setFromUnitVectors picks an
+  // arbitrary perpendicular axis to spin around — that yields an
+  // unpredictable Euler decomposition. Snap onto a known [180°,0,0]
+  // orientation so flips onto underside faces stay deterministic
+  // (testing agent T8 polish, iter-113).
+  let q;
+  if (N.z < -0.9999) {
+    q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+  } else {
+    q = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      N,
+    );
+  }
   // Convert to Euler degrees for the store's rotation field.
   const eul = new THREE.Euler().setFromQuaternion(q, "XYZ");
   const newRotDeg = [
