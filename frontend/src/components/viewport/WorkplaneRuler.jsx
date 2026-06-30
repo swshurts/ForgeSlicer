@@ -47,12 +47,12 @@ export function WorkplaneRuler() {
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
 
-  const { camera, gl } = useThree();
+  const { camera, gl, controls } = useThree();
   const draggingRef = useRef(false);
   // Iter-114.7 — track pointer-down position so we can tell a CLICK
-  // from a DRAG. A click on the origin sphere with negligible
-  // movement (<5 px) triggers re-placement: ruler drops out, user
-  // picks a new spot without touching the toolbar.
+  // from a DRAG. Iter-114.8 bumped the threshold to 10 px because
+  // 5 px was too tight — fine-tune drags were being misclassified as
+  // clicks and triggering re-placement instead of moving the ruler.
   const downPosRef = useRef(null);
   const enterPlacing = useScene((s) => s.enterWorkplaneRulerPlacing);
   const [, force] = useState(0); // re-render trigger for drag updates
@@ -67,17 +67,19 @@ export function WorkplaneRuler() {
     e.stopPropagation();
     draggingRef.current = true;
     downPosRef.current = { x: e.clientX, y: e.clientY, moved: false };
+    // Iter-114.8 — disable OrbitControls while the user is dragging
+    // the origin sphere. Without this, OrbitControls eats the drag
+    // and rotates the camera instead of moving the ruler.
+    if (controls) controls.enabled = false;
     try { gl.domElement.setPointerCapture(e.pointerId); } catch { /* noop */ }
   };
   const onOriginPointerMove = (e) => {
     if (!draggingRef.current) return;
     e.stopPropagation();
-    // Mark this gesture as a drag once the pointer has travelled more
-    // than 5 px from its start — anything less stays a "click".
     if (downPosRef.current) {
       const dx = e.clientX - downPosRef.current.x;
       const dy = e.clientY - downPosRef.current.y;
-      if (Math.hypot(dx, dy) > 5) downPosRef.current.moved = true;
+      if (Math.hypot(dx, dy) > 10) downPosRef.current.moved = true;
     }
     const rect = gl.domElement.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -95,9 +97,8 @@ export function WorkplaneRuler() {
   const onOriginPointerUp = (e) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
+    if (controls) controls.enabled = true;
     try { gl.domElement.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    // Pure click → re-enter placement. Drags already handled the move
-    // during pointer-move.
     if (downPosRef.current && !downPosRef.current.moved) {
       enterPlacing();
     }
