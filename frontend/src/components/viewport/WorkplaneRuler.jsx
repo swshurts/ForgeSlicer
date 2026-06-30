@@ -99,9 +99,10 @@ export function WorkplaneRuler() {
     draggingRef.current = false;
     if (controls) controls.enabled = true;
     try { gl.domElement.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    if (downPosRef.current && !downPosRef.current.moved) {
-      enterPlacing();
-    }
+    // Iter-114.10 — the explicit ↻ button replaced the
+    // click-to-re-place heuristic (which was unreliable when the
+    // origin sphere sat under another object's TransformControls
+    // gizmo). Origin sphere now drags only.
     downPosRef.current = null;
   };
 
@@ -238,18 +239,33 @@ export function WorkplaneRuler() {
         <sphereGeometry args={[2.2, 18, 18]} />
         <meshBasicMaterial color="#0EA5E9" depthTest={false} />
       </mesh>
-      {/* × remove button */}
+      {/* Origin action buttons — × (remove) + ↻ (re-place). The
+          re-place button replaces the click-vs-drag heuristic from
+          iter-114.7/.8 which proved unreliable on top of an
+          object's TransformControls gizmo. Now an unambiguous
+          dedicated button. The origin sphere still drags to
+          fine-tune the position via the pointer-move handler. */}
       <Html position={[ox, oy, oz + 0.5]} center zIndexRange={[90, 0]} sprite={false}>
-        <button
-          data-testid="workplane-ruler-remove"
-          onClick={(e) => { e.stopPropagation(); removeRuler(); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="translate-x-5 -translate-y-5 w-5 h-5 rounded-full bg-slate-900/95 hover:bg-red-500/70 text-slate-300 hover:text-white flex items-center justify-center border border-slate-700 shadow"
-          style={{ pointerEvents: "auto" }}
-          title="Remove workplane ruler"
-        >
-          <X size={11} />
-        </button>
+        <div className="flex gap-1 translate-x-5 -translate-y-5" style={{ pointerEvents: "auto" }}>
+          <button
+            data-testid="workplane-ruler-replace"
+            onClick={(e) => { e.stopPropagation(); enterPlacing(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-5 h-5 rounded-full bg-slate-900/95 hover:bg-orange-500/70 text-slate-300 hover:text-white flex items-center justify-center border border-slate-700 shadow text-[11px] font-bold leading-none"
+            title="Re-place the ruler — pick a new bed location"
+          >
+            ↻
+          </button>
+          <button
+            data-testid="workplane-ruler-remove"
+            onClick={(e) => { e.stopPropagation(); removeRuler(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-5 h-5 rounded-full bg-slate-900/95 hover:bg-red-500/70 text-slate-300 hover:text-white flex items-center justify-center border border-slate-700 shadow"
+            title="Remove workplane ruler"
+          >
+            <X size={11} />
+          </button>
+        </div>
       </Html>
       {/* Origin coordinate label */}
       <Html position={[ox, oy, oz + 1]} center zIndexRange={[60, 0]} sprite={false}>
