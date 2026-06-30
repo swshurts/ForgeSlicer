@@ -185,10 +185,15 @@ export const useScene = create((set, get) => ({
   // hole-to-hole spacing, vertex offsets, etc. without leaving the
   // ruler workflow.
   rulerPicks: [],
+  // Iter-114.6 — single-pick semantics. User reported the
+  // accumulating list was hard to read; TinkerCAD users replace the
+  // measurement with each new click. addRulerPick now REPLACES the
+  // current pick. (Array shape kept so existing render code and tests
+  // still work — always holds 0 or 1 entries.)
   addRulerPick: (point, meta = {}) => {
     if (!Array.isArray(point) || point.length !== 3) return;
     const id = `pick_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    set((s) => ({ rulerPicks: [...s.rulerPicks, { id, point, ...meta }] }));
+    set({ rulerPicks: [{ id, point, ...meta }] });
   },
   removeRulerPick: (id) => set((s) => ({
     rulerPicks: s.rulerPicks.filter((p) => p.id !== id),

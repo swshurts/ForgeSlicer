@@ -1726,7 +1726,7 @@ function RulerPickHintBanner() {
       data-testid="ruler-pick-hint"
     >
       <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-      PICK A POINT — click any yellow/blue/purple snap dot on the selected part to drop a measurement
+      PICK A POINT — click any yellow corner or purple face-centre dot on the selected part to drop a measurement
     </div>
   );
 }

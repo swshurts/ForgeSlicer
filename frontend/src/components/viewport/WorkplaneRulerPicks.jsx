@@ -33,8 +33,11 @@ function fmtSigned(mm, system, dp) {
 }
 
 /**
- * Compute the 27 candidate snap points (8 corners + 12 edge midpoints
- * + 6 face centres + 1 centre) for a given object's world bbox.
+ * Compute the candidate snap points for a given object's world bbox.
+ * Iter-114.6 reduces the picker set from 27 → 14 (8 corners + 6 face
+ * centres) per user feedback that small primitives like cones became
+ * unreadably busy. Edge midpoints + body centre are dropped — corners
+ * cover the common case, face centres handle thickness picks.
  */
 function objectSnapPoints(obj) {
   if (!obj) return [];
@@ -54,16 +57,10 @@ function objectSnapPoints(obj) {
     for (const x of xs) for (const y of ys) for (const z of zs) {
       pts.push({ p: [x, y, z], kind: "corner" });
     }
-    // 12 edge midpoints.
-    for (const y of ys) for (const z of zs) pts.push({ p: [xm, y, z], kind: "edge" });
-    for (const x of xs) for (const z of zs) pts.push({ p: [x, ym, z], kind: "edge" });
-    for (const x of xs) for (const y of ys) pts.push({ p: [x, y, zm], kind: "edge" });
     // 6 face centres.
     for (const x of xs) pts.push({ p: [x, ym, zm], kind: "face" });
     for (const y of ys) pts.push({ p: [xm, y, zm], kind: "face" });
     for (const z of zs) pts.push({ p: [xm, ym, z], kind: "face" });
-    // 1 body centre.
-    pts.push({ p: [xm, ym, zm], kind: "center" });
     return pts;
   } catch { return []; }
 }
@@ -93,10 +90,7 @@ function SnapDots({ selectedObj, addRulerPick }) {
         >
           <sphereGeometry args={[1.8, 16, 16]} />
           <meshBasicMaterial
-            color={entry.kind === "corner" ? "#F59E0B"
-                 : entry.kind === "edge"   ? "#60A5FA"
-                 : entry.kind === "face"   ? "#C084FC"
-                 :                            "#94A3B8"}
+            color={entry.kind === "corner" ? "#F59E0B" : "#C084FC"}
             transparent
             opacity={0.95}
             depthTest={false}
