@@ -18,6 +18,7 @@ import { ComponentDimensionsLayer } from "./viewport/ComponentDimensionsOverlay"
 import { RulerAnchorLayer, PinnedRulerLayer } from "./viewport/RulerLayers";
 import { SelectionDimLabels } from "./viewport/SelectionDimLabels";
 import { WorkplaneRuler } from "./viewport/WorkplaneRuler";
+import WorkplaneRulerPicks from "./viewport/WorkplaneRulerPicks";
 import PrintabilityOverlay from "./PrintabilityOverlay";
 
 const POSITIVE_COLOR = "#F97316";
@@ -1498,6 +1499,12 @@ export default function Viewport() {
           PLACE RULER — click anywhere on the bed, or on any face / edge / vertex of an object (Esc to cancel)
         </div>
       )}
+      {/* Iter-114.5 — once the ruler is placed, hint how to drop
+          persistent pick measurements. Only shown when the ruler is
+          active AND there's no active pick yet (so we don't shout at
+          the user once they're already using the feature). */}
+      <RulerPickHintBanner />
+      <RulerPickClearButton />
       {marqueeOverlayActive && (
         <div
           data-testid="marquee-hint"
@@ -1645,6 +1652,7 @@ export default function Viewport() {
         <PinnedRulerLayer />
         <SelectionDimLabels />
         <WorkplaneRuler />
+        <WorkplaneRulerPicks />
         <PrintabilityOverlay />
         <CutPlaneGizmo />
         <CanvasBridge bridgeRef={bridgeRef} />
@@ -1699,3 +1707,46 @@ export default function Viewport() {
     </div>
   );
 }
+
+// Iter-114.5 — Small hint banner shown after the ruler is placed, to
+// teach users that they can click snap-dots on the selected object
+// to drop persistent measurements. Self-dismisses after the first
+// pick is added so it doesn't nag.
+function RulerPickHintBanner() {
+  const workplaneRuler = useScene((s) => s.workplaneRuler);
+  const rulerPicks = useScene((s) => s.rulerPicks || []);
+  const selectedId = useScene((s) => s.selectedId);
+  if (!workplaneRuler?.active) return null;
+  if (workplaneRuler.placing) return null;
+  if (rulerPicks.length > 0) return null;
+  if (!selectedId) return null;
+  return (
+    <div
+      className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-blue-500/40 rounded text-[11px] font-mono text-blue-200 pointer-events-none flex items-center gap-2"
+      data-testid="ruler-pick-hint"
+    >
+      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+      PICK A POINT — click any yellow/blue/purple snap dot on the selected part to drop a measurement
+    </div>
+  );
+}
+
+// "Clear measurements" pill — appears in the top-right corner of the
+// canvas as soon as the user has at least one ruler pick. One click
+// wipes them all without dismissing the ruler itself.
+function RulerPickClearButton() {
+  const rulerPicks = useScene((s) => s.rulerPicks || []);
+  const clearRulerPicks = useScene((s) => s.clearRulerPicks);
+  if (!rulerPicks.length) return null;
+  return (
+    <button
+      data-testid="ruler-pick-clear-btn"
+      onClick={clearRulerPicks}
+      className="absolute top-3 right-3 z-10 px-2.5 py-1 bg-slate-900/90 hover:bg-slate-800 border border-slate-600 rounded text-[10.5px] font-mono font-semibold text-slate-200 shadow"
+      title="Remove all picked-point measurements (keeps the ruler placed)"
+    >
+      Clear {rulerPicks.length} measurement{rulerPicks.length === 1 ? "" : "s"}
+    </button>
+  );
+}
+
