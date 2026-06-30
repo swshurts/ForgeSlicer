@@ -49,6 +49,12 @@ export function WorkplaneRuler() {
 
   const { camera, gl } = useThree();
   const draggingRef = useRef(false);
+  // Iter-114.7 — track pointer-down position so we can tell a CLICK
+  // from a DRAG. A click on the origin sphere with negligible
+  // movement (<5 px) triggers re-placement: ruler drops out, user
+  // picks a new spot without touching the toolbar.
+  const downPosRef = useRef(null);
+  const enterPlacing = useScene((s) => s.enterWorkplaneRulerPlacing);
   const [, force] = useState(0); // re-render trigger for drag updates
 
   if (!ruler || !ruler.active) return null;
@@ -60,12 +66,19 @@ export function WorkplaneRuler() {
   const onOriginPointerDown = (e) => {
     e.stopPropagation();
     draggingRef.current = true;
+    downPosRef.current = { x: e.clientX, y: e.clientY, moved: false };
     try { gl.domElement.setPointerCapture(e.pointerId); } catch { /* noop */ }
   };
   const onOriginPointerMove = (e) => {
     if (!draggingRef.current) return;
     e.stopPropagation();
-    // Cast a ray from the camera through the pointer and intersect Z=0.
+    // Mark this gesture as a drag once the pointer has travelled more
+    // than 5 px from its start — anything less stays a "click".
+    if (downPosRef.current) {
+      const dx = e.clientX - downPosRef.current.x;
+      const dy = e.clientY - downPosRef.current.y;
+      if (Math.hypot(dx, dy) > 5) downPosRef.current.moved = true;
+    }
     const rect = gl.domElement.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -83,6 +96,12 @@ export function WorkplaneRuler() {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     try { gl.domElement.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    // Pure click → re-enter placement. Drags already handled the move
+    // during pointer-move.
+    if (downPosRef.current && !downPosRef.current.moved) {
+      enterPlacing();
+    }
+    downPosRef.current = null;
   };
 
   // ---- selection delta chips ----
@@ -199,7 +218,7 @@ export function WorkplaneRuler() {
           -Y · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
         </div>
       </Html>
-      {/* Origin sphere — draggable */}
+      {/* Origin sphere — click to re-place, drag to fine-tune. */}
       <mesh
         position={[ox, oy, oz + 0.5]}
         renderOrder={1002}
@@ -207,6 +226,8 @@ export function WorkplaneRuler() {
         onPointerMove={onOriginPointerMove}
         onPointerUp={onOriginPointerUp}
         onPointerOut={onOriginPointerUp}
+        onPointerOver={() => { document.body.style.cursor = "pointer"; }}
+        onPointerLeave={() => { document.body.style.cursor = ""; }}
       >
         <sphereGeometry args={[3.5, 24, 24]} />
         <meshBasicMaterial color="#F8FAFC" depthTest={false} />

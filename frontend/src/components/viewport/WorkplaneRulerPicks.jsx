@@ -136,21 +136,44 @@ function PickMeasurement({ origin, pick, unitSystem, onRemove }) {
         <sphereGeometry args={[1.2, 16, 16]} />
         <meshBasicMaterial color={PICK_LINE} depthTest={false} />
       </mesh>
-      {/* Chips cluster */}
+      {/* Chips cluster — pushed well clear of the pick point so it
+          never sits on top of geometry. Iter-114.7: bumped from
+          translate(18px,-28px) to translate(80px,-110px) after user
+          reported the chip covered a cone. A short dashed leader
+          line from chip back to the pick dot keeps the association
+          visually obvious. */}
       <Html position={pick.point} center zIndexRange={[71, 0]} sprite={false}>
-        <div
-          data-testid={`ruler-pick-${pick.id}`}
-          style={{
-            transform: "translate(18px, -28px)",
-            pointerEvents: "auto",
-            background: "rgba(255,255,255,0.84)",
-            border: `1px solid ${PICK_LINE}80`,
-            color: "#0F172A",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-            minWidth: 96,
-          }}
-          className="rounded font-mono text-[10.5px] font-semibold select-none p-1 leading-tight"
-        >
+        <div style={{ position: "relative", transform: "translate(80px, -110px)", pointerEvents: "auto" }}>
+          {/* Visual tether line from chip back to the pick point, in
+              CSS only (no extra Three.js geometry). */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: -78,
+              top: 108,
+              width: 78,
+              height: 108,
+              background: "linear-gradient(225deg, rgba(59,130,246,0.0) 0%, rgba(59,130,246,0) 30%, rgba(59,130,246,0) 100%)",
+              borderTop: `1px dashed ${PICK_LINE}`,
+              borderLeft: `1px dashed ${PICK_LINE}`,
+              borderRight: "none",
+              borderBottom: "none",
+              opacity: 0.45,
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            data-testid={`ruler-pick-${pick.id}`}
+            style={{
+              background: "rgba(255,255,255,0.84)",
+              border: `1px solid ${PICK_LINE}80`,
+              color: "#0F172A",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+              minWidth: 96,
+            }}
+            className="rounded font-mono text-[10.5px] font-semibold select-none p-1 leading-tight"
+          >
           <div className="flex items-center justify-between mb-0.5">
             <span className="text-[9px] uppercase tracking-wider text-slate-500">Pick</span>
             <button
@@ -178,6 +201,7 @@ function PickMeasurement({ origin, pick, unitSystem, onRemove }) {
           <div className="flex justify-between gap-2 border-t border-slate-300 mt-0.5 pt-0.5">
             <span style={{ color: COLOR_D }} className="font-bold">D</span>
             <span>{toDisplayLen(dist, unitSystem).toFixed(dp)} {unitSystem}</span>
+          </div>
           </div>
         </div>
       </Html>
