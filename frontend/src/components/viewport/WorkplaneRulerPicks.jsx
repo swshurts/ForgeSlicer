@@ -83,7 +83,22 @@ function SnapDots({ selectedObj, addRulerPick }) {
           renderOrder={1004}
           onClick={(e) => {
             e.stopPropagation();
-            addRulerPick(entry.p, { snapKind: entry.kind, objId: selectedObj.id });
+            // Iter-114.9 — toggle behaviour. If this exact snap point
+            // is already the active pick, remove it (so the user can
+            // dismiss with a second click on the same dot). Else add
+            // it (single-pick semantics from iter-114.6 still drops
+            // any other existing pick).
+            const store = useScene.getState();
+            const existing = (store.rulerPicks || []).find((p) =>
+              Math.abs(p.point[0] - entry.p[0]) < 0.01 &&
+              Math.abs(p.point[1] - entry.p[1]) < 0.01 &&
+              Math.abs(p.point[2] - entry.p[2]) < 0.01,
+            );
+            if (existing) {
+              store.removeRulerPick(existing.id);
+            } else {
+              addRulerPick(entry.p, { snapKind: entry.kind, objId: selectedObj.id });
+            }
           }}
           onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "crosshair"; }}
           onPointerOut={() => { document.body.style.cursor = ""; }}
