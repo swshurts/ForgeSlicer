@@ -16,9 +16,29 @@
 import React from "react";
 import { Html, Line } from "@react-three/drei";
 import { X } from "lucide-react";
+import * as THREE from "three";
 import { useScene } from "../../lib/store";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { toDisplayLen } from "../../lib/units";
+
+// Iter-114.11 — Custom raycast that forces the target mesh to always
+// be picked BEFORE any other scene geometry the camera ray traverses.
+// This is critical for stacked assemblies (e.g., cone on cube) where
+// the snap-dot / origin-sphere lives at or inside another mesh's
+// bounding volume — vanilla three.js raycast orders hits by geometric
+// distance, so the parent mesh's onClick fires first, calls
+// `e.stopPropagation()`, and the tiny control never receives the
+// click. Overriding `raycast` to push hit distances to a small
+// negative value guarantees front-of-queue ordering and matches the
+// visual "always on top" expectation set by `depthTest={false}`.
+export function priorityRaycast(raycaster, intersects) {
+  const local = [];
+  THREE.Mesh.prototype.raycast.call(this, raycaster, local);
+  for (const hit of local) {
+    hit.distance = -1e-4; // force ABSOLUTE front — negative sorts first
+    intersects.push(hit);
+  }
+}
 
 const COLOR_X = "#E11D48";
 const COLOR_Y = "#059669";
@@ -81,6 +101,7 @@ function SnapDots({ selectedObj, addRulerPick }) {
           key={i}
           position={entry.p}
           renderOrder={1004}
+          raycast={priorityRaycast}
           onClick={(e) => {
             e.stopPropagation();
             // Iter-114.9 — toggle behaviour. If this exact snap point
@@ -100,10 +121,11 @@ function SnapDots({ selectedObj, addRulerPick }) {
               addRulerPick(entry.p, { snapKind: entry.kind, objId: selectedObj.id });
             }
           }}
+          onPointerDown={(e) => e.stopPropagation()}
           onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "crosshair"; }}
           onPointerOut={() => { document.body.style.cursor = ""; }}
         >
-          <sphereGeometry args={[1.8, 16, 16]} />
+          <sphereGeometry args={[2.6, 16, 16]} />
           <meshBasicMaterial
             color={entry.kind === "corner" ? "#F59E0B" : "#C084FC"}
             transparent

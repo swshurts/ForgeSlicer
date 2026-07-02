@@ -23,6 +23,7 @@ import { X } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { toDisplayLen } from "../../lib/units";
+import { priorityRaycast } from "./WorkplaneRulerPicks";
 
 const COLOR_X = "#FB7185";
 const COLOR_Y = "#34D399";
@@ -220,10 +221,17 @@ export function WorkplaneRuler() {
           -Y · {toDisplayLen(RULER_LEN, unitSystem).toFixed(unitSystem === "in" ? 2 : 0)} {unitSystem}
         </div>
       </Html>
-      {/* Origin sphere — click to re-place, drag to fine-tune. */}
+      {/* Origin sphere — click to re-place, drag to fine-tune.
+          Iter-114.11 — `priorityRaycast` forces this sphere to be the
+          FIRST intersected mesh regardless of stacked geometry it
+          lives inside (matches the visual `depthTest={false}` promise).
+          Without this, on assemblies like "cone on cube" the parent
+          mesh's onClick called stopPropagation before the sphere's
+          handlers could fire, leaving the ruler UI unresponsive. */}
       <mesh
         position={[ox, oy, oz + 0.5]}
         renderOrder={1002}
+        raycast={priorityRaycast}
         onPointerDown={onOriginPointerDown}
         onPointerMove={onOriginPointerMove}
         onPointerUp={onOriginPointerUp}
@@ -235,7 +243,7 @@ export function WorkplaneRuler() {
         <meshBasicMaterial color="#F8FAFC" depthTest={false} />
       </mesh>
       {/* Smaller inner ring for visual feedback */}
-      <mesh position={[ox, oy, oz + 0.6]} renderOrder={1003}>
+      <mesh position={[ox, oy, oz + 0.6]} renderOrder={1003} raycast={priorityRaycast}>
         <sphereGeometry args={[2.2, 18, 18]} />
         <meshBasicMaterial color="#0EA5E9" depthTest={false} />
       </mesh>
@@ -245,13 +253,14 @@ export function WorkplaneRuler() {
           object's TransformControls gizmo. Now an unambiguous
           dedicated button. The origin sphere still drags to
           fine-tune the position via the pointer-move handler. */}
-      <Html position={[ox, oy, oz + 0.5]} center zIndexRange={[90, 0]} sprite={false}>
-        <div className="flex gap-1 translate-x-5 -translate-y-5" style={{ pointerEvents: "auto" }}>
+      <Html position={[ox, oy, oz + 0.5]} center zIndexRange={[9999, 9990]} sprite={false}>
+        <div className="flex gap-1.5 translate-x-6 -translate-y-6" style={{ pointerEvents: "auto" }}>
           <button
             data-testid="workplane-ruler-replace"
             onClick={(e) => { e.stopPropagation(); enterPlacing(); }}
             onPointerDown={(e) => e.stopPropagation()}
-            className="w-5 h-5 rounded-full bg-slate-900/95 hover:bg-orange-500/70 text-slate-300 hover:text-white flex items-center justify-center border border-slate-700 shadow text-[11px] font-bold leading-none"
+            onPointerUp={(e) => e.stopPropagation()}
+            className="w-6 h-6 rounded-full bg-slate-900/95 hover:bg-orange-500/80 text-slate-100 hover:text-white flex items-center justify-center border border-orange-400/60 shadow-lg text-[13px] font-bold leading-none"
             title="Re-place the ruler — pick a new bed location"
           >
             ↻
@@ -260,10 +269,11 @@ export function WorkplaneRuler() {
             data-testid="workplane-ruler-remove"
             onClick={(e) => { e.stopPropagation(); removeRuler(); }}
             onPointerDown={(e) => e.stopPropagation()}
-            className="w-5 h-5 rounded-full bg-slate-900/95 hover:bg-red-500/70 text-slate-300 hover:text-white flex items-center justify-center border border-slate-700 shadow"
+            onPointerUp={(e) => e.stopPropagation()}
+            className="w-6 h-6 rounded-full bg-slate-900/95 hover:bg-red-500/80 text-slate-100 hover:text-white flex items-center justify-center border border-red-400/50 shadow-lg"
             title="Remove workplane ruler"
           >
-            <X size={11} />
+            <X size={13} />
           </button>
         </div>
       </Html>
