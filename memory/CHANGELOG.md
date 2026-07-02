@@ -4456,3 +4456,26 @@ User asked for the experience to "be as close to TinkerCAD as possible" (handoff
 - Edited: `frontend/src/lib/store.js` (workplaneRuler slice + placeOnFaceMode), `frontend/src/components/Viewport.jsx` (mount overlays + SceneObject onClick branch + SelectedTransform hidden during placeOnFace + SubElementPickOverlay early-return), `frontend/src/components/toolbar/EditRow.jsx` (toolbar buttons), `frontend/src/components/toolbar/ToolbarUI.jsx` (IconBtn disabled prop), `frontend/src/components/toolbar/useToolbarShortcuts.js` (Esc handler), `frontend/src/components/viewport/SelectionDimLabels.jsx` (placeOnFaceMode gating).
 
 
+
+
+## Iter-114.11 (2026-02-XX) — Bugfix: Ruler unresponsive on stacked assemblies
+
+### Reported
+User: "When I put a cone on top of a cube and set a ruler at the right-front corner of the cube — clicking it again to reposition does nothing. Selecting a snap-dot on the cone works once, then picking another dot makes the vertex cloud disappear and the ruler becomes unresponsive until removed and re-added."
+
+### Root cause
+Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTest={false}` — visually "always on top". BUT three.js raycasting orders intersects by geometric distance regardless of `depthTest`, so on stacked geometry (cone on cube) the parent mesh was hit FIRST. Its `SceneObject.onClick` called `e.stopPropagation()` and the tiny control-sphere behind it never received the click. Result: ↻ / × / snap-dot picks silently failed.
+
+### Fix
+- New `priorityRaycast(raycaster, intersects)` helper in `WorkplaneRulerPicks.jsx`: calls the default `THREE.Mesh.prototype.raycast` then forces every hit's `distance = -1e-4` so the mesh sorts to the FRONT of the intersect queue regardless of stacked geometry.
+- Applied to: (a) every snap-dot mesh in `SnapDots`, (b) the origin sphere + inner ring in `WorkplaneRuler.jsx`.
+- Snap-dot radius bumped 1.8 → 2.6 mm for a more forgiving click target.
+- Origin ↻/× action buttons enlarged 5×5 → 6×6, translate offset increased to +24/-24 px, and lifted to `zIndexRange={[9999, 9990]}` so no other `<Html>` overlay (e.g., selection dim chips) can occlude them.
+- Explicit `onPointerDown` stops on snap dots for good measure.
+
+### Verified
+`testing_agent_v3_fork` iter-115.json — 4/4 in-scope checks PASS. `document.elementFromPoint` at the ↻ button centre correctly returns the button itself even after repeated picks across a stacked cube+cone assembly. Store transitions `{active,placing,origin}` verified through the full flow: place → pick → switch selection → pick → click ↻ → placing banner reappears → click × → removed.
+
+### Files touched
+- `frontend/src/components/viewport/WorkplaneRulerPicks.jsx` — added exported `priorityRaycast`, applied to snap-dot meshes, radius bump, onPointerDown stop.
+- `frontend/src/components/viewport/WorkplaneRuler.jsx` — imported `priorityRaycast`, applied to origin sphere + inner ring, enlarged/reskinned action buttons, bumped zIndexRange.
