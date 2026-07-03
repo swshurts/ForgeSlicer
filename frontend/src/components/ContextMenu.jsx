@@ -259,10 +259,20 @@ export default function ContextMenu({ position, onClose }) {
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
     window.addEventListener("keydown", onKey);
-    const t = setTimeout(() => window.addEventListener("mousedown", onClick), 0);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("mousedown", onClick); clearTimeout(t); };
+    // 350ms grace so the long-press touch that OPENED the menu (and any
+    // synthesized mouse events from it) can't immediately close it.
+    const t = setTimeout(() => {
+      window.addEventListener("mousedown", onDown);
+      window.addEventListener("touchstart", onDown, { passive: true });
+    }, 350);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("touchstart", onDown);
+      clearTimeout(t);
+    };
   }, [onClose]);
 
   const doFlatten = async () => {

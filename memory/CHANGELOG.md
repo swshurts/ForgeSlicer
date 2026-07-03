@@ -4502,3 +4502,9 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ **Scale-gizmo drag on a grouped member now pulls siblings** — same semantics as typed dim edits: dragging a scale handle on the centre bar translates attached parts with the moving faces (they are no longer ratio-scaled). Snapshot of primary bbox + sibling centres at drag start; absolute face displacement applied live during drag (no incremental drift). Non-grouped multi-selections keep the old ratio-scale behaviour.
 - ✅ Added `window.__forgeThree` dev hook (ThreeDevHook in Viewport) exposing R3F scene/camera/raycaster for deterministic automated 3D UI testing.
 - 🧪 Verified with a REAL pointer drag on the X scale handle (located via in-page raycasting): bar 80→104mm moved cylinders ±55→±67 exactly (expected 67.00), sibling scales unchanged.
+
+## Iteration 120 (2026-07-03) — Touch long-press context menu (iPad grouping)
+- ✅ **Long-press (550ms) on the viewport opens the context menu on touch devices** — raycast picks the part under the finger; menu offset +10/-10px from touch point. Implemented via pointer events on the viewport container (touch pointerType only); cancelled by >12px movement, lift-off, or a second finger (pinch).
+- ✅ **Long-press selects ADDITIVELY** — no modifier keys on iPad, so each long-press on an unselected part adds it to the selection before opening the menu. iPad grouping flow: long-press part A → Esc/dismiss → long-press part B → "Group selected".
+- ✅ ContextMenu outside-close now also listens for touchstart, with a 350ms grace period so the opening long-press can't immediately dismiss it. Container has -webkit-touch-callout/user-select none.
+- 🧪 Verified via synthetic touch pointer events: LP1 opened menu + selected cube A, LP2 added cube B (menu header "2 SELECTED"), "Group selected" created shared groupId, outliner shows ASSEMBLY group.

@@ -1450,13 +1450,16 @@ export default function Viewport() {
     };
   }, []);
 
-  const handleContextMenu = (e, hitId) => {
+  const handleContextMenu = (e, hitId, additive = false) => {
     e.preventDefault();
     if (hitId) {
       // Right-click on a mesh selects it (if not already in the selection)
       // so the menu's "selected count" reflects what the user is pointing at.
+      // Long-press (touch) selects ADDITIVELY — on iPad there are no
+      // modifier keys, so this is how multi-part selections get built
+      // for Group/Align actions.
       const inSel = (selectedIds && selectedIds.includes(hitId)) || hitId === selectedId;
-      if (!inSel) selectObject(hitId);
+      if (!inSel) selectObject(hitId, additive ? "add" : null);
     }
     setCtxMenu({ x: e.clientX, y: e.clientY });
   };
@@ -1560,8 +1563,70 @@ export default function Viewport() {
 
   const marqueeOverlayActive = (shiftHeld || marquee) && !measureMode;
 
+  // --- Long-press → context menu (touch devices; enables Group/Duplicate/
+  // Delete etc. on iPad where there is no right-click). Raycast picks the
+  // part under the finger so the menu targets it, same as right-click.
+  const longPressRef = useRef(null);
+  const cancelLongPress = () => {
+    if (longPressRef.current) {
+      clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
+  };
+  const pickObjectAt = (clientX, clientY) => {
+    const b = bridgeRef.current;
+    if (!b) return null;
+    try {
+      const rect = b.gl.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -(((clientY - rect.top) / rect.height) * 2 - 1)
+      );
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, b.camera);
+      const meshes = [];
+      b.scene.traverse((c) => { if (c.isMesh && c.userData?.id) meshes.push(c); });
+      const hits = ray.intersectObjects(meshes, false);
+      return hits.length ? hits[0].object.userData.id : null;
+    } catch { return null; }
+  };
+  const onTouchPointerDown = (e) => {
+    if (e.pointerType !== "touch") return;
+    if (!e.isPrimary) { cancelLongPress(); return; } // pinch/second finger
+    const { clientX, clientY } = e;
+    cancelLongPress();
+    longPressRef.current = {
+      x: clientX,
+      y: clientY,
+      timer: setTimeout(() => {
+        longPressRef.current = null;
+        const hitId = pickObjectAt(clientX, clientY);
+        handleContextMenu(
+          { preventDefault: () => {}, clientX: clientX + 10, clientY: clientY - 10 },
+          hitId,
+          true
+        );
+      }, 550),
+    };
+  };
+  const onTouchPointerMove = (e) => {
+    const lp = longPressRef.current;
+    if (!lp) return;
+    if (Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 12) cancelLongPress();
+  };
+
   return (
-    <div ref={containerRef} className="w-full h-full relative" data-testid="viewport-container" onContextMenu={(e) => handleContextMenu(e, null)}>
+    <div
+      ref={containerRef}
+      className="w-full h-full relative"
+      data-testid="viewport-container"
+      onContextMenu={(e) => handleContextMenu(e, null)}
+      onPointerDown={onTouchPointerDown}
+      onPointerMove={onTouchPointerMove}
+      onPointerUp={cancelLongPress}
+      onPointerCancel={cancelLongPress}
+      style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+    >
       {measureMode && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-black/85 border border-green-500/40 rounded text-[11px] font-mono text-green-300 pointer-events-none flex items-center gap-2" data-testid="measure-hint">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
