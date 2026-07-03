@@ -45,10 +45,17 @@ export default function RulerPlacementDots() {
     } catch { /* skip unmeasurable objects */ }
   }
   dots.push([0, 0, 0]); // workplane origin is always pickable
+  const seen = new Set();
+  const unique = dots.filter((p) => {
+    const k = p.map((v) => Math.round(v * 10)).join(",");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   return (
     <group renderOrder={1004}>
-      {dots.map((p, i) => (
+      {unique.map((p, i) => (
         <mesh
           key={i}
           position={p}

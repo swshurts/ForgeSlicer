@@ -4479,3 +4479,12 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 ### Files touched
 - `frontend/src/components/viewport/WorkplaneRulerPicks.jsx` — added exported `priorityRaycast`, applied to snap-dot meshes, radius bump, onPointerDown stop.
 - `frontend/src/components/viewport/WorkplaneRuler.jsx` — imported `priorityRaycast`, applied to origin sphere + inner ring, enlarged/reskinned action buttons, bumped zIndexRange.
+
+## Iteration 116 (2026-07-03) — TinkerCAD ruler-as-reference-origin rework
+- ✅ **Retired the two-point PICK measurement system** (rulerPicks store slice, WorkplaneRulerPicks.jsx, PICK hint banner, Clear-measurements button all deleted) — this was the root of the recurring "ruler unresponsive on stacked components" P0 bug.
+- ✅ **New RulerPlacementDots.jsx** — during ruler placement, amber dots highlight every visible object's 8 bbox corners (+ workplane origin, de-duped); clicking a dot drops the ruler exactly there. Bed/face click fallback preserved.
+- ✅ **Ruler = reference origin** — with ruler placed, selecting ANY object shows size chips (W/D/H) + X/Y/Z position chips measured from the ruler origin, even with the DIMS toggle off. Dashed leader ties origin to the pinned corner.
+- ✅ **Editable position chips** — typing a distance MOVES the object so its pinned corner lands at that distance (verified exact: origin [-10,-10,0], typed 25.5 → pos.x 25.5). Undo works.
+- ✅ **Focus fix for all chip editors** (DimChip + PositionChip) — drei <Html> re-appends its container after mount, silently dropping same-tick focus (keystrokes went to <body>). Double-focus (immediate + 80ms retry) fixes it.
+- ✅ No-ruler default: DIMS toggle shows size + position-from-workplane-origin chips (user choice 3b).
+- 🧪 Tested: /app/test_reports/iteration_116.json — 16/16 PASS incl. stacked cube+cone flows, ruler ↻/×/drag, MEASURE regression, undo, no console errors.

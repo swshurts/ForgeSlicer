@@ -1,4 +1,7 @@
-# ForgeSlicer — Product Requirements Document
+# ForgeSlicer — Product Requirements
+
+> Measurement UX (updated 2026-07-03, iter-116): The workplane ruler follows TinkerCAD's **reference-origin** model — placement dots on all bbox corners, ruler drop point becomes the measurement origin, selected objects show size chips + EDITABLE distance-from-origin chips (typing moves the part). The old two-point PICK measurement system is retired.
+ Document
 
 ## Original Problem Statement
 > Create a fork of OrcaSlicer that will incorporate a TinkerCad or FreeCad like interface for creating your 3D models, thus reducing the need for working in multiple platforms. The resultant application should allow the user to add positive and negative components to your model and precisely position them. The output from the application should be GCODE, STL and/or 3MF files.
