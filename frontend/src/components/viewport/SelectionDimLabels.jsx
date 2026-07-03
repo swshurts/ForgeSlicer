@@ -30,28 +30,42 @@ function isAxisEditable(obj, axis) {
   return false;
 }
 
-function commitAxisLength(obj, axis, mm, actions) {
+// Resize so the object's world bbox along `axis` becomes `mm`.
+// Ratio-based: parametric dims are multiplied by target/current, which
+// keeps this correct for objects carrying a scale factor (e.g. after a
+// group scale) or a rotation — writing the raw mm into dims would be
+// wrong by the scale factor (user bug: 120mm bar → typed 100 → 600mm).
+function commitAxisLength(obj, axis, mm, currentMm, actions) {
   if (!obj || !Number.isFinite(mm) || mm <= 0) return;
+  if (!Number.isFinite(currentMm) || currentMm <= 1e-6) return;
+  const ratio = mm / currentMm;
   const { updateDims, setImportedDim } = actions;
-  if (obj.type === "cube") { updateDims(obj.id, { [axis]: mm }); return; }
-  if (obj.type === "sphere") { updateDims(obj.id, { r: mm / 2 }); return; }
+  if (obj.type === "cube") {
+    updateDims(obj.id, { [axis]: (obj.dims?.[axis] ?? 20) * ratio });
+    return;
+  }
+  if (obj.type === "sphere") {
+    updateDims(obj.id, { r: (obj.dims?.r ?? 10) * ratio });
+    return;
+  }
   if (obj.type === "cylinder") {
-    if (axis === "z") updateDims(obj.id, { h: mm });
-    else updateDims(obj.id, { r: mm / 2 });
+    if (axis === "z") updateDims(obj.id, { h: (obj.dims?.h ?? 20) * ratio });
+    else updateDims(obj.id, { r: (obj.dims?.r ?? 10) * ratio });
     return;
   }
   if (obj.type === "cone") {
-    if (axis === "z") { updateDims(obj.id, { h: mm }); }
+    if (axis === "z") { updateDims(obj.id, { h: (obj.dims?.h ?? 20) * ratio }); }
     else {
       const oldR1 = obj.dims?.r1 ?? obj.dims?.r ?? 10;
       const oldR2 = obj.dims?.r2 ?? 0;
-      const factor = (mm / 2) / Math.max(oldR1, 1e-6);
-      updateDims(obj.id, { r1: mm / 2, r2: oldR2 * factor });
+      updateDims(obj.id, { r1: oldR1 * ratio, r2: oldR2 * ratio });
     }
     return;
   }
   if (obj.type === "imported" && obj.originalBbox) {
-    setImportedDim(obj.id, axis, mm);
+    const idx = { x: 0, y: 1, z: 2 }[axis];
+    const current = (obj.originalBbox?.[axis] ?? 1) * (obj.scale?.[idx] ?? 1);
+    setImportedDim(obj.id, axis, current * ratio);
   }
 }
 
@@ -372,16 +386,16 @@ export function SelectionDimLabels() {
   // at the right corner; placing it behind shows readings at the back
   // corner. Far more useful than always front-left-bottom.
   const origin = workplaneRuler?.active ? workplaneRuler.origin : [0, 0, 0];
-  // 8 candidate corners.
+  // 4 candidate corners — BOTTOM face only. Pinning to bottom corners
+  // means the Z chip always reads "distance from the ruler plane up to
+  // the BOTTOM of the part" (TinkerCAD elevation), instead of
+  // accidentally reporting a top-corner height when the origin is
+  // elevated. X/Y distances are identical for top/bottom corners.
   const corners = [
     [bboxData.minX, bboxData.minY, bboxData.minZ],
     [bboxData.maxX, bboxData.minY, bboxData.minZ],
     [bboxData.minX, bboxData.maxY, bboxData.minZ],
     [bboxData.maxX, bboxData.maxY, bboxData.minZ],
-    [bboxData.minX, bboxData.minY, bboxData.maxZ],
-    [bboxData.maxX, bboxData.minY, bboxData.maxZ],
-    [bboxData.minX, bboxData.maxY, bboxData.maxZ],
-    [bboxData.maxX, bboxData.maxY, bboxData.maxZ],
   ];
   let bestCorner = corners[0];
   let bestD = Infinity;
@@ -421,7 +435,7 @@ export function SelectionDimLabels() {
         screenOffset={{ x: 0, y: 24 }}
         editable={editableX}
         unitSystem={unitSystem}
-        onCommit={(mm) => commitAxisLength(obj, "x", mm, { updateDims, setImportedDim })}
+        onCommit={(mm) => commitAxisLength(obj, "x", mm, bboxData.sizeX, { updateDims, setImportedDim })}
         testid="dim-label-w"
       />
       <DimChip
@@ -433,7 +447,7 @@ export function SelectionDimLabels() {
         screenOffset={{ x: 24, y: 0 }}
         editable={editableY}
         unitSystem={unitSystem}
-        onCommit={(mm) => commitAxisLength(obj, "y", mm, { updateDims, setImportedDim })}
+        onCommit={(mm) => commitAxisLength(obj, "y", mm, bboxData.sizeY, { updateDims, setImportedDim })}
         testid="dim-label-d"
       />
       <DimChip
@@ -445,7 +459,7 @@ export function SelectionDimLabels() {
         screenOffset={{ x: -24, y: 0 }}
         editable={editableZ}
         unitSystem={unitSystem}
-        onCommit={(mm) => commitAxisLength(obj, "z", mm, { updateDims, setImportedDim })}
+        onCommit={(mm) => commitAxisLength(obj, "z", mm, bboxData.sizeZ, { updateDims, setImportedDim })}
         testid="dim-label-h"
       />
 
@@ -464,6 +478,22 @@ export function SelectionDimLabels() {
           depthTest={false}
           transparent
           opacity={0.5}
+        />
+      )}
+      {/* Vertical ELEVATION drop-line — when the part floats above (or
+          below) the ruler plane, tie its pinned bottom corner straight
+          down to the plane so the Z chip's reading is visually obvious. */}
+      {workplaneRuler?.active && Math.abs(cornerZ) > 0.05 && (
+        <Line
+          points={[[bestCorner[0], bestCorner[1], origin[2]], bestCorner]}
+          color={COLOR_Z}
+          lineWidth={1.5}
+          dashed
+          dashSize={2}
+          gapSize={2}
+          depthTest={false}
+          transparent
+          opacity={0.8}
         />
       )}
       <PositionChip

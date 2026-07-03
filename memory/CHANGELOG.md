@@ -4488,3 +4488,8 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ **Focus fix for all chip editors** (DimChip + PositionChip) — drei <Html> re-appends its container after mount, silently dropping same-tick focus (keystrokes went to <body>). Double-focus (immediate + 80ms retry) fixes it.
 - ✅ No-ruler default: DIMS toggle shows size + position-from-workplane-origin chips (user choice 3b).
 - 🧪 Tested: /app/test_reports/iteration_116.json — 16/16 PASS incl. stacked cube+cone flows, ruler ↻/×/drag, MEASURE regression, undo, no console errors.
+
+## Iteration 117 (2026-07-03) — Ruler elevation readout + scale-aware chip edits
+- ✅ **Z position chip = elevation off ruler plane** — pinned corner candidates restricted to the 4 BOTTOM bbox corners, so Z always reads "ruler plane → bottom of part" (user request: elevated bar showed top-corner/centerline height instead). Blue dashed vertical drop-line renders from the pinned corner down to the ruler plane when elevated.
+- ✅ **Fixed W/D/H chip math error on scaled objects** — commitAxisLength was writing typed mm straight into parametric dims, ignoring obj.scale (user's 6×-scaled bar: chip showed 120 → typed 100 → became 600mm). Now ratio-based (dims ×= target/currentBBox), correct under scale and rotation, for cube/sphere/cylinder/cone/imported.
+- 🧪 Verified via scripted browser test: scaled bar 120→100 edit yields exactly 100mm real size; elevated bar Z chip reads 32.50 = Bottom Z.
