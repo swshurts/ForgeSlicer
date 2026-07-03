@@ -4508,3 +4508,8 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ **Long-press selects ADDITIVELY** — no modifier keys on iPad, so each long-press on an unselected part adds it to the selection before opening the menu. iPad grouping flow: long-press part A → Esc/dismiss → long-press part B → "Group selected".
 - ✅ ContextMenu outside-close now also listens for touchstart, with a 350ms grace period so the opening long-press can't immediately dismiss it. Container has -webkit-touch-callout/user-select none.
 - 🧪 Verified via synthetic touch pointer events: LP1 opened menu + selected cube A, LP2 added cube B (menu header "2 SELECTED"), "Group selected" created shared groupId, outliner shows ASSEMBLY group.
+
+## Iteration 121 (2026-07-03) — Touch-friendly targets + more translucent chips
+- ✅ Dimension + position chips: background 0.80 → 0.55 alpha with 3px backdrop blur (editors 0.78) — geometry visible through chips, digits still readable.
+- ✅ Finger-friendly targets on coarse-pointer devices (iPad): chips px-3/py-2 + 13px text + wider inputs (IS_COARSE via matchMedia in SelectionDimLabels.jsx); ruler ↻/× buttons w-6→w-10 (WorkplaneRuler.jsx); top-toolbar buttons min-height 40px via @media (pointer: coarse) in index.css.
+- 🧪 Verified: chips render translucent, W chip edit still commits correctly (20→30mm).

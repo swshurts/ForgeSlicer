@@ -27,6 +27,9 @@ import { priorityRaycast } from "./RulerPlacementDots";
 const COLOR_X = "#FB7185";
 const COLOR_Y = "#34D399";
 const RULER_LEN = 120; // mm — visual reach of each arm
+// Finger-sized ruler buttons on touch devices.
+const RULER_BTN = (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
+  ? "w-10 h-10" : "w-6 h-6";
 
 export function WorkplaneRuler() {
   const ruler = useScene((s) => s.workplaneRuler);
@@ -229,7 +232,7 @@ export function WorkplaneRuler() {
             onClick={(e) => { e.stopPropagation(); enterPlacing(); }}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
-            className="w-6 h-6 rounded-full bg-slate-900/95 hover:bg-orange-500/80 text-slate-100 hover:text-white flex items-center justify-center border border-orange-400/60 shadow-lg text-[13px] font-bold leading-none"
+            className={`${RULER_BTN} rounded-full bg-slate-900/95 hover:bg-orange-500/80 text-slate-100 hover:text-white flex items-center justify-center border border-orange-400/60 shadow-lg text-[13px] font-bold leading-none`}
             title="Re-place the ruler — pick a new bed location"
           >
             ↻
@@ -239,7 +242,7 @@ export function WorkplaneRuler() {
             onClick={(e) => { e.stopPropagation(); removeRuler(); }}
             onPointerDown={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
-            className="w-6 h-6 rounded-full bg-slate-900/95 hover:bg-red-500/80 text-slate-100 hover:text-white flex items-center justify-center border border-red-400/50 shadow-lg"
+            className={`${RULER_BTN} rounded-full bg-slate-900/95 hover:bg-red-500/80 text-slate-100 hover:text-white flex items-center justify-center border border-red-400/50 shadow-lg`}
             title="Remove workplane ruler"
           >
             <X size={13} />

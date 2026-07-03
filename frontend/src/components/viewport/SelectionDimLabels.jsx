@@ -20,6 +20,17 @@ const COLOR_X = "#E11D48"; // rose-600  — slightly darker so it reads on white
 const COLOR_Y = "#059669"; // emerald-600
 const COLOR_Z = "#2563EB"; // blue-600
 
+// Touch devices get finger-sized chips (Apple HIG ≈44px targets).
+const IS_COARSE = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+const CHIP_PAD = IS_COARSE ? "px-3 py-2" : "px-1.5 py-0.5";
+const CHIP_TEXT = IS_COARSE ? "text-[13px]" : "text-[11px]";
+const CHIP_INPUT_W = IS_COARSE ? "w-20" : "w-14";
+// Translucent chips — geometry stays visible behind them; slight
+// backdrop blur keeps the digits readable over busy scenes.
+const CHIP_BG = "rgba(255,255,255,0.55)";
+const CHIP_BG_EDIT = "rgba(255,255,255,0.78)";
+const CHIP_BLUR = "blur(3px)";
+
 function isAxisEditable(obj, axis) {
   if (!obj) return false;
   if (obj.locked) return false;
@@ -144,10 +155,12 @@ function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editabl
           {editing ? (
             <div
               data-testid={`${testid}-editor`}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded shadow-md select-none"
+              className={`flex items-center gap-1 ${CHIP_PAD} rounded shadow-md select-none`}
               style={{
                 pointerEvents: "auto",
-                background: "rgba(255,255,255,0.92)",
+                background: CHIP_BG_EDIT,
+                backdropFilter: CHIP_BLUR,
+                WebkitBackdropFilter: CHIP_BLUR,
                 border: `1.5px solid ${color}`,
                 boxShadow: `0 1px 4px rgba(0,0,0,0.18), 0 0 6px ${color}40`,
               }}
@@ -164,7 +177,7 @@ function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editabl
                 onBlur={commit}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="w-14 bg-transparent text-[11px] font-mono font-semibold text-slate-900 outline-none border-b border-slate-400 focus:border-slate-900"
+                className={`${CHIP_INPUT_W} bg-transparent ${CHIP_TEXT} font-mono font-semibold text-slate-900 outline-none border-b border-slate-400 focus:border-slate-900`}
               />
               <span className="text-[9px] font-mono text-slate-500">{unitSystem}</span>
             </div>
@@ -178,16 +191,16 @@ function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editabl
               title={editable
                 ? `${axisLabel} (${axis.toUpperCase()}) — click to edit`
                 : `${axisLabel} (${axis.toUpperCase()}) — read-only for this object type`}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-semibold select-none whitespace-nowrap ${
+              className={`flex items-center gap-1 ${CHIP_PAD} rounded font-mono ${CHIP_TEXT} font-semibold select-none whitespace-nowrap ${
                 editable ? "cursor-pointer" : "cursor-default"
               }`}
               style={{
-                // Translucent white chip — TinkerCAD parity. Still
-                // readable over dark themes thanks to the 80 % opacity
-                // and the colored axis letter, but lets geometry show
-                // through behind it.
+                // Translucent white chip — geometry shows through; the
+                // backdrop blur + colored axis letter keep it readable.
                 pointerEvents: "auto",
-                background: "rgba(255,255,255,0.80)",
+                background: CHIP_BG,
+                backdropFilter: CHIP_BLUR,
+                WebkitBackdropFilter: CHIP_BLUR,
                 border: `1px solid ${color}80`,
                 color: "#0F172A",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
@@ -262,10 +275,12 @@ function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem
         {editing ? (
           <div
             data-testid={`${testid}-editor`}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded shadow-md select-none"
+            className={`flex items-center gap-1 ${CHIP_PAD} rounded shadow-md select-none`}
             style={{
               pointerEvents: "auto",
-              background: "rgba(255,255,255,0.92)",
+              background: CHIP_BG_EDIT,
+              backdropFilter: CHIP_BLUR,
+              WebkitBackdropFilter: CHIP_BLUR,
               border: `1.5px dashed ${color}`,
               boxShadow: `0 1px 4px rgba(0,0,0,0.18), 0 0 6px ${color}40`,
             }}
@@ -282,7 +297,7 @@ function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem
               onBlur={commit}
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
-              className="w-14 bg-transparent text-[11px] font-mono font-semibold text-slate-900 outline-none border-b border-slate-400 focus:border-slate-900"
+              className={`${CHIP_INPUT_W} bg-transparent ${CHIP_TEXT} font-mono font-semibold text-slate-900 outline-none border-b border-slate-400 focus:border-slate-900`}
             />
             <span className="text-[9px] font-mono text-slate-500">{unitSystem}</span>
           </div>
@@ -296,12 +311,14 @@ function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem
             title={editable
               ? `${label} distance from ruler origin — click to edit (moves the part)`
               : `${label} distance from ruler origin — this object is locked`}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10.5px] font-semibold whitespace-nowrap select-none ${
+            className={`flex items-center gap-1 ${CHIP_PAD} rounded font-mono ${CHIP_TEXT} font-semibold whitespace-nowrap select-none ${
               editable ? "cursor-pointer" : "cursor-default"
             }`}
             style={{
               pointerEvents: "auto",
-              background: "rgba(255,255,255,0.80)",
+              background: CHIP_BG,
+              backdropFilter: CHIP_BLUR,
+              WebkitBackdropFilter: CHIP_BLUR,
               border: `1px dashed ${color}80`,
               color: "#0F172A",
               boxShadow: "0 1px 2px rgba(0,0,0,0.12)",

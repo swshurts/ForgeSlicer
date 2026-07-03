@@ -61,3 +61,13 @@ code, .font-mono {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+/* Touch devices — finger-friendly hit targets (Apple HIG ≈44px).
+   Scoped to the top toolbar; viewport chips handle this in JS. */
+@media (pointer: coarse) {
+  [data-testid="top-toolbar"] button {
+    min-height: 40px;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+}
