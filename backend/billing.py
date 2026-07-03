@@ -80,6 +80,62 @@ class CheckoutStatusOut(BaseModel):
     new_tier: Optional[str] = None
 
 
+def _new_transaction_row(session, body: "CheckoutRequest", pkg: dict, user: Optional[dict], metadata: dict) -> dict:
+    """Transaction snapshot persisted BEFORE the Stripe redirect. Tracks
+    our own uuid, Stripe's session_id, initial statuses, the amount
+    snapshotted from PACKAGES at this moment, and the `tier_granted`
+    idempotency flag so duplicate polls / webhook deliveries can't
+    double-grant the tier upgrade."""
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "id": str(uuid.uuid4()),
+        "session_id": session.session_id,
+        "user_id": (user["user_id"] if user else None),
+        "user_email": (user.get("email") if user else None),
+        "package_id": body.package_id,
+        "amount": float(pkg["amount"]),
+        "currency": pkg["currency"],
+        "status": "initiated",
+        "payment_status": "pending",
+        "metadata": metadata,
+        "tier_granted": False,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def _grant_tier_if_paid(db, tx: dict, status_obj, user: Optional[dict], session_id: str):
+    """Idempotent tier grant. Returns (granted, new_tier).
+
+    Resolves the target user preferring metadata.user_id from checkout
+    creation, falling back to the currently-authed user (anonymous-to-paid
+    flow where the user signed in AFTER leaving for Stripe but BEFORE
+    returning)."""
+    granted = bool(tx.get("tier_granted"))
+    new_tier = None
+    if status_obj.payment_status != "paid" or granted:
+        return granted, new_tier
+    target_user_id = tx.get("user_id") or (user["user_id"] if user else None)
+    package_id = tx.get("package_id")
+    pkg = PACKAGES.get(package_id)
+    if target_user_id and pkg:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=pkg["period_days"])
+        await db.users.update_one(
+            {"user_id": target_user_id},
+            {"$set": {
+                "subscription_tier": package_id,
+                "subscription_expires_at": expires_at.isoformat(),
+            }},
+        )
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"tier_granted": True, "granted_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        granted = True
+        new_tier = package_id
+    return granted, new_tier
+
+
 def get_router(db, get_current_user_optional) -> APIRouter:
     """Factory so the auth helper from server.py can be injected without
     creating a circular import (this module is imported BY server.py).
@@ -149,28 +205,10 @@ def get_router(db, get_current_user_optional) -> APIRouter:
         session = await stripe.create_checkout_session(session_req)
 
         # Persist the transaction in `payment_transactions` BEFORE the
-        # user is redirected. We track:
-        #  - id (uuid we generate; not Stripe's)
-        #  - session_id (Stripe's checkout session)
-        #  - status / payment_status (initially "initiated" / "pending")
-        #  - amount + currency snapshotted from PACKAGES at this moment
-        #  - tier_granted: idempotency flag so duplicate polls / webhook
-        #    deliveries can't double-grant the tier upgrade.
-        await db.payment_transactions.insert_one({
-            "id": str(uuid.uuid4()),
-            "session_id": session.session_id,
-            "user_id": (user["user_id"] if user else None),
-            "user_email": (user.get("email") if user else None),
-            "package_id": body.package_id,
-            "amount": float(pkg["amount"]),
-            "currency": pkg["currency"],
-            "status": "initiated",
-            "payment_status": "pending",
-            "metadata": metadata,
-            "tier_granted": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        # user is redirected.
+        await db.payment_transactions.insert_one(
+            _new_transaction_row(session, body, pkg, user, metadata)
+        )
 
         return CheckoutResponse(url=session.url, session_id=session.session_id)
 
@@ -204,32 +242,7 @@ def get_router(db, get_current_user_optional) -> APIRouter:
             }},
         )
 
-        granted = bool(tx.get("tier_granted"))
-        new_tier = None
-
-        if status_obj.payment_status == "paid" and not granted:
-            # Resolve the target user: prefer the metadata.user_id from
-            # checkout creation; fall back to the currently-authed user
-            # (anonymous-to-paid flow where the user signed in AFTER
-            # leaving for Stripe but BEFORE returning).
-            target_user_id = tx.get("user_id") or (user["user_id"] if user else None)
-            package_id = tx.get("package_id")
-            pkg = PACKAGES.get(package_id)
-            if target_user_id and pkg:
-                expires_at = datetime.now(timezone.utc) + timedelta(days=pkg["period_days"])
-                await db.users.update_one(
-                    {"user_id": target_user_id},
-                    {"$set": {
-                        "subscription_tier": package_id,
-                        "subscription_expires_at": expires_at.isoformat(),
-                    }},
-                )
-                await db.payment_transactions.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"tier_granted": True, "granted_at": datetime.now(timezone.utc).isoformat()}},
-                )
-                granted = True
-                new_tier = package_id
+        granted, new_tier = await _grant_tier_if_paid(db, tx, status_obj, user, session_id)
 
         return CheckoutStatusOut(
             status=status_obj.status,

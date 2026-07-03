@@ -50,7 +50,8 @@ def fresh_user():
     """Register a fresh user and return (session, email, password)."""
     s = requests.Session()
     email = f"e2e.{int(time.time()*1000)}.{secrets.token_hex(3)}@example.com"
-    password = "passw0rdE2E"
+    # Random per-run password — nothing static committed to the repo.
+    password = f"Pw{secrets.token_hex(6)}1"
     r = s.post(f"{API}/auth/register",
                json={"name": "E2E Tester", "email": email, "password": password})
     assert r.status_code == 200, r.text

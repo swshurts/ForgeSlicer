@@ -99,24 +99,23 @@ def _app_url() -> str:
     return os.environ.get("APP_PUBLIC_URL", "https://forgeslicer.com").rstrip("/")
 
 
-async def send_contributor_celebration(to_email: str, to_name: str) -> Optional[str]:
-    """Send the "🏆 You're a Contributor for life" email.
-
-    Returns the Resend message id on success, or None if Resend isn't
-    configured / the send failed. Never raises — the caller's flow (DB
-    update + toast) must succeed regardless of email outcome.
-    """
-    if not to_email:
+async def _send(params: dict, *, ok_log: str, fail_log: str) -> Optional[str]:
+    """Fire a Resend send off-thread. Returns the message id on success,
+    None on failure. Never raises — email must not block caller flows."""
+    try:
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        msg_id = result.get("id") if isinstance(result, dict) else None
+        logger.info(ok_log, params["to"][0], msg_id)
+        _record_success()
+        return msg_id
+    except Exception as e:  # noqa: BLE001 - we want to swallow ALL Resend failures
+        logger.warning(fail_log, params["to"][0], e)
+        _record_failure(e)
         return None
-    if not _configured():
-        logger.info("Resend not configured; skipping contributor celebration email to %s", to_email)
-        return None
 
-    profile_url = f"{_app_url()}/profile"
-    display_name = (to_name or "Maker").strip()
 
-    subject = "🏆 You're a ForgeSlicer Contributor for life!"
-    html = f"""\
+def _contributor_celebration_html(display_name: str, profile_url: str) -> str:
+    return f"""\
 <!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#0f172a;font-family:'IBM Plex Sans',Arial,sans-serif;color:#e2e8f0;">
@@ -181,7 +180,9 @@ async def send_contributor_celebration(to_email: str, to_name: str) -> Optional[
   </body>
 </html>"""
 
-    text = f"""You're a ForgeSlicer Contributor for life
+
+def _contributor_celebration_text(display_name: str, profile_url: str) -> str:
+    return f"""You're a ForgeSlicer Contributor for life
 
 Hey {display_name},
 
@@ -198,24 +199,33 @@ Thanks for the work you publish under open licenses.
 — The ForgeSlicer Team
 """
 
-    params = {
-        "from": _sender(),
-        "to": [to_email],
-        "subject": subject,
-        "html": html,
-        "text": text,
-    }
 
-    try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        msg_id = result.get("id") if isinstance(result, dict) else None
-        logger.info("Contributor celebration email sent to %s (id=%s)", to_email, msg_id)
-        _record_success()
-        return msg_id
-    except Exception as e:  # noqa: BLE001 - we want to swallow ALL Resend failures
-        logger.warning("Contributor celebration email failed for %s: %s", to_email, e)
-        _record_failure(e)
+async def send_contributor_celebration(to_email: str, to_name: str) -> Optional[str]:
+    """Send the "🏆 You're a Contributor for life" email.
+
+    Returns the Resend message id on success, or None if Resend isn't
+    configured / the send failed. Never raises — the caller's flow (DB
+    update + toast) must succeed regardless of email outcome.
+    """
+    if not to_email:
         return None
+    if not _configured():
+        logger.info("Resend not configured; skipping contributor celebration email to %s", to_email)
+        return None
+
+    profile_url = f"{_app_url()}/profile"
+    display_name = (to_name or "Maker").strip()
+    return await _send(
+        {
+            "from": _sender(),
+            "to": [to_email],
+            "subject": "🏆 You're a ForgeSlicer Contributor for life!",
+            "html": _contributor_celebration_html(display_name, profile_url),
+            "text": _contributor_celebration_text(display_name, profile_url),
+        },
+        ok_log="Contributor celebration email sent to %s (id=%s)",
+        fail_log="Contributor celebration email failed for %s: %s",
+    )
 
 
 # ---------- Transactional auth emails ----------
@@ -315,6 +325,60 @@ async def send_password_reset_email(to_email: str, to_name: str, link: str) -> O
 
 # ---------- Admin upstream-profile digest ----------
 
+def _digest_row_table(rows, accent_color):
+    if not rows:
+        return ""
+    items = "".join(
+        f"<tr><td style='padding:6px 12px;border-top:1px solid #1e293b;font-family:monospace;color:#cbd5f5;'>{r.get('vendor','?')}</td>"
+        f"<td style='padding:6px 12px;border-top:1px solid #1e293b;font-family:monospace;color:#e2e8f0;'>{r.get('name','?')}</td></tr>"
+        for r in rows[:30]
+    )
+    more = ("" if len(rows) <= 30
+            else f"<tr><td colspan='2' style='padding:6px 12px;color:#64748b;border-top:1px solid #1e293b;'>… and {len(rows) - 30} more</td></tr>")
+    return (
+        f"<div style='margin:18px 0 6px 0;font-weight:600;color:{accent_color};font-size:13px;text-transform:uppercase;letter-spacing:0.06em;'>"
+        f"{len(rows)} {'new' if accent_color == '#22d3ee' else 'changed'}"
+        "</div>"
+        "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#0b1220;border:1px solid #1e293b;border-radius:8px;font-size:12px;'>"
+        f"{items}{more}"
+        "</table>"
+    )
+
+
+def _digest_html(name: str, total: int, period_label: str, new_deltas: list, changed_deltas: list, link: str) -> str:
+    body_html = (
+        f"<p>Hey {name},</p>"
+        f"<p>The upstream OrcaSlicer profile sync found <strong>{total} update"
+        f"{'s' if total != 1 else ''}</strong> {period_label}.</p>"
+        f"{_digest_row_table(new_deltas, '#22d3ee')}"
+        f"{_digest_row_table(changed_deltas, '#e879f9')}"
+        "<p style='margin-top:18px;color:#94a3b8;font-size:12px;'>"
+        "Open the admin dashboard to review the JSON diff and merge into the global library, "
+        "or dismiss anything you don't want."
+        "</p>"
+    )
+    return _wrap_email(
+        f"{total} profile update{'s' if total != 1 else ''} waiting",
+        body_html,
+        "Review in admin",
+        link,
+        "You're receiving this because you're an admin on ForgeSlicer. "
+        "These digests only fire when there are actually changes — quiet weeks stay quiet.",
+    )
+
+
+def _digest_text(name: str, total: int, period_label: str, new_deltas: list, changed_deltas: list, link: str) -> str:
+    text_rows_new = "\n".join(f"  NEW    {r.get('vendor','?')} / {r.get('name','?')}" for r in new_deltas[:30])
+    text_rows_chg = "\n".join(f"  CHANGE {r.get('vendor','?')} / {r.get('name','?')}" for r in changed_deltas[:30])
+    return (
+        f"ForgeSlicer upstream digest\n\n"
+        f"Hi {name},\n\n"
+        f"{total} OrcaSlicer profile update{'s' if total != 1 else ''} {period_label}:\n\n"
+        f"{text_rows_new}\n{text_rows_chg}\n\n"
+        f"Review + merge: {link}\n\n— ForgeSlicer\n"
+    )
+
+
 async def send_upstream_digest(
     to_email: str,
     to_name: str,
@@ -340,64 +404,17 @@ async def send_upstream_digest(
     name = (to_name or "Admin").strip()
     total = len(new_deltas) + len(changed_deltas)
     link = f"{_app_url()}/admin?tab=orca-upstream"
-
-    def _row_table(rows, accent_color):
-        if not rows:
-            return ""
-        items = "".join(
-            f"<tr><td style='padding:6px 12px;border-top:1px solid #1e293b;font-family:monospace;color:#cbd5f5;'>{r.get('vendor','?')}</td>"
-            f"<td style='padding:6px 12px;border-top:1px solid #1e293b;font-family:monospace;color:#e2e8f0;'>{r.get('name','?')}</td></tr>"
-            for r in rows[:30]
-        )
-        more = ("" if len(rows) <= 30
-                else f"<tr><td colspan='2' style='padding:6px 12px;color:#64748b;border-top:1px solid #1e293b;'>… and {len(rows) - 30} more</td></tr>")
-        return (
-            f"<div style='margin:18px 0 6px 0;font-weight:600;color:{accent_color};font-size:13px;text-transform:uppercase;letter-spacing:0.06em;'>"
-            f"{len(rows)} {'new' if accent_color == '#22d3ee' else 'changed'}"
-            "</div>"
-            "<table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#0b1220;border:1px solid #1e293b;border-radius:8px;font-size:12px;'>"
-            f"{items}{more}"
-            "</table>"
-        )
-
-    subject = f"ForgeSlicer · {total} OrcaSlicer profile update{'s' if total != 1 else ''} ready to review"
-    body_html = (
-        f"<p>Hey {name},</p>"
-        f"<p>The upstream OrcaSlicer profile sync found <strong>{total} update"
-        f"{'s' if total != 1 else ''}</strong> {period_label}.</p>"
-        f"{_row_table(new_deltas, '#22d3ee')}"
-        f"{_row_table(changed_deltas, '#e879f9')}"
-        "<p style='margin-top:18px;color:#94a3b8;font-size:12px;'>"
-        "Open the admin dashboard to review the JSON diff and merge into the global library, "
-        "or dismiss anything you don't want."
-        "</p>"
+    msg_id = await _send(
+        {
+            "from": _sender(),
+            "to": [to_email],
+            "subject": f"ForgeSlicer · {total} OrcaSlicer profile update{'s' if total != 1 else ''} ready to review",
+            "html": _digest_html(name, total, period_label, new_deltas, changed_deltas, link),
+            "text": _digest_text(name, total, period_label, new_deltas, changed_deltas, link),
+        },
+        ok_log="Upstream digest sent to %s (id=%s)",
+        fail_log="Upstream digest send failed for %s: %s",
     )
-    html = _wrap_email(
-        f"{total} profile update{'s' if total != 1 else ''} waiting",
-        body_html,
-        "Review in admin",
-        link,
-        "You're receiving this because you're an admin on ForgeSlicer. "
-        "These digests only fire when there are actually changes — quiet weeks stay quiet.",
-    )
-    text_rows_new = "\n".join(f"  NEW    {r.get('vendor','?')} / {r.get('name','?')}" for r in new_deltas[:30])
-    text_rows_chg = "\n".join(f"  CHANGE {r.get('vendor','?')} / {r.get('name','?')}" for r in changed_deltas[:30])
-    text = (
-        f"ForgeSlicer upstream digest\n\n"
-        f"Hi {name},\n\n"
-        f"{total} OrcaSlicer profile update{'s' if total != 1 else ''} {period_label}:\n\n"
-        f"{text_rows_new}\n{text_rows_chg}\n\n"
-        f"Review + merge: {link}\n\n— ForgeSlicer\n"
-    )
-    params = {"from": _sender(), "to": [to_email], "subject": subject, "html": html, "text": text}
-    try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        msg_id = result.get("id") if isinstance(result, dict) else None
-        logger.info("Upstream digest sent to %s (id=%s) — %d new, %d changed",
-                    to_email, msg_id, len(new_deltas), len(changed_deltas))
-        _record_success()
-        return msg_id
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Upstream digest send failed for %s: %s", to_email, e)
-        _record_failure(e)
-        return None
+    if msg_id:
+        logger.info("Upstream digest — %d new, %d changed", len(new_deltas), len(changed_deltas))
+    return msg_id

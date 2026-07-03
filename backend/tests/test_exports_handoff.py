@@ -25,7 +25,34 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://orca-cad-slice.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
-SESSION_TOKEN = "st_test_f9cb48812e2d4f29bd73d7bfef69aa1d"
+
+
+def _session_token() -> str:
+    """Temporary test credential: prefer TEST_SESSION_TOKEN from the env,
+    otherwise seed a fresh short-lived session row in MongoDB. Nothing
+    static is committed to version control."""
+    tok = os.environ.get("TEST_SESSION_TOKEN", "")
+    if tok:
+        return tok
+    import secrets as _secrets
+    from datetime import datetime, timedelta, timezone
+    from pymongo import MongoClient
+    cli = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
+    db = cli[os.environ.get("DB_NAME", "test_database")]
+    user = db.users.find_one({}, {"user_id": 1})
+    if not user:
+        pytest.skip("No users in DB to seed a test session", allow_module_level=True)
+    tok = "st_test_" + _secrets.token_hex(16)
+    db.user_sessions.insert_one({
+        "user_id": user["user_id"],
+        "session_token": tok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return tok
+
+
+SESSION_TOKEN = _session_token()
 BEARER = {"Authorization": f"Bearer {SESSION_TOKEN}"}
 
 STL_PATH = "/tmp/cube.stl"

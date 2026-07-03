@@ -11,12 +11,10 @@ Covers the seven scenarios verified by hand-curl at build time:
   6. Replay is idempotent — same user_id, fresh session (200)
   7. Expired / wrong-secret tokens (401)
 
-Test secret is the same value baked into `backend/.env` for the
-preview environment; if you rotate the prod secret remember to update
-this file too OR (better) pull the secret from os.environ at test
-time. We use the static value here because pytest collection happens
-before `.env` is loaded by the backend, and reading the live secret
-would couple test passes to whichever env was last sourced.
+Test secret is read from the environment (`FORGE_SUITE_SECRET`), falling
+back to `backend/.env` so the preview environment works out of the box.
+If neither source provides it, the module is skipped rather than baking
+a secret into version control.
 """
 from __future__ import annotations
 
@@ -31,7 +29,23 @@ from pymongo import MongoClient
 
 API = os.environ.get("REACT_APP_BACKEND_URL") or "http://localhost:8001"
 API = API.rstrip("/") + "/api"
-SECRET = os.environ.get("FORGE_SUITE_SECRET") or "1dffe108d3bb9d19db8d7b126b0de3fb45b9818f2e203e01b0db0109bba9e29b"
+
+
+def _load_suite_secret() -> str:
+    v = os.environ.get("FORGE_SUITE_SECRET", "")
+    if v:
+        return v
+    try:
+        from dotenv import dotenv_values
+        return dotenv_values("/app/backend/.env").get("FORGE_SUITE_SECRET", "") or ""
+    except Exception:
+        return ""
+
+
+SECRET = _load_suite_secret()
+if not SECRET:
+    pytest.skip("FORGE_SUITE_SECRET not set (env or backend/.env)", allow_module_level=True)
+
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "test_database")
 

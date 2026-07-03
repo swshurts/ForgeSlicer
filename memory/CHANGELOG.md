@@ -4513,3 +4513,13 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ Dimension + position chips: background 0.80 → 0.55 alpha with 3px backdrop blur (editors 0.78) — geometry visible through chips, digits still readable.
 - ✅ Finger-friendly targets on coarse-pointer devices (iPad): chips px-3/py-2 + 13px text + wider inputs (IS_COARSE via matchMedia in SelectionDimLabels.jsx); ruler ↻/× buttons w-6→w-10 (WorkplaneRuler.jsx); top-toolbar buttons min-height 40px via @media (pointer: coarse) in index.css.
 - 🧪 Verified: chips render translucent, W chip edit still commits correctly (20→30mm).
+
+## Iteration 122 (2026-07-03) — Backend code-review fixes
+- ✅ Circular import admin.py↔server.py removed properly: `build_admin_router(*, db, get_current_user)` now takes the session resolver via dependency injection (lazy `from server import` deleted; unused `public_user` param dropped).
+- ✅ admin.py split into `_make_guards`/`_make_audit` + 4 route groups (identity, user-admin, moderation, insights); shared `_require_user` 404 helper.
+- ✅ auth_local.py `build_auth_router` (was complexity 36 / 262 lines) split: brute-force helpers module-level, shared `_check_token_record` (single-use/expiry validation for magic + reset tokens), `_token_row` builder, password vs magic-link route groups. Behavior byte-identical, all messages preserved.
+- ✅ billing.py: extracted `_new_transaction_row` + `_grant_tier_if_paid` (idempotent grant) from get_router.
+- ✅ email_service.py: extracted `_send` wrapper + `_contributor_celebration_html/_text` + `_digest_html/_text/_digest_row_table` template builders.
+- ✅ Test secrets removed: sso-bridge secret now env/backend/.env only (module skips if absent); e2e auth password randomized per run; exports-handoff session token from TEST_SESSION_TOKEN env or freshly seeded in Mongo at test time.
+- ℹ️ FALSE POSITIVES rejected: `asyncio.create_subprocess_exec` in orca_engine.py is the safe non-shell subprocess API (not `exec()`); flagged `is` comparisons are all correct `is None` checks.
+- 🧪 Verified: 12+17+15 pytest pass (auth e2e, sso bridge, exports handoff, voice templates); admin DI (401 anon / 200 admin), login 401, billing packages OK after backend restart.

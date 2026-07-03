@@ -516,7 +516,7 @@ api_router.include_router(auth_local.build_auth_router(
 # auth via Depends(require_admin) / Depends(require_super_admin).
 api_router.include_router(admin_module.build_admin_router(
     db=db,
-    public_user=_public_user,
+    get_current_user=get_current_user,
 ))
 
 # OrcaSlicer engine routes — production-quality slice + install status.

@@ -84,19 +84,15 @@ class RemoveContentRequest(BaseModel):
     reason: Optional[str] = Field(None, max_length=500)
 
 
-# ---------- Router factory ----------
+# ---------- Guards + audit (injected into route groups) ----------
 
-def build_admin_router(*, db, public_user) -> APIRouter:
-    router = APIRouter(prefix="/admin", tags=["admin"])
-
-    # ---- Dependencies ----
-    async def _current_user_from_request(request: Request) -> dict:
-        # Lazy import to break the circular dep with server.py
-        from server import get_current_user
-        return await get_current_user(request)
+def _make_guards(get_current_user):
+    """Build the require_admin / require_super_admin dependencies from the
+    injected session resolver (dependency injection — no import of
+    server.py, so there is no circular dependency)."""
 
     async def require_admin(request: Request) -> dict:
-        user = await _current_user_from_request(request)
+        user = await get_current_user(request)
         if not (user.get("is_admin") or user.get("is_super_admin")):
             raise HTTPException(status_code=403, detail="Admin access required.")
         if user.get("banned"):
@@ -111,7 +107,10 @@ def build_admin_router(*, db, public_user) -> APIRouter:
             raise HTTPException(status_code=403, detail="Super-admin access required.")
         return user
 
-    # ---- Audit log writer ----
+    return require_admin, require_super_admin
+
+
+def _make_audit(db):
     async def _audit(actor: dict, action: str, target: Optional[str], details: Dict[str, Any]) -> None:
         try:
             await db.admin_audit.insert_one({
@@ -127,8 +126,19 @@ def build_admin_router(*, db, public_user) -> APIRouter:
             # Audit failure must never block the underlying action — log
             # and swallow. In a future iteration we'd alert on this.
             logger.error("Failed to write admin audit row: %s", e)
+    return _audit
 
-    # ---- Endpoints ----
+
+async def _require_user(db, user_id: str) -> dict:
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return target
+
+
+# ---------- Route groups ----------
+
+def _register_identity_routes(router: APIRouter, *, require_admin) -> None:
     @router.get("/me")
     async def admin_me(admin=Depends(require_admin)):
         """Cheap whoami probe so the frontend can confirm admin status
@@ -140,6 +150,8 @@ def build_admin_router(*, db, public_user) -> APIRouter:
             "user_id": admin["user_id"],
         }
 
+
+def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require_super_admin, audit) -> None:
     @router.get("/users")
     async def list_users(
         request: Request,
@@ -197,9 +209,7 @@ def build_admin_router(*, db, public_user) -> APIRouter:
         footgun (locks the team out of admin entirely)."""
         if req.user_id == super_admin["user_id"]:
             raise HTTPException(status_code=400, detail="You can't change your own admin status.")
-        target = await db.users.find_one({"user_id": req.user_id}, {"_id": 0})
-        if not target:
-            raise HTTPException(status_code=404, detail="User not found.")
+        target = await _require_user(db, req.user_id)
         # Refuse to demote another super-admin — only env-var bootstrap
         # changes super-admin status.
         if target.get("is_super_admin"):
@@ -208,7 +218,7 @@ def build_admin_router(*, db, public_user) -> APIRouter:
             {"user_id": req.user_id},
             {"$set": {"is_admin": bool(req.is_admin)}},
         )
-        await _audit(super_admin, "promote_admin", req.user_id, {"is_admin": req.is_admin})
+        await audit(super_admin, "promote_admin", req.user_id, {"is_admin": req.is_admin})
         return {"ok": True, "user_id": req.user_id, "is_admin": req.is_admin}
 
     @router.post("/users/ai-quota")
@@ -218,9 +228,7 @@ def build_admin_router(*, db, public_user) -> APIRouter:
         `quota=None` removes the override (user falls back to default).
         Otherwise an integer 1..300 sets their new monthly cap. The 300
         ceiling is a hard server-side guard."""
-        target = await db.users.find_one({"user_id": req.user_id}, {"_id": 0})
-        if not target:
-            raise HTTPException(status_code=404, detail="User not found.")
+        await _require_user(db, req.user_id)
         if req.quota is None:
             await db.users.update_one({"user_id": req.user_id}, {"$unset": {"ai_quota_override": ""}})
         else:
@@ -228,21 +236,19 @@ def build_admin_router(*, db, public_user) -> APIRouter:
                 {"user_id": req.user_id},
                 {"$set": {"ai_quota_override": int(req.quota)}},
             )
-        await _audit(admin, "set_ai_quota", req.user_id, {"quota": req.quota})
+        await audit(admin, "set_ai_quota", req.user_id, {"quota": req.quota})
         return {"ok": True, "user_id": req.user_id, "ai_quota_override": req.quota}
 
     @router.post("/users/contributor")
     async def set_contributor(req: ContributorOverrideRequest, admin=Depends(require_admin)):
         """Manually grant / revoke Contributor-for-Life. Bypasses the
         automatic 100-component + 20-design earning threshold."""
-        target = await db.users.find_one({"user_id": req.user_id}, {"_id": 0})
-        if not target:
-            raise HTTPException(status_code=404, detail="User not found.")
+        await _require_user(db, req.user_id)
         await db.users.update_one(
             {"user_id": req.user_id},
             {"$set": {"contributor_lifetime": bool(req.contributor_lifetime)}},
         )
-        await _audit(admin, "set_contributor", req.user_id, {"contributor_lifetime": req.contributor_lifetime})
+        await audit(admin, "set_contributor", req.user_id, {"contributor_lifetime": req.contributor_lifetime})
         return {"ok": True}
 
     @router.post("/users/ban")
@@ -250,9 +256,7 @@ def build_admin_router(*, db, public_user) -> APIRouter:
         """Soft-ban a user. We don't delete their content — just flag the
         account, which login/session validation refuses to honour. This is
         reversible; data is preserved for forensic review."""
-        target = await db.users.find_one({"user_id": req.user_id}, {"_id": 0})
-        if not target:
-            raise HTTPException(status_code=404, detail="User not found.")
+        target = await _require_user(db, req.user_id)
         if target.get("is_super_admin"):
             raise HTTPException(status_code=403, detail="Cannot ban a super-admin.")
         if req.user_id == admin["user_id"]:
@@ -268,7 +272,7 @@ def build_admin_router(*, db, public_user) -> APIRouter:
         # When banning, kill all live sessions immediately.
         if req.banned:
             await db.user_sessions.delete_many({"user_id": req.user_id})
-        await _audit(admin, "set_ban", req.user_id, {"banned": req.banned, "reason": req.reason})
+        await audit(admin, "set_ban", req.user_id, {"banned": req.banned, "reason": req.reason})
         return {"ok": True}
 
     @router.post("/users/force-password-reset")
@@ -277,13 +281,13 @@ def build_admin_router(*, db, public_user) -> APIRouter:
         everywhere and have to log back in (or reset password). Re-uses
         the PromoteAdminRequest shape just for the user_id field; the
         `is_admin` flag is ignored here."""
-        target = await db.users.find_one({"user_id": req.user_id}, {"_id": 0})
-        if not target:
-            raise HTTPException(status_code=404, detail="User not found.")
+        await _require_user(db, req.user_id)
         deleted = await db.user_sessions.delete_many({"user_id": req.user_id})
-        await _audit(admin, "force_password_reset", req.user_id, {"sessions_killed": deleted.deleted_count})
+        await audit(admin, "force_password_reset", req.user_id, {"sessions_killed": deleted.deleted_count})
         return {"ok": True, "sessions_killed": deleted.deleted_count}
 
+
+def _register_moderation_routes(router: APIRouter, *, db, require_admin, audit) -> None:
     @router.post("/content/remove")
     async def remove_content(req: RemoveContentRequest, admin=Depends(require_admin)):
         """Soft-flag a gallery item or component as 'removed' so it stops
@@ -304,9 +308,11 @@ def build_admin_router(*, db, public_user) -> APIRouter:
                 "private": True,  # also hide via existing privacy filters
             }},
         )
-        await _audit(admin, "remove_content", req.item_id, {"item_type": req.item_type, "reason": req.reason})
+        await audit(admin, "remove_content", req.item_id, {"item_type": req.item_type, "reason": req.reason})
         return {"ok": True}
 
+
+def _register_insight_routes(router: APIRouter, *, db, require_admin) -> None:
     @router.get("/analytics")
     async def analytics(admin=Depends(require_admin)):
         """Headline numbers for the dashboard. Computed in one round-trip
@@ -374,6 +380,24 @@ def build_admin_router(*, db, public_user) -> APIRouter:
         cursor = db.admin_audit.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
         return await cursor.to_list(limit)
 
+
+# ---------- Router factory ----------
+
+def build_admin_router(*, db, get_current_user) -> APIRouter:
+    """`get_current_user` is injected by server.py — dependency injection
+    replaces the old lazy `from server import ...`, eliminating the
+    circular import between admin.py and server.py."""
+    router = APIRouter(prefix="/admin", tags=["admin"])
+    require_admin, require_super_admin = _make_guards(get_current_user)
+    audit = _make_audit(db)
+
+    _register_identity_routes(router, require_admin=require_admin)
+    _register_user_admin_routes(
+        router, db=db, require_admin=require_admin,
+        require_super_admin=require_super_admin, audit=audit,
+    )
+    _register_moderation_routes(router, db=db, require_admin=require_admin, audit=audit)
+    _register_insight_routes(router, db=db, require_admin=require_admin)
     return router
 
 

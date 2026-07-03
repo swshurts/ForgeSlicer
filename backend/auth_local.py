@@ -23,6 +23,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 from typing import Optional
 
 import bcrypt
@@ -44,6 +45,8 @@ SESSION_COOKIE = "session_token"
 # to keep the funnel smooth — users hate forced symbols.
 PASSWORD_MIN_LEN = 8
 PASSWORD_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,128}$")
+
+PASSWORD_POLICY_MSG = "Password must be at least 8 characters and include a letter and a number."
 
 
 # ---------- Helpers ----------
@@ -129,70 +132,93 @@ class ProfileUpdateRequest(BaseModel):
     share_location: Optional[bool] = None
 
 
-# ---------- Service factory ----------
+# ---------- Brute-force tracking ----------
 
-def build_auth_router(*, db, email_service, set_session_cookie, public_user) -> APIRouter:
-    """Wire the local-auth router with the existing DB + cookie helpers.
+async def _record_failure(db, identifier: str) -> None:
+    await db.login_attempts.update_one(
+        {"identifier": identifier},
+        {
+            "$inc": {"count": 1},
+            "$set": {"last_at": _now().isoformat()},
+        },
+        upsert=True,
+    )
 
-    Parameters
-    ----------
-    db : motor AsyncIOMotorDatabase
-    email_service : module with `send_magic_link_email` + `send_password_reset_email`
-    set_session_cookie : callable(response, token) — reuses server.py's cookie code
-    public_user : callable(user_dict) -> dict — public profile shape for /me
-    """
-    router = APIRouter(prefix="/auth", tags=["auth"])
 
-    # ---- Brute-force tracking ----
-    async def _record_failure(identifier: str) -> None:
-        await db.login_attempts.update_one(
-            {"identifier": identifier},
-            {
-                "$inc": {"count": 1},
-                "$set": {"last_at": _now().isoformat()},
-            },
-            upsert=True,
-        )
+async def _is_locked(db, identifier: str) -> bool:
+    rec = await db.login_attempts.find_one({"identifier": identifier}, {"_id": 0})
+    if not rec or rec.get("count", 0) < MAX_FAILED_LOGINS:
+        return False
+    last_at_raw = rec.get("last_at")
+    if not last_at_raw:
+        return False
+    try:
+        last_at = datetime.fromisoformat(last_at_raw)
+    except Exception:
+        return False
+    if last_at.tzinfo is None:
+        last_at = last_at.replace(tzinfo=timezone.utc)
+    return _now() - last_at < timedelta(minutes=LOCKOUT_WINDOW_MIN)
 
-    async def _is_locked(identifier: str) -> bool:
-        rec = await db.login_attempts.find_one({"identifier": identifier}, {"_id": 0})
-        if not rec or rec.get("count", 0) < MAX_FAILED_LOGINS:
-            return False
-        last_at_raw = rec.get("last_at")
-        if not last_at_raw:
-            return False
-        try:
-            last_at = datetime.fromisoformat(last_at_raw)
-        except Exception:
-            return False
-        if last_at.tzinfo is None:
-            last_at = last_at.replace(tzinfo=timezone.utc)
-        return _now() - last_at < timedelta(minutes=LOCKOUT_WINDOW_MIN)
 
-    async def _clear_failures(identifier: str) -> None:
-        await db.login_attempts.delete_one({"identifier": identifier})
+async def _clear_failures(db, identifier: str) -> None:
+    await db.login_attempts.delete_one({"identifier": identifier})
 
-    # ---- Session issuance (shared with Google flow) ----
-    async def _issue_session(user: dict, response: Response) -> str:
-        session_token = f"st_{uuid.uuid4().hex}"
-        expires_at = _now() + timedelta(days=SESSION_TTL_DAYS)
-        await db.user_sessions.insert_one({
-            "user_id": user["user_id"],
-            "session_token": session_token,
-            "expires_at": expires_at.isoformat(),
-            "created_at": _now().isoformat(),
-        })
-        set_session_cookie(response, session_token)
-        return session_token
 
-    # ---------- Register ----------
+# ---------- Session + token helpers ----------
+
+async def _issue_session(ctx, user: dict, response: Response) -> str:
+    """Create a session row + set the cookie (shared with the Google flow)."""
+    session_token = f"st_{uuid.uuid4().hex}"
+    expires_at = _now() + timedelta(days=SESSION_TTL_DAYS)
+    await ctx.db.user_sessions.insert_one({
+        "user_id": user["user_id"],
+        "session_token": session_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": _now().isoformat(),
+    })
+    ctx.set_session_cookie(response, session_token)
+    return session_token
+
+
+def _check_token_record(rec: Optional[dict], *, kind: str) -> None:
+    """Shared single-use / expiry validation for magic-link + reset tokens.
+    Raises HTTPException(400) with the user-facing message on any failure."""
+    if not rec:
+        raise HTTPException(status_code=400, detail=f"Invalid or expired {kind}.")
+    if rec.get("used_at"):
+        raise HTTPException(status_code=400, detail=f"This {kind} has already been used.")
+    try:
+        expires_at = datetime.fromisoformat(rec["expires_at"])
+    except Exception:
+        expires_at = _now() - timedelta(seconds=1)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < _now():
+        raise HTTPException(status_code=400, detail=f"This {kind} has expired.")
+
+
+def _token_row(user: dict, email: str, token_hash: str, ttl_min: int, request: Request) -> dict:
+    return {
+        "user_id": user["user_id"],
+        "token_hash": token_hash,
+        "email": email,
+        "expires_at": (_now() + timedelta(minutes=ttl_min)).isoformat(),
+        "used_at": None,
+        "created_at": _now().isoformat(),
+        "ip": _client_ip(request),
+    }
+
+
+# ---------- Route groups ----------
+
+def _register_password_routes(router: APIRouter, ctx) -> None:
+    db = ctx.db
+
     @router.post("/register")
     async def register(req: RegisterRequest, response: Response):
         if not PASSWORD_RE.match(req.password):
-            raise HTTPException(
-                status_code=400,
-                detail="Password must be at least 8 characters and include a letter and a number.",
-            )
+            raise HTTPException(status_code=400, detail=PASSWORD_POLICY_MSG)
         email = _norm_email(req.email)
         existing = await db.users.find_one({"email": email}, {"_id": 0})
         if existing:
@@ -227,15 +253,14 @@ def build_auth_router(*, db, email_service, set_session_cookie, public_user) -> 
             await db.users.insert_one(user)
             # Strip _id which Motor adds in place — never return it.
             user.pop("_id", None)
-        await _issue_session(user, response)
-        return public_user(user)
+        await _issue_session(ctx, user, response)
+        return ctx.public_user(user)
 
-    # ---------- Login (password) ----------
     @router.post("/login")
     async def login(req: LoginRequest, request: Request, response: Response):
         email = _norm_email(req.email)
         identifier = f"{_client_ip(request)}:{email}"
-        if await _is_locked(identifier):
+        if await _is_locked(db, identifier):
             raise HTTPException(
                 status_code=429,
                 detail=f"Too many failed attempts. Try again in {LOCKOUT_WINDOW_MIN} minutes.",
@@ -244,105 +269,31 @@ def build_auth_router(*, db, email_service, set_session_cookie, public_user) -> 
         if not user or not user.get("password_hash"):
             # Same error for both "no account" and "google-only account" so
             # we don't reveal which emails exist.
-            await _record_failure(identifier)
+            await _record_failure(db, identifier)
             raise HTTPException(status_code=401, detail="Invalid email or password.")
         if not _verify_password(req.password, user["password_hash"]):
-            await _record_failure(identifier)
+            await _record_failure(db, identifier)
             raise HTTPException(status_code=401, detail="Invalid email or password.")
-        await _clear_failures(identifier)
+        await _clear_failures(db, identifier)
         await db.users.update_one(
             {"user_id": user["user_id"]},
             {"$set": {"last_login_at": _now().isoformat()}},
         )
-        await _issue_session(user, response)
-        return public_user(user)
+        await _issue_session(ctx, user, response)
+        return ctx.public_user(user)
 
-    # ---------- Magic link ----------
-    @router.post("/magic-link/request")
-    async def magic_link_request(req: MagicLinkRequest, request: Request):
-        email = _norm_email(req.email)
-        # Always return success — never leak which emails exist.
-        token = secrets.token_urlsafe(32)
-        token_hash = _hash_token(token)
-        expires_at = _now() + timedelta(minutes=MAGIC_TOKEN_TTL_MIN)
-        user = await db.users.find_one({"email": email}, {"_id": 0})
-        if user:
-            await db.magic_link_tokens.insert_one({
-                "user_id": user["user_id"],
-                "token_hash": token_hash,
-                "email": email,
-                "expires_at": expires_at.isoformat(),
-                "used_at": None,
-                "created_at": _now().isoformat(),
-                "ip": _client_ip(request),
-            })
-            link = f"{_app_url()}/magic-link?token={token}"
-            try:
-                await email_service.send_magic_link_email(email, user.get("name", "Maker"), link)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("Magic-link send failed for %s: %s", email, e)
-        return {"ok": True}
-
-    @router.post("/magic-link/consume")
-    async def magic_link_consume(req: MagicLinkConsumeRequest, response: Response):
-        token_hash = _hash_token(req.token)
-        rec = await db.magic_link_tokens.find_one({"token_hash": token_hash}, {"_id": 0})
-        if not rec:
-            raise HTTPException(status_code=400, detail="Invalid or expired magic link.")
-        if rec.get("used_at"):
-            raise HTTPException(status_code=400, detail="This magic link has already been used.")
-        try:
-            expires_at = datetime.fromisoformat(rec["expires_at"])
-        except Exception:
-            expires_at = _now() - timedelta(seconds=1)
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at < _now():
-            raise HTTPException(status_code=400, detail="This magic link has expired.")
-        user = await db.users.find_one({"user_id": rec["user_id"]}, {"_id": 0})
-        if not user:
-            raise HTTPException(status_code=400, detail="Account no longer exists.")
-        # Single-use: mark used.
-        await db.magic_link_tokens.update_one(
-            {"token_hash": token_hash},
-            {"$set": {"used_at": _now().isoformat()}},
-        )
-        # If this is the user's first sign-in via magic link, attach the method.
-        methods = set(user.get("auth_methods") or [])
-        if "magic" not in methods:
-            methods.add("magic")
-            await db.users.update_one(
-                {"user_id": user["user_id"]},
-                {"$set": {"auth_methods": sorted(methods)}},
-            )
-        await db.users.update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {"last_login_at": _now().isoformat()}},
-        )
-        await _issue_session(user, response)
-        return public_user(user)
-
-    # ---------- Password reset ----------
     @router.post("/password/forgot")
     async def password_forgot(req: ForgotPasswordRequest, request: Request):
         email = _norm_email(req.email)
         token = secrets.token_urlsafe(32)
-        token_hash = _hash_token(token)
-        expires_at = _now() + timedelta(minutes=RESET_TOKEN_TTL_MIN)
         user = await db.users.find_one({"email": email}, {"_id": 0})
         if user:
-            await db.password_reset_tokens.insert_one({
-                "user_id": user["user_id"],
-                "token_hash": token_hash,
-                "email": email,
-                "expires_at": expires_at.isoformat(),
-                "used_at": None,
-                "created_at": _now().isoformat(),
-                "ip": _client_ip(request),
-            })
+            await db.password_reset_tokens.insert_one(
+                _token_row(user, email, _hash_token(token), RESET_TOKEN_TTL_MIN, request)
+            )
             link = f"{_app_url()}/reset-password?token={token}"
             try:
-                await email_service.send_password_reset_email(email, user.get("name", "Maker"), link)
+                await ctx.email_service.send_password_reset_email(email, user.get("name", "Maker"), link)
             except Exception as e:  # noqa: BLE001
                 logger.warning("Password-reset send failed for %s: %s", email, e)
         # Always return ok — same response for unknown emails.
@@ -351,24 +302,10 @@ def build_auth_router(*, db, email_service, set_session_cookie, public_user) -> 
     @router.post("/password/reset")
     async def password_reset(req: ResetPasswordRequest, response: Response):
         if not PASSWORD_RE.match(req.new_password):
-            raise HTTPException(
-                status_code=400,
-                detail="Password must be at least 8 characters and include a letter and a number.",
-            )
+            raise HTTPException(status_code=400, detail=PASSWORD_POLICY_MSG)
         token_hash = _hash_token(req.token)
         rec = await db.password_reset_tokens.find_one({"token_hash": token_hash}, {"_id": 0})
-        if not rec:
-            raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
-        if rec.get("used_at"):
-            raise HTTPException(status_code=400, detail="This reset link has already been used.")
-        try:
-            expires_at = datetime.fromisoformat(rec["expires_at"])
-        except Exception:
-            expires_at = _now() - timedelta(seconds=1)
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at < _now():
-            raise HTTPException(status_code=400, detail="This reset link has expired.")
+        _check_token_record(rec, kind="reset link")
         user = await db.users.find_one({"user_id": rec["user_id"]}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=400, detail="Account no longer exists.")
@@ -390,9 +327,80 @@ def build_auth_router(*, db, email_service, set_session_cookie, public_user) -> 
         await db.user_sessions.delete_many({"user_id": user["user_id"]})
         # Issue a fresh session for the immediate post-reset experience.
         user_after = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
-        await _issue_session(user_after, response)
-        return public_user(user_after)
+        await _issue_session(ctx, user_after, response)
+        return ctx.public_user(user_after)
 
+
+def _register_magic_link_routes(router: APIRouter, ctx) -> None:
+    db = ctx.db
+
+    @router.post("/magic-link/request")
+    async def magic_link_request(req: MagicLinkRequest, request: Request):
+        email = _norm_email(req.email)
+        # Always return success — never leak which emails exist.
+        token = secrets.token_urlsafe(32)
+        user = await db.users.find_one({"email": email}, {"_id": 0})
+        if user:
+            await db.magic_link_tokens.insert_one(
+                _token_row(user, email, _hash_token(token), MAGIC_TOKEN_TTL_MIN, request)
+            )
+            link = f"{_app_url()}/magic-link?token={token}"
+            try:
+                await ctx.email_service.send_magic_link_email(email, user.get("name", "Maker"), link)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Magic-link send failed for %s: %s", email, e)
+        return {"ok": True}
+
+    @router.post("/magic-link/consume")
+    async def magic_link_consume(req: MagicLinkConsumeRequest, response: Response):
+        token_hash = _hash_token(req.token)
+        rec = await db.magic_link_tokens.find_one({"token_hash": token_hash}, {"_id": 0})
+        _check_token_record(rec, kind="magic link")
+        user = await db.users.find_one({"user_id": rec["user_id"]}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=400, detail="Account no longer exists.")
+        # Single-use: mark used.
+        await db.magic_link_tokens.update_one(
+            {"token_hash": token_hash},
+            {"$set": {"used_at": _now().isoformat()}},
+        )
+        # If this is the user's first sign-in via magic link, attach the method.
+        methods = set(user.get("auth_methods") or [])
+        if "magic" not in methods:
+            methods.add("magic")
+            await db.users.update_one(
+                {"user_id": user["user_id"]},
+                {"$set": {"auth_methods": sorted(methods)}},
+            )
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"last_login_at": _now().isoformat()}},
+        )
+        await _issue_session(ctx, user, response)
+        return ctx.public_user(user)
+
+
+# ---------- Service factory ----------
+
+def build_auth_router(*, db, email_service, set_session_cookie, public_user) -> APIRouter:
+    """Wire the local-auth router with the existing DB + cookie helpers.
+
+    Parameters
+    ----------
+    db : motor AsyncIOMotorDatabase
+    email_service : module with `send_magic_link_email` + `send_password_reset_email`
+    set_session_cookie : callable(response, token) — reuses server.py's cookie code
+    public_user : callable(user_dict) -> dict — public profile shape for /me
+    """
+    router = APIRouter(prefix="/auth", tags=["auth"])
+    ctx = SimpleNamespace(
+        db=db,
+        email_service=email_service,
+        set_session_cookie=set_session_cookie,
+        public_user=public_user,
+    )
+    _register_password_routes(router, ctx)
+    _register_magic_link_routes(router, ctx)
     return router
 
 
