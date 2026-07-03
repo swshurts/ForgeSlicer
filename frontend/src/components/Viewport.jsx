@@ -589,9 +589,48 @@ function SelectedTransform() {
         scl: [...o.scale],
       });
     }
+    // Scale-gizmo group pull: when the primary belongs to a group,
+    // snapshot its world bbox + each sibling's bbox centre so dragging
+    // a scale handle PULLS attached parts along the moving faces
+    // (same semantics as typed dim edits) instead of scaling them.
+    let groupPull = null;
+    if (primary.groupId) {
+      try {
+        const bb = computeRotatedBBox(primary);
+        const p = primary.position || [0, 0, 0];
+        const startBBox = {
+          min: [bb.min.x + p[0], bb.min.y + p[1], bb.min.z + p[2]],
+          max: [bb.max.x + p[0], bb.max.y + p[1], bb.max.z + p[2]],
+        };
+        const memberCenters = new Map();
+        for (const id of otherIds) {
+          const o = objects.find((x) => x.id === id);
+          if (!o || o.groupId !== primary.groupId) continue;
+          try {
+            const mb = computeRotatedBBox(o);
+            const mp = o.position || [0, 0, 0];
+            memberCenters.set(id, [
+              (mb.min.x + mb.max.x) / 2 + mp[0],
+              (mb.min.y + mb.max.y) / 2 + mp[1],
+              (mb.min.z + mb.max.z) / 2 + mp[2],
+            ]);
+          } catch { /* skip */ }
+        }
+        groupPull = {
+          startBBox,
+          memberCenters,
+          center: [
+            (startBBox.min[0] + startBBox.max[0]) / 2,
+            (startBBox.min[1] + startBBox.max[1]) / 2,
+            (startBBox.min[2] + startBBox.max[2]) / 2,
+          ],
+        };
+      } catch { groupPull = null; }
+    }
     dragStartRef.current = {
       primary: { pos: [...primary.position], rot: [...primary.rotation], scl: [...primary.scale] },
       others,
+      groupPull,
     };
   };
 
@@ -632,6 +671,28 @@ function SelectedTransform() {
       start.primary.scl[1] ? newScl[1] / start.primary.scl[1] : 1,
       start.primary.scl[2] ? newScl[2] / start.primary.scl[2] : 1,
     ];
+    // Live face displacements of the primary's bbox for group pull
+    // (scale mode + grouped primary only). Absolute from drag start —
+    // no incremental drift.
+    let pullD = null;
+    if (transformMode === "scale" && start.groupPull) {
+      try {
+        const liveBB = computeRotatedBBox({ ...obj, scale: newScl, rotation: newRot });
+        const sb = start.groupPull.startBBox;
+        pullD = {
+          minD: [
+            liveBB.min.x + newPos[0] - sb.min[0],
+            liveBB.min.y + newPos[1] - sb.min[1],
+            liveBB.min.z + newPos[2] - sb.min[2],
+          ],
+          maxD: [
+            liveBB.max.x + newPos[0] - sb.max[0],
+            liveBB.max.y + newPos[1] - sb.max[1],
+            liveBB.max.z + newPos[2] - sb.max[2],
+          ],
+        };
+      } catch { pullD = null; }
+    }
     start.others.forEach((s, id) => {
       if (transformMode === "translate") {
         setTransform(id, "position", [s.pos[0] + dPos[0], s.pos[1] + dPos[1], s.pos[2] + dPos[2]]);
@@ -697,7 +758,22 @@ function SelectedTransform() {
           primaryStart[2] + offset.z,
         ]);
       } else if (transformMode === "scale") {
-        setTransform(id, "scale", [s.scl[0] * sRatio[0], s.scl[1] * sRatio[1], s.scl[2] * sRatio[2]]);
+        if (pullD && start.groupPull?.memberCenters.has(id)) {
+          // Grouped sibling — PULL along the moving faces instead of
+          // scaling, so attachments stay flush (typed-edit parity).
+          const c = start.groupPull.memberCenters.get(id);
+          const ctr = start.groupPull.center;
+          const np = [...s.pos];
+          for (const ax of [0, 1, 2]) {
+            const d = c[ax] > ctr[ax] + 1e-6 ? pullD.maxD[ax]
+              : c[ax] < ctr[ax] - 1e-6 ? pullD.minD[ax]
+              : (pullD.minD[ax] + pullD.maxD[ax]) / 2;
+            np[ax] += d;
+          }
+          setTransform(id, "position", np);
+        } else {
+          setTransform(id, "scale", [s.scl[0] * sRatio[0], s.scl[1] * sRatio[1], s.scl[2] * sRatio[2]]);
+        }
       }
     });
   };
@@ -1315,6 +1391,14 @@ function CameraFitOnPrinterChange() {
 }
 
 
+// Exposes the R3F scene + camera for automated UI testing (projecting
+// world points to screen coords to drive gizmo drags deterministically).
+function ThreeDevHook() {
+  const three = useThree();
+  useEffect(() => { window.__forgeThree = three; }, [three]);
+  return null;
+}
+
 export default function Viewport() {
   const objects = useScene((s) => s.objects);
   const selectedId = useScene((s) => s.selectedId);
@@ -1525,6 +1609,7 @@ export default function Viewport() {
         style={{ background: viewportBg }}
       >
         <color attach="background" args={[viewportBg]} />
+        <ThreeDevHook />
         <ambientLight intensity={0.55} />
         <directionalLight
           position={[150, 100, 250]}

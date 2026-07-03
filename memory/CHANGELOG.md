@@ -4497,3 +4497,8 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 ## Iteration 118 (2026-07-03) — Group-pull on member resize
 - ✅ **Resizing a grouped member pulls attached parts along** — user request: shortening the centre linking bar of a grouped assembly must drag the end cylinders (positive + negative bores) inward with the faces. `applyGroupPull` in store.js: after `updateDims`/`setImportedDim` on an object with a `groupId`, sibling members are translated by the displacement of whichever face they sit beyond (per axis; members straddling the centre follow the centre). Respects bed-pinned Z resizes (min face static → parts above follow the top face). Single undo step reverts everything.
 - 🧪 Verified: grouped bar 80→60 moved end cylinders ±55→±45 and bores identically; undo restores all.
+
+## Iteration 119 (2026-07-03) — Gizmo scale group-pull + test dev hook
+- ✅ **Scale-gizmo drag on a grouped member now pulls siblings** — same semantics as typed dim edits: dragging a scale handle on the centre bar translates attached parts with the moving faces (they are no longer ratio-scaled). Snapshot of primary bbox + sibling centres at drag start; absolute face displacement applied live during drag (no incremental drift). Non-grouped multi-selections keep the old ratio-scale behaviour.
+- ✅ Added `window.__forgeThree` dev hook (ThreeDevHook in Viewport) exposing R3F scene/camera/raycaster for deterministic automated 3D UI testing.
+- 🧪 Verified with a REAL pointer drag on the X scale handle (located via in-page raycasting): bar 80→104mm moved cylinders ±55→±67 exactly (expected 67.00), sibling scales unchanged.
