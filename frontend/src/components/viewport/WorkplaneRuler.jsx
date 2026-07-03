@@ -15,34 +15,23 @@
 //
 // Storage: the ruler origin lives in mm in world space. Display strings
 // respect the global mm/inch toggle.
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState } from "react";
 import { Html, Line } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { X } from "lucide-react";
 import { useScene } from "../../lib/store";
-import { computeRotatedBBox } from "../../lib/geometry";
 import { toDisplayLen } from "../../lib/units";
-import { priorityRaycast } from "./WorkplaneRulerPicks";
+import { priorityRaycast } from "./RulerPlacementDots";
 
 const COLOR_X = "#FB7185";
 const COLOR_Y = "#34D399";
-const COLOR_Z = "#60A5FA";
 const RULER_LEN = 120; // mm — visual reach of each arm
-
-function fmtSigned(mm, system) {
-  const v = toDisplayLen(mm, system);
-  const dp = system === "in" ? 3 : 1;
-  const sign = v >= 0 ? "+" : "";
-  return `${sign}${v.toFixed(dp)} ${system}`;
-}
 
 export function WorkplaneRuler() {
   const ruler = useScene((s) => s.workplaneRuler);
   const setRuler = useScene((s) => s.setWorkplaneRuler);
   const removeRuler = useScene((s) => s.removeWorkplaneRuler);
-  const selectedId = useScene((s) => s.selectedId);
-  const objects = useScene((s) => s.objects);
   const unitSystem = useScene((s) => s.unitSystem);
   const measureMode = useScene((s) => s.measureMode);
   const rulerMode = useScene((s) => s.rulerMode);
@@ -106,26 +95,6 @@ export function WorkplaneRuler() {
     // gizmo). Origin sphere now drags only.
     downPosRef.current = null;
   };
-
-  // ---- selection delta chips ----
-  let selDeltas = null;
-  const selObj = objects.find((o) => o.id === selectedId);
-  if (selObj && selObj.visible !== false) {
-    try {
-      const bb = computeRotatedBBox(selObj);
-      const cx = (bb.min.x + bb.max.x) / 2 + (selObj.position?.[0] || 0);
-      const cy = (bb.min.y + bb.max.y) / 2 + (selObj.position?.[1] || 0);
-      const cz = (bb.min.z + bb.max.z) / 2 + (selObj.position?.[2] || 0);
-      selDeltas = {
-        dx: cx - ox,
-        dy: cy - oy,
-        dz: cz - oz,
-        targetX: cx,
-        targetY: cy,
-        targetZ: cz,
-      };
-    } catch { /* ignore */ }
-  }
 
   // Tick marks every 10mm along each arm. Bidirectional — produce
   // negative-direction ticks too so the user can read offsets either
@@ -287,27 +256,6 @@ export function WorkplaneRuler() {
           origin · {toDisplayLen(ox, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}, {toDisplayLen(oy, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}
         </div>
       </Html>
-
-      {/* Selection-relative Δ chips (iter-113) — REPLACED by the
-          corner-pinned PositionChips in SelectionDimLabels.jsx as of
-          iter-114.3. The new chips read X/Y/Z = N.NN at the front-
-          left-bottom corner of the selected bbox (TinkerCAD parity),
-          which is unambiguous when multiple parts share the scene.
-          Kept the dashed reference line below so the user can SEE
-          which selection the ruler is currently anchoring to. */}
-      {selDeltas && (
-        <Line
-          points={[[ox, oy, 0.05], [selDeltas.targetX, selDeltas.targetY, selDeltas.targetZ]]}
-          color="#94A3B8"
-          lineWidth={1}
-          dashed
-          dashSize={3}
-          gapSize={2}
-          depthTest={false}
-          opacity={0.45}
-          transparent
-        />
-      )}
     </group>
   );
 }

@@ -194,8 +194,8 @@ export default function EditRow({
           workplaneRulerActive
             ? "Remove the workplane ruler"
             : workplaneRulerPlacing
-              ? "Cancel placement — click anywhere on the bed or a face / edge / vertex to drop the ruler"
-              : "Workplane Ruler — click then pick any point in the scene (bed, face, edge, vertex) to drop the TinkerCAD-style ruler there. Drag the white sphere afterwards to fine-tune."
+              ? "Cancel placement — click a highlighted corner dot or anywhere on the bed to drop the ruler"
+              : "Workplane Ruler — drop a reference origin on any corner or bed point. Selecting a part then shows its size AND its distances from the ruler (editable — typing a distance moves the part)."
         }
         active={workplaneRulerActive || workplaneRulerPlacing}
         onClick={() => {

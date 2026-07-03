@@ -76,7 +76,19 @@ function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editabl
   }, [worldMm, unitSystem, editing]);
 
   useEffect(() => {
-    if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+    if (!editing) return undefined;
+    // Focus twice — immediately and after a short delay. Drei's <Html>
+    // re-appends its container to the DOM right after mount, which
+    // silently drops focus gained in the same tick (input stays open
+    // but keystrokes go to <body>).
+    if (inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+    const t = setTimeout(() => {
+      if (inputRef.current && document.activeElement !== inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, 80);
+    return () => clearTimeout(t);
   }, [editing]);
 
   const commit = () => {
@@ -179,34 +191,113 @@ function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editabl
 }
 
 /**
- * Position chip — non-editable. Anchored to the front-left-bottom
- * corner of the bbox, shows that corner's coordinate along one axis
- * relative to the active workplane ruler origin (or 0 if no ruler).
+ * Position chip — EDITABLE (TinkerCAD ruler parity). Anchored to the
+ * bbox corner nearest the ruler origin, shows that corner's coordinate
+ * along one axis relative to the active workplane ruler origin (or the
+ * workplane origin 0,0,0 if no ruler). Typing a new value MOVES the
+ * object so the corner lands at that distance from the origin.
  */
-function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem, testid }) {
+function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem, editable, onCommit, testid }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!editing) {
+      const dp = unitSystem === "in" ? 3 : 2;
+      setValue(toDisplayLen(worldMm, unitSystem).toFixed(dp));
+    }
+  }, [worldMm, unitSystem, editing]);
+
+  useEffect(() => {
+    if (!editing) return undefined;
+    // Same double-focus trick as DimChip — drei <Html> re-appends its
+    // container after mount which drops same-tick focus.
+    if (inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+    const t = setTimeout(() => {
+      if (inputRef.current && document.activeElement !== inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [editing]);
+
+  const commit = () => {
+    const display = parseFloat(value.replace("−", "-"));
+    if (Number.isFinite(display)) onCommit(fromDisplayLen(display, unitSystem));
+    setEditing(false);
+  };
+
+  const handleKey = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+    e.stopPropagation();
+  };
+
   const v = toDisplayLen(worldMm, unitSystem);
   const dp = unitSystem === "in" ? 3 : 2;
   const sign = v >= 0 ? "" : "−";
   const txt = `${sign}${Math.abs(v).toFixed(dp)}`;
   const transform = screenOffset ? `translate(${screenOffset.x}px, ${screenOffset.y}px)` : undefined;
   const label = axis.toUpperCase();
+
   return (
     <Html position={position} center zIndexRange={[68, 0]} sprite={false}>
-      <div
-        data-testid={testid}
-        style={{
-          transform,
-          pointerEvents: "none",
-          background: "rgba(255,255,255,0.80)",
-          border: `1px dashed ${color}80`,
-          color: "#0F172A",
-          boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
-        }}
-        className="flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10.5px] font-semibold whitespace-nowrap select-none"
-      >
-        <span style={{ color }} className="font-bold">{label}</span>
-        <span>{txt}</span>
-        <span className="text-[9px] text-slate-500">{unitSystem}</span>
+      <div style={{ transform, pointerEvents: "auto" }}>
+        {editing ? (
+          <div
+            data-testid={`${testid}-editor`}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded shadow-md select-none"
+            style={{
+              pointerEvents: "auto",
+              background: "rgba(255,255,255,0.92)",
+              border: `1.5px dashed ${color}`,
+              boxShadow: `0 1px 4px rgba(0,0,0,0.18), 0 0 6px ${color}40`,
+            }}
+          >
+            <span className="font-mono text-[10px] font-bold" style={{ color }}>{label}</span>
+            <input
+              ref={inputRef}
+              data-testid={`${testid}-input`}
+              type="text"
+              inputMode="decimal"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKey}
+              onBlur={commit}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="w-14 bg-transparent text-[11px] font-mono font-semibold text-slate-900 outline-none border-b border-slate-400 focus:border-slate-900"
+            />
+            <span className="text-[9px] font-mono text-slate-500">{unitSystem}</span>
+          </div>
+        ) : (
+          <button
+            data-testid={testid}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); if (editable) setEditing(true); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            disabled={!editable}
+            title={editable
+              ? `${label} distance from ruler origin — click to edit (moves the part)`
+              : `${label} distance from ruler origin — this object is locked`}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10.5px] font-semibold whitespace-nowrap select-none ${
+              editable ? "cursor-pointer" : "cursor-default"
+            }`}
+            style={{
+              pointerEvents: "auto",
+              background: "rgba(255,255,255,0.80)",
+              border: `1px dashed ${color}80`,
+              color: "#0F172A",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
+            }}
+          >
+            <span style={{ color }} className="font-bold">{label}</span>
+            <span>{txt}</span>
+            <span className="text-[9px] text-slate-500">{unitSystem}</span>
+          </button>
+        )}
       </div>
     </Html>
   );
@@ -218,6 +309,7 @@ export function SelectionDimLabels() {
   const unitSystem = useScene((s) => s.unitSystem);
   const updateDims = useScene((s) => s.updateDims);
   const setImportedDim = useScene((s) => s.setImportedDim);
+  const updateObject = useScene((s) => s.updateObject);
   const measureMode = useScene((s) => s.measureMode);
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
@@ -261,7 +353,9 @@ export function SelectionDimLabels() {
   }, [obj]);
 
   if (!obj || !bboxData) return null;
-  if (!dimLabelsEnabled) return null;
+  // Visible when DIMS is toggled on OR the workplane ruler is placed —
+  // TinkerCAD parity: dropping the ruler implies you want readouts.
+  if (!dimLabelsEnabled && !workplaneRuler?.active) return null;
   // Exclusive modes still hide the chip stack — they own the canvas.
   // Workplane ruler ACTIVE no longer hides us — both layer together.
   if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
@@ -301,6 +395,19 @@ export function SelectionDimLabels() {
   const cornerX = bestCorner[0] - origin[0];
   const cornerY = bestCorner[1] - origin[1];
   const cornerZ = bestCorner[2] - origin[2];
+
+  // Editing a position chip MOVES the object so the pinned corner sits
+  // at the typed distance from the origin (TinkerCAD ruler behavior).
+  const posEditable = !obj.locked;
+  const commitCornerPos = (axisIdx) => (mm) => {
+    const current = bestCorner[axisIdx] - origin[axisIdx];
+    const delta = mm - current;
+    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-6) return;
+    const p = obj.position || [0, 0, 0];
+    const np = [p[0], p[1], p[2]];
+    np[axisIdx] += delta;
+    updateObject(obj.id, { position: np });
+  };
 
   return (
     <group renderOrder={999}>
@@ -342,11 +449,23 @@ export function SelectionDimLabels() {
         testid="dim-label-h"
       />
 
-      {/* X / Y / Z — corner POSITION chips. Stacked at the front-left
-          bottom corner, displaying that corner's coordinate relative
-          to the active ruler origin (or workplane origin). Iter-114.3
-          TinkerCAD parity — these are the small "-44.10 / 0.00 / 0.00"
-          chips from the user's reference images. */}
+      {/* X / Y / Z — corner POSITION chips (EDITABLE — typing a value
+          moves the part relative to the ruler origin). Pinned to the
+          bbox corner nearest the origin. A dashed leader ties the
+          corner back to the ruler origin so the reference is obvious. */}
+      {workplaneRuler?.active && (
+        <Line
+          points={[origin, bestCorner]}
+          color="#94A3B8"
+          lineWidth={1}
+          dashed
+          dashSize={3}
+          gapSize={2}
+          depthTest={false}
+          transparent
+          opacity={0.5}
+        />
+      )}
       <PositionChip
         axis="x"
         worldMm={cornerX}
@@ -354,6 +473,8 @@ export function SelectionDimLabels() {
         position={bestCorner}
         screenOffset={{ x: -54, y: -2 }}
         unitSystem={unitSystem}
+        editable={posEditable}
+        onCommit={commitCornerPos(0)}
         testid="pos-chip-x"
       />
       <PositionChip
@@ -363,6 +484,8 @@ export function SelectionDimLabels() {
         position={bestCorner}
         screenOffset={{ x: -54, y: 16 }}
         unitSystem={unitSystem}
+        editable={posEditable}
+        onCommit={commitCornerPos(1)}
         testid="pos-chip-y"
       />
       <PositionChip
@@ -372,6 +495,8 @@ export function SelectionDimLabels() {
         position={bestCorner}
         screenOffset={{ x: -54, y: 34 }}
         unitSystem={unitSystem}
+        editable={posEditable}
+        onCommit={commitCornerPos(2)}
         testid="pos-chip-z"
       />
     </group>

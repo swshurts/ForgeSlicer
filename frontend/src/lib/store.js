@@ -172,33 +172,7 @@ export const useScene = create((set, get) => ({
   })),
   removeWorkplaneRuler: () => set((s) => ({
     workplaneRuler: { ...s.workplaneRuler, active: false, placing: false },
-    // Wipe pick measurements together with the ruler so the canvas
-    // is clean the next time the user reopens the tool (iter-114.5).
-    rulerPicks: [],
   })),
-
-  // ---- Workplane-ruler picked points (iter-114.5 / TinkerCAD parity) ----
-  // Persistent list of points the user has clicked on a selected
-  // object while the workplane ruler is active. Each pick renders a
-  // dashed leader line from the ruler origin + four chips (ΔX, ΔY,
-  // ΔZ, diagonal distance). Lets users measure plate thickness,
-  // hole-to-hole spacing, vertex offsets, etc. without leaving the
-  // ruler workflow.
-  rulerPicks: [],
-  // Iter-114.6 — single-pick semantics. User reported the
-  // accumulating list was hard to read; TinkerCAD users replace the
-  // measurement with each new click. addRulerPick now REPLACES the
-  // current pick. (Array shape kept so existing render code and tests
-  // still work — always holds 0 or 1 entries.)
-  addRulerPick: (point, meta = {}) => {
-    if (!Array.isArray(point) || point.length !== 3) return;
-    const id = `pick_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    set({ rulerPicks: [{ id, point, ...meta }] });
-  },
-  removeRulerPick: (id) => set((s) => ({
-    rulerPicks: s.rulerPicks.filter((p) => p.id !== id),
-  })),
-  clearRulerPicks: () => set({ rulerPicks: [] }),
 
   // ---- Snap-to-face placement (iter-113) ----
   // When ON, the next pointer-click on any face of any visible object
