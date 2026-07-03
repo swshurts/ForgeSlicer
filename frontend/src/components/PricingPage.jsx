@@ -115,21 +115,26 @@ export default function PricingPage() {
               ctaLabel={currentTier === "free" ? "Current plan" : "Downgrade not supported"}
               disabled
             />
-            {packages.map((p) => (
-              <PlanCard
-                key={p.id}
-                id={p.id}
-                name={p.name}
-                price={`$${Math.floor(p.amount)}`}
-                period="per year"
-                perks={p.perks}
-                current={currentTier === p.id}
-                ctaLabel={currentTier === p.id ? "Current plan" : (user ? `Upgrade to ${p.name}` : "Sign in to upgrade")}
-                disabled={!user || currentTier === p.id}
-                busy={false}
-                onClick={() => handleCheckout(p)}
-              />
-            ))}
+            {packages.map((p) => {
+              const early = p.early && p.early.active ? p.early : null;
+              return (
+                <PlanCard
+                  key={p.id}
+                  id={p.id}
+                  name={p.name}
+                  price={`$${Math.floor(p.effective_amount ?? p.amount)}`}
+                  strikePrice={early ? `$${Math.floor(p.amount)}` : null}
+                  earlyNote={early ? `Early adopter — ${early.remaining} of ${early.limit} spots left` : null}
+                  period="per year"
+                  perks={p.perks}
+                  current={currentTier === p.id}
+                  ctaLabel={currentTier === p.id ? "Current plan" : (user ? `Upgrade to ${p.name}` : "Sign in to upgrade")}
+                  disabled={!user || currentTier === p.id}
+                  busy={false}
+                  onClick={() => handleCheckout(p)}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -145,14 +150,14 @@ export default function PricingPage() {
         onClose={() => setSelectedPkg(null)}
         packageId={selectedPkg?.id}
         packageName={selectedPkg?.name}
-        amountDisplay={selectedPkg ? `$${Math.floor(selectedPkg.amount)} / yr` : ""}
+        amountDisplay={selectedPkg ? `$${Math.floor(selectedPkg.effective_amount ?? selectedPkg.amount)} / yr` : ""}
         onSuccess={handleSuccess}
       />
     </div>
   );
 }
 
-function PlanCard({ id, name, price, period, perks, current, ctaLabel, disabled, busy, onClick }) {
+function PlanCard({ id, name, price, strikePrice, earlyNote, period, perks, current, ctaLabel, disabled, busy, onClick }) {
   const accent = id === "pro" ? "border-orange-500/60 bg-orange-500/5" : id === "maker" ? "border-cyan-500/40 bg-cyan-500/5" : "border-slate-800 bg-slate-900";
   return (
     <div
@@ -169,8 +174,19 @@ function PlanCard({ id, name, price, period, perks, current, ctaLabel, disabled,
       </div>
       <div className="flex items-baseline gap-1">
         <span className="text-4xl font-extrabold">{price}</span>
+        {strikePrice && (
+          <span className="text-lg text-slate-500 line-through font-semibold" data-testid={`pricing-strike-${id}`}>{strikePrice}</span>
+        )}
         <span className="text-xs text-slate-500">{period}</span>
       </div>
+      {earlyNote && (
+        <div
+          data-testid={`pricing-early-note-${id}`}
+          className="text-[11px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1 -mt-2 w-fit"
+        >
+          {earlyNote}
+        </div>
+      )}
       <ul className="flex flex-col gap-1.5 flex-1">
         {perks.map((perk, i) => (
           <li key={i} className="flex items-start gap-2 text-[13px] text-slate-300 leading-snug">

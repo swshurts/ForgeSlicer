@@ -84,6 +84,18 @@ class RemoveContentRequest(BaseModel):
     reason: Optional[str] = Field(None, max_length=500)
 
 
+class PackagePriceOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    amount: float = Field(..., gt=0, le=10000)
+    early_amount: Optional[float] = Field(None, gt=0, le=10000)
+    early_limit: Optional[int] = Field(None, ge=0, le=100000)
+
+
+class PricingUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    packages: Dict[str, PackagePriceOverride]
+
+
 # ---------- Guards + audit (injected into route groups) ----------
 
 def _make_guards(get_current_user):
@@ -312,6 +324,56 @@ def _register_moderation_routes(router: APIRouter, *, db, require_admin, audit) 
         return {"ok": True}
 
 
+def _register_pricing_routes(router: APIRouter, *, db, require_super_admin, audit) -> None:
+    import pricing
+
+    @router.get("/pricing")
+    async def get_pricing(admin=Depends(require_super_admin)):
+        """Current catalog + live sold counts, for the /admin Pricing tab."""
+        catalog = await pricing.get_catalog(db)
+        out = {}
+        for pid, pkg in catalog.items():
+            sold = await pricing.sold_count(db, pid)
+            early = pkg.get("early") or {}
+            out[pid] = {
+                "name": pkg["name"],
+                "amount": float(pkg["amount"]),
+                "currency": pkg["currency"],
+                "period_days": pkg["period_days"],
+                "early_amount": float(early.get("amount")) if early.get("amount") else None,
+                "early_limit": int(early.get("limit") or 0),
+                "sold": sold,
+                "early_remaining": max(0, int(early.get("limit") or 0) - sold),
+            }
+        return out
+
+    @router.put("/pricing")
+    async def update_pricing(req: PricingUpdateRequest, admin=Depends(require_super_admin)):
+        """Super-admin only — adjust prices (and early-adopter tiers)
+        without a redeploy. Names/perks/periods stay code-defined."""
+        catalog = await pricing.get_catalog(db)
+        overrides: Dict[str, Any] = {}
+        for pid, p in req.packages.items():
+            if pid not in catalog:
+                raise HTTPException(status_code=400, detail=f"Unknown package '{pid}'.")
+            if p.early_amount is not None and p.early_amount > p.amount:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Early-adopter price for '{pid}' must not exceed the regular price.",
+                )
+            ov: Dict[str, Any] = {"amount": float(p.amount)}
+            if p.early_amount is not None or p.early_limit is not None:
+                base_early = catalog[pid].get("early") or {}
+                ov["early"] = {
+                    "amount": float(p.early_amount if p.early_amount is not None else base_early.get("amount") or p.amount),
+                    "limit": int(p.early_limit if p.early_limit is not None else base_early.get("limit") or 0),
+                }
+            overrides[pid] = ov
+        await pricing.save_overrides(db, overrides, admin["user_id"])
+        await audit(admin, "update_pricing", None, {"packages": overrides})
+        return {"ok": True, "packages": overrides}
+
+
 def _register_insight_routes(router: APIRouter, *, db, require_admin) -> None:
     @router.get("/analytics")
     async def analytics(admin=Depends(require_admin)):
@@ -397,6 +459,7 @@ def build_admin_router(*, db, get_current_user) -> APIRouter:
         require_super_admin=require_super_admin, audit=audit,
     )
     _register_moderation_routes(router, db=db, require_admin=require_admin, audit=audit)
+    _register_pricing_routes(router, db=db, require_super_admin=require_super_admin, audit=audit)
     _register_insight_routes(router, db=db, require_admin=require_admin)
     return router
 

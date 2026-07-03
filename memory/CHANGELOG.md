@@ -4523,3 +4523,11 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ Test secrets removed: sso-bridge secret now env/backend/.env only (module skips if absent); e2e auth password randomized per run; exports-handoff session token from TEST_SESSION_TOKEN env or freshly seeded in Mongo at test time.
 - ℹ️ FALSE POSITIVES rejected: `asyncio.create_subprocess_exec` in orca_engine.py is the safe non-shell subprocess API (not `exec()`); flagged `is` comparisons are all correct `is None` checks.
 - 🧪 Verified: 12+17+15 pytest pass (auth e2e, sso bridge, exports handoff, voice templates); admin DI (401 anon / 200 admin), login 401, billing packages OK after backend restart.
+
+## Iteration 123 (2026-07-03) — Admin-editable pricing + early-adopter tiers
+- ✅ Pricing moved from hardcoded PACKAGES to DB-backed catalog (`pricing.py`, `billing_config` collection; code defaults as fallback). New defaults: Maker $36/yr, Pro $108/yr, first 100 buyers of each pay $28/$90.
+- ✅ Early-adopter engine: sold counts derived from `payment_transactions` (tier_granted=True, all providers); effective price resolved server-side at charge time in BOTH checkout paths (Braintree primary + Stripe fallback).
+- ✅ /admin Pricing tab (SUPER-ADMIN only, hidden for regular admins): edit yearly price, early price, early spots per tier; shows sold + remaining; saves live instantly (no redeploy). GET/PUT /api/admin/pricing with validation (early ≤ base) + audit rows.
+- ✅ PricingPage: effective price + strikethrough regular price + "Early adopter — N of 100 spots left" badge; BraintreeDialog shows effective amount.
+- ✅ ROADMAP: added BYO Meshy AI key ToDo (user-provided key = uncapped; multi-provider = explore later).
+- 🧪 Verified: packages endpoint returns 28/90 effective; PUT roundtrip changes live price and restores; early>base rejected 400; anon PUT 401; UI screenshots of pricing page badges + admin editor + save toast.

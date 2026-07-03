@@ -26,6 +26,14 @@ export const adminApi = {
     const { data } = await axios.get(`${API}/admin/audit`, { ...cfg, params: { limit } });
     return data;
   },
+  getPricing: async () => {
+    const { data } = await axios.get(`${API}/admin/pricing`, cfg);
+    return data;
+  },
+  updatePricing: async (packages) => {
+    const { data } = await axios.put(`${API}/admin/pricing`, { packages }, cfg);
+    return data;
+  },
   setAiQuota: async (user_id, quota) => {
     const { data } = await axios.post(`${API}/admin/users/ai-quota`, { user_id, quota }, cfg);
     return data;

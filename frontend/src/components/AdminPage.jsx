@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import OrcaUpstreamTab from "./admin/OrcaUpstreamTab";
 import SharedPrintersModerationTab from "./admin/SharedPrintersModerationTab";
+import PricingTab from "./admin/PricingTab";
 
 // Convert a 2D array of strings into a CSV blob and trigger a download.
 // Cells are wrapped in double-quotes when they contain commas/quotes/newlines
@@ -407,6 +408,9 @@ export default function AdminPage() {
     { key: "users",     label: "Users",     icon: Users },
     { key: "orca-upstream", label: "Orca sync", icon: GitBranch },
     { key: "shared-moderation", label: "Moderation", icon: Shield },
+    // Pricing edits are super-admin only — hide the tab entirely for
+    // regular admins (backend re-checks on every call regardless).
+    ...(adminInfo.is_super_admin ? [{ key: "pricing", label: "Pricing", icon: Sparkles }] : []),
     { key: "audit",     label: "Audit log", icon: ListChecks },
   ];
 
@@ -450,6 +454,7 @@ export default function AdminPage() {
         {tab === "users" && <UsersTab adminInfo={adminInfo} />}
         {tab === "orca-upstream" && <OrcaUpstreamTab />}
         {tab === "shared-moderation" && <SharedPrintersModerationTab />}
+        {tab === "pricing" && adminInfo.is_super_admin && <PricingTab />}
         {tab === "audit" && <AuditTab />}
       </main>
     </div>

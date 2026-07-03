@@ -80,3 +80,6 @@ Prioritised backlog. **P0** = must-fix now / blocking, **P1** = next planned fea
 
 ## Recurring Items
 - **PRD / CHANGELOG / ROADMAP file split** — done in iter 46. Future agents: keep PRD.md static; append to CHANGELOG.md after every finish; move items from ROADMAP to CHANGELOG when they ship.
+
+## ToDo (added 2026-07-03, user request)
+- **BYO AI key (explore)**: let users paste their own Meshy.AI API key in profile settings; generations then use THEIR key (uncapped, no internal quota burn). Modest effort for Meshy (same API, swap key per-request). Supporting other providers (Tripo, Rodin, etc.) is a much larger lift (different APIs/response formats) — evaluate only if users ask. User note: "if too much of a hassle, don't pursue" → Meshy-only BYO is NOT a hassle; multi-provider likely is.

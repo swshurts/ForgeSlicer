@@ -39,10 +39,10 @@ import braintree
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-# Re-use the catalog from the Stripe module so prices can never drift
-# between providers. If/when Stripe is removed entirely, hoist the
-# PACKAGES dict into a shared catalog module.
-from billing import PACKAGES
+# Prices resolved via the shared pricing module (DB-backed catalog with
+# early-adopter tiers). No static import — amounts are decided at charge
+# time by pricing.resolve_for_checkout.
+import pricing
 
 logger = logging.getLogger(__name__)
 
@@ -154,9 +154,13 @@ def get_router(db, get_current_user_optional) -> APIRouter:
         the response (no separate status poll like the Stripe path)."""
         if not user:
             raise HTTPException(401, detail="Sign in before completing checkout.")
-        if body.package_id not in PACKAGES:
+        resolved = await pricing.resolve_for_checkout(db, body.package_id)
+        if not resolved:
             raise HTTPException(400, detail="Unknown package")
-        pkg = PACKAGES[body.package_id]
+        pkg, effective_amount = resolved
+        # Charge-time snapshot — includes early-adopter discount while
+        # spots remain. Server-side only; the client never sends amounts.
+        pkg = {**pkg, "amount": effective_amount}
         user_id = user["user_id"]
 
         # Idempotency check #1 — has this user already paid for this

@@ -29,33 +29,11 @@ from emergentintegrations.payments.stripe.checkout import (
     CheckoutSessionRequest,
 )
 
-# Server-defined catalog. Amount is the ANNUAL price in USD. Adding a
-# new tier here is the only change required to roll it out.
-PACKAGES = {
-    "maker": {
-        "name": "Maker",
-        "amount": 50.0,
-        "currency": "usd",
-        "period_days": 365,
-        "perks": [
-            "200 AI generations / year (up from 10 free)",
-            "Unlimited private designs",
-            "Manifold ✓ priority slicing",
-        ],
-    },
-    "pro": {
-        "name": "Pro",
-        "amount": 190.0,
-        "currency": "usd",
-        "period_days": 365,
-        "perks": [
-            "Unlimited AI generations",
-            "Commercial use license badge on Gallery items",
-            "1080p turntable thumbnails",
-            "Priority email support",
-        ],
-    },
-}
+# Server-defined catalog + admin-adjustable prices live in pricing.py
+# (MongoDB-backed with code defaults). PACKAGES remains as an alias to
+# the defaults for anything that only needs static metadata.
+import pricing
+from pricing import DEFAULT_PACKAGES as PACKAGES
 
 
 # ---- Pydantic request/response models ----
@@ -117,7 +95,7 @@ async def _grant_tier_if_paid(db, tx: dict, status_obj, user: Optional[dict], se
         return granted, new_tier
     target_user_id = tx.get("user_id") or (user["user_id"] if user else None)
     package_id = tx.get("package_id")
-    pkg = PACKAGES.get(package_id)
+    pkg = PACKAGES.get(package_id)  # period_days is code-defined; price not needed here
     if target_user_id and pkg:
         expires_at = datetime.now(timezone.utc) + timedelta(days=pkg["period_days"])
         await db.users.update_one(
@@ -160,17 +138,7 @@ def get_router(db, get_current_user_optional) -> APIRouter:
     async def list_packages():
         """Public — used by the pricing page so the same source-of-truth
         powers display and Checkout."""
-        return [
-            {
-                "id": pid,
-                "name": p["name"],
-                "amount": p["amount"],
-                "currency": p["currency"],
-                "period_days": p["period_days"],
-                "perks": p["perks"],
-            }
-            for pid, p in PACKAGES.items()
-        ]
+        return await pricing.get_effective_packages(db)
 
     @router.post("/checkout", response_model=CheckoutResponse)
     async def create_checkout(
@@ -180,7 +148,11 @@ def get_router(db, get_current_user_optional) -> APIRouter:
     ):
         if body.package_id not in PACKAGES:
             raise HTTPException(400, detail="Unknown package")
-        pkg = PACKAGES[body.package_id]
+        resolved = await pricing.resolve_for_checkout(db, body.package_id)
+        pkg, effective_amount = resolved
+        # Snapshot the charge-time price so the transaction row + Stripe
+        # session both use the same number.
+        pkg = {**pkg, "amount": effective_amount}
         origin = body.origin_url.rstrip("/")
         success_url = f"{origin}/billing/success?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{origin}/pricing?cancelled=1"
