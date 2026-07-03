@@ -38,11 +38,55 @@ import { PRIMITIVE_DEFAULTS, newId, buildPrimitive } from "./primitiveDefaults";
 // methods to spread into the main store below.
 import { rulerRefStillValid, createRulerActions } from "./rulerActions";
 // Composite-primitive action slice (iter-87 extraction — was ~50
+// Composite-primitive action slice (iter-87 extraction — was ~50
 // lines of repeated pushHistory+build+set boilerplate inlined here).
 import { createCompositeActions } from "./compositeActions";
 // Profile / preferences action slice (iter-90 extraction — printer
 // + filament + my-printer + auto-drop toggles + community list).
 import { createProfileActions } from "./profileActions";
+
+// Group-pull helper: when a group member is resized, parts hanging off
+// each side follow that side's face displacement so attachments stay
+// flush (e.g. shorten a linking bar → end cylinders + their bores move
+// inward). `before`/`after` are the target's WORLD bboxes {min,max}.
+function applyGroupPull(objects, targetId, groupId, before, after) {
+  const minD = [after.min[0] - before.min[0], after.min[1] - before.min[1], after.min[2] - before.min[2]];
+  const maxD = [after.max[0] - before.max[0], after.max[1] - before.max[1], after.max[2] - before.max[2]];
+  if (minD.every((v) => Math.abs(v) < 1e-6) && maxD.every((v) => Math.abs(v) < 1e-6)) return objects;
+  const center = [
+    (before.min[0] + before.max[0]) / 2,
+    (before.min[1] + before.max[1]) / 2,
+    (before.min[2] + before.max[2]) / 2,
+  ];
+  return objects.map((o) => {
+    if (o.id === targetId || o.groupId !== groupId) return o;
+    let c;
+    try {
+      const bb = computeRotatedBBox(o);
+      const p = o.position || [0, 0, 0];
+      c = [(bb.min.x + bb.max.x) / 2 + p[0], (bb.min.y + bb.max.y) / 2 + p[1], (bb.min.z + bb.max.z) / 2 + p[2]];
+    } catch { c = o.position || [0, 0, 0]; }
+    const np = [...(o.position || [0, 0, 0])];
+    let moved = false;
+    for (const ax of [0, 1, 2]) {
+      if (Math.abs(minD[ax]) < 1e-6 && Math.abs(maxD[ax]) < 1e-6) continue;
+      const d = c[ax] > center[ax] + 1e-6 ? maxD[ax]
+        : c[ax] < center[ax] - 1e-6 ? minD[ax]
+        : (minD[ax] + maxD[ax]) / 2;
+      if (Math.abs(d) > 1e-9) { np[ax] += d; moved = true; }
+    }
+    return moved ? { ...o, position: np } : o;
+  });
+}
+
+function worldBBox(obj) {
+  const bb = computeRotatedBBox(obj);
+  const p = obj.position || [0, 0, 0];
+  return {
+    min: [bb.min.x + p[0], bb.min.y + p[1], bb.min.z + p[2]],
+    max: [bb.max.x + p[0], bb.max.y + p[1], bb.max.z + p[2]],
+  };
+}
 
 const defaultPrinterId = "custom";
 const defaultFilamentId = "pla";
@@ -1191,37 +1235,44 @@ export const useScene = create((set, get) => ({
 
   updateDims: (id, dimsPatch) => {
     get().pushHistory();
-    set((s) => ({
-      objects: s.objects.map((o) => {
-        if (o.id !== id) return o;
-        // Compute the bottom-Z BEFORE the dim change so we can pin it after.
-        // Stops a part from "floating" when the user shrinks its Z dim: e.g.
-        // a 20mm cube sits at position Z=10 (bottom on bed). If the user
-        // types Z=6 into the Inspector, the cube now spans Z=7..13 (still
-        // centred at 10). We snap it back so bottom stays on the bed.
-        let bottomZ = null;
+    set((s) => {
+      const target = s.objects.find((o) => o.id === id);
+      if (!target) return {};
+      // Compute the bottom-Z BEFORE the dim change so we can pin it after.
+      // Stops a part from "floating" when the user shrinks its Z dim: e.g.
+      // a 20mm cube sits at position Z=10 (bottom on bed). If the user
+      // types Z=6 into the Inspector, the cube now spans Z=7..13 (still
+      // centred at 10). We snap it back so bottom stays on the bed.
+      let before = null;
+      try { before = worldBBox(target); } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("updateDims: pre-bbox failed", err);
+      }
+      const bottomZ = before ? before.min[2] : null;
+      const next = { ...target, dims: { ...target.dims, ...dimsPatch } };
+      if (bottomZ !== null && bottomZ > -1e-3 && bottomZ < 1e-3) {
+        // Was sitting on/near the bed — keep it there after the resize.
         try {
-          const bbBefore = computeRotatedBBox(o);
-          bottomZ = (o.position?.[2] ?? 0) + bbBefore.min.z;
+          const bbAfter = computeRotatedBBox(next);
+          next.position = [next.position[0], next.position[1], -bbAfter.min.z];
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.warn("updateDims: pre-bbox failed", err);
+          console.warn("updateDims: post-bbox failed", err);
         }
-        const next = { ...o, dims: { ...o.dims, ...dimsPatch } };
-        if (bottomZ !== null && bottomZ > -1e-3 && bottomZ < 1e-3) {
-          // Was sitting on/near the bed — keep it there after the resize.
-          try {
-            const bbAfter = computeRotatedBBox(next);
-            const newCenterZ = -bbAfter.min.z;
-            next.position = [next.position[0], next.position[1], newCenterZ];
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn("updateDims: post-bbox failed", err);
-          }
+      }
+      let objects = s.objects.map((o) => (o.id === id ? next : o));
+      // Group pull — resizing one member drags parts attached beyond
+      // each face along with that face (assemblies stay connected).
+      if (target.groupId && before) {
+        try {
+          objects = applyGroupPull(objects, id, target.groupId, before, worldBBox(next));
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("updateDims: group pull failed", err);
         }
-        return next;
-      }),
-    }));
+      }
+      return { objects };
+    });
   },
 
   // Bare transform setter — fires constantly during gizmo drag; DOES NOT snapshot.
@@ -1257,14 +1308,22 @@ export const useScene = create((set, get) => ({
     if (!orig || orig <= 0) return;
     s.pushHistory();
     const newScale = mm / orig;
-    set((st) => ({
-      objects: st.objects.map((o) => {
-        if (o.id !== id) return o;
-        const ns = [...o.scale];
-        ns[idx] = newScale;
-        return { ...o, scale: ns };
-      }),
-    }));
+    set((st) => {
+      const target = st.objects.find((o) => o.id === id);
+      if (!target) return {};
+      let before = null;
+      try { before = worldBBox(target); } catch { /* ignore */ }
+      const ns = [...target.scale];
+      ns[idx] = newScale;
+      const next = { ...target, scale: ns };
+      let objects = st.objects.map((o) => (o.id === id ? next : o));
+      if (target.groupId && before) {
+        try {
+          objects = applyGroupPull(objects, id, target.groupId, before, worldBBox(next));
+        } catch { /* ignore */ }
+      }
+      return { objects };
+    });
   },
 
   toggleVisible: (id) => {
