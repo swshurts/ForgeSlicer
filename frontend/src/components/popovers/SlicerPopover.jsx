@@ -22,23 +22,13 @@ import { useOrcaSlice } from "../../lib/useOrcaSlice";
 import { compareEngines } from "../../lib/engineCompare";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { PRESET_CATEGORIES } from "../../lib/slicerPresets";
+import { getSelectableSlicerEngines } from "../../lib/slicerEngines";
 import GcodePreviewDialog from "../GcodePreviewDialog";
 import PrintPreviewDialog from "../dialogs/PrintPreviewDialog";
 import SendToPrinterDialog from "../dialogs/SendToPrinterDialog";
 import EngineComparisonDialog from "../dialogs/EngineComparisonDialog";
 import { PopoverShell, NumberField } from "./PopoverShell";
 import OrcaProfileEditor from "./OrcaProfileEditor";
-
-// Engine choices. The built-in JS slicer remains the default — it's
-// fast, deterministic, fully offline, but emits perimeter-only walls
-// and the limited infill repertoire that the user pushed back on.
-// "Orca" routes the slice through a server-side OrcaSlicer CLI for
-// multi-perimeter walls, real supports, AMS, ironing, etc. Availability
-// depends on the backend having Orca installed (status endpoint).
-const ENGINES = {
-  builtin: { id: "builtin", label: "Built-in", description: "Fast, runs in your browser. Single perimeter, simple infills." },
-  orca:    { id: "orca",    label: "OrcaSlicer", description: "Production-quality. Multi-perimeter walls, all infill patterns, supports, AMS." },
-};
 
 export function SlicerPopover({ anchor, onClose }) {
   const objects = useScene((s) => s.objects);
@@ -180,6 +170,10 @@ export function SlicerPopover({ anchor, onClose }) {
   const orcaBuilding = orca.building;
   const orcaStatus = orca.status;
   const progress = orca.progress;
+  const engineOptions = useMemo(
+    () => getSelectableSlicerEngines({ orcaReady }),
+    [orcaReady],
+  );
 
   return (
     <PopoverShell title="Slicer Settings" icon={Sliders} onClose={onClose} anchor={anchor} testid="slicer-popover" width={340}>
@@ -190,46 +184,44 @@ export function SlicerPopover({ anchor, onClose }) {
       <div className="space-y-1.5" data-testid="slicer-engine-picker">
         <div className="text-[10px] uppercase tracking-wider text-slate-400">Slicer Engine</div>
         <div className="grid grid-cols-2 gap-2">
-          <button
-            data-testid="slicer-engine-builtin"
-            onClick={() => pickEngine("builtin")}
-            className={`h-12 rounded border text-left px-2 flex items-center gap-2 transition-colors ${
-              engine === "builtin"
-                ? "bg-orange-500/15 border-orange-500/60 text-orange-100"
-                : "bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500"
-            }`}
-            title={ENGINES.builtin.description}
-          >
-            <Zap size={14} className={engine === "builtin" ? "text-orange-400" : "text-slate-500"} />
-            <div className="flex-1 leading-tight">
-              <div className="text-[11px] font-semibold">{ENGINES.builtin.label}</div>
-              <div className="text-[9px] opacity-70">in-browser</div>
-            </div>
-          </button>
-          <button
-            data-testid="slicer-engine-orca"
-            onClick={() => orcaReady && pickEngine("orca")}
-            disabled={!orcaReady}
-            className={`h-12 rounded border text-left px-2 flex items-center gap-2 transition-colors ${
-              engine === "orca" && orcaReady
-                ? "bg-purple-500/15 border-purple-500/60 text-purple-100"
-                : orcaReady
-                ? "bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500"
-                : "bg-slate-950 border-slate-800 text-slate-500 cursor-not-allowed"
-            }`}
-            title={orcaReady ? ENGINES.orca.description : "OrcaSlicer is not yet available on the server."}
-          >
-            <Cpu size={14} className={engine === "orca" && orcaReady ? "text-purple-400" : "text-slate-500"} />
-            <div className="flex-1 leading-tight">
-              <div className="text-[11px] font-semibold flex items-center gap-1">
-                {ENGINES.orca.label}
-                {orcaBuilding && <Loader2 size={9} className="animate-spin text-amber-400" />}
-              </div>
-              <div className="text-[9px] opacity-70">
-                {orcaReady ? "server-side" : orcaBuilding ? "installing…" : "unavailable"}
-              </div>
-            </div>
-          </button>
+          {engineOptions.map((opt) => {
+            const active = engine === opt.id && opt.available;
+            const EngineIcon = opt.id === "builtin" ? Zap : Cpu;
+            return (
+              <button
+                key={opt.id}
+                data-testid={`slicer-engine-${opt.id}`}
+                onClick={() => opt.available && pickEngine(opt.id)}
+                disabled={!opt.available}
+                className={`h-12 rounded border text-left px-2 flex items-center gap-2 transition-colors ${
+                  active
+                    ? opt.id === "builtin"
+                      ? "bg-orange-500/15 border-orange-500/60 text-orange-100"
+                      : "bg-purple-500/15 border-purple-500/60 text-purple-100"
+                    : opt.available
+                    ? "bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500"
+                    : "bg-slate-950 border-slate-800 text-slate-500 cursor-not-allowed"
+                }`}
+                title={opt.available ? opt.description : `${opt.label} is not yet available.`}
+              >
+                <EngineIcon
+                  size={14}
+                  className={active ? (opt.id === "builtin" ? "text-orange-400" : "text-purple-400") : "text-slate-500"}
+                />
+                <div className="flex-1 leading-tight">
+                  <div className="text-[11px] font-semibold flex items-center gap-1">
+                    {opt.label}
+                    {opt.id === "orca" && orcaBuilding && <Loader2 size={9} className="animate-spin text-amber-400" />}
+                  </div>
+                  <div className="text-[9px] opacity-70">
+                    {opt.id === "orca" && !orcaReady
+                      ? (orcaBuilding ? "installing…" : "unavailable")
+                      : opt.locationLabel}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
         {engine === "orca" && orcaStatus?.version && (
           <div className="text-[10px] text-slate-500 font-mono pl-1" data-testid="slicer-engine-version">
@@ -679,7 +671,7 @@ function PresetPicker({ engine, onApply }) {
         const cur = PRESET_CATEGORIES.find((p) => p.id === activeId);
         if (!cur) return null;
         return (
-          <div className="text-[10px] text-slate-400 leading-tight pl-0.5" data-testid="slicer-preset-desc">
+          <div className="text-[10px] text-slate-400 leading-tight pl-0.5 pr-1 min-h-[3rem] mb-1" data-testid="slicer-preset-desc">
             {cur.description}
             {engine === "builtin" && /pattern|supports|ironing/.test(cur.description) && (
               <div className="text-[9px] text-amber-500/70 mt-0.5">

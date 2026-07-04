@@ -304,7 +304,7 @@ function PrintabilityToggle() {
           ? `${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} — open Printability check`
           : "Check my print — pre-flight printability checks"
       }
-      className={`h-8 px-2.5 ml-1 inline-flex items-center gap-1.5 rounded border text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+      className={`h-8 px-2.5 ml-1 inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded border text-[11px] font-semibold uppercase tracking-wider transition-colors ${
         panelOpen
           ? "bg-orange-500/20 border-orange-500/60 text-orange-300"
           : blockingCount > 0

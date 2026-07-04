@@ -57,7 +57,7 @@ export const TabPillButton = React.forwardRef(function TabPillButton(
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded flex items-center gap-1.5 border transition-colors ${activeCls} disabled:opacity-40 disabled:cursor-not-allowed`}
+      className={`h-8 px-2.5 text-[11px] font-semibold uppercase tracking-wider rounded inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap border transition-colors ${activeCls} disabled:opacity-40 disabled:cursor-not-allowed`}
     >
       {Icon ? <Icon size={12} /> : null}
       {label}
