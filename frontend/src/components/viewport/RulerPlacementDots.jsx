@@ -6,23 +6,12 @@
 // still works via Viewport's fallback handlers — the dots are the
 // precise "pick a vertex" affordance from TinkerCAD.
 import React from "react";
-import * as THREE from "three";
 import { useScene } from "../../lib/store";
 import { computeRotatedBBox } from "../../lib/geometry";
+import { priorityRaycast } from "../../lib/priorityRaycast";
 
-// Custom raycast that forces the target mesh to be picked BEFORE any
-// other scene geometry. Critical for corner dots sitting flush on (or
-// inside) mesh surfaces — vanilla raycast orders by distance, so the
-// host mesh's onClick would fire first and stopPropagation before the
-// dot ever receives the click.
-export function priorityRaycast(raycaster, intersects) {
-  const local = [];
-  THREE.Mesh.prototype.raycast.call(this, raycaster, local);
-  for (const hit of local) {
-    hit.distance = -1e-4; // negative sorts absolutely first
-    intersects.push(hit);
-  }
-}
+// Re-export so existing imports keep working.
+export { priorityRaycast };
 
 export default function RulerPlacementDots() {
   const placing = useScene((s) => s.workplaneRuler?.placing);
@@ -42,6 +31,17 @@ export default function RulerPlacementDots() {
       const ys = [bb.min.y + py, bb.max.y + py];
       const zs = [bb.min.z + pz, bb.max.z + pz];
       for (const x of xs) for (const y of ys) for (const z of zs) dots.push([x, y, z]);
+      // iter-125.1 — Also expose the TOP-CENTER of every bbox as a
+      // pickable point. For cones/cylinders this is the apex/top-face
+      // center — the reference point users intuitively want to
+      // "measure to" ("distance from cube's front-left to the tip of
+      // the cone"). For a cube it's just the top-face center, still
+      // useful for align-to-top workflows. Also add BOTTOM-CENTER and
+      // face midpoints so any picking gesture "just works".
+      const cx = (bb.min.x + bb.max.x) * 0.5 + px;
+      const cy = (bb.min.y + bb.max.y) * 0.5 + py;
+      dots.push([cx, cy, bb.max.z + pz]); // top-center (cone tip / cyl top)
+      dots.push([cx, cy, bb.min.z + pz]); // bottom-center (cyl base)
     } catch { /* skip unmeasurable objects */ }
   }
   dots.push([0, 0, 0]); // workplane origin is always pickable

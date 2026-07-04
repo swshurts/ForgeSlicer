@@ -22,7 +22,7 @@ import * as THREE from "three";
 import { X } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { toDisplayLen } from "../../lib/units";
-import { priorityRaycast } from "./RulerPlacementDots";
+import { priorityRaycast } from "../../lib/priorityRaycast";
 
 const COLOR_X = "#FB7185";
 const COLOR_Y = "#34D399";
@@ -249,7 +249,13 @@ export function WorkplaneRuler() {
           </button>
         </div>
       </Html>
-      {/* Origin coordinate label */}
+      {/* Origin coordinate label. iter-125.1 — include Z whenever the
+          ruler is elevated (dropped onto the top of a stacked object).
+          Previously the label only showed X/Y, so a ruler placed at
+          (10, -10, 20) read "origin · 10, -10" — visually identical to
+          a bed-level placement, causing "readings look wrong"
+          confusion when the selected part's distance chips reported
+          numbers relative to an elevated reference plane. */}
       <Html position={[ox, oy, oz + 1]} center zIndexRange={[60, 0]} sprite={false}>
         <div
           data-testid="workplane-ruler-origin-label"
@@ -257,6 +263,11 @@ export function WorkplaneRuler() {
           style={{ pointerEvents: "none" }}
         >
           origin · {toDisplayLen(ox, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}, {toDisplayLen(oy, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}
+          {Math.abs(oz) > 0.05 && (
+            <span data-testid="workplane-ruler-origin-z" className="text-amber-300 ml-1">
+              ↑ {toDisplayLen(oz, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}{unitSystem === "in" ? '"' : "mm"}
+            </span>
+          )}
         </div>
       </Html>
     </group>

@@ -33,6 +33,11 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-04)
 
+### Recently completed (iter-125.1, 2026-07-04) — Ruler regression on stacked objects
+- Fixed `priorityRaycast` tie-break — stacked/overlapping placement dots (cube-top + cone-bottom sharing a coord) now resolve to the dot closest to the camera instead of insertion order. Regression covered by 4 new Jest tests in `lib/priorityRaycast.test.js`.
+- Added top-center + bottom-center synthetic placement dots per bbox so users can pick cone tips / cylinder tops as the ruler origin.
+- Ruler origin label now shows an amber `↑ Z` elevation tag when the ruler is placed on an elevated surface (top of a stacked part), removing the "readings look wrong" confusion.
+
 ### Recently completed (iter-125, 2026-07-04) — BYO Meshy AI key (P1)
 - New `/api/me/meshy-key/*` routes (status / save / delete). Keys Fernet-encrypted at rest via new `secrets_vault.py` module (`FORGE_SECRET_ENC_KEY` env var).
 - `meshy_service.py` helpers all accept optional `api_key=` override; `verify_api_key()` validates the key against Meshy before saving.
