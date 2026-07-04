@@ -471,9 +471,19 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
             <Sparkles size={16} className="text-fuchsia-400" />
             <div className="flex-1 text-sm font-semibold text-white">AI Generate · 3D Mesh</div>
             {usage && (
-              <span className="text-[10px] font-mono text-fuchsia-300 border border-fuchsia-500/40 rounded px-2 py-0.5">
-                {usage.remaining}/{usage.cap} left this month
-              </span>
+              usage.has_personal_key ? (
+                <span
+                  data-testid="ai-usage-unlimited-badge"
+                  className="text-[10px] font-mono text-emerald-300 border border-emerald-500/40 rounded px-2 py-0.5"
+                  title="Using your own Meshy key — no ForgeSlicer cap"
+                >
+                  Unlimited · Your key
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono text-fuchsia-300 border border-fuchsia-500/40 rounded px-2 py-0.5">
+                  {usage.remaining}/{usage.cap} left this month
+                </span>
+              )
             )}
             {!inProgress && (
               <button data-testid="ai-close-btn" onClick={safeClose} className="ml-1 h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center">

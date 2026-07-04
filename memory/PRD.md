@@ -31,7 +31,15 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-07-03)
+## Current Open Items (as of 2026-07-04)
+
+### Recently completed (iter-125, 2026-07-04) — BYO Meshy AI key (P1)
+- New `/api/me/meshy-key/*` routes (status / save / delete). Keys Fernet-encrypted at rest via new `secrets_vault.py` module (`FORGE_SECRET_ENC_KEY` env var).
+- `meshy_service.py` helpers all accept optional `api_key=` override; `verify_api_key()` validates the key against Meshy before saving.
+- `/api/ai/generate/*`: users with a personal key BYPASS the monthly cap (they pay Meshy directly). `ai_jobs` rows tagged with `used_personal_key: bool` for admin reporting.
+- `/api/ai/usage` returns `has_personal_key: bool`. AI dialog badge flips to "Unlimited · Your key" when set.
+- New profile card `MeshyKeyCard.jsx` — password input + reveal toggle + Save & verify; masked hint chip + Remove key in the active state.
+- 11 new pytest cases (`test_meshy_key.py`) — 42 backend tests total pass.
 
 ### Recently completed (iter-124, 2026-07-03) — Vendor-native G-code routing (Option A)
 - Expanded `PRINTER_PRESET_META` from 4 Bambu-only IDs to **16 IDs** across 7 vendors (Bambu, Prusa, Voron, Sovol, FLSun, Creality, Elegoo).

@@ -4544,3 +4544,19 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ `resolveSystemPresets` guards against missing `suffix` — returns `null` process/filament instead of composing an "undefined" string. Unmapped printers (`custom`, `sovol_sv06_plus_ace`) return null triple so backend uses raw profile dict.
 - ✅ Production binary provisioning: `POST /api/slice/orca/reinstall` (already existed in `orca_engine.py`) triggers `backend/scripts/install_orca.py` which fetches the OrcaSlicer AppImage into persistent `/app/backend/bin/orca-x86_64/`. Preview keeps flatpak on aarch64.
 - 🧪 Verified: 11 new Jest tests in `orcaProfiles.presetRouting.test.js` — all vendor routings + Elegoo entries + null-return fallbacks; 23 backend pytest (fallback + staging + compat_patch) unchanged; 6 existing frontend clone tests unchanged.
+
+## Iteration 125 (2026-07-04) — BYO Meshy AI key (P1)
+- ✅ **New backend module `secrets_vault.py`** — Fernet symmetric encryption for per-user secrets. Uses `FORGE_SECRET_ENC_KEY` env var (freshly-generated Fernet key added to `backend/.env`). `encrypt/decrypt/mask_secret` helpers with graceful `None`-return on decryption failure (rotated key / corrupt row).
+- ✅ **New routes `/api/me/meshy-key/*`** (module `routes/meshy_key.py`, factory pattern, wired via DI in `server.py`):
+  - `GET /status` → `{has_key, hint}` — hint is masked (`msy-…abcd`), plaintext never leaves the server.
+  - `PUT /` → verifies the key against Meshy (calls `meshy_service.verify_api_key` = GET `/openapi/v2/text-to-3d?limit=1`), then encrypts + persists on `users.meshy_api_key_enc`.
+  - `DELETE /` → unsets the field.
+  - `resolve_user_meshy_key(user)` helper decrypts on demand (returns `None` on any failure so requests silently fall back to the platform key).
+- ✅ **`meshy_service.py`** — every helper (`create_text_to_3d`, `create_image_to_3d`, `create_multi_image_to_3d`, `get_task`, `download_mesh`) now accepts an optional `api_key=` override. `_headers(override_key)` builds the right Bearer header. `verify_api_key(key)` added for pre-save validation.
+- ✅ **`/api/ai/generate/*` endpoints** (text, image, multi-image): resolve the user's personal key first; when set, the monthly `_ai_increment_or_raise` cap check is BYPASSED (BYO users pay Meshy directly). Every `ai_jobs` row now stamps `used_personal_key: bool` for future admin reporting.
+- ✅ **`/api/ai/jobs/{id}` polling** — routes the poll through the same personal key that submitted the task (Meshy tasks are key-namespaced).
+- ✅ **`/api/ai/usage`** — new `has_personal_key: bool` field so the frontend can show "Unlimited · Your key" instead of the used/cap counter.
+- ✅ **Frontend `MeshyKeyCard.jsx`** — new profile card (mounted between the Contributor Card and Profile Editor). Two states: (1) no key → password input + reveal toggle + Save & verify button; (2) key saved → masked hint chip + "Active · Unlimited" badge + Remove key button. `data-testid`s: `meshy-key-card`, `meshy-key-input`, `meshy-key-save-btn`, `meshy-key-reveal-btn`, `meshy-key-active-badge`, `meshy-key-hint`, `meshy-key-clear-btn`, `meshy-key-help-link`.
+- ✅ **`AIGenerateDialog.jsx`** — replaces the "X/Y left this month" chip with a green "Unlimited · Your key" badge (testid `ai-usage-unlimited-badge`) when `usage.has_personal_key` is true.
+- 🧪 **Tests**: `tests/test_meshy_key.py` — 11 cases covering Fernet round-trip, IV randomness, bad-token graceful fail, masking edge cases (short/empty), unauthenticated status = 401, no-key user shape, invalid-key rejection, planted-key round trip through `/status` + `/ai/usage` + `DELETE`, too-short input = 422. Full suite: 42 passed / 2 skipped.
+- 🧪 **Live verified** on preview `/profile`: input field renders (no key), planted encrypted key surfaces the correct hint `msy-…abcd` + "Active · Unlimited" badge, `/ai/usage` returns `has_personal_key: true`.

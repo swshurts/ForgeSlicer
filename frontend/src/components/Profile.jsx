@@ -5,6 +5,7 @@ import { meApi, authApi } from "../lib/auth";
 import { galleryApi, componentsApi } from "../lib/api";
 import { toast } from "sonner";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
+import MeshyKeyCard from "./profile/MeshyKeyCard";
 import {
   ArrowLeft, Hexagon, GitFork, Download, Trash2, RefreshCw,
   PlusSquare, MinusSquare, Lock, Plus, Star, Award,
@@ -510,6 +511,8 @@ export default function Profile() {
         </div>
 
         <ContributorCard status={contributor} />
+
+        <MeshyKeyCard />
 
         <ProfileEditor user={user} onSaved={(u) => setUser(u)} />
 

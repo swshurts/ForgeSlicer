@@ -38,14 +38,15 @@ def is_configured() -> bool:
     return bool(_api_key())
 
 
-def _headers() -> Dict[str, str]:
+def _headers(override_key: Optional[str] = None) -> Dict[str, str]:
+    key = (override_key or "").strip() or _api_key()
     return {
-        "Authorization": f"Bearer {_api_key()}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
 
 
-async def create_text_to_3d(prompt: str, art_style: str = "realistic") -> str:
+async def create_text_to_3d(prompt: str, art_style: str = "realistic", api_key: Optional[str] = None) -> str:
     """Submit a text-to-3D preview task; returns Meshy task_id.
 
     Meshy text-to-3d v2 only accepts ``art_style`` values of ``realistic``
@@ -65,13 +66,13 @@ async def create_text_to_3d(prompt: str, art_style: str = "realistic") -> str:
         "target_formats": TARGET_FORMATS,
     }
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=60.0) as cx:
-        r = await cx.post(TEXT_ENDPOINT, headers=_headers(), json=payload)
+        r = await cx.post(TEXT_ENDPOINT, headers=_headers(api_key), json=payload)
         r.raise_for_status()
         data = r.json()
         return data["result"]
 
 
-async def create_image_to_3d(image_data_url: str) -> str:
+async def create_image_to_3d(image_data_url: str, api_key: Optional[str] = None) -> str:
     """Submit an image-to-3D task; returns Meshy task_id.
 
     `image_data_url` must be `data:image/<mime>;base64,<b64-payload>` per Meshy spec.
@@ -84,13 +85,13 @@ async def create_image_to_3d(image_data_url: str) -> str:
         "target_formats": TARGET_FORMATS,
     }
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=60.0) as cx:
-        r = await cx.post(IMAGE_ENDPOINT, headers=_headers(), json=payload)
+        r = await cx.post(IMAGE_ENDPOINT, headers=_headers(api_key), json=payload)
         r.raise_for_status()
         data = r.json()
         return data["result"]
 
 
-async def create_multi_image_to_3d(image_data_urls: list) -> str:
+async def create_multi_image_to_3d(image_data_urls: list, api_key: Optional[str] = None) -> str:
     """Submit a multi-image-to-3D task; returns Meshy task_id.
 
     Accepts 1-4 reference photos as data: URLs (typically top / front /
@@ -109,13 +110,13 @@ async def create_multi_image_to_3d(image_data_urls: list) -> str:
         "ai_model": "meshy-5",  # current multi-view default; auto-rolls forward
     }
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=60.0) as cx:
-        r = await cx.post(MULTI_IMAGE_ENDPOINT, headers=_headers(), json=payload)
+        r = await cx.post(MULTI_IMAGE_ENDPOINT, headers=_headers(api_key), json=payload)
         r.raise_for_status()
         data = r.json()
         return data["result"]
 
 
-async def get_task(task_id: str, kind: str) -> Dict[str, Any]:
+async def get_task(task_id: str, kind: str, api_key: Optional[str] = None) -> Dict[str, Any]:
     """Fetch task status. `kind` is 'text', 'image', or 'multi_image'
     — picks the right endpoint.
 
@@ -133,7 +134,7 @@ async def get_task(task_id: str, kind: str) -> Dict[str, Any]:
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=30.0) as cx:
         for attempt in range(3):
             try:
-                r = await cx.get(f"{endpoint}/{task_id}", headers=_headers())
+                r = await cx.get(f"{endpoint}/{task_id}", headers=_headers(api_key))
                 r.raise_for_status()
                 return r.json()
             except httpx.HTTPStatusError as e:
@@ -149,8 +150,13 @@ async def get_task(task_id: str, kind: str) -> Dict[str, Any]:
         raise last_err
 
 
-async def download_mesh(url: str) -> bytes:
+async def download_mesh(url: str, api_key: Optional[str] = None) -> bytes:  # noqa: ARG001
     """Download the generated mesh binary.
+
+    `api_key` is accepted for symmetry with the other helpers but not
+    currently used — Meshy's mesh URLs are pre-signed CDN links that
+    don't require the Bearer token. The parameter is kept so callers
+    can pass it uniformly without a special-case.
 
     Retries on transient 5xx from the Meshy CDN so a flaky download doesn't
     waste the user's already-paid generation credit.
@@ -182,3 +188,27 @@ def pick_model_url(task_obj: Dict[str, Any]) -> Optional[str]:
     """Return the best download URL: STL preferred, GLB fallback."""
     urls = task_obj.get("model_urls") or {}
     return urls.get("stl") or urls.get("glb") or urls.get("obj")
+
+
+async def verify_api_key(api_key: str) -> bool:
+    """Quick sanity check — does the supplied key work?
+    Hits `GET /openapi/v2/text-to-3d` with a limit=1 list request. Meshy
+    returns 200 with an (empty or non-empty) list on any valid key, 401
+    on a bad one. We only care about the status code — the response
+    body is discarded.
+
+    Returns True iff the key looks legit. Any 4xx/5xx returns False so
+    the UI can show "invalid key" without exposing upstream error text.
+    """
+    api_key = (api_key or "").strip()
+    if not api_key:
+        return False
+    try:
+        async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=15.0) as cx:
+            r = await cx.get(
+                f"{TEXT_ENDPOINT}?limit=1",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            return r.status_code == 200
+    except (httpx.HTTPError, httpx.TimeoutException):
+        return False

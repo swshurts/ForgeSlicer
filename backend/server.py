@@ -28,6 +28,7 @@ import orca_upstream
 import gallery_taxonomy
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
+from routes.meshy_key import build_meshy_key_router, resolve_user_meshy_key
 from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
 from routes.mesh_repair import build_mesh_repair_router
@@ -523,6 +524,11 @@ api_router.include_router(admin_module.build_admin_router(
 # Lives under /api/slice/orca/* per the router's own prefix declaration.
 api_router.include_router(orca_engine.router)
 
+# iter-124 — BYO Meshy AI key. Lets users bring their own Meshy key so
+# they can bypass the monthly platform cap (they pay Meshy directly).
+# Keys are Fernet-encrypted at rest via `secrets_vault`.
+api_router.include_router(build_meshy_key_router(db=db, get_current_user=get_current_user))
+
 # Hierarchical user projects — /api/projects/* (auth-required).
 # The router accepts the auth dependency as a callable so we don't have to
 # import server.py in routes/projects.py (circular import).
@@ -814,29 +820,39 @@ async def ai_usage_for_user(request: Request):
     cap = await _ai_cap_for(user)
     cur = await db.ai_usage.find_one({"user_id": user["user_id"], "month_key": _month_key()})
     used = (cur or {}).get("count", 0)
+    has_personal_key = bool(user.get("meshy_api_key_enc"))
     return {
         "used": used,
         "cap": cap,
         "remaining": max(0, cap - used),
         "month": _month_key(),
         "contributor_lifetime": bool(user.get("contributor_lifetime")),
+        # When True, the frontend shows "Unlimited (your Meshy key)" instead
+        # of the used/cap counter, and never renders the "cap reached" toast.
+        "has_personal_key": has_personal_key,
     }
 
 
 @api_router.post("/ai/generate/text")
 async def ai_generate_text(req: AITextRequest, request: Request):
     user = await get_current_user(request)
-    if not meshy_service.is_configured():
+    personal_key = await resolve_user_meshy_key(user)
+    if not personal_key and not meshy_service.is_configured():
         raise HTTPException(status_code=503, detail="AI generation not configured")
-    await _ai_increment_or_raise(user)
+    # BYO key holders bypass the monthly quota — they pay Meshy directly.
+    # We still record the job in ai_jobs (for stats + status polling) but
+    # skip the ai_usage increment so their cap stays untouched.
+    if not personal_key:
+        await _ai_increment_or_raise(user)
     try:
-        meshy_task_id = await meshy_service.create_text_to_3d(req.prompt, req.art_style)
+        meshy_task_id = await meshy_service.create_text_to_3d(req.prompt, req.art_style, api_key=personal_key)
     except httpx.HTTPStatusError as e:
-        # Refund the usage counter — they didn't get a generation.
-        await db.ai_usage.update_one(
-            {"user_id": user["user_id"], "month_key": _month_key()},
-            {"$inc": {"count": -1}},
-        )
+        if not personal_key:
+            # Refund the usage counter — they didn't get a generation.
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
         raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -850,6 +866,7 @@ async def ai_generate_text(req: AITextRequest, request: Request):
         "status": "PENDING",
         "progress": 0,
         "model_url": None,
+        "used_personal_key": bool(personal_key),
         "created_at": now,
         "updated_at": now,
     })
@@ -859,7 +876,8 @@ async def ai_generate_text(req: AITextRequest, request: Request):
 @api_router.post("/ai/generate/image")
 async def ai_generate_image(request: Request):
     user = await get_current_user(request)
-    if not meshy_service.is_configured():
+    personal_key = await resolve_user_meshy_key(user)
+    if not personal_key and not meshy_service.is_configured():
         raise HTTPException(status_code=503, detail="AI generation not configured")
     # Body must be JSON: {image_b64, mime_type}. We accept base64 from the frontend
     # rather than multipart because it's a tiny payload (~1MB) and keeps the
@@ -872,14 +890,16 @@ async def ai_generate_image(request: Request):
     if mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
         raise HTTPException(status_code=400, detail="Unsupported image mime_type")
     data_url = f"data:{mime};base64,{image_b64}"
-    await _ai_increment_or_raise(user)
+    if not personal_key:
+        await _ai_increment_or_raise(user)
     try:
-        meshy_task_id = await meshy_service.create_image_to_3d(data_url)
+        meshy_task_id = await meshy_service.create_image_to_3d(data_url, api_key=personal_key)
     except httpx.HTTPStatusError as e:
-        await db.ai_usage.update_one(
-            {"user_id": user["user_id"], "month_key": _month_key()},
-            {"$inc": {"count": -1}},
-        )
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
         raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -891,6 +911,7 @@ async def ai_generate_image(request: Request):
         "status": "PENDING",
         "progress": 0,
         "model_url": None,
+        "used_personal_key": bool(personal_key),
         "created_at": now,
         "updated_at": now,
     })
@@ -905,7 +926,8 @@ async def ai_generate_multi_image(request: Request):
     handlers with kind='multi_image'.
     """
     user = await get_current_user(request)
-    if not meshy_service.is_configured():
+    personal_key = await resolve_user_meshy_key(user)
+    if not personal_key and not meshy_service.is_configured():
         raise HTTPException(status_code=503, detail="AI generation not configured")
     body = await request.json()
     images = body.get("images") or []
@@ -920,20 +942,23 @@ async def ai_generate_multi_image(request: Request):
         if mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
             raise HTTPException(status_code=400, detail=f"Image {i+1}: unsupported mime_type ({mime})")
         data_urls.append(f"data:{mime};base64,{b64}")
-    await _ai_increment_or_raise(user)
+    if not personal_key:
+        await _ai_increment_or_raise(user)
     try:
-        meshy_task_id = await meshy_service.create_multi_image_to_3d(data_urls)
+        meshy_task_id = await meshy_service.create_multi_image_to_3d(data_urls, api_key=personal_key)
     except httpx.HTTPStatusError as e:
-        await db.ai_usage.update_one(
-            {"user_id": user["user_id"], "month_key": _month_key()},
-            {"$inc": {"count": -1}},
-        )
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
         raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
     except ValueError as ve:
-        await db.ai_usage.update_one(
-            {"user_id": user["user_id"], "month_key": _month_key()},
-            {"$inc": {"count": -1}},
-        )
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
         raise HTTPException(status_code=400, detail=str(ve))
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -946,6 +971,7 @@ async def ai_generate_multi_image(request: Request):
         "status": "PENDING",
         "progress": 0,
         "model_url": None,
+        "used_personal_key": bool(personal_key),
         "created_at": now,
         "updated_at": now,
     })
@@ -964,7 +990,11 @@ async def ai_job_status(job_id: str, request: Request):
     if job["status"] in ("SUCCEEDED", "FAILED"):
         return job
     try:
-        task = await meshy_service.get_task(job["meshy_task_id"], job["kind"])
+        # Poll with the same key that submitted the task so BYO-key
+        # users can see their generation's status. Meshy tasks are
+        # namespaced by the API key that created them.
+        poll_key = await resolve_user_meshy_key(user) if job.get("used_personal_key") else None
+        task = await meshy_service.get_task(job["meshy_task_id"], job["kind"], api_key=poll_key)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Meshy poll failed: {e.response.status_code}")
     status = task.get("status", "PENDING")
