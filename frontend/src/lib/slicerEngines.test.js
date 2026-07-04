@@ -1,5 +1,6 @@
 import {
   SLICER_ENGINE_IDS,
+  getSlicerEngine,
   getRecommendedSlicerEngineForPrinter,
   getSelectableSlicerEngines,
   isSlicerEngineAvailable,
@@ -14,6 +15,11 @@ describe("slicer engine registry", () => {
       SLICER_ENGINE_IDS.ORCA,
     ]);
     expect(engines.every((engine) => engine.implemented)).toBe(true);
+  });
+
+  test("Bambu local reserved adapter records the reviewed non-cloud source", () => {
+    expect(getSlicerEngine(SLICER_ENGINE_IDS.BAMBU_LOCAL).sourceUrl)
+      .toBe("https://github.com/swshurts/Bambu_Slicer");
   });
 
   test("Orca availability follows backend status while built-in is always available", () => {

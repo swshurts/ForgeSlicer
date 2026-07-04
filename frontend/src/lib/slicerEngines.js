@@ -55,11 +55,12 @@ export const SLICER_ENGINES = [
   {
     id: SLICER_ENGINE_IDS.BAMBU_LOCAL,
     label: "Bambu local",
-    description: "Reserved for a reviewed local/LAN Bambu adapter; Orca remains the current Bambu route.",
+    description: "Reserved for the reviewed non-cloud Bambu slicer adapter; Orca remains the current Bambu route.",
     locationLabel: "reserved",
     implemented: false,
     visibleInPicker: false,
     nativeFamilies: ["bambu"],
+    sourceUrl: "https://github.com/swshurts/Bambu_Slicer",
   },
 ];
 
