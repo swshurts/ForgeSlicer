@@ -249,6 +249,34 @@ export const PRINTER_PROFILES = {
       retraction_length: [1.0], retraction_speed: [60],
     },
   },
+  // Elegoo — recently added Neptune 4 series (Klipper-based) and
+  // Centauri Carbon (CoreXY, direct-drive, enclosed). OrcaSlicer ships
+  // native profiles for both under `resources/profiles/Elegoo/machine/`
+  // so vendor routing goes through the bundled inheritance chain.
+  elegoo_neptune_4: {
+    id: "elegoo_neptune_4", label: "Elegoo Neptune 4", category: "Elegoo",
+    profile: {
+      printer_model: "Elegoo Neptune 4", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: ["0x0", "225x0", "225x225", "0x225"],
+      printable_height: 265, gcode_flavor: "klipper",
+      machine_max_speed_x: [500], machine_max_speed_y: [500],
+      machine_max_speed_z: [30], machine_max_speed_e: [60],
+      retraction_length: [0.8], retraction_speed: [40],
+    },
+  },
+  elegoo_centauri_carbon: {
+    id: "elegoo_centauri_carbon", label: "Elegoo Centauri Carbon", category: "Elegoo",
+    profile: {
+      printer_model: "Elegoo Centauri Carbon", printer_variant: "0.4",
+      nozzle_diameter: [0.4],
+      printable_area: ["0x0", "256x0", "256x256", "0x256"],
+      printable_height: 256, gcode_flavor: "klipper",
+      machine_max_speed_x: [600], machine_max_speed_y: [600],
+      machine_max_speed_z: [30], machine_max_speed_e: [60],
+      retraction_length: [0.8], retraction_speed: [40],
+    },
+  },
   // Sanity-check fallback — still the most-owned hobbyist machine.
   ender_3: {
     id: "ender_3", label: "Creality Ender-3", category: "Creality",
@@ -430,6 +458,10 @@ export const INFILL_PATTERNS = [
 // the backend silently falls back to the raw profile dict — same as
 // before this mapping existed.
 const PRINTER_PRESET_META = {
+  // ---- Bambu Lab (BBL vendor bundle) --------------------------------
+  // Bambu ships fully-named process/filament presets, e.g.
+  // "0.20mm Standard @BBL A1" + "Bambu PLA Basic @BBL A1", so the
+  // resolver can compose them from the suffix below.
   bambu_a1: {
     vendor: "BBL",
     printerPreset: "Bambu Lab A1 0.4 nozzle",
@@ -451,6 +483,78 @@ const PRINTER_PRESET_META = {
     vendor: "BBL",
     printerPreset: "Bambu Lab X1 Carbon 0.4 nozzle",
     suffix: "@BBL X1C",
+  },
+  // ---- Non-BBL vendors ----------------------------------------------
+  // These vendors don't ship every layer-height * material combination
+  // as a bundled process/filament preset. We route the PRINTER preset
+  // to the vendor bundle (so start/end G-code + machine limits are
+  // vendor-accurate), and leave `suffix` unset so the resolver returns
+  // `null` for process/filament. The backend then applies our generic
+  // ForgeSlicer profile dict on top and `_patch_cross_profile_compatibility`
+  // rewrites the process/filament `compatible_printers` list so slicing
+  // succeeds regardless of vendor combo.
+  prusa_mk4: {
+    vendor: "Prusa",
+    printerPreset: "Prusa MK4 0.4 nozzle",
+  },
+  voron_24_350: {
+    vendor: "Voron",
+    printerPreset: "Voron 2.4 350 0.4 nozzle",
+  },
+  voron_24_300: {
+    vendor: "Voron",
+    printerPreset: "Voron 2.4 300 0.4 nozzle",
+  },
+  sovol_sv06: {
+    vendor: "Sovol",
+    printerPreset: "Sovol SV06 0.4 nozzle",
+  },
+  sovol_sv06_plus: {
+    vendor: "Sovol",
+    printerPreset: "Sovol SV06 Plus 0.4 nozzle",
+  },
+  sovol_sv07: {
+    vendor: "Sovol",
+    printerPreset: "Sovol SV07 0.4 nozzle",
+  },
+  sovol_sv08: {
+    vendor: "Sovol",
+    printerPreset: "Sovol SV08 0.4 nozzle",
+  },
+  flsun_q5: {
+    vendor: "FLSun",
+    printerPreset: "FLSun Q5 0.4 nozzle",
+  },
+  flsun_sr: {
+    vendor: "FLSun",
+    printerPreset: "FLSun SR 0.4 nozzle",
+  },
+  flsun_v400: {
+    vendor: "FLSun",
+    printerPreset: "FLSun V400 0.4 nozzle",
+  },
+  flsun_t1_pro: {
+    // OrcaSlicer bundles the T1 preset without the "Pro" suffix; the
+    // Pro is a hardware refresh that shares the same base machine
+    // config in-slicer.
+    vendor: "FLSun",
+    printerPreset: "FLSun T1 0.4 nozzle",
+  },
+  flsun_s1: {
+    vendor: "FLSun",
+    printerPreset: "FLSun S1 0.4 nozzle",
+  },
+  ender_3: {
+    vendor: "Creality",
+    printerPreset: "Creality Ender-3 0.4 nozzle",
+  },
+  elegoo_neptune_4: {
+    vendor: "Elegoo",
+    printerPreset: "Elegoo Neptune 4 0.4 nozzle",
+  },
+  elegoo_centauri_carbon: {
+    vendor: "Elegoo",
+    printerPreset: "Elegoo Centauri Carbon 0.4 nozzle",
   },
 };
 
@@ -493,10 +597,15 @@ export function resolveSystemPresets(printerId, processId, filamentId) {
   if (!meta) return { printer: null, process: null, filament: null };
   const procBase = PROCESS_PRESET_BASES[processId];
   const filBase  = FILAMENT_PRESET_BASES[filamentId];
+  // Non-BBL vendors typically don't ship every process/filament combo
+  // as a bundled preset name we can compose. When `suffix` is unset,
+  // the backend falls back to the Custom/OrcaFilamentLibrary chain and
+  // rewrites `compatible_printers` so slicing still succeeds.
+  const hasSuffix = typeof meta.suffix === "string" && meta.suffix.length > 0;
   return {
     printer: { vendor: meta.vendor, name: meta.printerPreset },
-    process: procBase ? { vendor: meta.vendor, name: `${procBase} ${meta.suffix}` } : null,
-    filament: filBase ? { vendor: meta.vendor, name: `${filBase} ${meta.suffix}` } : null,
+    process: (hasSuffix && procBase) ? { vendor: meta.vendor, name: `${procBase} ${meta.suffix}` } : null,
+    filament: (hasSuffix && filBase) ? { vendor: meta.vendor, name: `${filBase} ${meta.suffix}` } : null,
   };
 }
 

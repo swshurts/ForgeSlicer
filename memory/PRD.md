@@ -31,7 +31,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-06-26)
+## Current Open Items (as of 2026-07-03)
+
+### Recently completed (iter-124, 2026-07-03) — Vendor-native G-code routing (Option A)
+- Expanded `PRINTER_PRESET_META` from 4 Bambu-only IDs to **16 IDs** across 7 vendors (Bambu, Prusa, Voron, Sovol, FLSun, Creality, Elegoo).
+- Non-BBL vendors route the printer preset to their vendor bundle; process/filament fall through to Custom/OrcaFilamentLibrary and get patched into compatibility by `_patch_cross_profile_compatibility` server-side.
+- Added 2 Elegoo printers to `PRINTER_PROFILES` (Neptune 4, Centauri Carbon).
+- Production binary provisioning: `POST /api/slice/orca/reinstall` triggers the AppImage installer into persistent `/app/backend/bin/orca-x86_64/` (already wired; verified script targets correct path).
+- 11 new Jest tests in `orcaProfiles.presetRouting.test.js`; 23 backend + 6 frontend regression tests unchanged.
 
 ### In Progress P1
 - **Shapr3D-style reverse engineering** — RANSAC-based primitive fitting (STL → editable planes/cylinders/cubes) for mechanical parts.

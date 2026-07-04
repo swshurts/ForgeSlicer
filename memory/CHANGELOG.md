@@ -4531,3 +4531,16 @@ Snap-dot spheres AND the ruler origin sphere / inner ring rendered with `depthTe
 - ✅ PricingPage: effective price + strikethrough regular price + "Early adopter — N of 100 spots left" badge; BraintreeDialog shows effective amount.
 - ✅ ROADMAP: added BYO Meshy AI key ToDo (user-provided key = uncapped; multi-provider = explore later).
 - 🧪 Verified: packages endpoint returns 28/90 effective; PUT roundtrip changes live price and restores; early>base rejected 400; anon PUT 401; UI screenshots of pricing page badges + admin editor + save toast.
+
+## Iteration 124 (2026-07-03) — Vendor-native G-code routing (Option A) expanded
+- ✅ Expanded `PRINTER_PRESET_META` in `frontend/src/lib/orcaProfiles.js` beyond Bambu Lab (4 IDs) to route 12 additional printer IDs to their bundled OrcaSlicer vendor profiles:
+  - **Prusa**: `prusa_mk4` → `Prusa/machine/Prusa MK4 0.4 nozzle`
+  - **Voron**: `voron_24_350`, `voron_24_300` → `Voron/machine/Voron 2.4 350|300 0.4 nozzle`
+  - **Sovol**: `sovol_sv06`, `sovol_sv06_plus`, `sovol_sv07`, `sovol_sv08` → `Sovol/machine/...`
+  - **FLSun**: `flsun_q5`, `flsun_sr`, `flsun_v400`, `flsun_t1_pro` (→ T1), `flsun_s1` → `FLSun/machine/...`
+  - **Creality**: `ender_3` → `Creality/machine/Creality Ender-3 0.4 nozzle`
+  - **Elegoo** (NEW to PRINTER_PROFILES): `elegoo_neptune_4`, `elegoo_centauri_carbon` → `Elegoo/machine/...`
+- ✅ Non-BBL vendors get PRINTER preset routing only (no `suffix`); process/filament fall through to backend's Custom/OrcaFilamentLibrary fallback chain. `_patch_cross_profile_compatibility` in `orca_engine.py` then rewrites `compatible_printers` at slice time so vendor↔generic combos still slice cleanly.
+- ✅ `resolveSystemPresets` guards against missing `suffix` — returns `null` process/filament instead of composing an "undefined" string. Unmapped printers (`custom`, `sovol_sv06_plus_ace`) return null triple so backend uses raw profile dict.
+- ✅ Production binary provisioning: `POST /api/slice/orca/reinstall` (already existed in `orca_engine.py`) triggers `backend/scripts/install_orca.py` which fetches the OrcaSlicer AppImage into persistent `/app/backend/bin/orca-x86_64/`. Preview keeps flatpak on aarch64.
+- 🧪 Verified: 11 new Jest tests in `orcaProfiles.presetRouting.test.js` — all vendor routings + Elegoo entries + null-return fallbacks; 23 backend pytest (fallback + staging + compat_patch) unchanged; 6 existing frontend clone tests unchanged.
