@@ -10,7 +10,21 @@ must run for end-to-end development:
   port **8001**. Start from `backend/` using the project virtualenv:
   `backend/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001 --reload`.
 - **Frontend** — React 19 (CRA + CRACO) on port **3000**: `cd frontend && yarn start`.
-  The frontend talks to the backend via `REACT_APP_BACKEND_URL` (see `frontend/.env`).
+- **nginx reverse proxy** on port **8080** — REQUIRED for the app to work locally.
+  Start with `sudo nginx` (config at `/etc/nginx/conf.d/forgeslicer.conf`; test with
+  `sudo nginx -t`, reload with `sudo nginx -s reload`). **Open the app at
+  http://localhost:8080**, NOT :3000.
+
+### Why the reverse proxy is required (non-obvious)
+
+`frontend/src/lib/api.js` `resolveBackendUrl()` deliberately forces API calls to the
+page's own origin whenever `REACT_APP_BACKEND_URL`'s host differs from the page host
+(to keep the `session_token` cookie first-party). In production the Emergent ingress
+serves the frontend and routes `/api/*` to the backend on the same host. Locally,
+hitting :3000 directly makes the app POST to `localhost:3000/api/*`, which 404s (the
+UI surfaces this as a misleading "Recaptcha failed" error). The nginx proxy on :8080
+replicates the ingress: `/` → CRA dev server :3000, `/api/` → backend :8001, so the
+app works same-origin. No source or `.env` change is needed — just use :8080.
 
 ### Environment / secrets
 
