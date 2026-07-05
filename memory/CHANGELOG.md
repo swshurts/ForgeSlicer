@@ -4571,3 +4571,13 @@ Root causes identified & fixed:
 4. **Refactor**: extracted `priorityRaycast` from `RulerPlacementDots.jsx` into standalone `lib/priorityRaycast.js` to make it Jest-testable (component's transitive imports pull in three/examples ESM which Jest can't transform).
 
 - 🧪 **Tests**: 4 new Jest cases in `lib/priorityRaycast.test.js` — all pass (all priority stays negative; near-to-camera wins; hits stay distinct; still beats regular hits at 999mm scene scale). Frontend hot-reloads clean; landing + design routes render without errors.
+
+## Iteration 125.2 (2026-07-04) — Ruler: distance-to-tip chip for cones/cylinders/spheres
+Follow-up user report: after iter-125.1 fixes, the ruler at floor-corner still didn't show the 3D distance to the cone's TIP — only to the nearest bbox corner (which sits on the cone's BASE circle, giving X=0, Y=0, Z=20 instead of the ~46mm diagonal to the actual apex).
+
+- ✅ Added a **TIP/APEX chip** to `SelectionDimLabels.jsx`. When the workplane ruler is active AND the selected object is a primitive with a well-defined peak point (`cone`, `cylinder`, `sphere`, `pyramid`), a yellow chip renders at the peak world coordinate showing the true 3D Euclidean distance from the ruler origin. Testid: `peak-chip`. Label: `TIP` (cone/pyramid) or `TOP` (cylinder/sphere).
+- ✅ Peak point convention: `(bboxCenterXY, bbox.maxZ)` — apex for cones/pyramids, top-face-center for cylinders, top-pole for spheres.
+- ✅ A dashed amber leader line ties the ruler origin to the peak so the reference is visually unmistakable — no confusion about which point is being measured.
+- ✅ Read-only chip (you can't "type a distance" to a non-corner point). For imported STLs / cubes / toruses the chip is intentionally omitted (no natural single peak — showing an arbitrary "farthest bbox corner" would mislead).
+
+Files: `SelectionDimLabels.jsx` — 2 blocks (peak computation + render). No new deps, no test file (chip is purely presentational + math is a single `Math.hypot`).

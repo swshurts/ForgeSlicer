@@ -440,6 +440,44 @@ export function SelectionDimLabels() {
     updateObject(obj.id, { position: np });
   };
 
+  // iter-125.2 — Peak/apex point for cones, cylinders, spheres, and
+  // any primitive with a well-defined "tip". Users measuring a stacked
+  // cone-on-cube expect a "distance from ruler to the cone tip" reading;
+  // the existing X/Y/Z chips only pin to the bbox corner nearest the
+  // ruler (a bbox min corner, not the apex).
+  //
+  // Peak point convention (all in world coords):
+  //   cone         → apex     = (bboxCenterXY, bbox.maxZ)
+  //   cylinder     → top-face = (bboxCenterXY, bbox.maxZ)   [not a point but a useful reference]
+  //   sphere       → top-pole = (bboxCenterXY, bbox.maxZ)
+  //   pyramid      → apex     = (bboxCenterXY, bbox.maxZ)
+  //   torus/other  → skipped (no natural single-point peak)
+  //   imported STL → skipped (unknowable generically)
+  //
+  // The chip renders ONLY when the workplane ruler is active — outside
+  // ruler mode a "distance to tip" reading has no reference and would
+  // just clutter the viewport.
+  const PEAK_KINDS = new Set(["cone", "cylinder", "sphere", "pyramid"]);
+  const peakPoint = PEAK_KINDS.has(obj.type)
+    ? [
+        (bboxData.minX + bboxData.maxX) * 0.5,
+        (bboxData.minY + bboxData.maxY) * 0.5,
+        bboxData.maxZ,
+      ]
+    : null;
+  const peakDist = peakPoint && workplaneRuler?.active
+    ? Math.hypot(
+        peakPoint[0] - origin[0],
+        peakPoint[1] - origin[1],
+        peakPoint[2] - origin[2],
+      )
+    : null;
+  const peakLabel = obj.type === "cone" || obj.type === "pyramid"
+    ? "TIP"
+    : obj.type === "sphere"
+      ? "TOP"
+      : "TOP"; // cylinder
+
   return (
     <group renderOrder={999}>
       {/* W / D / H — dimension chips, each with a dashed leader line. */}
@@ -546,6 +584,46 @@ export function SelectionDimLabels() {
         onCommit={commitCornerPos(2)}
         testid="pos-chip-z"
       />
+
+      {/* iter-125.2 — TIP/APEX chip. Shows the 3D Euclidean distance
+          from the ruler origin to the object's characteristic peak
+          (cone tip, cylinder top-center, sphere top-pole, pyramid
+          apex). Non-editable — you can't "type a distance" to a point
+          that isn't a bbox corner; but a dashed leader line from the
+          origin to the peak makes the reference unmistakable. */}
+      {peakDist != null && (
+        <>
+          <Line
+            points={[origin, peakPoint]}
+            color="#FCD34D"
+            lineWidth={1.5}
+            dashed
+            dashSize={3}
+            gapSize={2}
+            depthTest={false}
+            transparent
+            opacity={0.9}
+          />
+          <Html
+            position={peakPoint}
+            center
+            zIndexRange={[70, 0]}
+            sprite={false}
+            data-testid="peak-chip-html"
+          >
+            <div
+              data-testid="peak-chip"
+              className="translate-y-[-24px] px-2 py-0.5 rounded-md bg-slate-950/90 border border-amber-400/60 font-mono text-[11px] text-amber-200 whitespace-nowrap select-none shadow-lg"
+              style={{ pointerEvents: "none" }}
+              title={`3D distance from the ruler origin to the ${peakLabel.toLowerCase()} of this ${obj.type}`}
+            >
+              <span className="text-amber-400 font-bold mr-1">{peakLabel}</span>
+              {toDisplayLen(peakDist, unitSystem).toFixed(unitSystem === "in" ? 3 : 1)}
+              <span className="ml-1 opacity-70">{unitSystem === "in" ? '"' : "mm"}</span>
+            </div>
+          </Html>
+        </>
+      )}
     </group>
   );
 }
