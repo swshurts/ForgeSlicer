@@ -31,6 +31,7 @@ import PlanPreviewDialog from "./PlanPreviewDialog";
 import WorkspaceDropZone from "./WorkspaceDropZone";
 import LithoInboxWatcher from "./LithoInboxWatcher";
 import PrintabilityPanel from "./PrintabilityPanel";
+import ModuleTabs from "./modules/ModuleTabs";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -844,6 +845,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
+      <ModuleTabs />
       <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} projectMetas={projectMetas} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />

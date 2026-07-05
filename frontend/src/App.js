@@ -17,6 +17,11 @@ import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
 import SsoAccept from "@/components/SsoAccept";
 import Handoff from "@/components/Handoff";
+import SlicePage from "@/components/modules/SlicePage";
+import LithoForgePage from "@/components/modules/LithoForgePage";
+import OrdersPage from "@/components/modules/OrdersPage";
+import ProductionPage from "@/components/modules/ProductionPage";
+import InventoryPage from "@/components/modules/InventoryPage";
 import Learn from "@/components/Learn";
 import SEOLanding from "@/components/SEOLanding";
 import { SEO_LANDING_SLUGS } from "@/seo/landings";
@@ -87,6 +92,16 @@ function AppRouter() {
           <ProtectedRoute label="the workspace" allowGuestFromHandoff><Workspace /></ProtectedRoute>
         }
       />
+      {/* ─── Top-level modules (scaffold) ──────────────────────
+          The major-functionality tab bar (Design · Slice ·
+          LithoForge · Library · Orders · Production · Inventory)
+          switches between these. Design → /workspace, Library →
+          /gallery; the rest are new module pages. */}
+      <Route path="/slice" element={<ProtectedRoute label="Slice"><SlicePage /></ProtectedRoute>} />
+      <Route path="/lithoforge" element={<ProtectedRoute label="LithoForge"><LithoForgePage /></ProtectedRoute>} />
+      <Route path="/orders" element={<ProtectedRoute label="Orders"><OrdersPage /></ProtectedRoute>} />
+      <Route path="/production" element={<ProtectedRoute label="Production"><ProductionPage /></ProtectedRoute>} />
+      <Route path="/inventory" element={<ProtectedRoute label="Inventory"><InventoryPage /></ProtectedRoute>} />
       <Route path="/handoff" element={<Handoff />} />
       <Route path="/auth/sso-accept" element={<SsoAccept />} />
       <Route
