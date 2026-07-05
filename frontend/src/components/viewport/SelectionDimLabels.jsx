@@ -348,6 +348,7 @@ export function SelectionDimLabels() {
   const dimLabelsEnabled = useScene((s) => s.dimLabelsEnabled);
   const workplaneRuler = useScene((s) => s.workplaneRuler);
   const workplaneRulerPlacing = workplaneRuler?.placing;
+  const workplaneRulerProbing = workplaneRuler?.probing;
 
   const obj = objects.find((o) => o.id === selectedId);
 
@@ -390,7 +391,7 @@ export function SelectionDimLabels() {
   // Exclusive modes still hide the chip stack — they own the canvas.
   // Workplane ruler ACTIVE no longer hides us — both layer together.
   if (measureMode || rulerMode || cutMode || placeOnFaceMode) return null;
-  if (workplaneRulerPlacing) return null;
+  if (workplaneRulerPlacing || workplaneRulerProbing) return null;
 
   const editableX = isAxisEditable(obj, "x");
   const editableY = isAxisEditable(obj, "y");

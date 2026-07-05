@@ -4581,3 +4581,18 @@ Follow-up user report: after iter-125.1 fixes, the ruler at floor-corner still d
 - ✅ Read-only chip (you can't "type a distance" to a non-corner point). For imported STLs / cubes / toruses the chip is intentionally omitted (no natural single peak — showing an arbitrary "farthest bbox corner" would mislead).
 
 Files: `SelectionDimLabels.jsx` — 2 blocks (peak computation + render). No new deps, no test file (chip is purely presentational + math is a single `Math.hypot`).
+
+## Iteration 125.3 (2026-07-04) — Ruler: vertex probe mode ("measure to ANY vertex")
+User escalated: even with the TIP chip, they still couldn't measure "from a reference point to the tip of any object" (bumping the ruler was misinterpreting cone-side clicks as the "center" of the bbox). Their real requirement: "I want to set a reference point somewhere and measure to any of the vertices in the drawing" — a proper generic point-to-point workflow, not one tied to selection.
+
+Delivered:
+- ✅ **New Probe (✛/Crosshair) button** on the workplane ruler's origin UI, next to ↻ and ×. Toggles a "probing" mode where every visible object's vertices/edges/face-centers/tips light up as CYAN dots (vs amber for placing). The button glows solid-cyan while probing is active.
+- ✅ **New store state** on `workplaneRuler`: `probing: boolean`, `probes: [{id, point}]`. Actions: `toggleWorkplaneRulerProbing`, `addWorkplaneRulerProbe`, `removeWorkplaneRulerProbe`, `clearWorkplaneRulerProbes`. Probes auto-clear on ruler removal.
+- ✅ **Expanded dot vocabulary** in `RulerPlacementDots.jsx` — beyond the 8 bbox corners + top/bottom-centers added in iter-125.1, we now also expose: volume center, 4 side-face centers, and 4 vertical-edge midpoints. That's 22 pick candidates per object — enough to cover any cantilevered-stack measurement without an "arbitrary point" mode.
+- ✅ **Persistent probe rendering** in `WorkplaneRuler.jsx` — each pinned probe draws a dashed cyan line from ruler origin to the picked point + a small anchor sphere at the vertex + a chip showing the 3D Euclidean distance (with a × button to remove just that probe). Chips are `data-testid="workplane-probe-chip-{id}"` for testability.
+- ✅ **Eraser button** appears next to the probe button whenever there's at least one probe (`data-testid="workplane-ruler-clear-probes"`) — one-click clear all.
+- ✅ `SelectionDimLabels` also hides during probing (avoids overlap between the bbox-corner chips and the probe chips).
+
+Test the workflow: place ruler on cube corner → click ✛ → click cone tip dot (top-center) → chip appears reading ~46 mm from ruler origin to tip. Repeat for any additional vertex (cube tops, side face centers, cantilevered edges). All measurements stack on-screen; each has its own × removal.
+
+Files: `store.js` (state + 5 new actions), `RulerPlacementDots.jsx` (dual-mode: placing vs probing, cyan color, expanded vocabulary), `WorkplaneRuler.jsx` (probe button + eraser + probe rendering with lines/spheres/chips), `SelectionDimLabels.jsx` (hide-when-probing). Frontend compiles clean.

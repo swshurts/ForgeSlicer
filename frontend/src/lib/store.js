@@ -199,12 +199,22 @@ export const useScene = create((set, get) => ({
     // origin.
     placing: false,
     origin: [0, 0, 0],
+    // iter-125.3 — Probe mode. When `probing` is true, RulerPlacementDots
+    // renders vertex/edge/face-center dots on every visible object; a
+    // click on a dot ADDS a persistent probe (dashed line from ruler
+    // origin to the picked point + 3D distance chip) instead of
+    // repositioning the ruler. Multiple probes stack — user can build
+    // up a full measurement diagram (e.g. distance from a bed corner
+    // to every vertex of a cantilevered assembly) without leaving the
+    // viewport. Cleared automatically when the ruler is removed.
+    probing: false,
+    probes: [], // [{ id: uuid, point: [x,y,z] }]
   },
   setWorkplaneRuler: (patch) => set((s) => ({
     workplaneRuler: { ...s.workplaneRuler, ...patch },
   })),
   enterWorkplaneRulerPlacing: () => set(() => ({
-    workplaneRuler: { active: false, placing: true, origin: [0, 0, 0] },
+    workplaneRuler: { active: false, placing: true, origin: [0, 0, 0], probing: false, probes: [] },
   })),
   placeWorkplaneRuler: (origin) => set((s) => ({
     workplaneRuler: {
@@ -215,7 +225,35 @@ export const useScene = create((set, get) => ({
     },
   })),
   removeWorkplaneRuler: () => set((s) => ({
-    workplaneRuler: { ...s.workplaneRuler, active: false, placing: false },
+    workplaneRuler: { ...s.workplaneRuler, active: false, placing: false, probing: false, probes: [] },
+  })),
+  toggleWorkplaneRulerProbing: () => set((s) => ({
+    workplaneRuler: { ...s.workplaneRuler, probing: !s.workplaneRuler.probing },
+  })),
+  addWorkplaneRulerProbe: (point) => set((s) => {
+    if (!Array.isArray(point) || point.length !== 3) return {};
+    // Dedup: don't re-add a probe within 0.1mm of an existing one.
+    const key = point.map((v) => Math.round(v * 10)).join(",");
+    for (const p of s.workplaneRuler.probes || []) {
+      const k = p.point.map((v) => Math.round(v * 10)).join(",");
+      if (k === key) return {};
+    }
+    const id = `probe_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    return {
+      workplaneRuler: {
+        ...s.workplaneRuler,
+        probes: [...(s.workplaneRuler.probes || []), { id, point }],
+      },
+    };
+  }),
+  removeWorkplaneRulerProbe: (probeId) => set((s) => ({
+    workplaneRuler: {
+      ...s.workplaneRuler,
+      probes: (s.workplaneRuler.probes || []).filter((p) => p.id !== probeId),
+    },
+  })),
+  clearWorkplaneRulerProbes: () => set((s) => ({
+    workplaneRuler: { ...s.workplaneRuler, probes: [] },
   })),
 
   // ---- Snap-to-face placement (iter-113) ----

@@ -19,7 +19,7 @@ import React, { useRef, useState } from "react";
 import { Html, Line } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { X } from "lucide-react";
+import { X, Crosshair, Eraser } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { toDisplayLen } from "../../lib/units";
 import { priorityRaycast } from "../../lib/priorityRaycast";
@@ -39,6 +39,9 @@ export function WorkplaneRuler() {
   const measureMode = useScene((s) => s.measureMode);
   const rulerMode = useScene((s) => s.rulerMode);
   const cutMode = useScene((s) => s.cutMode);
+  const toggleProbing = useScene((s) => s.toggleWorkplaneRulerProbing);
+  const removeProbe = useScene((s) => s.removeWorkplaneRulerProbe);
+  const clearProbes = useScene((s) => s.clearWorkplaneRulerProbes);
 
   const { camera, gl, controls } = useThree();
   const draggingRef = useRef(false);
@@ -111,6 +114,57 @@ export function WorkplaneRuler() {
 
   return (
     <group>
+      {/* iter-125.3 — persistent probe measurements. Each probe pins a
+          dashed cyan line from the ruler origin to a user-picked
+          vertex/tip/edge/face on any visible object, plus a chip
+          showing the 3D Euclidean distance. The × on each chip
+          removes just that probe. Rendered BEFORE the ruler arms so
+          the arms stay on top when they cross a probe line. */}
+      {(ruler.probes || []).map((probe) => {
+        const [px, py, pz] = probe.point;
+        const dist = Math.hypot(px - ox, py - oy, pz - oz);
+        const dp = unitSystem === "in" ? 3 : 1;
+        const suffix = unitSystem === "in" ? '"' : "mm";
+        return (
+          <group key={probe.id}>
+            <Line
+              points={[[ox, oy, oz + 0.05], [px, py, pz]]}
+              color="#22D3EE"
+              lineWidth={1.5}
+              dashed
+              dashSize={3}
+              gapSize={2}
+              depthTest={false}
+              transparent
+              opacity={0.9}
+            />
+            {/* Small anchor sphere at the picked point so the user
+                can visually confirm which vertex the probe landed on. */}
+            <mesh position={probe.point} renderOrder={1005}>
+              <sphereGeometry args={[1.8, 12, 12]} />
+              <meshBasicMaterial color="#22D3EE" depthTest={false} transparent opacity={0.95} />
+            </mesh>
+            <Html position={probe.point} center zIndexRange={[80, 0]} sprite={false}>
+              <div
+                data-testid={`workplane-probe-chip-${probe.id}`}
+                className="translate-y-[-22px] flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/92 border border-cyan-400/60 font-mono text-[11px] text-cyan-100 whitespace-nowrap select-none shadow-lg"
+                style={{ pointerEvents: "auto" }}
+              >
+                <span className="text-cyan-300 font-bold">{toDisplayLen(dist, unitSystem).toFixed(dp)}</span>
+                <span className="opacity-70">{suffix}</span>
+                <button
+                  data-testid={`workplane-probe-remove-${probe.id}`}
+                  onClick={(e) => { e.stopPropagation(); removeProbe(probe.id); }}
+                  className="ml-1 w-3.5 h-3.5 rounded-sm bg-slate-800 hover:bg-red-500/50 text-slate-400 hover:text-white flex items-center justify-center"
+                  title="Remove this probe"
+                >
+                  <X size={9} />
+                </button>
+              </div>
+            </Html>
+          </group>
+        );
+      })}
       {/* X arm — rose. Bidirectional so users can place the ruler on
           either side of a part and still get a meaningful reading. */}
       <Line
@@ -219,12 +273,14 @@ export function WorkplaneRuler() {
         <sphereGeometry args={[2.2, 18, 18]} />
         <meshBasicMaterial color="#0EA5E9" depthTest={false} />
       </mesh>
-      {/* Origin action buttons — × (remove) + ↻ (re-place). The
-          re-place button replaces the click-vs-drag heuristic from
-          iter-114.7/.8 which proved unreliable on top of an
-          object's TransformControls gizmo. Now an unambiguous
-          dedicated button. The origin sphere still drags to
-          fine-tune the position via the pointer-move handler. */}
+      {/* Origin action buttons — × (remove) + ↻ (re-place) + ✛ (probe).
+          iter-125.3 added the probe button: enters "vertex probe" mode
+          where every visible object's vertices/edges/face-centers/tips
+          light up as cyan dots. Clicking a dot pins a persistent
+          "distance from ruler origin to picked vertex" measurement.
+          Perfect for measuring cantilevered stacks — user picks a bed
+          corner as origin, then clicks any vertex of any tier and
+          reads the 3D distance immediately. */}
       <Html position={[ox, oy, oz + 0.5]} center zIndexRange={[9999, 9990]} sprite={false}>
         <div className="flex gap-1.5 translate-x-6 -translate-y-6" style={{ pointerEvents: "auto" }}>
           <button
@@ -237,6 +293,34 @@ export function WorkplaneRuler() {
           >
             ↻
           </button>
+          <button
+            data-testid="workplane-ruler-probe"
+            onClick={(e) => { e.stopPropagation(); toggleProbing(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            className={`${RULER_BTN} rounded-full flex items-center justify-center border shadow-lg ${ruler.probing
+              ? "bg-cyan-500/80 hover:bg-cyan-500 text-white border-cyan-300"
+              : "bg-slate-900/95 hover:bg-cyan-500/80 hover:text-white text-slate-100 border-cyan-400/50"
+            }`}
+            title={ruler.probing
+              ? "Stop probing — click any highlighted vertex/tip/edge/face to measure its distance from the ruler; click again to stop"
+              : "Vertex probe — click any vertex, tip, edge midpoint, or face centre on any object to pin a 3D distance measurement from this ruler"
+            }
+          >
+            <Crosshair size={13} />
+          </button>
+          {(ruler.probes || []).length > 0 && (
+            <button
+              data-testid="workplane-ruler-clear-probes"
+              onClick={(e) => { e.stopPropagation(); clearProbes(); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+              className={`${RULER_BTN} rounded-full bg-slate-900/95 hover:bg-red-500/70 text-slate-100 hover:text-white flex items-center justify-center border border-slate-600 shadow-lg`}
+              title={`Clear all ${ruler.probes.length} probe${ruler.probes.length === 1 ? "" : "s"}`}
+            >
+              <Eraser size={12} />
+            </button>
+          )}
           <button
             data-testid="workplane-ruler-remove"
             onClick={(e) => { e.stopPropagation(); removeRuler(); }}
