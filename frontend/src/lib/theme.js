@@ -24,9 +24,9 @@ import { create } from "zustand";
 const STORAGE_KEY = "forgeslicer.theme";
 const PER_ROUTE_KEY = "forgeslicer.theme.perRoute";
 const ROUTE_THEMES_KEY = "forgeslicer.theme.routes";
-const USER_THEMES = ["system", "dark", "dim", "light"];
-const RESOLVED_THEMES = ["dark", "dim", "light"];
-const DEFAULT_THEME = "system";
+const USER_THEMES = ["system", "dark", "dim", "graphite", "light"];
+const RESOLVED_THEMES = ["dark", "dim", "graphite", "light"];
+const DEFAULT_THEME = "graphite";
 
 function readStoredTheme() {
   try {
@@ -157,9 +157,10 @@ export function bootstrapTheme() {
 // Backgrounds the R3F Canvas reads as a hex string. Mirrors the
 // `--viewport-bg` variable in themes.css.
 export const VIEWPORT_BG = {
-  dark:  "#1E293B",
-  dim:   "#334155",
-  light: "#E2E8F0",
+  dark:     "#1E293B",
+  dim:      "#334155",
+  graphite: "#232A34",
+  light:    "#E2E8F0",
 };
 
 // ----- Initial state -----
