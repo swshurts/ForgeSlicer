@@ -7,14 +7,15 @@
 // Active-segment highlighting reflects what's CURRENTLY in effect for
 // this page (pinned route choice if present, otherwise global).
 import React from "react";
-import { Moon, Cloud, Sun, MonitorCog, Pin, PinOff } from "lucide-react";
+import { Moon, Cloud, Gem, Sun, MonitorCog, Pin, PinOff } from "lucide-react";
 import { useTheme } from "../../lib/theme";
 
 const THEMES = [
-  { id: "system", label: "Auto",  icon: MonitorCog, hint: "Follow OS appearance (prefers-color-scheme)" },
-  { id: "dark",   label: "Dark",  icon: Moon,       hint: "Midnight slate — original palette" },
-  { id: "dim",    label: "Dim",   icon: Cloud,      hint: "Softer dark — in-between contrast" },
-  { id: "light",  label: "Light", icon: Sun,        hint: "Light mode — bright background" },
+  { id: "system",   label: "Auto",     icon: MonitorCog, hint: "Follow OS appearance (prefers-color-scheme)" },
+  { id: "dark",     label: "Dark",     icon: Moon,       hint: "Midnight slate — original palette" },
+  { id: "dim",      label: "Dim",      icon: Cloud,      hint: "Softer dark — in-between contrast" },
+  { id: "graphite", label: "Graphite", icon: Gem,        hint: "Graphite — refined flat dark (default)" },
+  { id: "light",    label: "Light",    icon: Sun,        hint: "Light mode — bright background" },
 ];
 
 export default function ThemeSwitcher() {
