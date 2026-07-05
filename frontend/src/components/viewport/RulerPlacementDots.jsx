@@ -97,8 +97,21 @@ export default function RulerPlacementDots() {
           onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "crosshair"; }}
           onPointerOut={() => { document.body.style.cursor = ""; }}
         >
-          <sphereGeometry args={[2.6, 16, 16]} />
-          <meshBasicMaterial color={color} transparent opacity={0.95} depthTest={false} />
+          {/* iter-125.4 — user asked for smaller, unfilled dots instead
+              of the solid balls. Wireframe sphere = hollow-circle look
+              from any camera angle without needing a Billboard. Radius
+              dropped from 2.6 → 1.6 mm so a busy scene doesn't drown
+              in dots. `depthTest={false}` keeps the outline visible
+              even when it sits inside geometry. */}
+          <sphereGeometry args={[1.6, 12, 12]} />
+          <meshBasicMaterial
+            color={color}
+            wireframe
+            wireframeLinewidth={1}
+            transparent
+            opacity={0.95}
+            depthTest={false}
+          />
         </mesh>
       ))}
     </group>

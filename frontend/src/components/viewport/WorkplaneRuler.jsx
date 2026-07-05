@@ -138,11 +138,12 @@ export function WorkplaneRuler() {
               transparent
               opacity={0.9}
             />
-            {/* Small anchor sphere at the picked point so the user
-                can visually confirm which vertex the probe landed on. */}
+            {/* Small outline anchor at the picked point (iter-125.4 —
+                matches the pick dots' hollow style so pinned probes
+                don't stand out as filled balls). */}
             <mesh position={probe.point} renderOrder={1005}>
-              <sphereGeometry args={[1.8, 12, 12]} />
-              <meshBasicMaterial color="#22D3EE" depthTest={false} transparent opacity={0.95} />
+              <sphereGeometry args={[1.4, 12, 12]} />
+              <meshBasicMaterial color="#22D3EE" wireframe depthTest={false} transparent opacity={0.9} />
             </mesh>
             <Html position={probe.point} center zIndexRange={[80, 0]} sprite={false}>
               <div
