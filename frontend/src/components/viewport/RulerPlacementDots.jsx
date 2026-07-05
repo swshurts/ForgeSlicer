@@ -14,6 +14,7 @@
 //      stack probes on multiple vertices — e.g. measure a bed corner
 //      to every vertex of a cantilevered assembly.
 import React from "react";
+import { Billboard } from "@react-three/drei";
 import { useScene } from "../../lib/store";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { priorityRaycast } from "../../lib/priorityRaycast";
@@ -71,48 +72,50 @@ export default function RulerPlacementDots() {
     return true;
   });
 
-  // Placing dots are amber (matches TinkerCAD's ruler drop). Probing
-  // dots are cyan so the user immediately sees the mode has changed
-  // and understands clicks won't reposition the ruler.
-  const color = probing ? "#22D3EE" : "#F59E0B";
+  // iter-125.5 — user asked for ORANGE, small, and truly hollow.
+  // Both modes now use the same orange color to stay visually
+  // consistent with the ForgeSlicer accent. Placing vs probing is
+  // distinguished by the toolbar button state (glowing cyan when
+  // probing) and the ruler UI, not by dot color.
+  const color = "#F97316";
 
   return (
     <group renderOrder={1004}>
       {unique.map((p, i) => (
-        <mesh
-          key={i}
-          position={p}
-          renderOrder={1004}
-          raycast={priorityRaycast}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (probing) {
-              addProbe(p);
-            } else {
-              placeWorkplaneRuler(p);
-            }
-            document.body.style.cursor = "";
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "crosshair"; }}
-          onPointerOut={() => { document.body.style.cursor = ""; }}
-        >
-          {/* iter-125.4 — user asked for smaller, unfilled dots instead
-              of the solid balls. Wireframe sphere = hollow-circle look
-              from any camera angle without needing a Billboard. Radius
-              dropped from 2.6 → 1.6 mm so a busy scene doesn't drown
-              in dots. `depthTest={false}` keeps the outline visible
-              even when it sits inside geometry. */}
-          <sphereGeometry args={[1.6, 12, 12]} />
-          <meshBasicMaterial
-            color={color}
-            wireframe
-            wireframeLinewidth={1}
-            transparent
-            opacity={0.95}
-            depthTest={false}
-          />
-        </mesh>
+        <Billboard key={i} position={p} follow>
+          {/* Tiny invisible hit-target so click detection still works;
+              its `priorityRaycast` overrides ensure it wins over the
+              underlying object geometry (see priorityRaycast.js). */}
+          <mesh
+            renderOrder={1004}
+            raycast={priorityRaycast}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (probing) {
+                addProbe(p);
+              } else {
+                placeWorkplaneRuler(p);
+              }
+              document.body.style.cursor = "";
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "crosshair"; }}
+            onPointerOut={() => { document.body.style.cursor = ""; }}
+          >
+            {/* Flat plane sized to the hit area — invisible material,
+                only its bounds matter for raycasting. */}
+            <planeGeometry args={[2.4, 2.4]} />
+            <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
+          </mesh>
+          {/* Visible hollow ring — always faces the camera thanks to
+              the enclosing <Billboard>, so it reads as a clean unfilled
+              circle from every angle. innerRadius/outerRadius chosen
+              so the ring is 0.4 mm thick at 1.2 mm outer diameter. */}
+          <mesh renderOrder={1005}>
+            <ringGeometry args={[0.8, 1.2, 24]} />
+            <meshBasicMaterial color={color} transparent opacity={0.95} depthTest={false} side={2} />
+          </mesh>
+        </Billboard>
       ))}
     </group>
   );
