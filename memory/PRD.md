@@ -33,6 +33,15 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-04)
 
+### Recently completed (iter-125.6, 2026-07-04) — Ruler polish trio + AI-provider research
+- **Snap-to-vertex crosshair** on hover of any pick dot (orange, Billboard-anchored).
+- **TIP chip decomposition** — cone/cyl/sphere tip chip now shows 3D magnitude + inline "→ horizontal · ↑ vertical" breakdown.
+- **Probe hover tooltip** — pinned probes reveal per-axis ΔX/ΔY/ΔZ on hover (color-coded rose/emerald/sky).
+- **Provider research verified**: Meshy ≈ 2× Tripo ($0.40 vs $0.21/model). "Hi3D" is ambiguous (Hitem3D commercial / Hi3DGen open-source / Hunyuan3D via Replicate). Est. 1–2 days to add Tripo as alternate provider (reuses BYO-key vault).
+
+### Recently completed (iter-125.3, 2026-07-04) — Ruler vertex probe mode ("measure to ANY vertex")
+- New crosshair-icon toolbar button on the workplane ruler opens a **probe mode**: 22 pick candidates per visible object light up as small hollow-orange rings (bbox corners + top/bottom-centers + side face-centers + vertical-edge midpoints + volume center). Click any to pin a persistent dashed line + distance chip from ruler origin. Multiple probes stack. Eraser button clears all.
+
 ### Recently completed (iter-125.1, 2026-07-04) — Ruler regression on stacked objects
 - Fixed `priorityRaycast` tie-break — stacked/overlapping placement dots (cube-top + cone-bottom sharing a coord) now resolve to the dot closest to the camera instead of insertion order. Regression covered by 4 new Jest tests in `lib/priorityRaycast.test.js`.
 - Added top-center + bottom-center synthetic placement dots per bbox so users can pick cone tips / cylinder tops as the ruler origin.

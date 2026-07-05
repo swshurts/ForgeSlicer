@@ -122,9 +122,14 @@ export function WorkplaneRuler() {
           the arms stay on top when they cross a probe line. */}
       {(ruler.probes || []).map((probe) => {
         const [px, py, pz] = probe.point;
-        const dist = Math.hypot(px - ox, py - oy, pz - oz);
+        const dx = px - ox;
+        const dy = py - oy;
+        const dz = pz - oz;
+        const dist = Math.hypot(dx, dy, dz);
         const dp = unitSystem === "in" ? 3 : 1;
         const suffix = unitSystem === "in" ? '"' : "mm";
+        const fmt = (v) => toDisplayLen(v, unitSystem).toFixed(dp);
+        const signed = (v) => (v >= 0 ? `+${fmt(v)}` : fmt(v).replace("-", "−"));
         return (
           <group key={probe.id}>
             <Line
@@ -149,21 +154,48 @@ export function WorkplaneRuler() {
               </mesh>
             </Billboard>
             <Html position={probe.point} center zIndexRange={[80, 0]} sprite={false}>
+              {/* iter-125.6 — probe chip is now a hover-tooltip host.
+                  Default view shows just the 3D magnitude; hovering
+                  the chip reveals a compact per-axis breakdown (ΔX,
+                  ΔY, ΔZ) via CSS `group-hover`. Great for translating
+                  a specific vertex along a single axis to hit a
+                  target position without flipping between chips.
+
+                  `pointerEvents: auto` on the outer div because probe
+                  chips need to receive hover events for the tooltip. */}
               <div
-                data-testid={`workplane-probe-chip-${probe.id}`}
-                className="translate-y-[-22px] flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/92 border border-cyan-400/60 font-mono text-[11px] text-cyan-100 whitespace-nowrap select-none shadow-lg"
+                className="group relative"
                 style={{ pointerEvents: "auto" }}
               >
-                <span className="text-cyan-300 font-bold">{toDisplayLen(dist, unitSystem).toFixed(dp)}</span>
-                <span className="opacity-70">{suffix}</span>
-                <button
-                  data-testid={`workplane-probe-remove-${probe.id}`}
-                  onClick={(e) => { e.stopPropagation(); removeProbe(probe.id); }}
-                  className="ml-1 w-3.5 h-3.5 rounded-sm bg-slate-800 hover:bg-red-500/50 text-slate-400 hover:text-white flex items-center justify-center"
-                  title="Remove this probe"
+                <div
+                  data-testid={`workplane-probe-chip-${probe.id}`}
+                  className="translate-y-[-22px] flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/92 border border-cyan-400/60 font-mono text-[11px] text-cyan-100 whitespace-nowrap select-none shadow-lg cursor-help"
+                  title="Hover for per-axis breakdown"
                 >
-                  <X size={9} />
-                </button>
+                  <span className="text-cyan-300 font-bold">{fmt(dist)}</span>
+                  <span className="opacity-70">{suffix}</span>
+                  <button
+                    data-testid={`workplane-probe-remove-${probe.id}`}
+                    onClick={(e) => { e.stopPropagation(); removeProbe(probe.id); }}
+                    className="ml-1 w-3.5 h-3.5 rounded-sm bg-slate-800 hover:bg-red-500/50 text-slate-400 hover:text-white flex items-center justify-center"
+                    title="Remove this probe"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+                {/* Hover tooltip — per-axis deltas. Pointer-events
+                    disabled so it can't accidentally block the ×
+                    button beneath. */}
+                <div
+                  data-testid={`workplane-probe-axes-${probe.id}`}
+                  className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-2 py-1 rounded-md bg-slate-950/95 border border-cyan-500/40 font-mono text-[10px] text-cyan-100 whitespace-nowrap shadow-xl"
+                >
+                  <div className="flex gap-2.5">
+                    <span title="Signed X delta from ruler origin"><span className="text-rose-300 font-bold">ΔX</span> {signed(dx)}</span>
+                    <span title="Signed Y delta"><span className="text-emerald-300 font-bold">ΔY</span> {signed(dy)}</span>
+                    <span title="Signed Z delta"><span className="text-sky-300 font-bold">ΔZ</span> {signed(dz)}</span>
+                  </div>
+                </div>
               </div>
             </Html>
           </group>

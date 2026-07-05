@@ -466,13 +466,22 @@ export function SelectionDimLabels() {
         bboxData.maxZ,
       ]
     : null;
-  const peakDist = peakPoint && workplaneRuler?.active
-    ? Math.hypot(
-        peakPoint[0] - origin[0],
-        peakPoint[1] - origin[1],
-        peakPoint[2] - origin[2],
-      )
-    : null;
+  // iter-125.6 — Also decompose the diagonal into "horizontal" (Δ across
+  // the bed, sqrt(dx²+dy²)) and "vertical" (Δ up, dz) components so
+  // CAD users get both readings without doing the math in their head.
+  // Rendered inline next to the TIP chip.
+  let peakDist = null;
+  let peakDx = null;
+  let peakDy = null;
+  let peakDz = null;
+  let peakHoriz = null;
+  if (peakPoint && workplaneRuler?.active) {
+    peakDx = peakPoint[0] - origin[0];
+    peakDy = peakPoint[1] - origin[1];
+    peakDz = peakPoint[2] - origin[2];
+    peakHoriz = Math.hypot(peakDx, peakDy);
+    peakDist = Math.hypot(peakHoriz, peakDz);
+  }
   const peakLabel = obj.type === "cone" || obj.type === "pyramid"
     ? "TIP"
     : obj.type === "sphere"
@@ -619,8 +628,26 @@ export function SelectionDimLabels() {
               title={`3D distance from the ruler origin to the ${peakLabel.toLowerCase()} of this ${obj.type}`}
             >
               <span className="text-amber-400 font-bold mr-1">{peakLabel}</span>
-              {toDisplayLen(peakDist, unitSystem).toFixed(unitSystem === "in" ? 3 : 1)}
-              <span className="ml-1 opacity-70">{unitSystem === "in" ? '"' : "mm"}</span>
+              <span data-testid="peak-chip-total">
+                {toDisplayLen(peakDist, unitSystem).toFixed(unitSystem === "in" ? 3 : 1)}
+              </span>
+              <span className="ml-0.5 opacity-70">{unitSystem === "in" ? '"' : "mm"}</span>
+              {/* iter-125.6 — inline component breakdown so users see
+                  "how far across the bed" (→) and "how much up" (↑)
+                  without eyeballing the diagonal. Small, dim, and
+                  monospaced so it reads as auxiliary info. */}
+              <span
+                data-testid="peak-chip-components"
+                className="ml-2 pl-2 border-l border-amber-500/40 text-[10px] text-amber-300/85"
+              >
+                <span title="Horizontal distance across the bed (√(ΔX² + ΔY²))">
+                  → {toDisplayLen(peakHoriz, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}
+                </span>
+                <span className="mx-1 opacity-40">·</span>
+                <span title="Vertical distance up from the ruler plane (ΔZ)">
+                  ↑ {toDisplayLen(peakDz, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}
+                </span>
+              </span>
             </div>
           </Html>
         </>

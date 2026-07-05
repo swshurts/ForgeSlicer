@@ -4596,3 +4596,19 @@ Delivered:
 Test the workflow: place ruler on cube corner → click ✛ → click cone tip dot (top-center) → chip appears reading ~46 mm from ruler origin to tip. Repeat for any additional vertex (cube tops, side face centers, cantilevered edges). All measurements stack on-screen; each has its own × removal.
 
 Files: `store.js` (state + 5 new actions), `RulerPlacementDots.jsx` (dual-mode: placing vs probing, cyan color, expanded vocabulary), `WorkplaneRuler.jsx` (probe button + eraser + probe rendering with lines/spheres/chips), `SelectionDimLabels.jsx` (hide-when-probing). Frontend compiles clean.
+
+## Iteration 125.6 (2026-07-04) — Ruler polish trio + provider research
+
+### Provider research (Meshy vs Tripo vs Hi3D)
+Verified user's video claim: **Meshy ≈ 2× cost of Tripo** at comparable quality. Recorded findings in PRD/backlog.
+- **Tripo**: ~$0.21/textured model (Pro $15.90/mo → 3,000 credits → ~75 models). Free 300 credits/mo.
+- **Meshy**: ~$0.40/textured model (Pro $20/mo → 1,000 credits → ~50 models).
+- "Hi3D" is ambiguous — refers to **Hitem3D** (hi3d.ai, ~$0.10-$0.70/model, cheapest commercial), **Hi3DGen** (MIT open-source, self-host only), or **High3D/Hunyuan3D** via Replicate ($0.14/call).
+- **Switch effort estimate: 1–2 days**. Because Meshy is already isolated behind `meshy_service.py` + BYO-key/vault infrastructure, adding a provider is a mirrored `tripo_service.py` + per-user provider preference + small UI selector. Recommended path: keep Meshy as default (best text-to-3D per reviews), add Tripo as an alternate BYO backend that reuses the encrypted-key vault.
+
+### UI polish (three user-requested items)
+1. ✅ **Snap-to-vertex crosshair on hover** — When the workplane ruler is in placing or probing mode, hovering any pick dot now renders a small orange "+" crosshair around it (Billboard-anchored so it stays camera-facing). Only ONE dot ever shows the crosshair at a time (state is a single `hoveredIdx`). Makes the expanded dot vocabulary discoverable without a tutorial pass.
+2. ✅ **TIP chip component readings** — The apex/tip chip on cones/cylinders/spheres/pyramids now shows the 3D magnitude AND an inline "→ 14.1 · ↑ 44.0" horizontal/vertical decomposition (`peak-chip-components` testid). Horizontal = √(Δx²+Δy²), vertical = ΔZ. Border separator keeps it visually secondary to the main number.
+3. ✅ **Probe hover tooltip with per-axis ΔX/ΔY/ΔZ** — Each pinned probe now hosts a `group-hover` tooltip that pops beneath the distance chip on hover, showing signed ΔX / ΔY / ΔZ (color-coded rose/emerald/sky to match the axes). Testid `workplane-probe-axes-{probeId}`. Pointer-events disabled on the tooltip so it can't accidentally block the × remove button.
+
+Files: `RulerPlacementDots.jsx` (hoveredIdx state + crosshair Billboard), `WorkplaneRuler.jsx` (probe tooltip), `SelectionDimLabels.jsx` (peakDx/Dy/Dz/Horiz decomposition + inline render). Frontend compiles clean.

@@ -13,8 +13,8 @@
 //      picked point) instead of repositioning the ruler. Users can
 //      stack probes on multiple vertices — e.g. measure a bed corner
 //      to every vertex of a cantilevered assembly.
-import React from "react";
-import { Billboard } from "@react-three/drei";
+import React, { useState } from "react";
+import { Billboard, Line } from "@react-three/drei";
 import { useScene } from "../../lib/store";
 import { computeRotatedBBox } from "../../lib/geometry";
 import { priorityRaycast } from "../../lib/priorityRaycast";
@@ -28,6 +28,10 @@ export default function RulerPlacementDots() {
   const objects = useScene((s) => s.objects);
   const placeWorkplaneRuler = useScene((s) => s.placeWorkplaneRuler);
   const addProbe = useScene((s) => s.addWorkplaneRulerProbe);
+  // iter-125.6 — hovered-dot index for the snap-to-vertex crosshair.
+  // Only one dot is ever "hovered" at a time; storing the index (vs
+  // an object identity) keeps the state cheap and re-renders local.
+  const [hoveredIdx, setHoveredIdx] = useState(-1);
 
   if (!placing && !probing) return null;
 
@@ -81,6 +85,48 @@ export default function RulerPlacementDots() {
 
   return (
     <group renderOrder={1004}>
+      {/* iter-125.6 — snap-to-vertex crosshair. Rendered ONLY on the
+          currently-hovered dot so users get an unmistakable "you are
+          snapped to a discrete vertex" affordance (rather than a
+          smooth continuous surface pick). Four short line segments
+          form a "+" that outer-wraps the hover dot. Uses Billboard
+          so the crosshair stays camera-facing at all rotations. */}
+      {hoveredIdx >= 0 && hoveredIdx < unique.length && (
+        <Billboard position={unique[hoveredIdx]} follow>
+          <Line
+            points={[[-3.2, 0, 0], [-1.6, 0, 0]]}
+            color={color}
+            lineWidth={2}
+            depthTest={false}
+            transparent
+            opacity={1}
+          />
+          <Line
+            points={[[1.6, 0, 0], [3.2, 0, 0]]}
+            color={color}
+            lineWidth={2}
+            depthTest={false}
+            transparent
+            opacity={1}
+          />
+          <Line
+            points={[[0, -3.2, 0], [0, -1.6, 0]]}
+            color={color}
+            lineWidth={2}
+            depthTest={false}
+            transparent
+            opacity={1}
+          />
+          <Line
+            points={[[0, 1.6, 0], [0, 3.2, 0]]}
+            color={color}
+            lineWidth={2}
+            depthTest={false}
+            transparent
+            opacity={1}
+          />
+        </Billboard>
+      )}
       {unique.map((p, i) => (
         <Billboard key={i} position={p} follow>
           {/* Tiny invisible hit-target so click detection still works;
@@ -97,10 +143,18 @@ export default function RulerPlacementDots() {
                 placeWorkplaneRuler(p);
               }
               document.body.style.cursor = "";
+              setHoveredIdx(-1);
             }}
             onPointerDown={(e) => e.stopPropagation()}
-            onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "crosshair"; }}
-            onPointerOut={() => { document.body.style.cursor = ""; }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              document.body.style.cursor = "crosshair";
+              setHoveredIdx(i);
+            }}
+            onPointerOut={() => {
+              document.body.style.cursor = "";
+              setHoveredIdx((prev) => (prev === i ? -1 : prev));
+            }}
           >
             {/* Flat plane sized to the hit area — invisible material,
                 only its bounds matter for raycasting. */}
