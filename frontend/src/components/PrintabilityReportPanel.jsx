@@ -44,17 +44,25 @@ function ScoreRing({ score }) {
   const dash = (clamped / 100) * c;
   const color = clamped >= 80 ? "#10B981" : clamped >= 45 ? "#F59E0B" : "#EF4444";
   return (
-    <svg width="112" height="112" className="-rotate-90" data-testid="printability-score-ring">
-      <circle cx="56" cy="56" r={r} stroke="#1E293B" strokeWidth="10" fill="none" />
-      <circle
-        cx="56" cy="56" r={r} stroke={color} strokeWidth="10" fill="none"
-        strokeDasharray={`${dash} ${c - dash}`} strokeLinecap="round"
-        style={{ transition: "stroke-dasharray 400ms ease-out" }}
-      />
+    <svg width="112" height="112" data-testid="printability-score-ring">
+      {/* iter-126.1 — Rotate only the ring paths (so the arc starts at
+          12 o'clock and grows clockwise), NOT the whole SVG. Previously
+          the outer <svg> had className '-rotate-90' AND the <text> had
+          BOTH className 'rotate-90' AND a transform attribute — a
+          triple-rotation stack that pushed the number off-canvas. Now
+          only the two <circle> elements rotate; the text sits upright
+          in the natural SVG coordinate system. */}
+      <g transform="rotate(-90 56 56)">
+        <circle cx="56" cy="56" r={r} stroke="#1E293B" strokeWidth="10" fill="none" />
+        <circle
+          cx="56" cy="56" r={r} stroke={color} strokeWidth="10" fill="none"
+          strokeDasharray={`${dash} ${c - dash}`} strokeLinecap="round"
+          style={{ transition: "stroke-dasharray 400ms ease-out" }}
+        />
+      </g>
       <text
         x="56" y="56" textAnchor="middle" dominantBaseline="central"
-        className="rotate-90 origin-center font-mono font-bold" fill="white" fontSize="26"
-        transform="rotate(90 56 56)"
+        className="font-mono font-bold" fill="white" fontSize="26"
         data-testid="printability-score-number"
       >
         {clamped}

@@ -33,6 +33,25 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-04)
 
+### Strategic pivot (2026-07-04)
+**ForgeSlicer is now positioned as an "AI-mesh → printable-file preparation system"** — the missing middleware between AI 3D generators (Meshy, Tripo, Hunyuan3D, TRELLIS) and consumer slicers (Bambu, Prusa, Orca). Not another slicer, not another CAD tool. Owns the workflow-pain wedge nobody else does.
+
+**Approved roadmap:**
+- Week 1: Fal.ai Hunyuan3D v2.1 as default provider ($0.05/gen, 8× cheaper than Meshy) — Meshy kept as premium BYO
+- **Week 2 (CURRENT): Printability Report scoring engine ← ✅ DONE (iter-126)**
+- Weeks 4-5: Auto-Clean bundle + Decimate-with-print-intent
+- Weeks 6-7: Auto-Base generator + Thin-wall detection
+- Weeks 8-11: Resin MVP (hollow, drain holes, orientation assistant, resin readiness score)
+- Ongoing: Batch mode + shareable print-shop preset packs
+
+### Recently completed (iter-126, 2026-07-04) — Printability Report engine (Phase 1B skeleton)
+- Backend `printability_service.py` — pure-function analyzer: watertight / winding / fragments / triangle-count / degenerate / flat-base / bbox checks → `PrintabilityReport { score, verdict, issues[], metrics }`. Uses trimesh + numpy (no new deps).
+- `POST /api/printability/analyze` — auth-required multipart upload, `.stl/.obj/.ply/.3mf/.glb/.gltf`, 100MB cap, stateless.
+- 14 pytest cases (service + HTTP) — all pass. Testing agent added 2 more HTTP cases (16/16 total) + verified 9/9 UI cases.
+- Frontend `PrintabilityReportPanel.jsx` — docked slide-in with color-coded score ring, verdict badge, metric strip, and issue rows with **"Fix with X" buttons** wired to `fix_action` codes (currently stubbed toasts; real handlers land as future tools ship).
+- Toolbar button `printability-open-btn` (orange ShieldCheck) opens the panel from SystemRow.
+- Testing agent: 25/25 pass, no functional issues. Minor visual polish (score ring double-rotation) fixed in iter-126.1.
+
 ### Recently completed (iter-125.6, 2026-07-04) — Ruler polish trio + AI-provider research
 - **Snap-to-vertex crosshair** on hover of any pick dot (orange, Billboard-anchored).
 - **TIP chip decomposition** — cone/cyl/sphere tip chip now shows 3D magnitude + inline "→ horizontal · ↑ vertical" breakdown.
