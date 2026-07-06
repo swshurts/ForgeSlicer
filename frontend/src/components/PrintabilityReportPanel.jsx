@@ -164,6 +164,7 @@ function actionLabel(code) {
 export default function PrintabilityReportPanel({ open, onClose }) {
   const objects = useScene((s) => s.objects);
   const updateObject = useScene((s) => s.updateObject);
+  const pushHistory = useScene((s) => s.pushHistory);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [err, setErr] = useState("");
@@ -232,6 +233,12 @@ export default function PrintabilityReportPanel({ open, onClose }) {
       return;
     }
     setFixingCode("auto_clean");
+    // iter-127.2 — Snapshot the scene BEFORE the repair so Ctrl+Z can
+    // roll it back like any other edit. Users get consistent undo
+    // semantics across the whole app; no dedicated "Revert" button
+    // needed. Single history entry covers the entire repair batch
+    // (repair-all-then-undo-once, not undo-once-per-object).
+    pushHistory();
     // Remember the current score so we can show a delta after re-analysis.
     setLastScoreBeforeFix(report?.score ?? null);
     let repaired = 0;
@@ -249,7 +256,8 @@ export default function PrintabilityReportPanel({ open, onClose }) {
       }
       toast.success(`Auto-Clean complete — ${repaired} mesh${repaired === 1 ? "" : "es"} repaired`, {
         description: `${totalInTris.toLocaleString()} → ${totalOutTris.toLocaleString()} triangles`
-          + (anyNonWatertight ? " · some parts still not fully watertight" : " · all parts now watertight"),
+          + (anyNonWatertight ? " · some parts still not fully watertight" : " · all parts now watertight")
+          + " · press Ctrl+Z to revert",
       });
       // Re-run analysis to refresh the score. The delta-toast fires
       // inside runAnalysis when it sees lastScoreBeforeFix is set.
@@ -260,7 +268,7 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     } finally {
       setFixingCode(null);
     }
-  }, [objects, report, updateObject, runAnalysis]);
+  }, [objects, report, updateObject, runAnalysis, pushHistory]);
 
   const handleFix = useCallback((code, issue) => {
     if (code === "auto_clean") {

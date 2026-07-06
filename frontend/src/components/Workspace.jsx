@@ -105,6 +105,34 @@ export default function Workspace() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // iter-127.2 — Global Ctrl+Z / Cmd+Z (undo) and Ctrl+Shift+Z / Ctrl+Y
+  // (redo). The store already carries a full history stack; the
+  // toolbar's undo button hits `useScene.undo()` — this just wires the
+  // same action to the standard OS keyboard shortcut, so Auto-Clean and
+  // every other edit gets consistent "one Ctrl+Z reverts it" semantics.
+  // Bindings are skipped when the user is typing in a text field or
+  // when other components (SketchOverlay) already own Ctrl+Z locally.
+  useEffect(() => {
+    const onKey = (e) => {
+      const key = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      // Skip when editing text so browser undo still works in inputs.
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const s = useScene.getState();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        s.undo();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        s.redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const remixId = searchParams.get("remix");
   const remixFit = searchParams.get("fit") === "1";
   const addComponentParam = searchParams.get("addComponent");

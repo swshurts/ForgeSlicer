@@ -861,7 +861,36 @@ async def ai_generate_text(req: AITextRequest, request: Request):
                 {"user_id": user["user_id"], "month_key": _month_key()},
                 {"$inc": {"count": -1}},
             )
-        raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
+        # Try to surface Meshy's own error message if it fits — it's
+        # usually more actionable than "Meshy submission failed: 500".
+        detail_extra = ""
+        try:
+            body = e.response.json() if e.response is not None else {}
+            msg = body.get("message") or body.get("error") or ""
+            if msg:
+                detail_extra = f" — {msg[:200]}"
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(
+            status_code=502,
+            detail=f"Meshy submission failed: {e.response.status_code}{detail_extra}",
+        )
+    except (httpx.TimeoutException, httpx.RequestError) as e:
+        # iter-127.1 — Previously any Meshy network issue (timeout,
+        # connection reset) bubbled as a bare 500 and Cloudflare's
+        # gateway showed users its "origin returned invalid response"
+        # message. Now we translate cleanly to 504 with an actionable
+        # hint — and still refund the quota.
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
+        logger.warning("Meshy text-to-3d network error: %s", e)
+        raise HTTPException(
+            status_code=504,
+            detail="Meshy took too long to respond. Please try again in a moment.",
+        )
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db.ai_jobs.insert_one({

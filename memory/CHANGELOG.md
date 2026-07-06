@@ -4673,3 +4673,26 @@ The "Fix with Auto-Clean" button on the Printability Report is now wired to a re
 2. Click "Fix with Auto-Clean" on the non-watertight issue → button spins → repaired mesh replaces the imported one in the viewport → panel re-scores itself → toast fires: **"Score raised: 42 → 78 · +36 points from the last fix."**
 
 Files: `PrintabilityReportPanel.jsx` (handleFix + runAutoClean + score-delta toast + IssueRow spinner state). No backend changes.
+
+## Iteration 127.2 (2026-07-06) — Auto-Clean undo via Ctrl+Z + Meshy sculpture fix + Meshy style deprecation lock-in
+User requested that Auto-Clean roll back through the standard Ctrl+Z rather than a dedicated Revert button, and reported that selecting the Sculpture style in AI generation produced a Cloudflare 502 error.
+
+### Auto-Clean undo (Ctrl+Z)
+- ✅ `PrintabilityReportPanel.runAutoClean` now calls `pushHistory()` BEFORE updating any object, so a single Ctrl+Z rolls back the whole repair batch atomically.
+- ✅ Success toast now includes " · press Ctrl+Z to revert" so users know the option exists.
+- ✅ **New global keyboard binding in `Workspace.jsx`** — Ctrl+Z / Cmd+Z → `useScene.undo()`, Ctrl+Shift+Z / Ctrl+Y → `useScene.redo()`. Previously the store had `undo` / `redo` actions and a toolbar button but NO global keyboard shortcut — only SketchOverlay had a scoped local binding. Standard OS-conforming behavior; skips when the user is typing in an input/textarea/contentEditable so browser undo still works in text fields.
+- Net: every edit (transform, boolean, import, Auto-Clean, gizmo scale, ...) now Ctrl+Z-reverts uniformly.
+
+### Meshy Sculpture 502 fix
+- ✅ Meshy DEPRECATED `art_style` in their `meshy-6` model (their current default). Per their docs: "requests will ignore art_style; some combinations may cause errors." — which is exactly what triggered the Cloudflare "origin returned invalid response" gateway timeout when users picked Sculpture.
+- ✅ `meshy_service.create_text_to_3d` — dropped `art_style` from the payload. Instead prepends a short style hint to the prompt ("sculpture style, artistic surface treatment, ..." / "realistic style, ..."). Meshy still steers toward the requested aesthetic via the prompt, and the deprecated field no longer risks 5xx.
+- ✅ Hardened `server.py` `ai_generate_text` error handling — `httpx.HTTPStatusError` now surfaces Meshy's actual error message if the response body contains one (much more actionable than "Meshy submission failed: 500"). `httpx.TimeoutException` / `httpx.RequestError` now returns a clean 504 with "Meshy took too long — please try again" instead of bubbling as a bare 500 that Cloudflare masks with its "origin returned invalid response" page.
+- Both branches refund the AI usage counter when the user is on the platform quota (not their BYO key).
+
+### Tests
+- ✅ New `tests/test_meshy_style_deprecation.py` — **5 pytest cases** locking in: `art_style` never appears in the outbound Meshy payload; Sculpture selection injects a prompt hint; Realistic also gets a hint; 600-char prompt cap still enforced after hint prepend; unknown/garbled styles pass the prompt through unchanged. Uses a lightweight `_FakeClient` async-context-manager mock (no pytest-asyncio dep required).
+
+Files: `meshy_service.py` (dropped art_style, added prompt-hint composer), `server.py` (broadened Meshy error handling + 504 pathway), `Workspace.jsx` (global Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y binding), `PrintabilityReportPanel.jsx` (pushHistory + toast copy), `tests/test_meshy_style_deprecation.py` (new, 5 pass). Frontend compiles clean.
+
+### Support agent guidance issued (LithoForge → ForgeSlicer merge)
+User asked for a step-by-step to import their separate LithoForge Emergent project into ForgeSlicer. Support agent returned a 6-step recipe (Save to GitHub from LithoForge → GitHub icon in ForgeSlicer chat input → import → paste merge instructions in chat → env-var consolidation guidance → backup + rollback safety net). Relayed verbatim to the user.

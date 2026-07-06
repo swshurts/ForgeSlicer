@@ -49,21 +49,32 @@ def _headers(override_key: Optional[str] = None) -> Dict[str, str]:
 async def create_text_to_3d(prompt: str, art_style: str = "realistic", api_key: Optional[str] = None) -> str:
     """Submit a text-to-3D preview task; returns Meshy task_id.
 
-    Meshy text-to-3d v2 only accepts ``art_style`` values of ``realistic``
-    or ``sculpture`` — anything else (e.g. ``low_poly``) returns 400. For
-    sculpture, the docs explicitly require ``enable_pbr: false`` because
-    that style generates its own PBR maps. We disable PBR unconditionally
-    since we're geometry-only for 3D printing anyway.
+    iter-127.1 — Meshy DEPRECATED the ``art_style`` parameter in ``meshy-6``
+    (their current default model). Per Meshy's own docs the field is
+    ignored on happy paths but "some combinations may cause errors" —
+    which is exactly what triggered the "origin returned invalid
+    response" Cloudflare gateway timeout users hit when picking the
+    Sculpture style. We now drop ``art_style`` from the payload and
+    instead prepend a short prompt hint so the model still steers toward
+    the requested aesthetic.
+
+    The frontend UI still shows Realistic / Sculpture buttons — they
+    just influence the prompt now rather than a dedicated API field.
     """
-    if art_style not in ("realistic", "sculpture"):
-        art_style = "realistic"
+    style_hint = ""
+    if art_style == "sculpture":
+        style_hint = "sculpture style, artistic surface treatment, "
+    elif art_style == "realistic":
+        style_hint = "realistic style, "
+    effective_prompt = f"{style_hint}{prompt}"[:600]  # Meshy hard-caps at 600
     payload = {
         "mode": "preview",
-        "prompt": prompt[:600],  # API hard-limits prompt length
-        "art_style": art_style,
-        "enable_pbr": False,
+        "prompt": effective_prompt,
         "should_remesh": True,
         "target_formats": TARGET_FORMATS,
+        # `enable_pbr: False` is safe on all model versions; we're
+        # geometry-only for 3D printing so PBR maps are wasted anyway.
+        "enable_pbr": False,
     }
     async with httpx.AsyncClient(base_url=MESHY_BASE, timeout=60.0) as cx:
         r = await cx.post(TEXT_ENDPOINT, headers=_headers(api_key), json=payload)
