@@ -335,6 +335,24 @@ def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
         _prune()
         return UploadOut(image_id=image_id, width=img.width, height=img.height)
 
+    @router.get("/upload/{image_id}/source.png")
+    async def get_upload_source(image_id: str) -> Response:
+        """Rehydrate a previously-uploaded image so a returning tab can
+        restore its studio state after a reload. The frontend saves
+        `image_id` in localStorage but blob URLs don't survive tab
+        close, so we re-issue the PNG from the on-disk spill. 404 lets
+        the client fall back to "start fresh"."""
+        img = _get_upload(image_id)
+        if img is None:
+            raise HTTPException(status_code=404, detail="image_id not found")
+        buf = io.BytesIO()
+        img.save(buf, "PNG", optimize=False)
+        return Response(
+            content=buf.getvalue(),
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=300"},
+        )
+
     @router.post("/optimize", response_model=OptimizeOut)
     async def optimize_endpoint(
         body: OptimizeIn,

@@ -17,7 +17,13 @@ import {
   optimize,
   suggestPalette,
   uploadImage,
+  API as LITHO_API,
 } from "./lib/api";
+import {
+  saveStudioState,
+  loadStudioState,
+  clearStudioState,
+} from "./lib/studioStorage";
 
 const DEFAULT_CONFIG = {
   width_mm: 100,
@@ -75,10 +81,79 @@ export default function LithoStudio() {
   const [uploadedEdits, setUploadedEdits] = useState({ ...DEFAULT_EDITS });
 
   useEffect(() => {
+    // Skip if we're about to hydrate a saved session — the hydration
+    // effect below will restore the user's palette. Fetching defaults
+    // here would race and clobber whichever resolved last (typically
+    // the network-slower default filaments call).
+    const saved = loadStudioState();
+    if (saved && saved.filaments?.length) return;
     getDefaultFilaments()
       .then(setFilaments)
       .catch(() => toast.error("Failed to load default filaments"));
   }, []);
+
+  // iter-133 — Studio state restoration. If the user closed the tab
+  // mid-workflow, hydrate imageId + config + palette + edits from
+  // localStorage and re-fetch the source PNG from the backend spill.
+  useEffect(() => {
+    const saved = loadStudioState();
+    if (!saved) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${LITHO_API}/upload/${saved.imageId}/source.png`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error(`expired (${res.status})`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setSourceUrl(url);
+        setImageId(saved.imageId);
+        const htmlImg = new window.Image();
+        htmlImg.onload = () => {
+          if (cancelled) return;
+          originalImgRef.current = htmlImg;
+          setOriginalImg(htmlImg);
+        };
+        htmlImg.src = url;
+        if (saved.config) setConfig((c) => ({ ...c, ...saved.config }));
+        if (saved.filaments?.length) setFilaments(saved.filaments);
+        if (saved.edits) setEdits(saved.edits);
+        if (saved.uploadedEdits) setUploadedEdits(saved.uploadedEdits);
+        if (typeof saved.vibrancy === "number") setVibrancy(saved.vibrancy);
+        if (typeof saved.autoOrder === "boolean") setAutoOrder(saved.autoOrder);
+        toast.success("Restored your last session", {
+          description: "Photo, palette, and settings are back.",
+          duration: 3500,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[litho] restore failed, clearing snapshot:", err?.message || err);
+        clearStudioState();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // iter-133 — Persist the tunable studio state on every meaningful
+  // change. The helper debounces internally so a slider drag doesn't
+  // hammer localStorage on every frame. We only ship the "user-tuned"
+  // slice (no `result`, no HTMLImageElement, no blobs) so the payload
+  // stays well under localStorage's 5 MB cap.
+  useEffect(() => {
+    saveStudioState({
+      imageId,
+      config,
+      filaments,
+      edits,
+      uploadedEdits,
+      vibrancy,
+      autoOrder,
+    });
+  }, [imageId, config, filaments, edits, uploadedEdits, vibrancy, autoOrder]);
 
   // Voice → Meshy.ai → upload pipeline. Subscribe to `voice-prompt`
   // events from VoiceCommand.jsx. On each prompt:
@@ -332,6 +407,9 @@ export default function LithoStudio() {
     originalImgRef.current = null;
     setEdits({ ...DEFAULT_EDITS });
     setUploadedEdits({ ...DEFAULT_EDITS });
+    // iter-133 — wipe the persistence snapshot too so a hydrate on next
+    // load doesn't drag the just-cleared image back in.
+    clearStudioState();
   };
 
   // Keep max_swaps consistent with the actual palette length: at most
