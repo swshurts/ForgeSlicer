@@ -4638,3 +4638,11 @@ Strategic pivot: ForgeSlicer is now positioned as an **AI-mesh → printable-fil
 Every downstream tool (weeks 4-11 in the roadmap) now has a natural entry point: the "Fix with X" button on each issue is already wired — implementations just replace the toast stub with a real handler. The Print-Readiness score becomes the product's North Star metric.
 
 Files touched: 3 new backend files (`printability_service.py`, `routes/printability.py`, `tests/test_printability.py`), 3 new frontend files (`PrintabilityReportPanel.jsx`, `lib/printabilityApi.js`, wiring in `Workspace.jsx` / `TopToolbar.jsx` / `SystemRow.jsx`). Frontend compiles clean, all 14 backend tests pass.
+
+## Iteration 126.2 (2026-07-04) — Auto-open Printability after AI import
+User request: "Yes, auto-open the Printability panel after every successful AI generation."
+
+- ✅ `AIGenerateDialog.handleImport` — after `addImportedMesh()` + toast, dispatches `new CustomEvent('forgeslicer:open-dialog', { detail: { name: 'printability' } })` on a 400ms delay. Delay lets the mesh finish committing to the scene store before the analyzer runs against it.
+- ✅ `Workspace.jsx` — existing global event listener extended: `else if (name === "printability") setPrintabilityOpen(true);`. Matches the same pattern used for save_component / share_gallery / help / settings / projects.
+
+Net effect: every AI generation → user clicks Import → mesh lands → Print-Readiness panel slides in with a scored assessment (typical AI meshes land 30-55/100 due to over-tesselation + non-watertight + no flat base), showing the value proposition of the "AI-mesh → printable-file" positioning immediately without a tutorial pass. Frontend compiles clean.

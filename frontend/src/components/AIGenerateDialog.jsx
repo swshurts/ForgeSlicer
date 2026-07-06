@@ -407,6 +407,19 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
         description: `Max dimension: ${finalMax.toFixed(1)} mm. Drop, scale, or carve as normal.`,
       });
       closeDialog();
+      // iter-126.2 — Auto-open the Printability Report after an AI import
+      // so users see the score immediately. AI meshes typically land
+      // 30-55/100 (over-tesselated + non-watertight + no flat base) so
+      // the panel becomes the natural next-step affordance. Dispatched
+      // as a custom window event to avoid threading a prop through the
+      // dialog — Workspace already listens on `forgeslicer:open-dialog`.
+      // Small delay so the mesh finishes committing to the scene store
+      // before the analyzer runs against it.
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", {
+          detail: { name: "printability" },
+        }));
+      }, 400);
     } catch (e) {
       const detail = e?.response?.data?.detail || e.message;
       setError(`Import failed: ${detail}`);

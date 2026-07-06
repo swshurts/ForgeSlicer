@@ -84,6 +84,7 @@ export default function Workspace() {
       else if (name === "help") setHelpOpen(true);
       else if (name === "settings") setSettingsOpen(true);
       else if (name === "projects") setProjectExplorerOpen(true);
+      else if (name === "printability") setPrintabilityOpen(true);
     };
     window.addEventListener("forgeslicer:open-dialog", handler);
     return () => window.removeEventListener("forgeslicer:open-dialog", handler);
