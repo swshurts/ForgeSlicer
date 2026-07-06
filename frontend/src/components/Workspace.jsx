@@ -28,6 +28,7 @@ import { reportSceneOversize } from "../lib/oversizeCheck";
 import { preloadDefaultFont } from "../lib/textGeometry";
 import SubdivideDialog from "./dialogs/SubdivideDialog";
 import PlanPreviewDialog from "./PlanPreviewDialog";
+import PrintabilityReportPanel from "./PrintabilityReportPanel";
 import WorkspaceDropZone from "./WorkspaceDropZone";
 import LithoInboxWatcher from "./LithoInboxWatcher";
 import PrintabilityPanel from "./PrintabilityPanel";
@@ -50,6 +51,10 @@ export default function Workspace() {
   // change). `subdivideTargetId` carries the object id to operate on.
   const [subdivideTargetId, setSubdivideTargetId] = useState(null);
   const [projectExplorerOpen, setProjectExplorerOpen] = useState(false);
+  // iter-126 — Print-Readiness report panel. Docked slide-in on the right,
+  // opened via a toolbar button (or auto-opened after a fresh AI import
+  // so users see the score immediately after a Meshy/Hunyuan generation).
+  const [printabilityOpen, setPrintabilityOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   // Iter-92 — when an STL arrives via cross-app handoff (LithoForge ➜
   // ForgeSlicer) we stash the attribution metadata so a sticky chip
@@ -844,7 +849,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} projectMetas={projectMetas} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} onOpenPrintability={() => setPrintabilityOpen(true)} projectMetas={projectMetas} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
@@ -878,6 +883,10 @@ export default function Workspace() {
         onClose={() => setSubdivideTargetId(null)}
       />
       <PlanPreviewDialog />
+      <PrintabilityReportPanel
+        open={printabilityOpen}
+        onClose={() => setPrintabilityOpen(false)}
+      />
       {importBanner && (
         <div
           data-testid="import-banner"

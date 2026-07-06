@@ -29,6 +29,7 @@ import gallery_taxonomy
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
 from routes.meshy_key import build_meshy_key_router, resolve_user_meshy_key
+from routes.printability import build_printability_router
 from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
 from routes.mesh_repair import build_mesh_repair_router
@@ -528,6 +529,13 @@ api_router.include_router(orca_engine.router)
 # they can bypass the monthly platform cap (they pay Meshy directly).
 # Keys are Fernet-encrypted at rest via `secrets_vault`.
 api_router.include_router(build_meshy_key_router(db=db, get_current_user=get_current_user))
+
+# iter-126 — Printability Report scoring engine. Central UX skeleton for
+# the "AI-mesh → printable file" workflow: upload STL/OBJ/3MF/GLB, get
+# a 0-100 score + itemised issues each tagged with a fix_action that
+# maps to a downstream tool (Auto-Clean, Decimate, Add Base, etc.).
+api_router.include_router(build_printability_router(get_current_user=get_current_user))
+
 
 # Hierarchical user projects — /api/projects/* (auth-required).
 # The router accepts the auth dependency as a callable so we don't have to

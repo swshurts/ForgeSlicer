@@ -4612,3 +4612,29 @@ Verified user's video claim: **Meshy ≈ 2× cost of Tripo** at comparable quali
 3. ✅ **Probe hover tooltip with per-axis ΔX/ΔY/ΔZ** — Each pinned probe now hosts a `group-hover` tooltip that pops beneath the distance chip on hover, showing signed ΔX / ΔY / ΔZ (color-coded rose/emerald/sky to match the axes). Testid `workplane-probe-axes-{probeId}`. Pointer-events disabled on the tooltip so it can't accidentally block the × remove button.
 
 Files: `RulerPlacementDots.jsx` (hoveredIdx state + crosshair Billboard), `WorkplaneRuler.jsx` (probe tooltip), `SelectionDimLabels.jsx` (peakDx/Dy/Dz/Horiz decomposition + inline render). Frontend compiles clean.
+
+## Iteration 126 (2026-07-04) — Printability Report scoring engine (Phase 1B skeleton)
+Strategic pivot: ForgeSlicer is now positioned as an **AI-mesh → printable-file preparation system**. The Printability Report becomes the central UX skeleton — every future repair tool (Auto-Clean, Decimate, Voxel Remesh, Add Base, Thicken Walls, Reorient) is hung off score-raising fixes.
+
+### Backend
+- ✅ New `printability_service.py` — pure-function analyzer taking mesh bytes → `PrintabilityReport { score, verdict, issues[], metrics }`. Zero new deps (uses trimesh + numpy already installed).
+- ✅ Analysers: `_check_watertight`, `_check_winding`, `_check_fragments`, `_check_triangle_count`, `_check_degenerate`, `_check_flat_base`, `_check_bbox_size`. Each returns typed `PrintabilityIssue` with severity + `fix_action` code (`auto_clean`, `decimate_with_intent`, `voxel_remesh`, `add_base`, `thicken_walls`, `reorient`, `none`).
+- ✅ Score formula: `100 - Σ weights`, clamped [0,100]. Verdict thresholds: `ready ≥ 80`, `needs_work ≥ 45`, `not_printable < 45`.
+- ✅ New route `POST /api/printability/analyze` (auth-required, multipart file upload, 100MB cap, `.stl/.obj/.ply/.3mf/.glb/.gltf` allowed). Stateless.
+- ✅ **14 pytest cases** in `tests/test_printability.py` (10 service-level + 4 HTTP) covering: clean cube = ready score, non-watertight = critical + auto-clean fix, loose fragments detection, no-flat-base = add_base fix, tiny-mesh unit-mismatch warning, score-clamp, verdict thresholds, byte parsing, dict-JSON roundtrip, 401/400/200 HTTP paths. **All 14 pass.**
+
+### Frontend
+- ✅ New `PrintabilityReportPanel.jsx` — docked slide-in panel (right-side, w-380px). Contains:
+  - Score ring (0-100) — color coded emerald/amber/red at 80/45 thresholds. Testid `printability-score-ring` / `printability-score-number`.
+  - Verdict header with icon + descriptive line.
+  - Metric strip: triangles, volume (cm³), bbox, watertight ✓/✗, parts, flat base.
+  - Issue list — one row per issue with severity badge, message, detail, and a **"Fix with X" button** wired to a `handleFix` handler that maps `fix_action` → downstream tool. Currently stubs toast "coming in next update" since Auto-Clean etc. land in follow-up iterations. Testid pattern `printability-issue-{code}` + `printability-fix-{code}`.
+  - Refresh button re-runs the analyzer.
+- ✅ New `lib/printabilityApi.js` — `analyzePrintability(bytes, filename, fileType)` posts to the endpoint using existing `exportSceneToSTLBytes` output.
+- ✅ New toolbar button `printability-open-btn` (orange ShieldCheck icon, sits after STL-preview in SystemRow) — opens the panel.
+- ✅ Panel auto-runs analysis on open.
+
+### What this unblocks
+Every downstream tool (weeks 4-11 in the roadmap) now has a natural entry point: the "Fix with X" button on each issue is already wired — implementations just replace the toast stub with a real handler. The Print-Readiness score becomes the product's North Star metric.
+
+Files touched: 3 new backend files (`printability_service.py`, `routes/printability.py`, `tests/test_printability.py`), 3 new frontend files (`PrintabilityReportPanel.jsx`, `lib/printabilityApi.js`, wiring in `Workspace.jsx` / `TopToolbar.jsx` / `SystemRow.jsx`). Frontend compiles clean, all 14 backend tests pass.

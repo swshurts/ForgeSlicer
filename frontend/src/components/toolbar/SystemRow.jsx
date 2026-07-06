@@ -11,7 +11,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  FilePlus2, FileUp, FileDown, Save, Upload, Layers, Eye,
+  FilePlus2, FileUp, FileDown, Save, Upload, Layers, Eye, ShieldCheck,
   Hexagon, Globe, Library, Printer, ChevronDown, Sparkles, Settings as SettingsIcon,
   FolderTree,
 } from "lucide-react";
@@ -31,7 +31,7 @@ export default function SystemRow({
   busyMsg,
   actions,
   onShare, onSaveComponent, onSendToOrca, onOpenHelp,
-  onPreviewExport, onOpenProjectExplorer,
+  onPreviewExport, onOpenProjectExplorer, onOpenPrintability,
 }) {
   const projectName = useScene((s) => s.projectName);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -131,6 +131,17 @@ export default function SystemRow({
       </IconBtn>
       <IconBtn testid="stl-preview-btn" onClick={onPreviewExport} title="Preview the export in 3D (verify carves before slicing)">
         <Eye size={16} />
+      </IconBtn>
+      {/* iter-126 — Print-Readiness. Runs the analyzer on the current
+          scene and slides in the docked report panel. High-visibility
+          orange badge because it's the tent-pole feature for the
+          AI-mesh-to-printable-file positioning. */}
+      <IconBtn
+        testid="printability-open-btn"
+        onClick={onOpenPrintability}
+        title="Print-Readiness — score this scene and see fixable issues"
+      >
+        <ShieldCheck size={16} className="text-orange-400" />
       </IconBtn>
 
       <div className="flex-1" />
