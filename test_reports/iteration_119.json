@@ -1,0 +1,32 @@
+{
+  "summary": "Full-merge LithoForge → ForgeSlicer regression complete. Backend: 22/22 pytest cases in /app/backend/tests/test_litho_studio.py PASS. New tests added for (a) SSO/inbox shim removal: /api/litho/inbox, /api/auth/sso-bridge, /api/auth/sso-bridge/mint all return 404; (b) new persistent submodules: /api/litho/studio/presets full CRUD (GET→POST→GET→DELETE→404 on 2nd DELETE), /api/litho/studio/my-jobs returns list + newly-optimized job persists (verified job_id, total_layers>0, delta_e_mean, thumbnail_base64); (c) /api/litho/studio/filament-library/brands returns 19 brands, /filament-library/mine returns filaments[] (empty for test user). Frontend: session-cookie E2E worked end-to-end — /litho loads (litho-studio-header + all sliders + printer/nozzle/shape selects + generate + workspace-back present); palette shows 8 default filaments (WHITE/YELLOW/ORANGE/RED/MAGENTA/GREEN/BLUE/KEY); 128x128 gradient PNG upload → histogram populated + Brightness/Contrast/Saturation sliders visible; 'Suggest palette from photo' re-derived a 6-filament palette (now WHITE/ORANGE/GREEN/MAGENTA/PURPLE/KEY); 'Generate lithophane' produced ΔE 34.65 · 22 Layers · 6 filaments with preview render + MEAN 34.65/95PCT 49.48 in Color Fidelity + Layer Stack bar + STL/3MF/Swap download buttons; 'Workspace' back button routed to /workspace. Regression: /workspace still loads (3D canvas), TopToolbar 'Lithophane' button (data-testid open-lithoforge-btn, href=/litho) navigates to studio. Landing page header + hero 'Lithophane' links both href=/litho — zero cross-domain lithoforge.net references remain in the interactive flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_litho_studio.py",
+    "/app/test_reports/pytest/pytest_litho_studio_iter119.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "3 lithoforge.net string references remain but are BENIGN: /app/frontend/src/components/litho/lib/auth.js (comment only), /app/frontend/src/components/Handoff.jsx (postMessage origin allowlist for legacy handoff URLs + doc-example comment), /app/frontend/src/contexts/AuthContext.jsx (comment noting handoff retirement). None trigger an actual cross-domain jump; the runtime openInPeer helper is gone. Safe to leave, or clean up in a follow-up pass.",
+    "In-memory _JOBS/_UPLOADS dicts in routes/litho_studio.py are still per-process (carried over from iter-118). Non-blocking for MVP but would break under multi-worker uvicorn; the new litho.jobs_history submodule DOES persist to Mongo for /my-jobs so cross-worker read is safe there — only the in-flight optimize→export handoff relies on the dict.",
+    "TestPresets creates uniquely-named 'TEST_preset_*' entries and cleans them up via DELETE at the end. No orphaned data left in Mongo after test run."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_litho_studio.py (added TestPresets, TestMyJobs, TestFilamentLibrary; added sso-bridge 404 regressions)"
+  ],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100%"},
+  "test_credentials": "session_token=st_test_litho_1783361464350 (bound to litho.test.*@example.com), still valid.",
+  "seed_data_creation": "none — one throwaway preset created + deleted by TestPresets.test_presets_full_crud; one lithophane job auto-persisted by TestMyJobs.test_optimize_persists_job_in_my_jobs.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend suite /app/backend/tests/test_litho_studio.py (22 tests) is the canonical regression for the full LithoForge merge. New sub-modules covered: presets (CRUD), my-jobs (persistence), filament-library/{brands,mine}. Shim-removal regressions cover /litho/inbox and /auth/sso-bridge*. Frontend flow verified via seeded session cookie — see Playwright script above for the upload → suggest → generate → export pattern (30s timeout is plenty). If the litho-studio-header data-testid ever moves out of the top banner, the header ΔE/layers text actually lives in the viewport sub-bar (VIEWPORT · ΔE 34.65 · 22 Layers · 6 filaments), not the header itself.",
+  "rca of the issue": "N/A — full stack green."
+}

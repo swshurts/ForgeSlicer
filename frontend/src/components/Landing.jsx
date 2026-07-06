@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
-import { openInPeer } from "../lib/ssoHandoff";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
 import { useAuth } from "../contexts/AuthContext";
 import UserMenu from "./UserMenu";
@@ -217,73 +216,11 @@ function IterPopoverTrigger() {
   );
 }
 
-// Iter-103 — SSO Bridge banner.
-//
-// Surfaces the cross-app SSO flow that was previously hidden inside the
-// "LithoForge" header link. Modern third-party cookie partitioning
-// killed the auto-bridge for visitors who type either domain into the
-// address bar directly, so the only way most users discover the linked
-// account is through an explicit affordance. This banner is that
-// affordance — dismissible (localStorage flag) and only shown on the
-// Landing page so it never competes with workspace tooling.
+// Iter-103 — Removed. LithoForge is now merged into ForgeSlicer as the
+// in-app Lithophane Studio (/litho route); the old cross-domain SSO
+// bridge banner served a pain-point that no longer exists.
 function SsoBridgeBanner() {
-  const { user } = useAuth();
-  const [dismissed, setDismissed] = React.useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage?.getItem("forge.sso.banner.dismissed") === "1";
-  });
-  if (dismissed) return null;
-
-  const handleOpenLitho = (e) => {
-    e.preventDefault();
-    if (user) openInPeer("https://lithoforge.net", "/");
-    else window.open("https://lithoforge.net", "_blank", "noopener");
-  };
-  const dismiss = () => {
-    try { window.localStorage?.setItem("forge.sso.banner.dismissed", "1"); } catch (_) { /* noop */ }
-    setDismissed(true);
-  };
-
-  return (
-    <div
-      data-testid="sso-bridge-banner"
-      className="mb-10 border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-orange-500/5 to-transparent rounded-lg px-4 py-3 flex items-center gap-3"
-    >
-      <div className="w-8 h-8 rounded bg-orange-500/15 border border-orange-500/40 flex items-center justify-center flex-shrink-0">
-        <Sparkles size={14} className="text-orange-300" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-semibold text-white">
-          {user
-            ? "Already signed in here — bridge over to LithoForge with one click"
-            : "Use ForgeSlicer + LithoForge together"}
-        </div>
-        <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-          {user
-            ? "Browser-level privacy now blocks our auto-bridge, but clicking through transfers your sign-in via a one-time secure handoff. Same account, no second password."
-            : "One account, both apps. Sign in here, and you'll land on LithoForge already signed in (and vice-versa) — even though browsers have started partitioning cross-site cookies."}
-        </div>
-      </div>
-      <a
-        href="https://lithoforge.net"
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={handleOpenLitho}
-        data-testid="sso-bridge-cta"
-        className="flex-shrink-0 h-8 px-3 text-[11px] font-semibold text-orange-200 hover:text-white bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 rounded flex items-center gap-1.5 transition-colors whitespace-nowrap"
-      >
-        Open LithoForge <ChevronRight size={12} />
-      </a>
-      <button
-        onClick={dismiss}
-        data-testid="sso-bridge-dismiss"
-        title="Hide this banner"
-        className="flex-shrink-0 h-7 w-7 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800/60 flex items-center justify-center text-lg leading-none"
-      >
-        ×
-      </button>
-    </div>
-  );
+  return null;
 }
 
 export default function Landing() {
@@ -309,18 +246,12 @@ export default function Landing() {
     setOpenStartSections((prev) => ({ ...prev, [id]: !prev[id] }));
   const { user } = useAuth();
 
-  // Iter-99.2 — When the visitor is signed into ForgeSlicer, route the
-  // LithoForge link through `openInPeer` so they land on LithoForge
-  // already signed in (first-party cookie set by LithoForge after the
-  // /auth/sso-accept exchange). Anonymous visitors get the plain
-  // external link — no JWT to mint, no SSO benefit, just a fresh tab.
+  // iter-128 — LithoForge is now merged into ForgeSlicer as the in-app
+  // Lithophane Studio at /litho. The old cross-domain "openInPeer" jump
+  // is retired; header + footer links now route to the internal page.
   const openLithoForge = (e) => {
     e.preventDefault();
-    if (user) {
-      openInPeer("https://lithoforge.net", "/");
-    } else {
-      window.open("https://lithoforge.net", "_blank", "noopener");
-    }
+    navigate("/litho");
   };
 
   const handlePickFile = () => {
@@ -374,17 +305,14 @@ export default function Landing() {
             both domains and is positioning them as a "Forge Suite".
             External link → opens in a new tab so users keep their
             ForgeSlicer session intact. */}
-        <a
-          href="https://lithoforge.net"
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={openLithoForge}
+        <Link
+          to="/litho"
           data-testid="landing-lithoforge-link"
           className="h-8 px-3 text-xs text-slate-400 hover:text-orange-300 hidden sm:flex items-center gap-1.5 transition-colors"
-          title={user ? "Open LithoForge (auto sign-in)" : "Open LithoForge — our sister tool for lithophanes & multi-color prints"}
+          title="Open Lithophane Studio — turn photos into 3D-printable multi-color lithophanes"
         >
-          <Sparkles size={13} className="text-orange-400" /> LithoForge
-        </a>
+          <Sparkles size={13} className="text-orange-400" /> Lithophane
+        </Link>
         <Link to="/gallery" data-testid="landing-gallery-link" className="h-8 px-3 text-xs text-slate-300 hover:text-white flex items-center gap-1.5">
           <Globe size={14} /> Public Gallery
         </Link>
@@ -1089,10 +1017,7 @@ export default function Landing() {
               Browser CAD + slicer for 3D printing. Free for the core toolkit. Private by default.
             </p>
             <div className="mt-3 text-[10px] text-slate-600">
-              Part of the Forge Suite ·{" "}
-              <a href="https://lithoforge.net" target="_blank" rel="noopener noreferrer" onClick={openLithoForge} className="text-orange-400/80 hover:text-orange-300">
-                LithoForge
-              </a>{" "}for lithophanes &amp; multi-color prints
+              Includes <Link to="/litho" className="text-orange-400/80 hover:text-orange-300">Lithophane Studio</Link> for multi-color photo prints
             </div>
           </div>
 

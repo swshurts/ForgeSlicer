@@ -502,7 +502,7 @@ def build_diffuser_mesh(spec: LightboxSpec) -> Tuple[np.ndarray, np.ndarray]:
 
 def build_lightbox_export(spec: LightboxSpec) -> dict:
     """Return STLs for frame, back panel and (optionally) diffuser."""
-    from exporters import write_stl_binary
+    from .exporters import write_stl_binary
 
     spec = _clamp_spec(spec)
     frame_v, frame_f = build_frame_mesh(spec)

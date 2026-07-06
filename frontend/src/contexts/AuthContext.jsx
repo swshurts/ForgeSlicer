@@ -81,14 +81,9 @@ export function AuthProvider({ children }) {
   // Wrap setUser so callers (e.g. AuthCallback after a fresh sign-in, or
   // Profile after pulling contributor-status) trigger the celebration check.
   //
-  // Iter-100 — Forge-Suite SSO is now exclusively the redirect flow in
-  // `lib/ssoHandoff.js` (user-clicked "Open in [peer]" buttons that
-  // round-trip a 60 s JWT through the peer's `/auth/sso-accept` route
-  // and land a first-party cookie). The earlier silent fan-out helper
-  // was removed because modern browser cookie partitioning made the
-  // cross-site `Set-Cookie` it relied on invisible to the user when
-  // they later visited the peer directly — false confidence with
-  // ongoing CORS-preflight noise as the only visible artefact.
+  // iter-128 — LithoForge merged in-tree, so the Forge-Suite SSO
+  // handoff to lithoforge.net has been retired. Sign-in just sets the
+  // ForgeSlicer session cookie and celebrates any new contributor tier.
   const setUserAndCelebrate = useCallback((u) => {
     setUser(u);
     maybeCelebrate(u);

@@ -21,7 +21,8 @@ import email_service
 import auth_local
 import billing
 import braintree_billing
-import sso_bridge
+# iter-128 — LithoForge merged into ForgeSlicer as first-party
+# Lithophane Studio. The old SSO bridge / peer app model is retired.
 import admin as admin_module
 import orca_engine
 import orca_upstream
@@ -31,7 +32,6 @@ from routes.user_printers import build_user_printers_router
 from routes.meshy_key import build_meshy_key_router, resolve_user_meshy_key
 from routes.printability import build_printability_router
 from routes.custom_textures import build_custom_textures_router
-from routes.litho_inbox import build_litho_inbox_router
 from routes.litho_studio import build_litho_studio_router
 from routes.mesh_repair import build_mesh_repair_router
 from routes.exports import build_exports_router
@@ -553,12 +553,7 @@ api_router.include_router(build_custom_textures_router(db, get_current_user))
 # POST a finished STL/3MF here; the user's workspace polls /api/litho/inbox
 # and auto-imports onto the build plate the next time they open ForgeSlicer.
 # File payloads go through GridFS so the 16MB BSON limit doesn't bite.
-api_router.include_router(build_litho_inbox_router(db, get_current_user))
-
-# Lithophane Studio — LithoForge merged in-tree. /api/litho/studio/*
-# owns the image → CMYKW lithophane → STL/3MF pipeline. Shares
-# ForgeSlicer's auth so no second sign-in prompt.
-api_router.include_router(build_litho_studio_router(get_current_user))
+api_router.include_router(build_litho_studio_router(get_current_user, db))
 
 # Server-side mesh repair via MeshLab. /api/mesh/repair takes an STL
 # upload and returns a repaired (watertight, manifold) STL. Used by
@@ -668,17 +663,6 @@ billing_webhook_router = billing.get_webhook_router(db)
 # the pricing page routes here; Stripe routes stay mounted so any
 # historical session ids still resolve via /api/billing/status.
 braintree_api_router = braintree_billing.get_router(db, get_optional_user)
-
-# Iter-99 — Forge Suite SSO bridge. Lets a user signed into a peer
-# app (LithoForge today, future siblings later) auto-land signed in
-# on ForgeSlicer. Mounted at /api/auth/sso-bridge/* alongside the
-# existing Google + local-auth flows.
-sso_bridge_router = sso_bridge.get_router(
-    db,
-    get_optional_user,
-    _set_session_cookie,
-    _public_user,
-)
 
 
 # ---------- Contributor tier ----------
@@ -2329,7 +2313,6 @@ app.include_router(api_router)
 app.include_router(billing_api_router)
 app.include_router(billing_webhook_router)
 app.include_router(braintree_api_router)
-app.include_router(sso_bridge_router)
 # OpenAI Realtime API (live voice transcription) — mounted under
 # /api/v1 to match the integration playbook's documented prefix so the
 # frontend WebRTC client can call /api/v1/realtime/session and

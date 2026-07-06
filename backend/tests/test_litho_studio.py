@@ -201,13 +201,19 @@ class TestRegression:
         assert r.status_code == 200
         assert "user_id" in r.json()
 
-    def test_litho_inbox_older_api(self, client):
-        # The older inbox API — separate from the new studio one.
+    def test_litho_inbox_older_api_removed(self, client):
+        # LithoForge merge: legacy inbox API stripped. Should now 404.
         r = client.get(f"{API}/litho/inbox")
-        assert r.status_code == 200, r.text
-        # Should return list-like structure
-        data = r.json()
-        assert isinstance(data, (list, dict))
+        assert r.status_code == 404
+
+    def test_sso_bridge_mint_removed(self, client):
+        # sso_bridge.py has been deleted; endpoint must be gone.
+        r = client.post(f"{API}/auth/sso-bridge/mint")
+        assert r.status_code == 404
+
+    def test_sso_bridge_root_removed(self, client):
+        r = client.get(f"{API}/auth/sso-bridge")
+        assert r.status_code == 404
 
     def test_meshy_key_endpoint(self, client):
         # GET on /me/meshy-key/status is the status probe endpoint
@@ -215,6 +221,137 @@ class TestRegression:
         assert r.status_code == 200
 
     def test_printability_analyze_small_stl(self, client):
+        # minimal 84-byte valid STL header (1 triangle count)
+        header = b"\x00" * 80 + (1).to_bytes(4, "little")
+        tri = b"\x00" * 50
+        stl_bytes = header + tri
+        files = {"file": ("t.stl", stl_bytes, "model/stl")}
+        r = client.post(f"{API}/printability/analyze", files=files)
+        assert r.status_code in (200, 400, 422), f"unexpected: {r.status_code} {r.text[:200]}"
+
+
+# ---------------------------------------------------------------------------
+# New submodules (iter-119): presets, my-jobs, filament-library
+# ---------------------------------------------------------------------------
+class TestPresets:
+    """Presets CRUD flow — GET (empty|existing) → POST (create) →
+    GET (includes new) → DELETE → GET (removed)."""
+
+    def test_presets_full_crud(self, client):
+        # 1. GET list — status 200 (may or may not have prior presets)
+        r = client.get(f"{API}/litho/studio/presets")
+        assert r.status_code == 200
+        initial = r.json()
+        assert isinstance(initial, list)
+
+        # 2. POST create — use a unique test name so we don't clash
+        preset_name = f"TEST_preset_{uuid.uuid4().hex[:8]}"
+        payload = {
+            "name": preset_name,
+            "config": {"width_mm": 100, "height_mm": 100, "thickness_mm": 2.2},
+            "filaments": [
+                {"name": "WHITE", "hex": "#ffffff", "td": 3.0},
+                {"name": "BLACK", "hex": "#000000", "td": 3.0},
+            ],
+            "vibrancy": 0.5,
+        }
+        r = client.post(f"{API}/litho/studio/presets", json=payload)
+        assert r.status_code == 200, r.text
+        created = r.json()
+        assert created["name"] == preset_name
+        assert "preset_id" in created
+        preset_id = created["preset_id"]
+
+        # 3. GET again — the new preset must appear
+        r = client.get(f"{API}/litho/studio/presets")
+        assert r.status_code == 200
+        names = [p["name"] for p in r.json()]
+        assert preset_name in names, f"created preset missing in list: {names}"
+
+        # 4. DELETE — should return ok
+        r = client.delete(f"{API}/litho/studio/presets/{preset_id}")
+        assert r.status_code == 200, r.text
+        assert r.json().get("ok") is True
+
+        # 5. GET again — preset must be gone
+        r = client.get(f"{API}/litho/studio/presets")
+        assert r.status_code == 200
+        names = [p["name"] for p in r.json()]
+        assert preset_name not in names
+
+        # 6. DELETE again — should now 404
+        r = client.delete(f"{API}/litho/studio/presets/{preset_id}")
+        assert r.status_code == 404
+
+
+class TestMyJobs:
+    """/my-jobs endpoint — signed-in list of persisted jobs."""
+
+    def test_my_jobs_returns_list(self, client):
+        r = client.get(f"{API}/litho/studio/my-jobs")
+        assert r.status_code == 200
+        data = r.json()
+        # my-jobs may be either {"jobs": [...]} or bare [...] — accept either
+        if isinstance(data, dict):
+            assert "jobs" in data or isinstance(data, list)
+            jobs = data.get("jobs", [])
+        else:
+            jobs = data
+        assert isinstance(jobs, list)
+
+    def test_optimize_persists_job_in_my_jobs(self, client):
+        # Upload + optimize a small image, then verify it lands in /my-jobs.
+        b64 = _make_png_b64((70, 70))
+        up = client.post(f"{API}/litho/studio/upload",
+                         json={"image_base64": b64}).json()
+        payload = {
+            "image_id": up["image_id"],
+            "width_mm": 60,
+            "height_mm": 60,
+            "thickness_mm": 2.2,
+            "border_mm": 2.0,
+            "layer_height_mm": 0.12,
+            "max_swaps": 4,
+            "geometry": "flat",
+        }
+        r = client.post(f"{API}/litho/studio/optimize", json=payload)
+        assert r.status_code == 200, r.text
+        new_job = r.json()
+        new_job_id = new_job["job_id"]
+
+        # Fetch my-jobs — new job_id must be present, with thumbnail
+        r = client.get(f"{API}/litho/studio/my-jobs")
+        assert r.status_code == 200
+        data = r.json()
+        jobs = data.get("jobs", data) if isinstance(data, dict) else data
+        matched = [j for j in jobs if j.get("job_id") == new_job_id]
+        assert matched, f"just-optimized job_id={new_job_id} not in my-jobs"
+        j0 = matched[0]
+        assert j0.get("total_layers", 0) > 0
+        assert "delta_e_mean" in j0
+        # Thumbnail is optional in payload schema; if present, must be non-empty
+        if "thumbnail_base64" in j0 and j0["thumbnail_base64"]:
+            assert len(j0["thumbnail_base64"]) > 100
+
+
+class TestFilamentLibrary:
+    """New filament-library sub-router — brands + user-scoped mine."""
+
+    def test_filament_library_brands(self, client):
+        r = client.get(f"{API}/litho/studio/filament-library/brands")
+        assert r.status_code == 200
+        data = r.json()
+        assert "brands" in data
+        assert isinstance(data["brands"], list)
+        assert len(data["brands"]) >= 1, "brand catalog is empty"
+
+    def test_filament_library_mine_returns_list(self, client):
+        r = client.get(f"{API}/litho/studio/filament-library/mine")
+        assert r.status_code == 200
+        data = r.json()
+        assert "filaments" in data
+        assert isinstance(data["filaments"], list)
+
         # minimal 84-byte valid STL header (1 triangle count)
         header = b"\x00" * 80 + (1).to_bytes(4, "little")
         # Add one triangle (50 bytes): 12 floats + 2 bytes attr

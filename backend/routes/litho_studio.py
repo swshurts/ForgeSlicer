@@ -34,7 +34,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict
 
@@ -176,12 +176,52 @@ def _filaments_from_input(fils: Optional[List[FilamentIn]]) -> List[Filament]:
 # Router
 # ---------------------------------------------------------------------------
 
-def build_litho_studio_router(get_current_user) -> APIRouter:
+def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
     """Build the studio router. `get_current_user` is ForgeSlicer's
     standard auth dep (raises 401 if not signed in). We keep upload +
     optimize gated behind sign-in so anonymous scrapers can't run the
-    (expensive) heightmap solver against arbitrary uploads."""
+    (expensive) heightmap solver against arbitrary uploads.
+    `db` is the shared Motor async client — only required for the
+    persistent submodules (presets, jobs history, private filaments)."""
     router = APIRouter(prefix="/litho/studio", tags=["litho-studio"])
+
+    # Persistent sub-routers — mounted lazily so the studio still boots
+    # if the db handle isn't wired (e.g. unit tests that skip Mongo).
+    # ForgeSlicer's get_current_user returns a plain dict; LithoForge's
+    # routers expect `user.user_id`. Adapter wraps the dict in a
+    # SimpleNamespace so attribute access works.
+    from types import SimpleNamespace
+
+    async def _adapted_user(user: Dict[str, Any] = Depends(get_current_user)):
+        return SimpleNamespace(**user)
+
+    if db is not None:
+        from litho.presets import build_presets_router
+        from litho.jobs_history import build_jobs_router
+        from litho.filament_library_api import build_filament_library_router
+        router.include_router(build_presets_router(db, _adapted_user))
+        router.include_router(build_jobs_router(db, _adapted_user, _JOBS))
+        # Filament library needs both a hard-auth dep and an optional-user
+        # dep (for endpoints that read anonymous but personalize when
+        # signed in). We wrap ForgeSlicer's optional user with the same
+        # SimpleNamespace adapter (returning None when unauthenticated).
+        from types import SimpleNamespace as _SNS  # noqa: F811
+
+        # Late binding — get_optional_user lives in server.py, so import
+        # by name from the enclosing app module at call time.
+        import sys as _sys
+        _server_mod = _sys.modules.get("server")
+        _get_optional_user = getattr(_server_mod, "get_optional_user", None)
+
+        async def _adapted_optional_user(
+            request: Request,
+        ):
+            if _get_optional_user is None:
+                return None
+            u = await _get_optional_user(request)
+            return _SNS(**u) if u else None
+
+        router.include_router(build_filament_library_router(db, _adapted_user, _adapted_optional_user))
 
     async def _require_user(request):
         return await get_current_user(request)
@@ -236,7 +276,10 @@ def build_litho_studio_router(get_current_user) -> APIRouter:
         return UploadOut(image_id=image_id, width=img.width, height=img.height)
 
     @router.post("/optimize", response_model=OptimizeOut)
-    async def optimize_endpoint(body: OptimizeIn) -> OptimizeOut:
+    async def optimize_endpoint(
+        body: OptimizeIn,
+        request: Request,
+    ) -> OptimizeOut:
         if body.image_id not in _UPLOADS:
             raise HTTPException(status_code=404, detail="image_id not found")
         image = _UPLOADS[body.image_id]
@@ -334,6 +377,43 @@ def build_litho_studio_router(get_current_user) -> APIRouter:
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         _prune()
+
+        # Persist to MongoDB for signed-in users so they get a Job
+        # History strip that survives page reloads. Anonymous users
+        # continue to use the in-memory _JOBS dict only.
+        if db is not None:
+            try:
+                import sys as _sys
+                _server_mod = _sys.modules.get("server")
+                _get_optional_user = getattr(_server_mod, "get_optional_user", None)
+                _u = await _get_optional_user(request) if _get_optional_user else None
+                if _u and _u.get("user_id"):
+                    from litho.jobs_history import JobPersistData, persist_job
+                    await persist_job(
+                        db,
+                        _u["user_id"],
+                        JobPersistData(
+                            job_id=job_id,
+                            request=body.model_dump(),
+                            filaments=list(result.filaments),
+                            layer_map=result.layer_map,
+                            layer_height_mm=result.layer_height_mm,
+                            swap_heights_mm=result.swap_heights_mm,
+                            swap_colors=result.swap_colors,
+                            allocation=result.layer_allocation,
+                            total_layers=result.total_layers,
+                            delta_e_mean=result.delta_e_mean,
+                            delta_e_p95=result.delta_e_p95,
+                            preview_png_base64=preview,
+                            heightmap_png_base64=heightmap,
+                            timeline=timeline,
+                        ),
+                    )
+            except Exception:
+                # Persistence is best-effort — don't block the response
+                # on a Mongo hiccup. The user still gets the job_id +
+                # in-memory export.
+                logger.exception("Failed to persist litho job to MongoDB")
 
         return OptimizeOut(
             job_id=job_id,

@@ -15,7 +15,7 @@ import AuthorProfile from "@/components/AuthorProfile";
 import AdminPage from "@/components/AdminPage";
 import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
-import SsoAccept from "@/components/SsoAccept";
+import LithoStudio from "@/components/litho/LithoStudio";
 import Handoff from "@/components/Handoff";
 import Learn from "@/components/Learn";
 import SEOLanding from "@/components/SEOLanding";
@@ -88,7 +88,12 @@ function AppRouter() {
         }
       />
       <Route path="/handoff" element={<Handoff />} />
-      <Route path="/auth/sso-accept" element={<SsoAccept />} />
+      <Route
+        path="/litho"
+        element={
+          <ProtectedRoute label="Lithophane Studio"><LithoStudio /></ProtectedRoute>
+        }
+      />
       <Route
         path="/profile"
         element={

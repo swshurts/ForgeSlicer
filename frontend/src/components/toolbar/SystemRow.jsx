@@ -24,14 +24,12 @@ import HelpMegaMenu from "./HelpMegaMenu";
 import VoiceCommandPalette from "../VoiceCommandPalette";
 import UserMenu from "../UserMenu";
 import ThemeSwitcher from "./ThemeSwitcher";
-import { openInPeer } from "../../lib/ssoHandoff";
-import { useAuth } from "../../contexts/AuthContext";
 
 export default function SystemRow({
   busyMsg,
   actions,
   onShare, onSaveComponent, onSendToOrca, onOpenHelp,
-  onPreviewExport, onOpenProjectExplorer, onOpenPrintability, onOpenLithoStudio,
+  onPreviewExport, onOpenProjectExplorer, onOpenPrintability,
 }) {
   const projectName = useScene((s) => s.projectName);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -47,23 +45,6 @@ export default function SystemRow({
   // per-print without changing their default.
   const preferred = getPreferredSlicer();
   const userSlicers = getAllSlicers();
-  const { user } = useAuth();
-  // iter-127 — LithoForge is now merged in-tree. This button opens the
-  // Lithophane Studio modal (image → CMYKW lithophane → STL/3MF) with
-  // a Send-to-build-plate hand-off. The old cross-domain openInPeer
-  // handoff to lithoforge.net is kept as a fallback if the workspace
-  // parent hasn't wired the modal callback (e.g. legacy contexts).
-  const openLithoForge = () => {
-    if (onOpenLithoStudio) {
-      onOpenLithoStudio();
-      return;
-    }
-    if (user) {
-      openInPeer("https://lithoforge.net", "/");
-    } else {
-      window.open("https://lithoforge.net", "_blank", "noopener");
-    }
-  };
   // Build the merged option list, de-duping by id. Order:
   //   1. Preferred slicer (if any) — first so the primary button hits it
   //   2. Printer-recommended slicers
@@ -167,19 +148,17 @@ export default function SystemRow({
       >
         <Globe size={14} /> Gallery
       </Link>
-      {/* iter-100: cross-app launcher — sister tool LithoForge.
-          Signed-in users get an SSO handoff so they land already
-          authed. Hidden on small screens to keep the toolbar
-          breathing room. */}
-      <button
-        type="button"
-        onClick={openLithoForge}
+      {/* iter-128: Lithophane Studio — LithoForge merged in-tree as
+          the /litho route. Direct navigation now (no cross-domain SSO
+          bridge to maintain). */}
+      <Link
+        to="/litho"
         data-testid="open-lithoforge-btn"
-        title="Lithophane Studio — turn an image into a CMYKW lithophane, right in the workspace"
+        title="Lithophane Studio — photo → CMYKW multi-color lithophane → 3MF ready to slice"
         className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded hidden lg:flex items-center gap-1.5 border border-slate-700"
       >
         <Sparkles size={13} className="text-orange-400" /> Lithophane
-      </button>
+      </Link>
       <button
         data-testid="share-design-btn"
         onClick={onShare}
