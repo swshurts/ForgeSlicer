@@ -23,6 +23,7 @@ import { X, RefreshCcw, ShieldAlert, ShieldCheck, ShieldQuestion, Loader2, Wrenc
 import { useScene } from "../lib/store";
 import { exportSceneToSTLBytes } from "../lib/exporters";
 import { analyzePrintability } from "../lib/printabilityApi";
+import { repairImportedObject } from "../lib/meshRepairApi";
 
 const SEV_META = {
   critical: { label: "CRITICAL", cls: "bg-red-500/15 text-red-300 border-red-500/40" },
@@ -112,8 +113,10 @@ function MetricStrip({ metrics }) {
   );
 }
 
-function IssueRow({ issue, onFix }) {
+function IssueRow({ issue, onFix, fixingCode }) {
   const sev = SEV_META[issue.severity] || SEV_META.info;
+  const isFixing = fixingCode === issue.fix_action;
+  const anyFixing = !!fixingCode;
   return (
     <div
       data-testid={`printability-issue-${issue.code}`}
@@ -134,9 +137,13 @@ function IssueRow({ issue, onFix }) {
         <button
           data-testid={`printability-fix-${issue.code}`}
           onClick={() => onFix(issue.fix_action, issue)}
-          className="mt-2 h-7 px-2 bg-slate-800 hover:bg-orange-500/25 hover:text-orange-100 text-slate-200 text-[11px] font-medium rounded flex items-center gap-1.5 border border-slate-700 hover:border-orange-500/40"
+          disabled={anyFixing}
+          className="mt-2 h-7 px-2 bg-slate-800 hover:bg-orange-500/25 hover:text-orange-100 text-slate-200 text-[11px] font-medium rounded flex items-center gap-1.5 border border-slate-700 hover:border-orange-500/40 disabled:opacity-50 disabled:cursor-wait"
         >
-          <Wrench size={11} /> Fix with {actionLabel(issue.fix_action)}
+          {isFixing
+            ? <><Loader2 size={11} className="animate-spin" /> Fixing…</>
+            : <><Wrench size={11} /> Fix with {actionLabel(issue.fix_action)}</>
+          }
         </button>
       )}
     </div>
@@ -156,9 +163,15 @@ function actionLabel(code) {
 
 export default function PrintabilityReportPanel({ open, onClose }) {
   const objects = useScene((s) => s.objects);
+  const updateObject = useScene((s) => s.updateObject);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [err, setErr] = useState("");
+  // iter-127 — Track "Fix in progress" so the button spins + we can
+  // disable other actions concurrently. Also remember the pre-fix score
+  // so we can surface a satisfying "42 → 78" delta toast after each run.
+  const [fixingCode, setFixingCode] = useState(null);
+  const [lastScoreBeforeFix, setLastScoreBeforeFix] = useState(null);
 
   const runAnalysis = useCallback(async () => {
     setErr("");
@@ -174,27 +187,92 @@ export default function PrintabilityReportPanel({ open, onClose }) {
       const { bytes } = await exportSceneToSTLBytes(objects);
       const rep = await analyzePrintability(bytes, "scene.stl", "stl");
       setReport(rep);
+      // If a fix just completed, celebrate the delta.
+      if (lastScoreBeforeFix != null) {
+        const delta = rep.score - lastScoreBeforeFix;
+        if (delta > 0) {
+          toast.success(`Score raised: ${lastScoreBeforeFix} → ${rep.score}`, {
+            description: `+${delta} points from the last fix.`,
+          });
+        } else if (delta < 0) {
+          toast.warning(`Score dropped: ${lastScoreBeforeFix} → ${rep.score}`, {
+            description: `The fix introduced ${-delta} new penalty points. You may want to undo.`,
+          });
+        } else {
+          toast.info(`Score unchanged (${rep.score})`, {
+            description: "No detectable improvement — the mesh may already be at its best.",
+          });
+        }
+        setLastScoreBeforeFix(null);
+      }
     } catch (e) {
       setErr(e.message || "Analysis failed.");
     } finally {
       setLoading(false);
     }
-  }, [objects]);
+  }, [objects, lastScoreBeforeFix]);
 
   useEffect(() => {
     if (open) runAnalysis();
   }, [open, runAnalysis]);
 
+  // iter-127 — Real Fix handlers. `auto_clean` runs the existing
+  // /api/mesh/repair endpoint (MeshLab dedupe/reorient/tiny-shard removal
+  // + PyMeshFix watertight + trimesh fix_normals) on every imported
+  // object in the scene. Non-imported primitives (cube/cone/etc) don't
+  // need repair — they're mathematically clean by construction.
+  const runAutoClean = useCallback(async () => {
+    const importedObjs = (objects || []).filter(
+      (o) => o.type === "imported" && !o.locked && (o.visible ?? true) && o.geometry,
+    );
+    if (importedObjs.length === 0) {
+      toast.info("Auto-Clean skipped", {
+        description: "Only imported meshes need repair — primitives are already clean.",
+      });
+      return;
+    }
+    setFixingCode("auto_clean");
+    // Remember the current score so we can show a delta after re-analysis.
+    setLastScoreBeforeFix(report?.score ?? null);
+    let repaired = 0;
+    let totalInTris = 0;
+    let totalOutTris = 0;
+    let anyNonWatertight = false;
+    try {
+      for (const obj of importedObjs) {
+        const { update, stats } = await repairImportedObject(obj);
+        updateObject(obj.id, update);
+        repaired += 1;
+        totalInTris += stats.inputTris || 0;
+        totalOutTris += stats.outputTris || 0;
+        if (!stats.watertight) anyNonWatertight = true;
+      }
+      toast.success(`Auto-Clean complete — ${repaired} mesh${repaired === 1 ? "" : "es"} repaired`, {
+        description: `${totalInTris.toLocaleString()} → ${totalOutTris.toLocaleString()} triangles`
+          + (anyNonWatertight ? " · some parts still not fully watertight" : " · all parts now watertight"),
+      });
+      // Re-run analysis to refresh the score. The delta-toast fires
+      // inside runAnalysis when it sees lastScoreBeforeFix is set.
+      await runAnalysis();
+    } catch (e) {
+      setLastScoreBeforeFix(null);
+      toast.error(`Auto-Clean failed: ${e.message || e}`);
+    } finally {
+      setFixingCode(null);
+    }
+  }, [objects, report, updateObject, runAnalysis]);
+
   const handleFix = useCallback((code, issue) => {
-    // Fix actions will be wired to real tools in follow-up iterations
-    // (Auto-Clean → mesh_repair; Add Base → boolean union with a base
-    // primitive; Decimate → new endpoint using open3d). For now surface
-    // a clear "coming next" message with the mapped tool name so the
-    // report's UX is complete end-to-end.
+    if (code === "auto_clean") {
+      runAutoClean();
+      return;
+    }
+    // Remaining fix actions (decimate_with_intent, voxel_remesh, add_base,
+    // thicken_walls, reorient) still land in follow-up iterations.
     toast.info(`${actionLabel(code)} — coming in the next update`, {
       description: `Will address: ${issue.message}`,
     });
-  }, []);
+  }, [runAutoClean]);
 
   if (!open) return null;
 
@@ -273,7 +351,7 @@ export default function PrintabilityReportPanel({ open, onClose }) {
                   Issues ({report.issues.length})
                 </div>
                 {report.issues.map((issue, i) => (
-                  <IssueRow key={`${issue.code}-${i}`} issue={issue} onFix={handleFix} />
+                  <IssueRow key={`${issue.code}-${i}`} issue={issue} onFix={handleFix} fixingCode={fixingCode} />
                 ))}
               </div>
             )}

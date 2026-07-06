@@ -31,9 +31,27 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-07-04)
+## Current Open Items (as of 2026-07-06)
+
+### Recently completed (iter-127, 2026-07-06) — Auto-Clean: first real Fix handler
+- "Fix with Auto-Clean" button now wired to the existing `/api/mesh/repair` pipeline (MeshLab + PyMeshFix + trimesh normal fix).
+- Score-delta toast: "Score raised: 42 → 78 · +36 points" after every fix (positive), and warning toasts for zero / negative deltas.
+- Per-issue Fix buttons show spinner + disabled state during repair to prevent double-click races.
+- Verified live: broken non-watertight cube 70 → 100 (+30 score jump). Full backend suite: **16/16 passed**.
 
 ### Strategic pivot (2026-07-04)
+**ForgeSlicer is now positioned as an "AI-mesh → printable-file preparation system"** — the missing middleware between AI 3D generators (Meshy, Tripo, Hunyuan3D, TRELLIS) and consumer slicers (Bambu, Prusa, Orca). Not another slicer, not another CAD tool. Owns the workflow-pain wedge nobody else does.
+
+**Approved roadmap:**
+- Week 1: Fal.ai Hunyuan3D v2.1 as default provider ($0.05/gen, 8× cheaper than Meshy) — Meshy kept as premium BYO
+- **Week 2: Printability Report scoring engine ← ✅ DONE (iter-126)**
+- **Week 3-4: Auto-Clean bundle wired to fix_action ← ✅ DONE (iter-127)**
+- Weeks 4-5: Decimate-with-print-intent presets
+- Weeks 6-7: Auto-Base generator + Thin-wall detection
+- Weeks 8-11: Resin MVP (hollow, drain holes, orientation assistant, resin readiness score)
+- Ongoing: Batch mode + shareable print-shop preset packs
+
+### Recently completed (iter-126, 2026-07-04) — Printability Report engine (Phase 1B skeleton)
 **ForgeSlicer is now positioned as an "AI-mesh → printable-file preparation system"** — the missing middleware between AI 3D generators (Meshy, Tripo, Hunyuan3D, TRELLIS) and consumer slicers (Bambu, Prusa, Orca). Not another slicer, not another CAD tool. Owns the workflow-pain wedge nobody else does.
 
 **Approved roadmap:**

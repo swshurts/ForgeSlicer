@@ -4646,3 +4646,30 @@ User request: "Yes, auto-open the Printability panel after every successful AI g
 - ✅ `Workspace.jsx` — existing global event listener extended: `else if (name === "printability") setPrintabilityOpen(true);`. Matches the same pattern used for save_component / share_gallery / help / settings / projects.
 
 Net effect: every AI generation → user clicks Import → mesh lands → Print-Readiness panel slides in with a scored assessment (typical AI meshes land 30-55/100 due to over-tesselation + non-watertight + no flat base), showing the value proposition of the "AI-mesh → printable-file" positioning immediately without a tutorial pass. Frontend compiles clean.
+
+## Iteration 127 (2026-07-06) — Auto-Clean: first real fix_action handler
+The "Fix with Auto-Clean" button on the Printability Report is now wired to a real repair pipeline (previously a stubbed toast). Reused the existing `POST /api/mesh/repair` endpoint (MeshLab dedupe/reorient/tiny-shard removal + PyMeshFix watertight + trimesh `fix_normals`) — no new backend surface required.
+
+### Frontend
+- ✅ `PrintabilityReportPanel.jsx` — `handleFix("auto_clean")` now calls `runAutoClean()`:
+  - Filters scene for imported objects (`type === "imported"`, unlocked, visible, geometry-attached). Primitives are already mathematically clean by construction so we skip them with an "Auto-Clean skipped" info toast.
+  - Runs `repairImportedObject(obj)` (existing helper in `lib/meshRepairApi.js`) on each — returns `{ update: { geometry, originalBbox }, stats }`. Merges the update into the store via `updateObject(obj.id, update)`.
+  - Aggregates before/after triangle counts and watertight status across all repaired objects, surfaces a summary toast: `"Auto-Clean complete — N meshes repaired · 45,213 → 42,890 triangles · all parts now watertight"`.
+  - Auto re-runs the printability analyzer and shows a **"Score raised: X → Y"** toast with the delta. Uses `lastScoreBeforeFix` state to capture the pre-fix score so the delta survives the async round-trip.
+  - Per-issue Fix button shows a `<Loader2 />` spinner + "Fixing…" label while the action is running; all Fix buttons on the panel go disabled (cursor-wait) concurrently to prevent double-click races.
+- ✅ Fix handlers for the remaining actions (`decimate_with_intent`, `voxel_remesh`, `add_base`, `thicken_walls`, `reorient`) still stub a "coming in the next update" toast — same UX shape, they'll each swap to a real handler in follow-up iterations.
+
+### Backend
+- No new endpoints — reused the existing `POST /api/mesh/repair` (already validated in `tests/test_mesh_repair.py`). Auto-Clean is a UI-layer composition of existing capability.
+
+### Tests
+- ✅ New `tests/test_autoclean_raises_score.py` — 2 integration cases:
+  - `test_broken_cube_score_rises_after_repair`: broken non-watertight cube (10 tris) → `/api/mesh/repair` → repaired 12-tri watertight cube. Asserts score strictly increases, `non_watertight` issue removed, verdict moves out of `not_printable`. Verified live: **70 → 100 (+30)**.
+  - `test_score_delta_is_meaningful`: same flow but asserts Δ ≥ 10 points. Guards against a future regression that "repairs" the mesh without actually improving score-visible metrics.
+- Full backend suite: **16/16 passed** (14 printability + 2 auto-clean e2e).
+
+### What's now user-visible
+1. Import an AI mesh (Meshy / Hunyuan) → Printability panel auto-opens with a low score (typical 30-55).
+2. Click "Fix with Auto-Clean" on the non-watertight issue → button spins → repaired mesh replaces the imported one in the viewport → panel re-scores itself → toast fires: **"Score raised: 42 → 78 · +36 points from the last fix."**
+
+Files: `PrintabilityReportPanel.jsx` (handleFix + runAutoClean + score-delta toast + IssueRow spinner state). No backend changes.
