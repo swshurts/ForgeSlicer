@@ -109,6 +109,11 @@ def build_marketplace_router(
     async def publish_listing(
         job_id: str, body: ListingIn, user=Depends(require_user)
     ):
+        # iter-134 — Publishing to the marketplace is a paid perk. Free
+        # tier can still browse + buy; only the "sell your work" flow
+        # is gated. Payouts follow the same gate on POST /payouts/email.
+        from .tier_gate import ensure_paid
+        ensure_paid(user, feature="Publishing to the marketplace")
         job = await db.jobs.find_one(
             {"user_id": user.user_id, "job_id": job_id}, {"_id": 0}
         )

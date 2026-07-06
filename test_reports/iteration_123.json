@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 3 LithoForge merge — tier gates + landing integration. Extended /app/backend/tests/test_litho_studio.py with a new TestTierGates class (6 tests: unit-level is_paid/ensure_paid semantics, FREE 402 for publish + set-email with JSON body + no DB mutation, FREE eligible=false in status, MAKER 200 on all paid endpoints + tier revert verification, and FREE regression that non-gated endpoints stay open). Also updated TestPayouts.test_status_returns_full_schema to assert the new `eligible` field, and rewrapped TestPayouts.test_set_paypal_email_persists + TestMarketplace.test_publish_browse_detail_unpublish_flow with a _promote_to_maker context manager so they keep passing under the new gate. Backend: 40/40 PASS. Frontend: 6/6 Playwright flows PASS across free-tier + maker-promotion + regression.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_litho_studio.py",
+    "/app/test_reports/pytest/iteration_123_litho.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "tier_gate.py is exemplary — 66 lines, single responsibility, defaults 'free' on missing subscription_tier so a schema drift can never accidentally unlock paid features. Accepts both dict and SimpleNamespace user shapes (LithoForge/ForgeSlicer boundary).",
+    "PayoutStatusOut.eligible defaults to True in the model — but the router always overrides via is_paid(user), so the default only leaks if a future code path constructs the model without setting eligible. Consider making it a required field (no default) to prevent this class of bug.",
+    "paypal_payouts.py imports `from .tier_gate import is_paid` twice inside set_email (lines 581 + 588) — harmless but redundant. Could hoist to module-level.",
+    "PayoutsPage upgrade banner text is well-scoped and matches the 402 detail returned by the backend (both mention 'Maker or Pro subscription') — consistent messaging across the FE/BE seam.",
+    "PublishDialog 402 branch (lines 82-94) surfaces backend detail verbatim via toast.error with a Sonner action button that opens /pricing in a new tab. Good UX: no dead-end error; user can bounce directly to plans. `noopener` on window.open guards against reverse tabnabbing.",
+    "Landing.jsx (~1166 lines) is approaching the 700-line advisory ceiling with all three lithophane integration blocks — future refactor should extract the accordion sections + LithoFeature/Feature sub-components into a separate file."
+  ],
+  "updated_files": ["/app/backend/tests/test_litho_studio.py"],
+  "success_rate": {"backend": "100% (40/40)", "frontend": "100% (6/6 flows)"},
+  "test_credentials": "session_token=st_test_litho_1783361464350 (user_test_litho_1783361464350). Cookie domain orca-cad-slice.preview.emergentagent.com, secure=True, httpOnly=True, sameSite=None. Bearer token also works.",
+  "seed_data_creation": "None new. Existing seeded listing cc3bb001-251a-48c3-a671-d242ac78f270 still present. Test user's paypal_email is now 'maker.uitest.1783@example.com' (updated by FLOW 5 promoted-tier UI Save). subscription_tier field is UNSET (= free) after cleanup. Confirmed via mongosh at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3 tier gates + landing merge validated end-to-end. Free-tier gets 402 (JSON, not HTML) on PUT /my-jobs/{id}/listing and POST /payouts/email; DB unchanged on 402. GET /payouts/status returns full schema including `eligible: bool`, which flips to true when subscription_tier is promoted to 'maker' or 'pro'. Landing.jsx new lithophane accordion section is on the Start tab (data-testid=landing-tab-start → data-testid=start-accordion-toggle-lithophane → data-testid=landing-lithophane-section). PayoutsPage renders data-testid=payouts-upgrade-banner + disables paypal-email-input and paypal-email-save on free tier; both are enabled and banner is hidden on maker/pro. PublishDialog 402 branch surfaces a Sonner toast with a 'See plans' action → window.open('/pricing', '_blank'). All 6 new TestTierGates pytest cases pass idempotently — the _promote_to_maker context manager captures/restores prior tier state so re-runs are safe. Tier state confirmed reverted at end of run.",
+  "flows_verified": {
+    "backend": [
+      "TestTierGates.test_unit_is_paid_variants — dict, SimpleNamespace, None, empty, arbitrary strings all handled correctly; ensure_paid raises 402 with feature name in detail",
+      "TestTierGates.test_free_tier_publish_returns_402_json — content-type=application/json + expected detail text",
+      "TestTierGates.test_free_tier_set_email_402_no_db_mutation — 402 + paypal_email in DB unchanged",
+      "TestTierGates.test_free_tier_status_eligible_false — full schema + eligible: false",
+      "TestTierGates.test_maker_tier_all_paid_endpoints_succeed — status eligible: true, set-email 200, publish 200, tier reverted after context",
+      "TestTierGates.test_free_tier_non_gated_endpoints_still_work — 10 non-gated endpoints all 200 under free tier",
+      "Full existing suite (34 tests): filaments, printers, upload/optimize/export, disc geometry, presets CRUD, my-jobs, filament library, marketplace flow, Braintree checkout, PayPal payouts (transactions/status), admin payouts 403, webhook — all still PASS"
+    ],
+    "frontend": [
+      "FLOW 1: Start tab shows 'Photo → Lithophane' accordion header between 'What It Does' and 'How It Works' (verified by string indices in body text)",
+      "FLOW 1: Expanding accordion reveals data-testid=landing-lithophane-section with badge, H3, both CTAs, all 4 LithoFeature cards (Photo intake / Auto palette / Layer-swap G-code / Marketplace)",
+      "FLOW 2: landing-lithophane-cta → navigates to /litho",
+      "FLOW 3: landing-lithophane-marketplace → navigates to /litho/marketplace",
+      "FLOW 4 (FREE): /litho/payouts renders data-testid=payouts-upgrade-banner with heading 'Upgrade to earn from your lithophanes', body containing 'Publishing to the marketplace and receiving payouts require', data-testid=payouts-upgrade-cta linking to /pricing; paypal-email-input and paypal-email-save both disabled",
+      "FLOW 5 (MAKER): after promoting subscription_tier=maker in Mongo, banner is GONE, both inputs enabled, POST /api/litho/studio/payouts/email returned 200, new email persisted after reload",
+      "FLOW 6 (regression): /litho, /litho/marketplace, /workspace all load; workspace TopToolbar Marketplace hover menu shows both Models and Lithophanes submenu items",
+      "PublishDialog 402 handling — code path verified at PublishDialog.jsx L82-94 (toast.error with action label 'See plans' + window.open('/pricing', '_blank', 'noopener'), duration 8000ms)"
+    ]
+  },
+  "rca of the issue": "N/A — no bugs found. All requested Phase 3 tier-gate and landing-integration behavior working as designed."
+}

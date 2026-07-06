@@ -75,7 +75,23 @@ export const PublishDialog = ({ jobId, jobName, onClose, onChanged }) => {
       onChanged && onChanged({ listed: true });
       onClose();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Could not publish");
+      // iter-134 — Free tier gets a 402 with an upgrade-nudge action
+      // that opens /pricing in a new tab. Everyone else gets the raw
+      // backend detail. Sonner action buttons keep the user in flow
+      // instead of a dead-end error.
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail || "Could not publish";
+      if (status === 402) {
+        toast.error(detail, {
+          action: {
+            label: "See plans",
+            onClick: () => window.open("/pricing", "_blank", "noopener"),
+          },
+          duration: 8000,
+        });
+      } else {
+        toast.error(detail);
+      }
     } finally {
       setBusy(false);
     }

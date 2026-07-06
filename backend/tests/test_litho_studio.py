@@ -7,16 +7,22 @@ import io
 import os
 import uuid
 import zipfile
+from contextlib import contextmanager
 
 import pytest
 import requests
 from PIL import Image
+from pymongo import MongoClient
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL") or "https://orca-cad-slice.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip("/")
 API = f"{BASE_URL}/api"
 
 SESSION_TOKEN = "st_test_litho_1783361464350"
+SESSION_USER_ID = "user_test_litho_1783361464350"
+
+MONGO_URL = os.environ.get("MONGO_URL") or "mongodb://localhost:27017"
+DB_NAME = os.environ.get("DB_NAME") or "test_database"
 
 
 @pytest.fixture(scope="session")
@@ -25,6 +31,40 @@ def client():
     s.headers.update({"Authorization": f"Bearer {SESSION_TOKEN}"})
     s.cookies.set("session_token", SESSION_TOKEN)
     return s
+
+
+@pytest.fixture(scope="session")
+def mongo_db():
+    """Direct DB access for tier promotion/revert during test setup."""
+    m = MongoClient(MONGO_URL)
+    return m[DB_NAME]
+
+
+@contextmanager
+def _promote_to_maker(mongo_db):
+    """Promote the test session user to `maker` tier for the duration of
+    the block, then revert. Any pre-existing tier is captured and restored."""
+    prior = mongo_db.users.find_one(
+        {"user_id": SESSION_USER_ID}, {"_id": 0, "subscription_tier": 1}
+    ) or {}
+    prior_tier = prior.get("subscription_tier")
+    mongo_db.users.update_one(
+        {"user_id": SESSION_USER_ID},
+        {"$set": {"subscription_tier": "maker"}},
+    )
+    try:
+        yield
+    finally:
+        if prior_tier is None:
+            mongo_db.users.update_one(
+                {"user_id": SESSION_USER_ID},
+                {"$unset": {"subscription_tier": ""}},
+            )
+        else:
+            mongo_db.users.update_one(
+                {"user_id": SESSION_USER_ID},
+                {"$set": {"subscription_tier": prior_tier}},
+            )
 
 
 def _make_png_b64(size=(60, 60), gradient=True) -> str:
@@ -389,63 +429,66 @@ class TestMarketplace:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
-    def test_publish_browse_detail_unpublish_flow(self, client):
-        job_id = self._make_job(client)
-        title = f"TEST_Listing_{uuid.uuid4().hex[:6]}"
-        # PUBLISH
-        put = client.put(
-            f"{API}/litho/studio/my-jobs/{job_id}/listing",
-            json={
-                "title": title,
-                "description": "pytest listing",
-                "price_usd": 3.50,
-                "license": "personal",
-            },
-        )
-        assert put.status_code == 200, put.text
-        pub = put.json()
-        assert pub["job_id"] == job_id
-        assert pub["title"] == title
-        assert pub["price_usd"] == 3.50
+    def test_publish_browse_detail_unpublish_flow(self, client, mongo_db):
+        # iter-134: publish endpoint is tier-gated (Maker/Pro only).
+        # Promote for the duration of this flow, revert after.
+        with _promote_to_maker(mongo_db):
+            job_id = self._make_job(client)
+            title = f"TEST_Listing_{uuid.uuid4().hex[:6]}"
+            # PUBLISH
+            put = client.put(
+                f"{API}/litho/studio/my-jobs/{job_id}/listing",
+                json={
+                    "title": title,
+                    "description": "pytest listing",
+                    "price_usd": 3.50,
+                    "license": "personal",
+                },
+            )
+            assert put.status_code == 200, put.text
+            pub = put.json()
+            assert pub["job_id"] == job_id
+            assert pub["title"] == title
+            assert pub["price_usd"] == 3.50
 
-        # LISTING STATUS
-        st = client.get(f"{API}/litho/studio/my-jobs/{job_id}/listing")
-        assert st.status_code == 200
-        assert st.json()["listed"] is True
+            # LISTING STATUS
+            st = client.get(f"{API}/litho/studio/my-jobs/{job_id}/listing")
+            assert st.status_code == 200
+            assert st.json()["listed"] is True
 
-        # BROWSE contains it
-        br = client.get(f"{API}/litho/studio/marketplace")
-        assert br.status_code == 200
-        assert any(x["job_id"] == job_id for x in br.json())
+            # BROWSE contains it
+            br = client.get(f"{API}/litho/studio/marketplace")
+            assert br.status_code == 200
+            assert any(x["job_id"] == job_id for x in br.json())
 
-        # DETAIL
-        det = client.get(f"{API}/litho/studio/marketplace/{job_id}")
-        assert det.status_code == 200
-        dj = det.json()
-        assert dj["job_id"] == job_id
-        assert "preview_png_base64" in dj
-        assert "filaments" in dj
-        assert dj["platform_fee_pct"] == 6.0
+            # DETAIL
+            det = client.get(f"{API}/litho/studio/marketplace/{job_id}")
+            assert det.status_code == 200
+            dj = det.json()
+            assert dj["job_id"] == job_id
+            assert "preview_png_base64" in dj
+            assert "filaments" in dj
+            assert dj["platform_fee_pct"] == 6.0
 
-        # PREVIEW MESH — STL binary >=1KB with "CMYKW" magic first bytes
-        pm = client.get(f"{API}/litho/studio/marketplace/{job_id}/preview-mesh")
-        assert pm.status_code == 200, pm.text[:200]
-        assert len(pm.content) >= 1024, f"stl too small: {len(pm.content)}"
-        assert pm.content[:5] == b"CMYKW", f"missing magic: {pm.content[:16]!r}"
+            # PREVIEW MESH — STL binary >=1KB with "CMYKW" magic first bytes
+            pm = client.get(f"{API}/litho/studio/marketplace/{job_id}/preview-mesh")
+            assert pm.status_code == 200, pm.text[:200]
+            assert len(pm.content) >= 1024, f"stl too small: {len(pm.content)}"
+            assert pm.content[:5] == b"CMYKW", f"missing magic: {pm.content[:16]!r}"
 
-        # CREATOR PROFILE
-        me = client.get(f"{API}/auth/me").json()
-        cp = client.get(f"{API}/litho/studio/creators/{me['user_id']}")
-        assert cp.status_code == 200
-        cpj = cp.json()
-        assert cpj["user_id"] == me["user_id"]
-        assert any(x["job_id"] == job_id for x in cpj["listings"])
+            # CREATOR PROFILE
+            me = client.get(f"{API}/auth/me").json()
+            cp = client.get(f"{API}/litho/studio/creators/{me['user_id']}")
+            assert cp.status_code == 200
+            cpj = cp.json()
+            assert cpj["user_id"] == me["user_id"]
+            assert any(x["job_id"] == job_id for x in cpj["listings"])
 
-        # UNPUBLISH
-        d = client.delete(f"{API}/litho/studio/my-jobs/{job_id}/listing")
-        assert d.status_code == 200
-        # after unpublish, detail 404s + browse omits
-        assert client.get(f"{API}/litho/studio/marketplace/{job_id}").status_code == 404
+            # UNPUBLISH (delete is not gated)
+            d = client.delete(f"{API}/litho/studio/my-jobs/{job_id}/listing")
+            assert d.status_code == 200
+            # after unpublish, detail 404s + browse omits
+            assert client.get(f"{API}/litho/studio/marketplace/{job_id}").status_code == 404
 
 
 class TestBraintreeCheckout:
@@ -507,23 +550,29 @@ class TestPayouts:
         assert r.status_code == 200, r.text
         d = r.json()
         for k in ("paypal_email", "pending_balance_usd",
-                  "lifetime_paid_usd", "payout_threshold_usd", "mode"):
+                  "lifetime_paid_usd", "payout_threshold_usd", "mode",
+                  "eligible"):
             assert k in d, f"missing {k}"
         assert d["mode"] in ("mock", "sandbox", "live")
         # PayPal creds not set on this env → mock mode expected
         assert d["mode"] == "mock"
+        # iter-134: eligible boolean must be present
+        assert isinstance(d["eligible"], bool)
 
-    def test_set_paypal_email_persists(self, client):
+    def test_set_paypal_email_persists(self, client, mongo_db):
+        # iter-134: /payouts/email is now tier-gated. Promote to maker for
+        # this test only, then revert to preserve default free-tier state.
         email = f"paypal.test.{uuid.uuid4().hex[:6]}@example.com"
-        r = client.post(
-            f"{API}/litho/studio/payouts/email",
-            json={"paypal_email": email},
-        )
-        assert r.status_code == 200, r.text
-        assert r.json()["paypal_email"] == email.lower()
-        # verify GET reflects the update
-        st = client.get(f"{API}/litho/studio/payouts/status").json()
-        assert st["paypal_email"] == email.lower()
+        with _promote_to_maker(mongo_db):
+            r = client.post(
+                f"{API}/litho/studio/payouts/email",
+                json={"paypal_email": email},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["paypal_email"] == email.lower()
+            # verify GET reflects the update
+            st = client.get(f"{API}/litho/studio/payouts/status").json()
+            assert st["paypal_email"] == email.lower()
 
     def test_transactions_returns_list(self, client):
         r = client.get(f"{API}/litho/studio/payouts/transactions")
@@ -563,3 +612,185 @@ class TestPayPalWebhook:
         # Current impl returns 200 without signature. Documented as tech
         # debt in paypal_payouts.py inline comment.
         assert r.status_code in (200, 400, 401, 403)
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 iter-134: subscription-tier gate on publish + payouts/email
+# ---------------------------------------------------------------------------
+class TestTierGates:
+    """FREE tier must be locked out of publish + set-email; MAKER/PRO
+    must succeed. Everything else stays open on both tiers."""
+
+    # --- Unit-level: tier_gate.is_paid / ensure_paid semantics ------------
+    def test_unit_is_paid_variants(self):
+        from types import SimpleNamespace
+        from litho.tier_gate import is_paid, ensure_paid
+        from fastapi import HTTPException
+
+        # dict form
+        assert is_paid({"subscription_tier": "maker"}) is True
+        assert is_paid({"subscription_tier": "pro"}) is True
+        assert is_paid({"subscription_tier": "free"}) is False
+        assert is_paid({"subscription_tier": ""}) is False
+        assert is_paid({"subscription_tier": None}) is False
+        assert is_paid({}) is False
+        assert is_paid(None) is False
+        assert is_paid({"subscription_tier": "enterprise-xyz"}) is False
+
+        # SimpleNamespace form (LithoForge wrapping)
+        assert is_paid(SimpleNamespace(subscription_tier="maker")) is True
+        assert is_paid(SimpleNamespace(subscription_tier="pro")) is True
+        assert is_paid(SimpleNamespace(subscription_tier="free")) is False
+        assert is_paid(SimpleNamespace()) is False
+
+        # ensure_paid raises 402 for free, returns None for paid
+        ensure_paid({"subscription_tier": "maker"}, feature="X")  # no raise
+        ensure_paid(SimpleNamespace(subscription_tier="pro"), feature="Y")
+        with pytest.raises(HTTPException) as ei:
+            ensure_paid({"subscription_tier": "free"}, feature="Z")
+        assert ei.value.status_code == 402
+        assert "Z requires a Maker or Pro subscription" in ei.value.detail
+
+    # --- FREE tier: publish is 402 with JSON body ------------------------
+    def test_free_tier_publish_returns_402_json(self, client, mongo_db):
+        # Ensure user is on free tier (default). Snapshot & clear if stale.
+        mongo_db.users.update_one(
+            {"user_id": SESSION_USER_ID},
+            {"$unset": {"subscription_tier": ""}},
+        )
+        # Grab any existing job for this user
+        jobs_resp = client.get(f"{API}/litho/studio/my-jobs").json()
+        jobs = jobs_resp.get("jobs", jobs_resp) if isinstance(jobs_resp, dict) else jobs_resp
+        assert jobs, "no jobs available to test publish gate"
+        job_id = jobs[0]["job_id"]
+
+        r = client.put(
+            f"{API}/litho/studio/my-jobs/{job_id}/listing",
+            json={"title": "FreeGateProbe", "description": "",
+                  "price_usd": 2.0, "license": "personal"},
+        )
+        assert r.status_code == 402, r.text
+        # Must be JSON not HTML
+        ct = r.headers.get("content-type", "")
+        assert "application/json" in ct, f"expected JSON error, got {ct}"
+        detail = r.json().get("detail", "")
+        assert "Publishing to the marketplace requires a Maker or Pro subscription" in detail
+
+    # --- FREE tier: set payout email 402 + DB unchanged ------------------
+    def test_free_tier_set_email_402_no_db_mutation(self, client, mongo_db):
+        mongo_db.users.update_one(
+            {"user_id": SESSION_USER_ID},
+            {"$unset": {"subscription_tier": ""}},
+        )
+        prior = (mongo_db.users.find_one(
+            {"user_id": SESSION_USER_ID}, {"_id": 0, "paypal_email": 1}
+        ) or {}).get("paypal_email")
+
+        gate_email = f"tier_gate_probe_{uuid.uuid4().hex[:6]}@example.com"
+        r = client.post(
+            f"{API}/litho/studio/payouts/email",
+            json={"paypal_email": gate_email},
+        )
+        assert r.status_code == 402, r.text
+        ct = r.headers.get("content-type", "")
+        assert "application/json" in ct
+        detail = r.json().get("detail", "")
+        assert "Setting a payout email requires" in detail
+
+        # DB must NOT have been mutated
+        post = (mongo_db.users.find_one(
+            {"user_id": SESSION_USER_ID}, {"_id": 0, "paypal_email": 1}
+        ) or {}).get("paypal_email")
+        assert post == prior, f"paypal_email mutated on 402 (prior={prior!r}, post={post!r})"
+
+    # --- FREE tier: /payouts/status returns eligible=False ---------------
+    def test_free_tier_status_eligible_false(self, client, mongo_db):
+        mongo_db.users.update_one(
+            {"user_id": SESSION_USER_ID},
+            {"$unset": {"subscription_tier": ""}},
+        )
+        r = client.get(f"{API}/litho/studio/payouts/status")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["eligible"] is False
+        for k in ("paypal_email", "pending_balance_usd", "lifetime_paid_usd",
+                  "payout_threshold_usd", "mode", "eligible"):
+            assert k in d, f"missing {k} in status shape"
+
+    # --- MAKER promotion: everything succeeds ---------------------------
+    def test_maker_tier_all_paid_endpoints_succeed(self, client, mongo_db):
+        with _promote_to_maker(mongo_db):
+            # /payouts/status → eligible True
+            r = client.get(f"{API}/litho/studio/payouts/status")
+            assert r.status_code == 200
+            assert r.json()["eligible"] is True
+
+            # /payouts/email → 200
+            email = f"maker.gate.{uuid.uuid4().hex[:6]}@example.com"
+            r = client.post(
+                f"{API}/litho/studio/payouts/email",
+                json={"paypal_email": email},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["paypal_email"] == email.lower()
+
+            # publish a fresh job → 200
+            b64 = _make_png_b64((60, 60))
+            up = client.post(f"{API}/litho/studio/upload",
+                             json={"image_base64": b64}).json()
+            opt = client.post(f"{API}/litho/studio/optimize", json={
+                "image_id": up["image_id"], "width_mm": 60, "height_mm": 60,
+                "thickness_mm": 2.2, "border_mm": 2.0, "layer_height_mm": 0.12,
+                "max_swaps": 4, "geometry": "flat",
+            }).json()
+            job_id = opt["job_id"]
+            r = client.put(
+                f"{API}/litho/studio/my-jobs/{job_id}/listing",
+                json={"title": f"TEST_MakerListing_{uuid.uuid4().hex[:6]}",
+                      "description": "", "price_usd": 2.0,
+                      "license": "personal"},
+            )
+            assert r.status_code == 200, r.text
+            # Cleanup (delete not gated)
+            client.delete(f"{API}/litho/studio/my-jobs/{job_id}/listing")
+
+        # After context exit: back to free — verify revert
+        u = mongo_db.users.find_one(
+            {"user_id": SESSION_USER_ID}, {"_id": 0, "subscription_tier": 1}
+        ) or {}
+        assert u.get("subscription_tier") in (None, "", "free"), \
+            f"tier revert failed: {u}"
+
+    # --- Regression: non-gated endpoints stay open on FREE tier ---------
+    def test_free_tier_non_gated_endpoints_still_work(self, client, mongo_db):
+        mongo_db.users.update_one(
+            {"user_id": SESSION_USER_ID},
+            {"$unset": {"subscription_tier": ""}},
+        )
+        # A representative sample of endpoints that must NOT be gated
+        checks = [
+            ("GET", "/litho/studio/marketplace", None),
+            ("POST", "/litho/studio/marketplace/client-token", None),
+            ("GET", "/litho/studio/my-jobs", None),
+            ("GET", "/litho/studio/presets", None),
+            ("GET", "/litho/studio/filament-library/brands", None),
+            ("GET", "/litho/studio/filament-library/mine", None),
+            ("GET", "/litho/studio/printers", None),
+            ("GET", "/litho/studio/filaments/default", None),
+            ("GET", "/litho/studio/payouts/status", None),
+            ("GET", "/litho/studio/payouts/transactions", None),
+        ]
+        for method, path, body in checks:
+            url = f"{API}{path}"
+            r = client.request(method, url, json=body)
+            assert r.status_code == 200, f"{method} {path} → {r.status_code} {r.text[:150]}"
+
+        # marketplace/{id} detail
+        br = client.get(f"{API}/litho/studio/marketplace").json()
+        if br:
+            det = client.get(f"{API}/litho/studio/marketplace/{br[0]['job_id']}")
+            assert det.status_code == 200
+            # creator profile too
+            cp = client.get(f"{API}/litho/studio/creators/{br[0]['creator_id']}")
+            assert cp.status_code == 200

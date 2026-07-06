@@ -109,6 +109,11 @@ export const PayoutsPage = () => {
   const threshold = Number(status?.payout_threshold_usd ?? 1);
   const aboveThreshold = pending >= threshold;
   const mode = status?.mode || "mock";
+  // iter-134 — Free tier can visit this page but can't set an email or
+  // receive payouts. Backend surfaces `eligible: false`; we show an
+  // upsell card so the user has a clear path to unlock, instead of
+  // hitting a 402 toast the moment they click Save.
+  const eligible = status?.eligible !== false;
 
   return (
     <div
@@ -142,6 +147,34 @@ export const PayoutsPage = () => {
             Studio →
           </Link>
         </header>
+
+        {/* iter-134 — Free tier upsell */}
+        {!eligible && (
+          <section
+            className="border border-orange-500/40 bg-orange-500/[0.06] p-6 space-y-3"
+            data-testid="payouts-upgrade-banner"
+          >
+            <div className="flex items-center gap-2 text-orange-300">
+              <AlertTriangle className="w-4 h-4" />
+              <span className="font-display text-lg font-bold">
+                Upgrade to earn from your lithophanes
+              </span>
+            </div>
+            <p className="font-mono text-[11px] text-zinc-400 max-w-2xl leading-relaxed">
+              Publishing to the marketplace and receiving payouts require
+              a Maker or Pro subscription. Anyone can still buy your
+              work; only the creator side is gated so we can cover
+              PayPal fees, moderation, and marketplace infrastructure.
+            </p>
+            <Link
+              to="/pricing"
+              data-testid="payouts-upgrade-cta"
+              className="inline-block px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-mono text-[10px] uppercase tracking-[0.18em] font-bold"
+            >
+              See plans →
+            </Link>
+          </section>
+        )}
 
         {/* PayPal email card */}
         <section
@@ -178,15 +211,16 @@ export const PayoutsPage = () => {
                 placeholder="you@paypal.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={!eligible}
                 data-testid="paypal-email-input"
-                className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-800 focus:border-zinc-500 focus:outline-none font-mono text-[12px] text-zinc-100"
+                className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-800 focus:border-zinc-500 focus:outline-none font-mono text-[12px] text-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed"
               />
             </div>
             <button
               type="submit"
-              disabled={busy || !email.trim()}
+              disabled={busy || !email.trim() || !eligible}
               data-testid="paypal-email-save"
-              className="px-4 py-2 bg-zinc-100 text-zinc-950 font-mono text-[10px] uppercase tracking-[0.18em] font-bold hover:bg-white disabled:opacity-50"
+              className="px-4 py-2 bg-zinc-100 text-zinc-950 font-mono text-[10px] uppercase tracking-[0.18em] font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
             </button>

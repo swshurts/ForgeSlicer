@@ -543,6 +543,10 @@ class PayoutStatusOut(BaseModel):
     lifetime_paid_usd: float = 0.0
     payout_threshold_usd: float = PAYOUT_THRESHOLD_USD
     mode: str = "mock"
+    # iter-134 — Whether the current user is on a paid tier and
+    # therefore allowed to publish + receive payouts. Free users see
+    # the same page but with the "Upgrade to earn" state.
+    eligible: bool = True
 
 
 class SetEmailIn(BaseModel):
@@ -556,6 +560,7 @@ def build_payouts_router(
 
     @router.get("/payouts/status", response_model=PayoutStatusOut)
     async def status(user=Depends(require_user)):
+        from .tier_gate import is_paid
         state = await get_user_payout_state(db, user.user_id)
         return PayoutStatusOut(
             paypal_email=state["paypal_email"],
@@ -563,21 +568,31 @@ def build_payouts_router(
             lifetime_paid_usd=round(state["lifetime_paid_usd"], 2),
             payout_threshold_usd=PAYOUT_THRESHOLD_USD,
             mode=_paypal_mode(),
+            eligible=is_paid(user),
         )
 
     @router.post("/payouts/email", response_model=PayoutStatusOut)
     async def set_email(body: SetEmailIn, user=Depends(require_user)):
+        # iter-134 — Only paid creators can register a payout address.
+        # Free tier is still allowed to see the /payouts/status page
+        # (it renders in read-only "upgrade to earn" mode), but the
+        # write side is gated behind the same tier as marketplace
+        # publishing. Keeps the money flow consistent.
+        from .tier_gate import ensure_paid
+        ensure_paid(user, feature="Setting a payout email")
         email_clean = body.paypal_email.strip().lower()
         if not PAYPAL_EMAIL_RE.match(email_clean):
             raise HTTPException(400, "Invalid PayPal email")
         await set_user_paypal_email(db, user.user_id, email_clean)
         state = await get_user_payout_state(db, user.user_id)
+        from .tier_gate import is_paid
         return PayoutStatusOut(
             paypal_email=state["paypal_email"],
             pending_balance_usd=round(state["pending_balance_usd"], 2),
             lifetime_paid_usd=round(state["lifetime_paid_usd"], 2),
             payout_threshold_usd=PAYOUT_THRESHOLD_USD,
             mode=_paypal_mode(),
+            eligible=is_paid(user),
         )
 
     @router.get("/payouts/transactions")

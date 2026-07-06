@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock } from "lucide-react";
+import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock, Image as ImageIcon, Palette, ShoppingBag } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
 import { useAuth } from "../contexts/AuthContext";
@@ -132,6 +132,22 @@ function Feature({ icon: Icon, title, desc, accent }) {
   );
 }
 
+// iter-134 — Compact Feature card variant for the Lithophane section.
+// Slightly tighter than the top-level `Feature` and with an orange
+// left border to visually connect the four cards as part of the same
+// product surface.
+function LithoFeature({ icon: Icon, title, desc }) {
+  return (
+    <div className="border border-slate-800 border-l-2 border-l-orange-500/70 bg-slate-900/60 rounded p-3.5">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon size={14} className="text-orange-300" />
+        <h4 className="text-[13px] font-semibold text-white">{title}</h4>
+      </div>
+      <p className="text-[11px] text-slate-400 leading-relaxed">{desc}</p>
+    </div>
+  );
+}
+
 // Iter-103 — Clickable iteration tag.
 //
 // Renders the muted "iter-X.Y" pill next to the wordmark and, when
@@ -240,6 +256,7 @@ export default function Landing() {
     audience: false,
     features: false,
     howitworks: false,
+    lithophane: false,
     starters: true,
   });
   const toggleStartSection = (id) =>
@@ -742,6 +759,78 @@ export default function Landing() {
           <Feature icon={Move3D} title="Precise Transforms" desc="Per-axis numeric position, rotation, scale. Snap-to-grid in mm or degrees. Build-plate bounds checking." accent="bg-emerald-500" />
           <Feature icon={Layers} title="Three Ways to Slice" desc="Slice in-browser for an instant preview, on our server's bundled OrcaSlicer engine for production G-code, or export STL / 3MF and open in your desktop slicer." accent="bg-amber-500" />
         </div>
+        </StartAccordionSection>
+
+        {/* iter-134 — Lithophane Studio section on the main landing.
+            Deliberately woven INTO the same accordion pattern as the
+            other feature sections (not a separate splash page) so it
+            reads as one product, not two bolted together. */}
+        <StartAccordionSection
+          id="lithophane"
+          title="Photo → Lithophane"
+          subtitle="Turn any photograph into a printable multi-color lithophane, without a second app."
+          isOpen={openStartSections.lithophane}
+          onToggle={toggleStartSection}
+        >
+          <div className="mt-2 space-y-8" data-testid="landing-lithophane-section">
+            <div className="grid lg:grid-cols-2 gap-6 items-start">
+              <div className="space-y-4">
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-orange-500/10 border border-orange-500/30 rounded text-[10px] uppercase tracking-widest text-orange-300 font-semibold">
+                  <Sparkles className="w-3 h-3" /> Included · no separate account
+                </div>
+                <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white leading-tight">
+                  A CMYKW pipeline built into the same workspace you already know.
+                </h3>
+                <p className="text-slate-400 leading-relaxed text-sm">
+                  Upload a photograph. We compute a Beer–Lambert-accurate
+                  height map, pick a filament palette to match the pixels,
+                  and produce a printable 3MF with the filament-swap
+                  layer heights already annotated for OrcaSlicer, Bambu
+                  Studio, PrusaSlicer, or Cura. Every export lands on the
+                  same build plate as your CAD models — remix, arrange,
+                  slice, done.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Link
+                    to="/litho"
+                    data-testid="landing-lithophane-cta"
+                    className="h-9 px-4 rounded bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow"
+                  >
+                    <Sparkles size={13} /> Open Lithophane Studio <ChevronRight size={12} />
+                  </Link>
+                  <Link
+                    to="/litho/marketplace"
+                    data-testid="landing-lithophane-marketplace"
+                    className="h-9 px-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold flex items-center gap-1.5 border border-slate-700"
+                  >
+                    <ShoppingBag size={13} /> Browse marketplace
+                  </Link>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <LithoFeature
+                  icon={ImageIcon}
+                  title="Photo intake"
+                  desc="PNG · JPG · WebP. In-browser brightness, contrast, saturation, and crop before the height-map solver runs."
+                />
+                <LithoFeature
+                  icon={Palette}
+                  title="Auto palette"
+                  desc="K-means Lab-space filament picker with Accurate / Balanced / Vibrant modes. Manufacturer swatches from Bambu, Prusament, Polymaker, and 16 more."
+                />
+                <LithoFeature
+                  icon={Layers}
+                  title="Layer-swap G-code"
+                  desc="Every export ships with the exact layer heights where you'll swap filament, ready to paste into OrcaSlicer / Bambu Studio / Cura."
+                />
+                <LithoFeature
+                  icon={Store}
+                  title="Marketplace"
+                  desc="Sell your lithophanes at your own price. Buyers get instant STL/3MF downloads; creators get PayPal payouts weekly."
+                />
+              </div>
+            </div>
+          </div>
         </StartAccordionSection>
 
         <StartAccordionSection
