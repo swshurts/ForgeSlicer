@@ -32,6 +32,7 @@ from routes.meshy_key import build_meshy_key_router, resolve_user_meshy_key
 from routes.printability import build_printability_router
 from routes.custom_textures import build_custom_textures_router
 from routes.litho_inbox import build_litho_inbox_router
+from routes.litho_studio import build_litho_studio_router
 from routes.mesh_repair import build_mesh_repair_router
 from routes.exports import build_exports_router
 from routes.release import build_release_router
@@ -553,6 +554,11 @@ api_router.include_router(build_custom_textures_router(db, get_current_user))
 # and auto-imports onto the build plate the next time they open ForgeSlicer.
 # File payloads go through GridFS so the 16MB BSON limit doesn't bite.
 api_router.include_router(build_litho_inbox_router(db, get_current_user))
+
+# Lithophane Studio — LithoForge merged in-tree. /api/litho/studio/*
+# owns the image → CMYKW lithophane → STL/3MF pipeline. Shares
+# ForgeSlicer's auth so no second sign-in prompt.
+api_router.include_router(build_litho_studio_router(get_current_user))
 
 # Server-side mesh repair via MeshLab. /api/mesh/repair takes an STL
 # upload and returns a repaired (watertight, manifold) STL. Used by

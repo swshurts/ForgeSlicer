@@ -32,6 +32,7 @@ import PrintabilityReportPanel from "./PrintabilityReportPanel";
 import WorkspaceDropZone from "./WorkspaceDropZone";
 import LithoInboxWatcher from "./LithoInboxWatcher";
 import PrintabilityPanel from "./PrintabilityPanel";
+import LithoStudioModal from "./LithoStudioModal";
 
 export default function Workspace() {
   const [shareOpen, setShareOpen] = useState(false);
@@ -55,6 +56,10 @@ export default function Workspace() {
   // opened via a toolbar button (or auto-opened after a fresh AI import
   // so users see the score immediately after a Meshy/Hunyuan generation).
   const [printabilityOpen, setPrintabilityOpen] = useState(false);
+  // Lithophane Studio — merged LithoForge as an in-app modal. Opens via
+  // the "LithoForge" button in the toolbar (now hooked in-tree instead
+  // of the old external redirect) or the "litho_studio" voice event.
+  const [lithoStudioOpen, setLithoStudioOpen] = useState(false);
   const [importBanner, setImportBanner] = useState(null); // { kind, message }
   // Iter-92 — when an STL arrives via cross-app handoff (LithoForge ➜
   // ForgeSlicer) we stash the attribution metadata so a sticky chip
@@ -85,6 +90,7 @@ export default function Workspace() {
       else if (name === "settings") setSettingsOpen(true);
       else if (name === "projects") setProjectExplorerOpen(true);
       else if (name === "printability") setPrintabilityOpen(true);
+      else if (name === "litho_studio") setLithoStudioOpen(true);
     };
     window.addEventListener("forgeslicer:open-dialog", handler);
     return () => window.removeEventListener("forgeslicer:open-dialog", handler);
@@ -878,7 +884,7 @@ export default function Workspace() {
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       data-testid="workspace"
     >
-      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} onOpenPrintability={() => setPrintabilityOpen(true)} projectMetas={projectMetas} />
+      <TopToolbar onShare={() => setShareOpen(true)} onSendToOrca={handleSendTo} onSaveComponent={() => setSaveComponentOpen(true)} onOpenHelp={() => setHelpOpen(true)} onOpenProjectExplorer={() => setProjectExplorerOpen(true)} onOpenPrintability={() => setPrintabilityOpen(true)} onOpenLithoStudio={() => setLithoStudioOpen(true)} projectMetas={projectMetas} />
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
@@ -915,6 +921,10 @@ export default function Workspace() {
       <PrintabilityReportPanel
         open={printabilityOpen}
         onClose={() => setPrintabilityOpen(false)}
+      />
+      <LithoStudioModal
+        open={lithoStudioOpen}
+        onClose={() => setLithoStudioOpen(false)}
       />
       {importBanner && (
         <div

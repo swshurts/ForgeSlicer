@@ -31,7 +31,7 @@ export default function SystemRow({
   busyMsg,
   actions,
   onShare, onSaveComponent, onSendToOrca, onOpenHelp,
-  onPreviewExport, onOpenProjectExplorer, onOpenPrintability,
+  onPreviewExport, onOpenProjectExplorer, onOpenPrintability, onOpenLithoStudio,
 }) {
   const projectName = useScene((s) => s.projectName);
   const setProjectName = useScene((s) => s.setProjectName);
@@ -48,13 +48,16 @@ export default function SystemRow({
   const preferred = getPreferredSlicer();
   const userSlicers = getAllSlicers();
   const { user } = useAuth();
-  // Iter-100 — Workspace gets the same LithoForge launch path the
-  // Landing header has. Signed-in users (workspace is auth-gated, so
-  // this is the common case) get the SSO redirect via `openInPeer`
-  // so they land already logged into LithoForge; otherwise plain
-  // window.open. Keeps the cross-app jump one click away without
-  // forcing the user back to Landing.
+  // iter-127 — LithoForge is now merged in-tree. This button opens the
+  // Lithophane Studio modal (image → CMYKW lithophane → STL/3MF) with
+  // a Send-to-build-plate hand-off. The old cross-domain openInPeer
+  // handoff to lithoforge.net is kept as a fallback if the workspace
+  // parent hasn't wired the modal callback (e.g. legacy contexts).
   const openLithoForge = () => {
+    if (onOpenLithoStudio) {
+      onOpenLithoStudio();
+      return;
+    }
     if (user) {
       openInPeer("https://lithoforge.net", "/");
     } else {
@@ -172,10 +175,10 @@ export default function SystemRow({
         type="button"
         onClick={openLithoForge}
         data-testid="open-lithoforge-btn"
-        title={user ? "Open LithoForge (auto sign-in)" : "Open LithoForge — sister tool for lithophanes & multi-color prints"}
+        title="Lithophane Studio — turn an image into a CMYKW lithophane, right in the workspace"
         className="h-8 px-3 ml-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded hidden lg:flex items-center gap-1.5 border border-slate-700"
       >
-        <Sparkles size={13} className="text-orange-400" /> LithoForge
+        <Sparkles size={13} className="text-orange-400" /> Lithophane
       </button>
       <button
         data-testid="share-design-btn"

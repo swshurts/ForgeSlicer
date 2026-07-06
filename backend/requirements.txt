@@ -45,15 +45,18 @@ httplib2==0.31.2
 httpx==0.28.1
 huggingface_hub==1.14.0
 idna==3.15
+ImageIO==2.37.3
 importlib_metadata==9.0.0
 iniconfig==2.3.0
 isort==8.0.1
 Jinja2==3.1.6
 jiter==0.14.0
 jmespath==1.1.0
+joblib==1.5.3
 jq==1.11.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+lazy-loader==0.5
 librt==0.11.0
 litellm==1.80.0
 lxml==6.1.1
@@ -67,6 +70,7 @@ motor==3.3.1
 multidict==6.7.1
 mypy==2.1.0
 mypy_extensions==1.1.0
+narwhals==2.23.0
 networkx==3.6.1
 numpy==2.4.4
 oauthlib==3.3.1
@@ -96,6 +100,7 @@ pymeshlab==2025.7.post1
 pymongo==4.5.0
 pyparsing==3.3.2
 pypdf==6.12.2
+pyransac3d==0.6.0
 pytest==9.0.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
@@ -115,6 +120,8 @@ rsa==4.9.1
 rtree==1.4.1
 s3transfer==0.17.0
 s5cmd==0.2.0
+scikit-image==0.26.0
+scikit-learn==1.9.0
 scipy==1.17.1
 shapely==2.1.2
 shellingham==1.5.4
@@ -124,6 +131,8 @@ starlette==0.37.2
 stripe==15.1.0
 svg.path==7.0
 tenacity==9.1.4
+threadpoolctl==3.6.0
+tifffile==2026.3.3
 tiktoken==0.12.0
 tokenizers==0.23.1
 tqdm==4.67.3
@@ -141,4 +150,3 @@ websockets==16.0
 xxhash==3.7.1
 yarl==1.23.0
 zipp==3.23.1
-pyransac3d==0.6.0
