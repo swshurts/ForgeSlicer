@@ -1,0 +1,37 @@
+{
+  "summary": "Phase 2 LithoForge marketplace merge retest of iter-121 HIGH-priority /litho/payouts loading bug. Auth shim fix at /app/frontend/src/components/litho/lib/auth.jsx (re-export of ForgeSlicer's global AuthContext) works as intended. All 6 requested frontend flows PASS. Backend regression not re-run (no backend changes since iter-121; shim is FE-only).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_121.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth.jsx shim is well-structured: proxies useAuth to global provider with defensive no-op fallbacks for login/logout/refresh. AuthCallbackHandler is a no-op (correctly prevents double-fire). AuthProvider passthrough preserves import-compat.",
+    "One transient 401 on /api/auth/me on first paint is observed on hard-navigation to /litho/payouts. It self-corrects on the follow-up /me call and does not block rendering — the AuthProvider effect re-fires and populates `user`. This is pre-existing behaviour (also present in iter-121). Not a regression from the shim.",
+    "Non-blocking: iter-121's medium-priority findings (checkout vs checkout-bt naming, missing /checkout/status/{session_id}) are unchanged. Main agent already flagged these as documentation / dead-code, not real bugs."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not-retested (no BE changes since iter-121, previous 100%)", "frontend": "100% (6/6 requested flows)"},
+  "test_credentials": "session_token=st_test_litho_1783361464350 (still valid; user_test_litho_1783361464350). Cookie domain orca-cad-slice.preview.emergentagent.com, secure=True, httpOnly=True, sameSite=None. Bearer token also works.",
+  "seed_data_creation": "None new. Seeded listing cc3bb001-251a-48c3-a671-d242ac78f270 ($4.99 Sunset Gradient) still exists. Two seeded transactions ($4.99 each, payouts pending, buyer=buyer@test.com) already present. Test 2 saved paypal.retest.1783369267@example.com to the seeded user (previously paypal.test.ad18d8@example.com).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter-121 HIGH-priority /litho/payouts bug fully resolved. Auth shim pattern at /app/frontend/src/components/litho/lib/auth.jsx re-exports @/contexts/AuthContext. All LithoForge components importing `../lib/auth` or `../../lib/auth` now transparently read from ForgeSlicer's global AuthProvider — verified via /litho/payouts (PayoutsPage), /litho (JobHistory/PresetManager/LibraryMatchPanel), /litho/marketplace (ListingCard), /litho/marketplace/{jobId} (ListingDetailPage + Buy/PurchaseDialog). No other regressions observed. Backend suite (34/34 iter-121) does not need re-run — shim is FE-only.",
+  "rca of the issue": "Iter-121 root cause: PayoutsPage.jsx did `import { useAuth } from '../../lib/auth'`, resolving to `/app/frontend/src/components/litho/lib/auth.js` — a self-contained AuthContext whose Provider was never mounted at App root. `useAuth()` returned the createContext default `{user:null, loading:true}` so the `if (authLoading) return <Loading… />` guard short-circuited forever. Iter-122 fix (verified): main agent renamed auth.js → auth.jsx and rewrote it as a compatibility shim — `useAuth` now proxies through to `@/contexts/AuthContext` (which IS mounted at index.js). All downstream LithoForge consumers of the same import path (PayoutsPage, JobHistory, PresetManager, LibraryMatchPanel, FilamentLibraryDialog, PurchaseDialog, quota.jsx) transparently get the real signed-in user. Playwright verified across /litho/payouts, /litho, /litho/marketplace, /litho/marketplace/{jobId}, /workspace with the seeded session cookie.",
+  "detailed_test_results": {
+    "TEST_1_payouts_loads": "PASS — [data-testid=payouts-page] renders. Not stuck on Loading…. Confirmed email input, pending-balance card, threshold display, PayPal-connected badge, RECENT PAYOUTS + RECENT SALES sections all visible. Seeded values populated correctly: paypal_email=paypal.test.ad18d8@example.com, pending=$9.38, threshold=$1.00, mode=mock.",
+    "TEST_2_save_paypal_email": "PASS — Typed new email paypal.retest.1783369267@example.com, clicked SAVE, POST /api/litho/studio/payouts/email returned 200, reloaded page and the new email was persisted (both in the input and in the 'Current · ...' label).",
+    "TEST_3_litho_studio_regression": "PASS — /litho loads, file upload input present, no auth-related regressions. Body length 2491 chars, no infinite loading state.",
+    "TEST_4_marketplace_grid": "PASS — /litho/marketplace loads, [data-testid=marketplace-grid] present with 1 listing link.",
+    "TEST_5_listing_detail": "PASS — Click into /litho/marketplace/cc3bb001-... — Buy button present, price rendered, PurchaseDialog available (uses shim).",
+    "TEST_6_workspace_toolbar_menu": "PASS — /workspace TopToolbar Marketplace hover-menu shows Models (→/gallery) + Lithophanes (→/litho/marketplace) links."
+  }
+}
