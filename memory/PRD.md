@@ -33,6 +33,18 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
+### Recently completed (iter-134, 2026-07-06) — LithoForge Phase 3: Tier gates + Landing integration
+- **User directives** (verbatim): Landing option A (fold into ForgeSlicer's `/`, no separate splash). Perks: Job quota **inherits** from ForgeSlicer; Marketplace publishing **gated**; Export formats **open**; Nozzle/printer count **open**; Filament library **open**; Preset slots **retain current (unlimited)**; Creator payouts **gated**.
+- **New**: `/app/backend/litho/tier_gate.py` — stateless helper. `ensure_paid(user)` raises 402 for non-paid tier; `is_paid(user)` non-raising boolean. Accepts both dict and SimpleNamespace user shapes.
+- **Gates applied** (only two — everything else stays open):
+  - `PUT /api/litho/studio/my-jobs/{job_id}/listing` → 402 for free.
+  - `POST /api/litho/studio/payouts/email` → 402 for free.
+  - `GET /api/litho/studio/payouts/status` — now returns `eligible: bool` so the frontend can render an upsell state instead of 402 on view.
+- **Frontend upsell UX**: `PayoutsPage.jsx` shows a `payouts-upgrade-banner` with a `payouts-upgrade-cta → /pricing` for free users; email input + Save button disabled. `PublishDialog.jsx` 402 catch branch surfaces a Sonner toast with a `See plans` action button that opens `/pricing`.
+- **Landing integration** (`Landing.jsx`): new `StartAccordionSection id="lithophane"` between "What It Does" and "How It Works" using the same accordion pattern as siblings so it reads as one product. Content: badge, H3, description, 4-card LithoFeature grid (Photo intake · Auto palette · Layer-swap G-code · Marketplace), two CTAs `landing-lithophane-cta → /litho` and `landing-lithophane-marketplace → /litho/marketplace`.
+- **Testing (iter-123)**: **backend 40/40 PASS · frontend 6/6 flows PASS · zero issues.** New `TestTierGates` class + updated `TestPayouts` for `eligible` field + `_promote_to_maker` context manager for the affected marketplace/payouts tests.
+- **E2E verified live**: promote user to maker → publish/set-email 200; revert to free → 402; landing Photo → Lithophane accordion renders with both CTAs; `/litho/payouts` upgrade banner visible.
+
 ### Recently completed (iter-131, 2026-07-06) — Full LithoForge Phase 2 merge: Marketplace, Checkout, Creator Payouts
 - **User directive**: Continue the LithoForge merge — Phase 2 (marketplace). Confirmed choices from iter-129: separate `/litho/marketplace` route with a TopToolbar submenu "Marketplace → Models / Lithophanes"; unified pricing (no separate lithophane tier); no account migration.
 - **Backend ports** (all in `/app/backend/litho/`, mounted inside `/api/litho/studio/*` for a single root URL space):
