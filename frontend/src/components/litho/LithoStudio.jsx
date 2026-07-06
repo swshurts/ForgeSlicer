@@ -283,15 +283,36 @@ export default function LithoStudio() {
     setLoading(true);
     setProgressLabel(editsAreActive(edits) ? "Applying edits…" : "Building LUT…");
     try {
-      const currentId = await ensureCurrentImageId();
-      const payload = {
-        image_id: currentId,
+      let currentId = await ensureCurrentImageId();
+      const buildPayload = (id) => ({
+        image_id: id,
         ...config,
         filaments: filaments.slice(0, maxActive),
         auto_order: autoOrder,
-      };
+      });
       setProgressLabel("Matching pixels…");
-      const data = await optimize(payload);
+      let data;
+      try {
+        data = await optimize(buildPayload(currentId));
+      } catch (firstErr) {
+        // Same resilience story as handleSuggestPalette — the backend
+        // may have restarted and lost the in-memory upload. Re-upload
+        // from the browser blob and retry once before giving up.
+        if (firstErr?.response?.status === 404 && sourceUrl) {
+          setProgressLabel("Re-uploading source…");
+          const blobRes = await fetch(sourceUrl);
+          const blob = await blobRes.blob();
+          const file = new File([blob], "reupload.png", { type: blob.type || "image/png" });
+          const up = await uploadImage(file);
+          currentId = up.image_id;
+          setImageId(up.image_id);
+          setUploadedEdits({ ...DEFAULT_EDITS });
+          setProgressLabel("Matching pixels…");
+          data = await optimize(buildPayload(currentId));
+        } else {
+          throw firstErr;
+        }
+      }
       setResult(data);
       // Tell JobHistory to refresh so the newly-saved job appears.
       window.dispatchEvent(new Event("lithoforge:job-finished"));
@@ -340,7 +361,35 @@ export default function LithoStudio() {
           .join(" · ")}`
       );
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Suggestion failed");
+      // If the backend lost the upload (hot-reload, LRU eviction, or
+      // stale link), re-upload the source blob from the browser and
+      // retry once — the user experiences a subtle 1s delay instead of
+      // an infuriating "Suggestion failed" that they have to work
+      // around manually.
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      if (status === 404 && sourceUrl) {
+        try {
+          const blobRes = await fetch(sourceUrl);
+          const blob = await blobRes.blob();
+          const file = new File([blob], "reupload.png", { type: blob.type || "image/png" });
+          const data = await uploadImage(file);
+          setImageId(data.image_id);
+          setUploadedEdits({ ...DEFAULT_EDITS });
+          const suggested = await suggestPalette(data.image_id, maxActive, vibrancy);
+          setFilaments(suggested);
+          setAutoOrder(true);
+          toast.success(
+            `Re-uploaded + suggested ${suggested.length} filaments: ${suggested
+              .map((f) => f.name)
+              .join(" · ")}`
+          );
+          return;
+        } catch (retryErr) {
+          // fall through to the generic error toast below
+        }
+      }
+      toast.error(detail || (status ? `Suggestion failed (${status})` : "Suggestion failed"));
     } finally {
       setSuggesting(false);
     }

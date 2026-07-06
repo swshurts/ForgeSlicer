@@ -54,21 +54,65 @@ from litho.cost_estimator import estimate_print_costs
 logger = logging.getLogger("forge_litho_studio")
 
 
-# In-memory stores. Sized bounded by cheap eviction — see _prune() below.
+# In-memory + on-disk uploads store. Backend hot-reload (uvicorn --reload)
+# wipes the process, which used to nuke uploads mid-session — the user
+# would upload a photo, edit some sliders, then click "Suggest palette
+# from photo" 30s later and see a bogus "Suggestion failed" toast.
+# We now also spill every upload to /tmp/litho_uploads/{id}.png so a
+# reload just costs the cache lookup, not the whole workflow.
 _JOBS: Dict[str, Dict[str, Any]] = {}
 _UPLOADS: Dict[str, Image.Image] = {}
 _MAX_UPLOADS = 40
 _MAX_JOBS = 60
+_UPLOAD_DIR = "/tmp/litho_uploads"
+try:
+    import os as _os
+    _os.makedirs(_UPLOAD_DIR, exist_ok=True)
+except OSError:
+    pass
 
 
 def _prune() -> None:
     """Best-effort LRU on the in-memory dicts so we don't OOM the worker
     when a heavy user uploads dozens of images. Insertion order in Py 3.7+
-    dicts gives us free FIFO — pop from the head."""
+    dicts gives us free FIFO — pop from the head. Disk copies are pruned
+    lazily on lookup (see `_get_upload`)."""
     while len(_UPLOADS) > _MAX_UPLOADS:
         _UPLOADS.pop(next(iter(_UPLOADS)))
     while len(_JOBS) > _MAX_JOBS:
         _JOBS.pop(next(iter(_JOBS)))
+
+
+def _upload_disk_path(image_id: str) -> str:
+    # Sanitize: only accept UUID-ish characters so we can't be tricked
+    # into escaping the uploads directory with a crafted image_id.
+    safe = "".join(c for c in image_id if c.isalnum() or c in "-_")[:64]
+    return f"{_UPLOAD_DIR}/{safe}.png"
+
+
+def _persist_upload(image_id: str, img: Image.Image) -> None:
+    try:
+        img.save(_upload_disk_path(image_id), "PNG", optimize=False)
+    except OSError:
+        logger.exception("Failed to spill litho upload %s to disk", image_id)
+
+
+def _get_upload(image_id: str) -> Optional[Image.Image]:
+    """Fetch a previously-uploaded image, transparently rehydrating from
+    the disk spill if the in-memory copy was evicted (LRU) or lost to a
+    hot-reload."""
+    img = _UPLOADS.get(image_id)
+    if img is not None:
+        return img
+    path = _upload_disk_path(image_id)
+    try:
+        img = Image.open(path).convert("RGB")
+    except (FileNotFoundError, OSError):
+        return None
+    # Warm the in-memory cache so subsequent hits skip disk.
+    _UPLOADS[image_id] = img
+    _prune()
+    return img
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +312,9 @@ def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
 
     @router.post("/palette/suggest")
     async def suggest_palette_endpoint(body: SuggestIn) -> Dict[str, List[Dict[str, Any]]]:
-        if body.image_id not in _UPLOADS:
+        image = _get_upload(body.image_id)
+        if image is None:
             raise HTTPException(status_code=404, detail="image_id not found")
-        image = _UPLOADS[body.image_id]
         size = max(2, min(8, body.palette_size))
         vibrancy = max(0.0, min(1.0, body.vibrancy))
         chosen = suggest_palette(image, palette_size=size, vibrancy=vibrancy)
@@ -287,6 +331,7 @@ def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
             )
         image_id = str(uuid.uuid4())
         _UPLOADS[image_id] = img
+        _persist_upload(image_id, img)
         _prune()
         return UploadOut(image_id=image_id, width=img.width, height=img.height)
 
@@ -295,9 +340,9 @@ def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
         body: OptimizeIn,
         request: Request,
     ) -> OptimizeOut:
-        if body.image_id not in _UPLOADS:
+        image = _get_upload(body.image_id)
+        if image is None:
             raise HTTPException(status_code=404, detail="image_id not found")
-        image = _UPLOADS[body.image_id]
         filaments = _filaments_from_input(body.filaments)
 
         usable_short = max(
