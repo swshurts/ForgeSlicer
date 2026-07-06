@@ -33,7 +33,30 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-128, 2026-07-06) — LithoForge merged into ForgeSlicer as in-app Lithophane Studio
+### Recently completed (iter-129, 2026-07-06) — Full LithoForge merged into ForgeSlicer (Phase 1)
+- **User directive**: "Merge the entire functionality of LithoForge into ForgeSlicer, not just a stripped-down version. The goal is to make LithoForge.net go away." User confirmed: full Studio UX first, unified pricing, no account migration (no publicized signups), strip SSO/handoff shims now.
+- **Scope shipped this session (Phase 1 of 5)**: complete Lithophane Studio workspace at `/litho` route + all backend routers to make it stateful.
+- **Backend adds** (`/app/backend/litho/`):
+  - `presets.py` — user-saved lithophane presets (CRUD `/api/litho/studio/presets`)
+  - `jobs_history.py` — persisted job history with thumbnails (GET `/api/litho/studio/my-jobs`); optimize now writes to Mongo for signed-in users
+  - `filament_library_api.py` — real-world brand catalog + user's private filaments (`/api/litho/studio/filament-library/*`)
+  - `manufacturer_library.py` — 19-brand curated catalog (Bambu, Prusament, Polymaker, Sunlu, Elegoo, eSun, etc.)
+  - All wired inside `/app/backend/routes/litho_studio.py` via a shared user-dict-to-SimpleNamespace adapter.
+- **Frontend adds** (`/app/frontend/src/components/litho/`, ~11K LOC):
+  - LithoStudio.jsx (main page, from LithoForge's App.js)
+  - 25 workspace components (ConfigPanel, PaletteEditor, LayerTimeline, Histogram, CompareSlider, Loupe, ZoomPanView, CostSwapSimulator, FilamentLibraryDialog, PresetManager, StatsPanel, LibraryMatchPanel, ImageEditPanel, UploadZone, Viewport, CropOverlay, HelpHint, JobHistory, PrinterSelect, NozzleSelect)
+  - Stubs for Header (with in-tree "Back to Workspace" link + primary "Generate lithophane" CTA), MobileShell (passthrough), ModeToggle, PublishDialog (Phase 2 toast), ForgeSlicerSendButton (uses in-app importAnyMeshFile pipeline — no HTTP handoff)
+  - Route `/litho` wired in `App.js` behind ProtectedRoute
+  - `SystemRow.jsx` and `Landing.jsx` toolbar buttons converted from `openInPeer(lithoforge.net)` to `<Link to="/litho">`
+- **Stripped (Phase 5 clean slate)**:
+  - Backend: `/app/backend/sso_bridge.py`, `/app/backend/routes/litho_inbox.py`
+  - Frontend: `LithoInboxWatcher.jsx`, `LithoStudioModal.jsx` (from iter-128, superseded), `SsoAccept.jsx`, `ssoBridge.js`, `ssoHandoff.js`, `lithoInboxApi.js`
+  - Related tests: `test_sso_bridge.py`
+  - All `openInPeer` calls, SSO-bridge banner rendering (returns null now), and cross-domain lithoforge.net links replaced with in-app routes
+- **Testing (iter-119)**: **22/22 backend pytests pass · 100% frontend E2E pass · zero issues.** Test file: `/app/backend/tests/test_litho_studio.py` extended with TestPresets, TestMyJobs, TestFilamentLibrary, and 404-regression tests for the removed sso-bridge/inbox routes. E2E verified: /litho loads → upload 128×128 PNG → "Suggest palette from photo" → "Generate lithophane" → ΔE 34.65 · 22 Layers · 6 filaments · MEAN 34.65/95PCT 49.48 → STL/3MF/Swap downloads visible → Workspace back button routes to /workspace.
+- **What's still Phase 2+** (upcoming): marketplace routes (publish/browse/buy/creator/payouts), pricing tier merge (add lithophane perks to ForgeSlicer's existing tiers), unified admin tab, `/litho` landing/launch marketing page, DNS-level redirect for lithoforge.net → forgeslicer.com/litho.
+
+### Recently completed (iter-128, 2026-07-06) — LithoForge merged into ForgeSlicer as in-app Lithophane Studio (Superseded by iter-129)
 - **What**: User uploaded `LithoForge.zip` asking to merge the separate lithophane generator INTO ForgeSlicer as a first-party feature (instead of the old cross-domain redirect to lithoforge.net).
 - **Backend port** (`/app/backend/litho/`): 6 core engine files copied verbatim — `lithophane.py` (CMYKW optimizer core, 900+ lines), `exporters.py` (STL/3MF/lightbox builders), `palette_suggest.py` (K-means Lab palette picker), `printers.py` (56 profiles across 7 vendors), `cost_estimator.py`, `lightbox.py`. Intra-package imports rewritten to relative imports. New router `/app/backend/routes/litho_studio.py` exposes `/api/litho/studio/*` under ForgeSlicer's existing `get_current_user` auth dep.
 - **New endpoints** (all under `/api/litho/studio`): `GET /filaments/default`, `GET /filaments/library`, `GET /printers`, `GET /printers/{id}/fit`, `POST /palette/suggest`, `POST /upload` (base64 PNG/JPG), `POST /optimize` (image → heightmap + preview), `GET /jobs/{id}`, `GET /export/{id}/{stl|3mf|swaps}`. Jobs + uploads kept in a bounded per-process LRU dict (40 uploads, 60 jobs) — ForgeSlicer's own project system handles long-term persistence.
