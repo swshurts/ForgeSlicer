@@ -16,6 +16,11 @@ import AdminPage from "@/components/AdminPage";
 import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
 import LithoStudio from "@/components/litho/LithoStudio";
+import { MarketplacePage } from "@/components/litho/components/marketplace/MarketplacePage";
+import { ListingDetailPage } from "@/components/litho/components/marketplace/ListingDetailPage";
+import { CreatorPage } from "@/components/litho/components/marketplace/CreatorPage";
+import { PayoutsPage } from "@/components/litho/components/marketplace/PayoutsPage";
+import { PurchaseSuccessPage } from "@/components/litho/components/marketplace/PurchaseSuccessPage";
 import Handoff from "@/components/Handoff";
 import Learn from "@/components/Learn";
 import SEOLanding from "@/components/SEOLanding";
@@ -92,6 +97,19 @@ function AppRouter() {
         path="/litho"
         element={
           <ProtectedRoute label="Lithophane Studio"><LithoStudio /></ProtectedRoute>
+        }
+      />
+      {/* Lithophane marketplace — Phase 2 of the LithoForge merge.
+          Browsing is public; purchase/publish is gated behind sign-in
+          inside the specific pages (client-token + checkout require it). */}
+      <Route path="/litho/marketplace" element={<MarketplacePage />} />
+      <Route path="/litho/marketplace/:jobId" element={<ListingDetailPage />} />
+      <Route path="/litho/marketplace/:jobId/success" element={<PurchaseSuccessPage />} />
+      <Route path="/litho/creator/:userId" element={<CreatorPage />} />
+      <Route
+        path="/litho/payouts"
+        element={
+          <ProtectedRoute label="Payouts"><PayoutsPage /></ProtectedRoute>
         }
       />
       <Route

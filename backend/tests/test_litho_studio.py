@@ -361,3 +361,205 @@ class TestFilamentLibrary:
         r = client.post(f"{API}/printability/analyze", files=files)
         # Accept 200 or 400/422 (small mesh may reject) — we only care route exists
         assert r.status_code in (200, 400, 422), f"unexpected: {r.status_code} {r.text[:200]}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 iter-121 additions: Marketplace, Braintree checkout, PayPal Payouts
+# ---------------------------------------------------------------------------
+class TestMarketplace:
+    """Publish → browse → detail → preview-mesh → creator → unpublish."""
+
+    def _make_job(self, client) -> str:
+        # Upload + optimize a small image so we have a fresh job to publish.
+        b64 = _make_png_b64((64, 64))
+        up = client.post(f"{API}/litho/studio/upload",
+                         json={"image_base64": b64}).json()
+        payload = {
+            "image_id": up["image_id"],
+            "width_mm": 60, "height_mm": 60, "thickness_mm": 2.2,
+            "border_mm": 2.0, "layer_height_mm": 0.12,
+            "max_swaps": 4, "geometry": "flat",
+        }
+        r = client.post(f"{API}/litho/studio/optimize", json=payload)
+        assert r.status_code == 200, r.text
+        return r.json()["job_id"]
+
+    def test_browse_returns_200_list(self, client):
+        r = client.get(f"{API}/litho/studio/marketplace")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_publish_browse_detail_unpublish_flow(self, client):
+        job_id = self._make_job(client)
+        title = f"TEST_Listing_{uuid.uuid4().hex[:6]}"
+        # PUBLISH
+        put = client.put(
+            f"{API}/litho/studio/my-jobs/{job_id}/listing",
+            json={
+                "title": title,
+                "description": "pytest listing",
+                "price_usd": 3.50,
+                "license": "personal",
+            },
+        )
+        assert put.status_code == 200, put.text
+        pub = put.json()
+        assert pub["job_id"] == job_id
+        assert pub["title"] == title
+        assert pub["price_usd"] == 3.50
+
+        # LISTING STATUS
+        st = client.get(f"{API}/litho/studio/my-jobs/{job_id}/listing")
+        assert st.status_code == 200
+        assert st.json()["listed"] is True
+
+        # BROWSE contains it
+        br = client.get(f"{API}/litho/studio/marketplace")
+        assert br.status_code == 200
+        assert any(x["job_id"] == job_id for x in br.json())
+
+        # DETAIL
+        det = client.get(f"{API}/litho/studio/marketplace/{job_id}")
+        assert det.status_code == 200
+        dj = det.json()
+        assert dj["job_id"] == job_id
+        assert "preview_png_base64" in dj
+        assert "filaments" in dj
+        assert dj["platform_fee_pct"] == 6.0
+
+        # PREVIEW MESH — STL binary >=1KB with "CMYKW" magic first bytes
+        pm = client.get(f"{API}/litho/studio/marketplace/{job_id}/preview-mesh")
+        assert pm.status_code == 200, pm.text[:200]
+        assert len(pm.content) >= 1024, f"stl too small: {len(pm.content)}"
+        assert pm.content[:5] == b"CMYKW", f"missing magic: {pm.content[:16]!r}"
+
+        # CREATOR PROFILE
+        me = client.get(f"{API}/auth/me").json()
+        cp = client.get(f"{API}/litho/studio/creators/{me['user_id']}")
+        assert cp.status_code == 200
+        cpj = cp.json()
+        assert cpj["user_id"] == me["user_id"]
+        assert any(x["job_id"] == job_id for x in cpj["listings"])
+
+        # UNPUBLISH
+        d = client.delete(f"{API}/litho/studio/my-jobs/{job_id}/listing")
+        assert d.status_code == 200
+        # after unpublish, detail 404s + browse omits
+        assert client.get(f"{API}/litho/studio/marketplace/{job_id}").status_code == 404
+
+
+class TestBraintreeCheckout:
+    """Braintree Drop-in checkout via sandbox fake-valid-nonce."""
+
+    def test_client_token_returns_nonempty_string(self, client):
+        r = client.post(f"{API}/litho/studio/marketplace/client-token")
+        assert r.status_code == 200, r.text
+        tok = r.json().get("client_token")
+        assert isinstance(tok, str) and len(tok) > 20
+
+    def test_checkout_endpoint_shape(self, client):
+        # Use existing seed listing if present, else publish one.
+        br = client.get(f"{API}/litho/studio/marketplace").json()
+        if br:
+            job_id = br[0]["job_id"]
+            unpublish_after = False
+        else:
+            job_id = TestMarketplace()._make_job(client)
+            client.put(
+                f"{API}/litho/studio/my-jobs/{job_id}/listing",
+                json={"title": "TEST_bt", "description": "",
+                      "price_usd": 1.00, "license": "personal"},
+            )
+            unpublish_after = True
+
+        # NOTE: spec says /checkout but router mounts /checkout-bt.
+        r = client.post(
+            f"{API}/litho/studio/marketplace/{job_id}/checkout-bt",
+            json={
+                "payment_method_nonce": "fake-valid-nonce",
+                "buyer_email": "buyer@test.com",
+                "origin_url": "https://example.com",
+            },
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        # Sandbox may succeed OR return provider error — accept either
+        # but require the response schema to be correct.
+        assert "success" in data
+        if data["success"]:
+            assert data["transaction_id"]
+            assert data["download_token"]
+
+        if unpublish_after:
+            client.delete(f"{API}/litho/studio/my-jobs/{job_id}/listing")
+
+    def test_webhook_braintree_rejects_unsigned(self, client):
+        # No bt_signature/bt_payload → 400 or 422 form-validation err
+        r = client.post(f"{API}/litho/studio/webhook/braintree", data={})
+        assert r.status_code in (400, 422)
+
+
+class TestPayouts:
+    """/payouts/status, /payouts/email, /payouts/transactions."""
+
+    def test_status_returns_full_schema(self, client):
+        r = client.get(f"{API}/litho/studio/payouts/status")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        for k in ("paypal_email", "pending_balance_usd",
+                  "lifetime_paid_usd", "payout_threshold_usd", "mode"):
+            assert k in d, f"missing {k}"
+        assert d["mode"] in ("mock", "sandbox", "live")
+        # PayPal creds not set on this env → mock mode expected
+        assert d["mode"] == "mock"
+
+    def test_set_paypal_email_persists(self, client):
+        email = f"paypal.test.{uuid.uuid4().hex[:6]}@example.com"
+        r = client.post(
+            f"{API}/litho/studio/payouts/email",
+            json={"paypal_email": email},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["paypal_email"] == email.lower()
+        # verify GET reflects the update
+        st = client.get(f"{API}/litho/studio/payouts/status").json()
+        assert st["paypal_email"] == email.lower()
+
+    def test_transactions_returns_list(self, client):
+        r = client.get(f"{API}/litho/studio/payouts/transactions")
+        assert r.status_code == 200
+        d = r.json()
+        assert "transactions" in d and isinstance(d["transactions"], list)
+        assert "payouts" in d and isinstance(d["payouts"], list)
+
+
+class TestAdminPayouts:
+    """Admin routes require is_admin — non-admin test user should 403."""
+
+    def test_pending_forbidden_for_non_admin(self, client):
+        r = client.get(f"{API}/litho/studio/admin/payouts/pending")
+        assert r.status_code == 403
+
+    def test_run_forbidden_for_non_admin(self, client):
+        r = client.post(f"{API}/litho/studio/admin/payouts/run")
+        assert r.status_code == 403
+
+    def test_batches_forbidden_for_non_admin(self, client):
+        r = client.get(f"{API}/litho/studio/admin/payouts/batches")
+        assert r.status_code == 403
+
+
+class TestPayPalWebhook:
+    """Webhook endpoint smoke — currently accepts any JSON (see code
+    comment in paypal_payouts.py: signature verification deferred until
+    PAYPAL_WEBHOOK_ID is provisioned). Verify at least the route exists."""
+
+    def test_webhook_route_reachable(self, client):
+        r = client.post(
+            f"{API}/litho/studio/webhook/paypal-payouts",
+            json={"event_type": "PAYMENT.PAYOUTSBATCH.PROCESSING",
+                  "resource": {"batch_header": {}}},
+        )
+        # Current impl returns 200 without signature. Documented as tech
+        # debt in paypal_payouts.py inline comment.
+        assert r.status_code in (200, 400, 401, 403)

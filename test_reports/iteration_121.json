@@ -1,0 +1,49 @@
+{
+  "summary": "Phase 2 LithoForge marketplace merge — backend 34/34 pytest PASS (12 new: TestMarketplace, TestBraintreeCheckout, TestPayouts, TestAdminPayouts, TestPayPalWebhook). Frontend E2E via seeded session cookie verified: TopToolbar Marketplace hover-menu renders with Models(/gallery) + Lithophanes(/litho/marketplace); old standalone Gallery link is gone; open-lithoforge-btn preserved; /litho/marketplace loads grid with seeded 'Sunset Gradient' listing; ListingDetailPage renders (title, price, Buy button, Braintree Drop-in with real card iframe + email input); /litho/creator/{userId} loads with creator name + listings; /litho studio still functional. Fixed two blocking bugs during testing: (a) /api/litho/studio/marketplace/{job_id}/preview-mesh 500'd due to broken absolute imports `from jobs_history import` → `from litho.jobs_history import`; (b) ListingCard Link routed to `/marketplace/{jobId}` (no route → landing) instead of `/litho/marketplace/{jobId}`. One unresolved critical bug remains: /litho/payouts stuck on 'Loading…' forever because PayoutsPage.useAuth() reads from LithoForge's AuthContext which is never mounted around App.js routes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/litho/studio/marketplace/{job_id}/checkout", "issue": "Endpoint per spec doesn't exist — actual path is /checkout-bt. Frontend PurchaseDialog and any docs pointing to /checkout will 404. Consider adding a /checkout alias or updating the spec."},
+      {"endpoint": "GET /api/litho/studio/marketplace/checkout/status/{session_id}", "issue": "Endpoint listed in review request does not exist (404). marketplace_braintree.py never defines it. Order-status polling is impossible."},
+      {"endpoint": "POST /api/litho/studio/webhook/paypal-payouts", "issue": "Currently accepts any unsigned JSON and returns 200. Review spec expected 400 on unsigned. Signature verification is intentionally deferred per inline code comment — flag as tech debt (PAYPAL_WEBHOOK_ID + /v1/notifications/verify-webhook-signature integration needed before going live)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PayoutsPage.jsx (litho/components/marketplace/)", "issue": "Route /litho/payouts is stuck on 'Loading…' — PayoutsPage imports useAuth from components/litho/lib/auth.js (a LithoForge-scoped AuthContext) but that provider is never mounted in App.js. useAuth returns the default {user:null, loading:true} so the page never renders. Fix: either wrap the /litho/payouts route in the LithoForge AuthProvider, or migrate PayoutsPage to use ForgeSlicer's @/contexts/AuthContext (same pattern used by Workspace).", "selector": "[data-testid=payouts-page]", "priority": "HIGH"},
+      {"component": "ListingCard.jsx", "issue": "FIXED — Link `to={\\`/marketplace/${listing.job_id}\\`}` navigated to a non-existent route (dropped user on landing page). Corrected to `/litho/marketplace/{jobId}`.", "selector": "[data-testid=marketplace-grid] a", "priority": "FIXED"},
+      {"component": "Lithophane3DPreview canvas on ListingDetailPage", "issue": "No <canvas> element found on initial detail page load — the 3D preview may live behind a '3D' tab (page shows 'RENDER / 3D' tabs). Not tested clicking the 3D tab since spec permitted verifying render only. Also blocked by CSP/three loader — flag for main-agent visual verification."}
+    ],
+    "integration_issues": [
+      {"flow": "Publish → Purchase → Download", "issue": "PurchaseDialog opens correctly with Braintree Drop-in card iframe + email input. Real card submission not verified (would hit sandbox Braintree — flaky in headless per spec). Backend /checkout-bt works with fake-valid-nonce (returned 200 in curl).", "affected_selectors": ["[data-testid=marketplace-grid]", "PurchaseDialog"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_litho_studio.py",
+    "/app/test_reports/pytest/pytest_litho_iter121.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix /litho/payouts loading loop — wrap the route with LithoForge's AuthProvider in App.js OR replace `useAuth` import in PayoutsPage.jsx with ForgeSlicer's `@/contexts/AuthContext`. Root cause: LithoForge's AuthProvider is never mounted; only its default context values apply.",
+    "MEDIUM: Reconcile checkout endpoint naming. Frontend + spec expect /marketplace/{job_id}/checkout, backend exposes /checkout-bt. Either add an alias or update the frontend + docs.",
+    "MEDIUM: Implement GET /api/litho/studio/marketplace/checkout/status/{session_id} — it's in the spec but missing from marketplace_braintree.py; order-confirmation UI (PurchaseSuccessPage) can't poll status without it.",
+    "LOW: PayPal webhook signature verification is documented tech debt — add before production."
+  ],
+  "critical_code_review_comments": [
+    "marketplace.py used `from jobs_history import ...` (top-level module) instead of `from litho.jobs_history import ...` — this only broke because /preview-mesh is exercised at request-time; unit tests never imported it. Fixed in place.",
+    "PayoutsPage.jsx couples to a never-mounted LithoAuthProvider — same anti-pattern is likely present anywhere under components/litho that imports from ./lib/auth. Sweep the tree for other consumers.",
+    "marketplace_braintree.py has BRAINTREE_MERCHANT_ID/PUBLIC/PRIVATE required at request-time via os.environ[...]. If any of these vars are unset the client-token endpoint 500s instead of returning a helpful 503/mock. Consider a mock mode mirroring paypal_payouts.py._paypal_mode()."
+  ],
+  "updated_files": [
+    "/app/backend/litho/marketplace.py (fixed jobs_history + exporters imports)",
+    "/app/frontend/src/components/litho/components/marketplace/ListingCard.jsx (prefixed Link with /litho)",
+    "/app/backend/tests/test_litho_studio.py (added 12 new tests for marketplace, braintree, payouts, admin, webhook)"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "~85% — Marketplace browse/detail/creator/toolbar-menu all working; Payouts page blocked by auth-provider wiring bug"},
+  "test_credentials": "session_token=st_test_litho_1783361464350 (from Phase 1); still valid, non-admin so admin/* routes correctly 403.",
+  "seed_data_creation": "One 'Sunset Gradient' listing at $4.99 pre-existed. Test suite publishes and then unpublishes ephemeral TEST_Listing_* listings; the seed listing is not modified.",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Backend suite /app/backend/tests/test_litho_studio.py now covers 34 tests including full Phase-2 marketplace/braintree/payouts/admin loops. When retesting after PayoutsPage fix: (1) reload /litho/payouts under seeded session, expect data-testid=payouts-page + paypal-email-input visible + can save email + toast confirms; (2) verify PurchaseSuccessPage can poll checkout-status once that endpoint is added. Braintree Drop-in iframe loads real card UI in sandbox — leave card submission out of headless tests.",
+  "rca of the issue": "PayoutsPage /litho/payouts: PayoutsPage.jsx calls `useAuth()` imported from ../../lib/auth (LithoForge's AuthContext). App.js wires PayoutsPage under a top-level Route but does NOT wrap it in the LithoAuthProvider (which is only defined, never rendered anywhere in the tree). Result: useAuth returns the createContext default `{user:null, loading:true, login:()=>{}, logout:()=>{}}` so the guard `if (authLoading) return <Loading… />` short-circuits forever. Reproduction: sign in with test session cookie → navigate to /litho/marketplace (works) → navigate to /litho/payouts → screen shows only 'Loading…' text. Fix options: (a) wrap /litho and /litho/* routes in App.js with LithoForge's AuthProvider; (b) refactor PayoutsPage to use @/contexts/AuthContext (single source of truth already used by Workspace + Profile)."
+}

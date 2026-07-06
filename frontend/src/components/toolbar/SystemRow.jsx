@@ -13,7 +13,7 @@ import { Link } from "react-router-dom";
 import {
   FilePlus2, FileUp, FileDown, Save, Upload, Layers, Eye, ShieldCheck,
   Hexagon, Globe, Library, Printer, ChevronDown, Sparkles, Settings as SettingsIcon,
-  FolderTree,
+  FolderTree, ShoppingBag,
 } from "lucide-react";
 import { useScene } from "../../lib/store";
 import { getSlicersForPrinter } from "../../lib/presets";
@@ -141,16 +141,15 @@ export default function SystemRow({
         placeholder="project name"
       />
 
-      <Link
-        to="/gallery"
-        data-testid="open-gallery-btn"
-        className="h-8 px-3 ml-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
-      >
-        <Globe size={14} /> Gallery
-      </Link>
+      {/* iter-130: Marketplace hover-menu — combines ForgeSlicer's
+          public model gallery with the new Lithophane marketplace
+          (Phase 2 of the LithoForge merge). Single access point in
+          the toolbar keeps the header uncluttered. */}
+      <MarketplaceMenu />
       {/* iter-128: Lithophane Studio — LithoForge merged in-tree as
-          the /litho route. Direct navigation now (no cross-domain SSO
-          bridge to maintain). */}
+          the /litho route. This is the *creation* tool (photo → CMYKW),
+          distinct from the marketplace above (browse/buy other
+          people's lithophanes). Two separate CTAs on purpose. */}
       <Link
         to="/litho"
         data-testid="open-lithoforge-btn"
@@ -252,6 +251,69 @@ export default function SystemRow({
       </button>
       <ThemeSwitcher />
       <UserMenu returnPath="/workspace" />
+    </div>
+  );
+}
+
+
+// iter-130 — Marketplace hover-menu. Two-item dropdown: Models (the
+// public gallery ForgeSlicer already had) + Lithophanes (the merged
+// LithoForge marketplace at /litho/marketplace). Uses pure CSS
+// hover/focus so we don't pull in a full popover primitive for a
+// two-line list. Delay-open + delay-close on group-hover makes the
+// hit target forgiving.
+function MarketplaceMenu() {
+  return (
+    <div
+      className="relative group ml-2"
+      data-testid="marketplace-menu"
+    >
+      <button
+        type="button"
+        data-testid="marketplace-menu-btn"
+        className="h-8 px-3 bg-slate-800 hover:bg-slate-700 group-hover:bg-slate-700 text-slate-200 text-xs font-medium rounded flex items-center gap-1.5 border border-slate-700"
+        title="Browse the community marketplace"
+      >
+        <ShoppingBag size={13} /> Marketplace
+        <ChevronDown size={11} className="text-slate-400 group-hover:text-slate-200 transition" />
+      </button>
+      <div
+        className="absolute top-full right-0 mt-1 w-64 bg-slate-950 border border-slate-800 rounded shadow-2xl overflow-hidden opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity z-50"
+        role="menu"
+      >
+        <Link
+          to="/gallery"
+          data-testid="marketplace-menu-models"
+          className="flex items-start gap-3 px-3 py-2.5 hover:bg-slate-900 border-b border-slate-800"
+          role="menuitem"
+        >
+          <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
+            <Globe size={15} className="text-slate-300" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-white">Models</div>
+            <div className="text-[10px] text-slate-400 leading-snug mt-0.5">
+              STL / 3MF designs — remix, download, publish.
+            </div>
+          </div>
+        </Link>
+        <Link
+          to="/litho/marketplace"
+          data-testid="marketplace-menu-lithophanes"
+          className="flex items-start gap-3 px-3 py-2.5 hover:bg-slate-900"
+          role="menuitem"
+        >
+          <div className="w-8 h-8 rounded bg-orange-500/10 border border-orange-500/40 flex items-center justify-center flex-shrink-0">
+            <Sparkles size={15} className="text-orange-400" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-white">Lithophanes</div>
+            <div className="text-[10px] text-slate-400 leading-snug mt-0.5">
+              Multi-color CMYKW lithophanes — buy print-ready 3MFs from creators.
+            </div>
+          </div>
+        </Link>
+      </div>
     </div>
   );
 }

@@ -184,7 +184,6 @@ def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
     `db` is the shared Motor async client — only required for the
     persistent submodules (presets, jobs history, private filaments)."""
     router = APIRouter(prefix="/litho/studio", tags=["litho-studio"])
-
     # Persistent sub-routers — mounted lazily so the studio still boots
     # if the db handle isn't wired (e.g. unit tests that skip Mongo).
     # ForgeSlicer's get_current_user returns a plain dict; LithoForge's
@@ -195,33 +194,49 @@ def build_litho_studio_router(get_current_user, db=None) -> APIRouter:
     async def _adapted_user(user: Dict[str, Any] = Depends(get_current_user)):
         return SimpleNamespace(**user)
 
+    # Late binding — get_optional_user lives in server.py, so import
+    # by name from the enclosing app module at call time.
+    import sys as _sys
+    _server_mod = _sys.modules.get("server")
+    _get_optional_user = getattr(_server_mod, "get_optional_user", None)
+
+    async def _adapted_optional_user(request: Request):
+        if _get_optional_user is None:
+            return None
+        u = await _get_optional_user(request)
+        return SimpleNamespace(**u) if u else None
+
+    # ForgeSlicer-side admin dep (matches the pattern used by
+    # orca_upstream). Wraps get_current_user + is_admin/super check.
+    async def _require_admin(request: Request):
+        u = await get_current_user(request)
+        if not (u.get("is_admin") or u.get("is_super_admin")):
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        return SimpleNamespace(**u)
+
     if db is not None:
         from litho.presets import build_presets_router
         from litho.jobs_history import build_jobs_router
         from litho.filament_library_api import build_filament_library_router
+        from litho.marketplace import build_marketplace_router
+        from litho.marketplace_braintree import build_braintree_router
+        from litho.paypal_payouts import (
+            build_payouts_router,
+            build_admin_payouts_router,
+            build_paypal_webhook_router,
+        )
+
         router.include_router(build_presets_router(db, _adapted_user))
         router.include_router(build_jobs_router(db, _adapted_user, _JOBS))
-        # Filament library needs both a hard-auth dep and an optional-user
-        # dep (for endpoints that read anonymous but personalize when
-        # signed in). We wrap ForgeSlicer's optional user with the same
-        # SimpleNamespace adapter (returning None when unauthenticated).
-        from types import SimpleNamespace as _SNS  # noqa: F811
-
-        # Late binding — get_optional_user lives in server.py, so import
-        # by name from the enclosing app module at call time.
-        import sys as _sys
-        _server_mod = _sys.modules.get("server")
-        _get_optional_user = getattr(_server_mod, "get_optional_user", None)
-
-        async def _adapted_optional_user(
-            request: Request,
-        ):
-            if _get_optional_user is None:
-                return None
-            u = await _get_optional_user(request)
-            return _SNS(**u) if u else None
-
         router.include_router(build_filament_library_router(db, _adapted_user, _adapted_optional_user))
+        # Marketplace bundle — mounts /marketplace/*, /my-jobs/*/listing,
+        # /creators/*, /payouts/*, /admin/payouts/*, /webhook/* under
+        # the studio prefix. Frontend already targets these paths.
+        router.include_router(build_marketplace_router(db, _adapted_user, _adapted_optional_user))
+        router.include_router(build_braintree_router(db))
+        router.include_router(build_payouts_router(db, _adapted_user))
+        router.include_router(build_admin_payouts_router(db, _require_admin))
+        router.include_router(build_paypal_webhook_router(db))
 
     async def _require_user(request):
         return await get_current_user(request)
