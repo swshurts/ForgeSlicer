@@ -33,6 +33,28 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
+### Recently completed (iter-131, 2026-07-06) — Full LithoForge Phase 2 merge: Marketplace, Checkout, Creator Payouts
+- **User directive**: Continue the LithoForge merge — Phase 2 (marketplace). Confirmed choices from iter-129: separate `/litho/marketplace` route with a TopToolbar submenu "Marketplace → Models / Lithophanes"; unified pricing (no separate lithophane tier); no account migration.
+- **Backend ports** (all in `/app/backend/litho/`, mounted inside `/api/litho/studio/*` for a single root URL space):
+  - `marketplace.py` — listings CRUD (`PUT/GET/DELETE /my-jobs/{job_id}/listing`), browse (`GET /marketplace`), detail (`GET /marketplace/{id}`), preview mesh (`GET /marketplace/{id}/preview-mesh` → STL blob), creator profile (`GET /creators/{user_id}`).
+  - `marketplace_braintree.py` — sandbox-mode Braintree checkout (`POST /marketplace/client-token`, `POST /marketplace/{id}/checkout-bt`, `POST /webhook/braintree`, download-token gated STL/3MF export).
+  - `paypal_payouts.py` — creator payouts with **auto mock-mode** when `PAYPAL_CLIENT_ID` is empty (which it is). Endpoints: `GET/POST /payouts/{status,email,transactions}`, admin-only `/admin/payouts/{pending,run,batches}`, webhook `/webhook/paypal-payouts`. Real PayPal Payouts wire-in ready — flip the env var to go live.
+  - `email_purchase.py` — Resend-backed purchase-confirmation email with download link. Degrades to no-op when `RESEND_API_KEY` is missing.
+- **Frontend ports** (`/app/frontend/src/components/litho/components/marketplace/`):
+  - MarketplacePage (browse grid), MarketplaceHeader (page chrome, no more UserMenu — deferred to app-level), ListingCard, ListingDetailPage (title, price, filaments, Lithophane3DPreview canvas), Lithophane3DPreview (three.js viewer), PurchaseDialog (Braintree Drop-in card iframe + email input), PurchaseSuccessPage (?token= short-circuit works), CreatorPage, PayoutsPage.
+  - Real PublishDialog replaces the Phase-2 stub from iter-129.
+- **App wiring**:
+  - 5 new React Router routes: `/litho/marketplace`, `/litho/marketplace/:jobId`, `/litho/marketplace/:jobId/success`, `/litho/creator/:userId`, `/litho/payouts` (ProtectedRoute).
+  - TopToolbar `SystemRow.jsx` — old standalone Gallery button REMOVED. New `<MarketplaceMenu />` hover-dropdown at the same position with two items: **Models** (→ /gallery) and **Lithophanes** (→ /litho/marketplace). Lithophane creation button (open-lithoforge-btn → /litho) preserved as a separate CTA.
+- **Auth context bridge** (iter-131 fix):
+  - `/app/frontend/src/components/litho/lib/auth.jsx` rewritten as a shim that re-exports ForgeSlicer's global `@/contexts/AuthContext`. Every LithoForge component's `useAuth` import (JobHistory, PresetManager, LibraryMatchPanel, FilamentLibraryDialog, PurchaseDialog, PayoutsPage, quota.jsx) transparently reads through — no consumer-side edits needed.
+  - `AuthProvider` and `AuthCallbackHandler` kept as no-op re-exports so stale imports don't blow up the tree.
+- **Testing**:
+  - **iter-121**: backend **34/34 pytest PASS** (12 new: TestMarketplace, TestBraintreeCheckout, TestPayouts, TestAdminPayouts, TestPayPalWebhook). Frontend E2E: marketplace-menu renders, /litho/marketplace grid, ListingCard → detail → Buy → PurchaseDialog all work. Two bugs auto-fixed by testing agent: (a) `/preview-mesh` broken imports (`from jobs_history` → `from litho.jobs_history`); (b) ListingCard Link path missing `/litho` prefix. One HIGH-priority bug found: /litho/payouts stuck on "Loading…" (LithoForge AuthProvider never mounted).
+  - **iter-122**: **retest post-fix — 100% pass, 6/6 frontend flows, zero issues.** /litho/payouts now loads instantly, PayPal email save persists, no regressions on any other litho page.
+- **E2E verified live**: upload 96×96 gradient PNG → optimize → PUT publish "Sunset Gradient" @ $4.99 → marketplace grid renders the ListingCard with CMYKW gradient thumbnail → detail page → Buy button opens PurchaseDialog with Braintree Drop-in.
+- **What's still Phase 3+**: unified landing/marketing splash for `/litho` (currently the studio launches directly); merge lithophane perks into ForgeSlicer's pricing tiers; DNS 301s from lithoforge.net → forgeslicer.com/litho; PayPal webhook signature verification (tech debt — code has a TODO); admin quota unification.
+
 ### Recently completed (iter-129, 2026-07-06) — Full LithoForge merged into ForgeSlicer (Phase 1)
 - **User directive**: "Merge the entire functionality of LithoForge into ForgeSlicer, not just a stripped-down version. The goal is to make LithoForge.net go away." User confirmed: full Studio UX first, unified pricing, no account migration (no publicized signups), strip SSO/handoff shims now.
 - **Scope shipped this session (Phase 1 of 5)**: complete Lithophane Studio workspace at `/litho` route + all backend routers to make it stateful.
