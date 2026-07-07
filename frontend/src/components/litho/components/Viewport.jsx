@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, Eye, Grid3x3, SplitSquareHorizontal } from "lucide-react";
 import { UploadZone } from "./UploadZone";
-import { editsToCssFilter, editsToClipPath, editsAreActive } from "./ImageEditPanel";
+import { editsToCssFilter, editsAreActive } from "./ImageEditPanel";
 import { CropOverlay } from "./CropOverlay";
 import { CompareSlider } from "./CompareSlider";
 import { ZoomPanView } from "./ZoomPanView";
@@ -85,9 +85,45 @@ export const Viewport = ({
   // edited image, so they show un-filtered.
   const liveEdit = !result || view === "original";
   const filterStyle = liveEdit && edits ? editsToCssFilter(edits) : "none";
-  const clipStyle = liveEdit && edits && editsAreActive(edits)
-    ? editsToClipPath(edits)
-    : "none";
+
+  // iter-135 — Crop display. The previous implementation used CSS
+  // `clip-path` on the full-sized <img> and left the clipped-out
+  // pixels as an empty rectangle inside a fixed viewport container —
+  // the user saw a large black band above/below the visible crop
+  // (bug reported 2026-07-06). We now wrap the <img> in an
+  // `overflow: hidden` box whose aspect ratio matches the crop rect,
+  // then scale + translate the underlying <img> so only the crop
+  // shows. The visible content fills the viewport at its natural
+  // aspect, no dead space. CropOverlay still receives full-container
+  // coordinates because the wrapper stays edge-to-edge on the source
+  // dimensions — it just crops what's drawn under it.
+  const cropActive = liveEdit && edits && editsAreActive(edits) && (
+    (edits.cropL || 0) + (edits.cropR || 0) + (edits.cropT || 0) + (edits.cropB || 0) > 0
+  );
+  const cw = cropActive ? Math.max(1, 100 - (edits.cropL || 0) - (edits.cropR || 0)) : 100;
+  const ch = cropActive ? Math.max(1, 100 - (edits.cropT || 0) - (edits.cropB || 0)) : 100;
+  const cropImgStyle = cropActive
+    ? {
+        // Scale the img up so the visible crop rectangle fills the
+        // wrapper. The wrapper's aspect ratio is already the crop's
+        // aspect ratio, so a `width/height: 100/cw * 100%` scale on
+        // each axis yields exactly the crop rect at natural fit.
+        width: `${(100 / cw) * 100}%`,
+        height: `${(100 / ch) * 100}%`,
+        // Shift so the crop's top-left starts at (0,0) of the wrapper.
+        // `objectPosition` on a wider-than-container img with
+        // object-fit:none positions the pixel origin.
+        marginLeft: `${(-(edits.cropL || 0) / cw) * 100}%`,
+        marginTop: `${(-(edits.cropT || 0) / ch) * 100}%`,
+        maxWidth: "none",
+        maxHeight: "none",
+        filter: filterStyle,
+        ...(view === "heightmap" ? { imageRendering: "pixelated" } : {}),
+      }
+    : {
+        filter: filterStyle,
+        ...(view === "heightmap" ? { imageRendering: "pixelated" } : {}),
+      };
 
   return (
     <div
@@ -161,26 +197,25 @@ export const Viewport = ({
           >
             <div
               ref={imgWrapRef}
-              className="relative border border-zinc-800 max-h-full max-w-full inline-block mx-auto"
+              className="relative border border-zinc-800 max-h-full max-w-full inline-block mx-auto overflow-hidden"
               data-testid="viewport-image-wrap"
+              style={cropActive ? { aspectRatio: `${cw} / ${ch}`, height: "70vh" } : undefined}
             >
               <img
                 ref={setImgEl}
                 src={previewSrc}
                 alt="lithophane"
-                className="block max-h-[70vh] max-w-full object-contain"
+                className={
+                  cropActive
+                    ? "block object-cover"
+                    : "block max-h-[70vh] max-w-full object-contain"
+                }
                 data-testid="viewport-image"
                 draggable={false}
                 crossOrigin="anonymous"
-                style={{
-                  filter: filterStyle,
-                  clipPath: clipStyle,
-                  ...(view === "heightmap"
-                    ? { imageRendering: "pixelated" }
-                    : {}),
-                }}
+                style={cropImgStyle}
               />
-              {liveEdit && setEdits && !zoomed && (
+              {liveEdit && setEdits && !zoomed && !cropActive && (
                 <CropOverlay
                   edits={edits}
                   setEdits={setEdits}

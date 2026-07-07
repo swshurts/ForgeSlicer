@@ -1,0 +1,44 @@
+{
+  "summary": "iter-124 crop viewport bug fix (Viewport.jsx) — validated end-to-end. Frontend: 4/4 crop-state Playwright flows PASS (fresh upload with overlay, crop-active hides overlay + wrap shrinks to crop aspect, reset restores 1:1 wrap + overlay, cropT=30 persists across reload). Generate-with-crop produces a preview PNG with naturalHeight=110 (exactly 55% of source 200) — proves the crop reaches the /optimize pipeline. Backend regression: 40/40 test_litho_studio.py PASS + 1/1 new dimensional-crop pipeline test. No black-band regression. All non-litho pages (/, /workspace, /litho/marketplace) load with 0 console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_litho_studio.py",
+    "/app/backend/tests/test_iter124_crop_backend.py",
+    "/app/test_reports/pytest/iteration_124_litho.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Viewport.jsx iter-135 fix is well-scoped and well-commented (lines 89-127 explain the old clip-path bug + new wrapper-with-aspect-ratio approach). The CropOverlay is correctly gated on !cropActive so users can't drag when sliders are already set — this is the right UX because dragging inside a shrunk wrap would produce non-intuitive coordinates.",
+    "cw/ch use Math.max(1, 100 - L - R) — guards against a division-by-zero if a user somehow slams all four sides to 100 (Radix sliders clamp at 45, but the guard is a good belt-and-suspenders).",
+    "Minor: line 202 uses inline `height:'70vh'` on the wrap when cropActive. The non-cropped state relies on `max-h-[70vh]` via the child img instead. Slight asymmetry — a user who has a very tall crop (e.g., 200x400 aspect) will get a 70vh-tall wrap regardless of container width, which could push against the sidebar. Not a defect on 16:9 desktop viewports (tested 1920x1080 fine), but worth eyeballing on ultrawide/portrait tabs. Deferrable.",
+    "Line 218 gate `!zoomed && !cropActive` is correct — zoom pan mode and crop-active both suppress the drag overlay for the same reason: their coordinate systems don't match. Good.",
+    "The `img` element still uses object-cover when cropActive and object-contain otherwise — the switch is necessary to preserve the marginLeft/marginTop scale-and-shift trick. Explained inline. Non-obvious but correct.",
+    "test_litho_studio.py hasn't been touched since iter-123; the iter-124 crop backend test is in a fresh file (test_iter124_crop_backend.py) so it doesn't clutter the main litho suite. Consider absorbing that test into the main litho suite in a future refactor to unify the pipeline coverage — it's a strict regression for the /upload → /optimize dimensional contract."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter124_crop_backend.py"
+  ],
+  "success_rate": {"backend": "100% (40/40 litho suite + 1/1 new crop-pipeline test)", "frontend": "100% (4 crop states + 3 regression pages)"},
+  "test_credentials": "session_token=st_test_litho_1783361464350 (user_test_litho_1783361464350). Cookie domain orca-cad-slice.preview.emergentagent.com, secure=True, httpOnly=True, sameSite=None. Bearer token also works.",
+  "seed_data_creation": "None new. Existing seeded listing cc3bb001-... (Sunset Gradient by Litho Test User, $4.99) still present. subscription_tier field is UNSET (= free) after cleanup. Confirmed via marketplace API.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter-124 crop-visual bug fix verified. Measured behavior on preview environment (https://orca-cad-slice.preview.emergentagent.com/litho): STATE1 (no crop) wrap = 202x202 (1:1) + crop-overlay present. STATE2 (cropT=45%) wrap CSS aspectRatio = '100 / 55', measured 1232x756 (constrained by container flex, aspect ~1.63 not 1.818 — max-w-full clamp is respected), CROP OVERLAY IS HIDDEN, img has style width:100% height:181.818% margin-top computed correctly — visible content is pure blue (from a red-top blue-bottom source), NO BLACK BAND. STATE3 (reset via Home key) wrap back to 1:1 + overlay reappears. STATE4 (cropT=30 persisted after reload) wrap aspect exactly 1.428 (=200/140), overlay hidden, slider label shows 'Top 30%'. Post-generate: preview img.naturalHeight=110 (exactly 55% of 200) — the crop reaches /optimize. Overall: NOT the same class of bug reported by user; the visual bug is unambiguously fixed on preview. User's 'reappearing in lithophane' complaint was almost certainly stale production build — the pipeline math is correct in preview. If user still reports the issue, first confirm they hard-reloaded production (forgeslicer.com) after redeploy. Radix slider tip: focus the [role=slider] child of data-testid=crop-top-slider (NOT the outer wrapper) or the keyboard events won't register. Marketplace listing selector prefix is `listing-<jobid>` not `marketplace-listing-<jobid>` — a legacy naming choice, worth normalizing later. Landing accordion toggle requires clicking [data-testid=landing-tab-start] first before [data-testid=start-accordion-toggle-lithophane] is in the DOM (Start is not the default tab).",
+  "flows_verified": {
+    "backend": [
+      "40/40 test_litho_studio.py — all classes GREEN: FilamentsAndPrinters, OptimizeAndExport, DiscGeometry, Regression, Presets, MyJobs, FilamentLibrary, Marketplace, BraintreeCheckout, Payouts, AdminPayouts, PayPalWebhook, TierGates (incl. 6 iter-134 tests).",
+      "NEW test_iter124_crop_backend.test_optimize_preserves_45pct_top_crop_aspect — /upload of 200x110 (frontend-cropped) + /optimize returns preview PNG 200x110. Heightmap same aspect. Proves crop bytes flow through pipeline unchanged.",
+      "Preview PNG dimensions (200x110) exactly match crop rect — confirms the frontend's client-side crop-to-canvas is what /optimize receives (NOT the source 200x200)."
+    ],
+    "frontend": [
+      "STATE 1 (fresh 200x200 upload, no crop): viewport-image-wrap 202x202 (1:1), crop-overlay PRESENT — user can drag to crop.",
+      "STATE 2 (cropT=45% via Radix slider Home + 45x ArrowRight): CSS aspect-ratio '100/55' applied on wrap, height:70vh in effect, img styled width:100% height:181.818% with negative margins — visible content is uniform BLUE (no black band), crop-overlay HIDDEN.",
+      "STATE 3 (Home to reset cropT=0): wrap back to 202x202, crop-overlay REAPPEARS.",
+      "STATE 4 (cropT=30, reload): wrap aspect = 1.428 (exact 200:140), overlay hidden, slider label 'Top 30%' — crop persisted correctly through localStorage debounce + rehydration.",
+      "GENERATE (cropT=45%, click litho-generate-btn): loading overlay shown for optimize, preview img.naturalHeight = 110 (55% of 200) — pipeline honors the crop end-to-end. Toast 'Optimized · ΔE 96.88' shown, 22 layers / 6 filaments used.",
+      "Regression: /, /workspace, /litho/marketplace all load with 0 console errors. Workspace hover-menu shows Marketplace + Lithophane. Landing Start tab reveals landing-lithophane accordion. Marketplace grid shows 1 seeded listing (Sunset Gradient, $4.99, listing-cc3bb001-...)."
+    ]
+  },
+  "rca of the issue": "Root cause (as diagnosed by main agent, now validated): the previous Viewport.jsx implementation applied CSS `clip-path` to a full-sized <img> to visualize the crop, but left the img's DOM bounding-box at the source's natural dimensions. Inside the fixed 70vh viewport container, this produced a dead-space band (rendered black by the container's background) above/below the visible crop rect. The fix (iter-135 in Viewport.jsx lines 89-127) replaces clip-path with a wrapping div whose aspect-ratio matches the crop rect, plus scale+translate on the child img via inline width/height/margin percentages. The wrapper's overflow:hidden crops what falls outside. CropOverlay is hidden while a crop is active because its coordinate system (0..100% of full source) would be off-scale inside the shrunk wrap. Verified: (a) no more black band in preview environment, (b) the crop pipeline is unchanged and still produces preview PNGs of the cropped dimensions, (c) crop state persists across reload with correct rehydration. The user's report of 'reappearing in lithophane' was almost certainly a stale production build — the correct behavior is live on preview."
+}
