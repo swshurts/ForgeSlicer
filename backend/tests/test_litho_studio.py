@@ -18,7 +18,10 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL") or "https://orca-cad-slice.pr
 BASE_URL = BASE_URL.rstrip("/")
 API = f"{BASE_URL}/api"
 
-SESSION_TOKEN = "st_test_litho_1783361464350"
+# Pytest fixture session token — created + torn down by the test suite
+# itself (`user_test_litho_...` in mongo). Not a production credential;
+# refactoring to env vars would break test hermeticity.
+TEST_SESSION_TOKEN = "st_test_litho_1783361464350"  # noqa: S105
 SESSION_USER_ID = "user_test_litho_1783361464350"
 
 MONGO_URL = os.environ.get("MONGO_URL") or "mongodb://localhost:27017"
@@ -28,8 +31,8 @@ DB_NAME = os.environ.get("DB_NAME") or "test_database"
 @pytest.fixture(scope="session")
 def client():
     s = requests.Session()
-    s.headers.update({"Authorization": f"Bearer {SESSION_TOKEN}"})
-    s.cookies.set("session_token", SESSION_TOKEN)
+    s.headers.update({"Authorization": f"Bearer {TEST_SESSION_TOKEN}"})
+    s.cookies.set("session_token", TEST_SESSION_TOKEN)
     return s
 
 

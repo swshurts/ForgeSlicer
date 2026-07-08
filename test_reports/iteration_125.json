@@ -1,0 +1,41 @@
+{
+  "summary": "iter-136 code-quality refactor of estimate_print_costs verified. All 11 behaviour-lock unit tests + 40 litho studio integration tests + 1 iter-124 crop test + 2 orca_engine tests + 2 new HTTP behaviour-lock tests I added = 56/56 pass. Full backend suite: 365 passed / 1 pre-existing unrelated failure / 2 skipped. The refactor is byte-for-byte behaviour preserving. No functional regressions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_projects.py", "issue": "Pre-existing collection error: reads env var TOKEN_A at import time — unrelated to refactor, was broken before"},
+      {"endpoint": "/api/slice/orca/status (test_iter15_smoke::test_status_returns_installed_true_on_arm64)", "issue": "Pre-existing platform issue: OrcaSlicer binary present but version banner is null on aarch64 in this env. Not in the refactor scope."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cost_estimator_refactor.py",
+    "/app/backend/tests/test_iter136_optimize_behaviour_lock.py",
+    "/app/test_reports/pytest/iter136_final.xml",
+    "/app/test_reports/pytest/iter136_refactor.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Refactor is clean: estimate_print_costs public signature preserved; 5 new helpers (_apply_shape_mask, _floor_layer_map, _resolve_slab_bounds, _cost_for_slot, _print_time_minutes) are single-responsibility and independently testable.",
+    "SESSION_TOKEN → TEST_SESSION_TOKEN rename applied in both test files with the # noqa: S105 comment; downstream references updated. Signal clarity improved without changing runtime behaviour (token value unchanged).",
+    "orca_engine.py noqa: S603 comments correctly identify these as asyncio.create_subprocess_exec (safe API) not the exec() builtin. Comments are on the correct lines (222/929/1157). Module still imports cleanly and /api/slice/orca/status returns 200.",
+    "Pre-existing minor issue (not in refactor scope): tests/test_projects.py fails at collection because it reads TOKEN_A env var at module import — should be lazy-loaded in a fixture."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter136_optimize_behaviour_lock.py (NEW — 2 HTTP end-to-end behaviour-lock tests hitting /api/litho/studio/upload + /api/litho/studio/optimize on flat + disc; asserts full cost_estimate schema and non-zero values)"
+  ],
+  "success_rate": {
+    "backend": "99.7% (365/366 non-refactor-scope tests + 56/56 refactor-scope tests)",
+    "frontend": "N/A (backend-only per review request)"
+  },
+  "test_credentials": "TEST_SESSION_TOKEN=st_test_litho_1783361464350 (Bearer + session_token cookie).",
+  "seed_data_creation": "None — used pre-seeded litho test session (user_test_litho_1783361464350).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter-136 is complete and green. Two pre-existing minor issues remain and are NOT related to this refactor: (1) tests/test_projects.py fails collection due to eager TOKEN_A env-var read (2) test_iter15_smoke::test_status_returns_installed_true_on_arm64 fails because Orca version banner is null in this env. If asked to fix those, they are quick — move both env reads into fixtures / assert on `installed:true` instead of `version` for the ARM64 build. Refactored cost_estimator schema keys are: total_time_minutes, total_weight_g, total_length_mm, total_cost_usd, total_volume_mm3, per_filament[{slot,cost_usd,length_mm,layers,weight_g,volume_mm3,hex,...}].",
+  "rca of the issue": "N/A — no regression. My initial HTTP behaviour-lock test wrongly asserted `print_time_pretty`/`total_filament_pretty` keys, which are not in the CostEstimate.to_dict() schema; corrected assertions to match actual schema and both flat+disc pass."
+}

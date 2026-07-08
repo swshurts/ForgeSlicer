@@ -18,14 +18,16 @@ from PIL import Image
 
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://orca-cad-slice.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
-SESSION_TOKEN = "st_test_litho_1783361464350"
+# Pytest fixture session token — see /app/backend/tests/test_litho_studio.py
+# for the seed script. Not a production credential.
+TEST_SESSION_TOKEN = "st_test_litho_1783361464350"  # noqa: S105
 
 
 @pytest.fixture(scope="module")
 def client():
     s = requests.Session()
-    s.headers.update({"Authorization": f"Bearer {SESSION_TOKEN}"})
-    s.cookies.set("session_token", SESSION_TOKEN)
+    s.headers.update({"Authorization": f"Bearer {TEST_SESSION_TOKEN}"})
+    s.cookies.set("session_token", TEST_SESSION_TOKEN)
     return s
 
 

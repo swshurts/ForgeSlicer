@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -148,6 +148,115 @@ def _filament_material_key(name: str) -> str:
     return "PLA"
 
 
+def _apply_shape_mask(
+    layer_map: np.ndarray, shape: str
+) -> np.ndarray:
+    """iter-136 helper — Zero-out cells outside the printable footprint.
+    Currently only 'disc' shapes constrain the footprint (inscribed
+    circle); 'flat' and other geometries are pass-through so we don't
+    accidentally over-count cells."""
+    if shape != "disc":
+        return layer_map
+    h_px, w_px = layer_map.shape
+    yy, xx = np.ogrid[:h_px, :w_px]
+    cy, cx = (h_px - 1) / 2.0, (w_px - 1) / 2.0
+    radius = min(h_px, w_px) / 2.0
+    mask = ((yy - cy) ** 2 + (xx - cx) ** 2) <= (radius * radius)
+    return np.where(mask, layer_map, 0).astype(layer_map.dtype)
+
+
+def _floor_layer_map(
+    layer_map: np.ndarray, base_min_layers: int, shape: str
+) -> np.ndarray:
+    """iter-136 helper — Enforce the exporter's base_min_layers floor
+    everywhere except cells that are already zero because they're
+    outside the print footprint (disc mask)."""
+    base_min_layers = max(1, int(base_min_layers))
+    floored = np.maximum(layer_map, base_min_layers).astype(np.float64)
+    if shape == "disc":
+        floored = np.where(layer_map > 0, floored, 0.0)
+    return floored
+
+
+def _resolve_slab_bounds(
+    swap_layer_indices: List[int], top_cap: int, n_slots: int,
+) -> Tuple[List[int], List[int]]:
+    """iter-136 helper — Build the (bottom, top) layer indices for each
+    filament slot. Pads short lists with `top_cap` so slots that got
+    dropped by the auto-order stage collapse to zero layers instead of
+    raising."""
+    bottoms = [0] + list(swap_layer_indices)
+    tops = list(swap_layer_indices) + [top_cap]
+    while len(bottoms) < n_slots:
+        bottoms.append(top_cap)
+    while len(tops) < n_slots:
+        tops.append(top_cap)
+    return bottoms[:n_slots], tops[:n_slots]
+
+
+def _cost_for_slot(
+    *,
+    k: int,
+    fil: Any,
+    layer_map: np.ndarray,
+    floored_lm: np.ndarray,
+    bottoms: List[int],
+    tops: List[int],
+    layer_height_mm: float,
+    cell_area_mm2: float,
+    cross_section_mm2: float,
+) -> Optional[FilamentCost]:
+    """iter-136 helper — Compute one filament slot's cost breakdown, or
+    return None if the slot contributes zero layers to the print."""
+    if tops[k] <= bottoms[k]:
+        return None
+    # Slot 0 is the base — reads from the floored map so the enforced
+    # base_min_layers show up in its per-cell contribution. All later
+    # slots read the un-floored map.
+    source = floored_lm if k == 0 else layer_map.astype(np.float64)
+    clipped = np.clip(source - bottoms[k], 0, tops[k] - bottoms[k])
+    layer_count_for_slot = int(clipped.sum())
+    if layer_count_for_slot == 0:
+        return None
+
+    volume_mm3 = float(clipped.sum()) * layer_height_mm * cell_area_mm2
+    mat = _filament_material_key(getattr(fil, "name", ""))
+    brand = getattr(fil, "brand", "") or ""
+    finish = getattr(fil, "finish", "gloss") or "gloss"
+    explicit_price = getattr(fil, "price_per_kg_usd", None)
+    if explicit_price is not None:
+        price_per_kg = float(explicit_price)
+    else:
+        price_per_kg = price_per_kg_usd(mat, brand, finish)
+    density = DENSITY_G_PER_MM3.get(mat, DENSITY_G_PER_MM3["PLA"])
+
+    weight_g = volume_mm3 * density
+    length_mm = volume_mm3 / cross_section_mm2 if cross_section_mm2 > 0 else 0.0
+    cost_usd = weight_g * (price_per_kg / 1000.0)
+
+    return FilamentCost(
+        slot=k,
+        name=getattr(fil, "name", f"slot {k}"),
+        hex=getattr(fil, "hex", "#888888"),
+        layers=int(tops[k] - bottoms[k]),
+        volume_mm3=volume_mm3,
+        weight_g=weight_g,
+        length_mm=length_mm,
+        cost_usd=cost_usd,
+    )
+
+
+def _print_time_minutes(
+    total_length_mm: float, total_layers: int, n_swaps: int
+) -> float:
+    """iter-136 helper — Total wall-clock print time = extrusion +
+    per-layer overhead + per-swap overhead."""
+    extrusion_seconds = total_length_mm / max(MM_FILAMENT_PER_SECOND, 0.1)
+    overhead_seconds = PER_LAYER_OVERHEAD_SEC * total_layers
+    swap_seconds = SWAP_OVERHEAD_SEC * max(0, n_swaps)
+    return (extrusion_seconds + overhead_seconds + swap_seconds) / 60.0
+
+
 def estimate_print_costs(
     *,
     layer_map: np.ndarray,
@@ -165,45 +274,24 @@ def estimate_print_costs(
     `OptimizeIn`; the caller is responsible for passing the resolved
     "litho mode" usable area (e.g. for box-rect/box-round we feed the
     LITHOPHANE dims, not the enclosure outer dims).
+
+    iter-136 refactor — the ~120-line body was split into five
+    single-responsibility helpers (`_apply_shape_mask`,
+    `_floor_layer_map`, `_resolve_slab_bounds`, `_cost_for_slot`,
+    `_print_time_minutes`) so each piece is unit-testable and the
+    per-slot inner loop is now a single readable expression. Behaviour
+    is byte-for-byte identical to the pre-refactor version — see
+    /app/backend/tests/test_cost_estimator_refactor.py.
     """
+    layer_map = _apply_shape_mask(layer_map, shape)
     h_px, w_px = layer_map.shape
     cell_area_mm2 = float(usable_width_mm * usable_height_mm) / float(h_px * w_px)
 
-    # Disc geometry: zero-out cells outside the inscribed circle so we
-    # don't overcount the print footprint.
-    if shape == "disc":
-        yy, xx = np.ogrid[:h_px, :w_px]
-        cy, cx = (h_px - 1) / 2.0, (w_px - 1) / 2.0
-        radius = min(h_px, w_px) / 2.0
-        mask = ((yy - cy) ** 2 + (xx - cx) ** 2) <= (radius * radius)
-        # Effective footprint is a circle inscribed in (usable_w × usable_h).
-        # Adjust cell_area_mm2 down by (π/4) ratio if W==H, else use the
-        # average. The cell area itself is unchanged for cells inside the
-        # circle; we just suppress the out-of-circle cells.
-        layer_map = np.where(mask, layer_map, 0).astype(layer_map.dtype)
-
-    # Enforce base_min_layers floor (matches the exporter's behaviour).
-    base_min_layers = max(1, int(base_min_layers))
-    floored_lm = np.maximum(layer_map, base_min_layers).astype(np.float64)
-
-    # If a cell is outside the print footprint (layer_map==0 after the
-    # disc mask), keep it at zero — do NOT floor those.
-    if shape == "disc":
-        floored_lm = np.where(layer_map > 0, floored_lm, 0.0)
-
+    floored_lm = _floor_layer_map(layer_map, base_min_layers, shape)
     cross_section_mm2 = math.pi * (FILAMENT_DIAMETER_MM / 2.0) ** 2
 
-    # Slab boundaries:
-    bottoms = [0] + list(swap_layer_indices)
     top_cap = int(np.max(layer_map)) + 1
-    tops = list(swap_layer_indices) + [top_cap]
-    n_slots = len(filaments)
-    while len(bottoms) < n_slots:
-        bottoms.append(top_cap)
-    while len(tops) < n_slots:
-        tops.append(top_cap)
-    bottoms = bottoms[:n_slots]
-    tops = tops[:n_slots]
+    bottoms, tops = _resolve_slab_bounds(swap_layer_indices, top_cap, len(filaments))
 
     per_filament: List[FilamentCost] = []
     total_volume_mm3 = 0.0
@@ -212,55 +300,29 @@ def estimate_print_costs(
     total_cost_usd = 0.0
 
     for k, fil in enumerate(filaments):
-        if tops[k] <= bottoms[k]:
+        entry = _cost_for_slot(
+            k=k, fil=fil,
+            layer_map=layer_map,
+            floored_lm=floored_lm,
+            bottoms=bottoms, tops=tops,
+            layer_height_mm=layer_height_mm,
+            cell_area_mm2=cell_area_mm2,
+            cross_section_mm2=cross_section_mm2,
+        )
+        if entry is None:
             continue
-        # Slot k's contribution at each cell = clipped layer count × layer_h × cell_area
-        source = floored_lm if k == 0 else layer_map.astype(np.float64)
-        clipped = np.clip(source - bottoms[k], 0, tops[k] - bottoms[k])
-        layer_count_for_slot = int(clipped.sum())
-        if layer_count_for_slot == 0:
-            continue
-        volume_mm3 = float(clipped.sum()) * layer_height_mm * cell_area_mm2
+        per_filament.append(entry)
+        total_volume_mm3 += entry.volume_mm3
+        total_weight_g += entry.weight_g
+        total_length_mm += entry.length_mm
+        total_cost_usd += entry.cost_usd
 
-        mat = _filament_material_key(getattr(fil, "name", ""))
-        # Prefer an explicit price_per_kg_usd attached to the filament
-        # (set by the swap simulator); otherwise fall back to brand-tier
-        # pricing if a brand is available, else the material baseline.
-        brand = getattr(fil, "brand", "") or ""
-        finish = getattr(fil, "finish", "gloss") or "gloss"
-        explicit_price = getattr(fil, "price_per_kg_usd", None)
-        if explicit_price is not None:
-            price_per_kg = float(explicit_price)
-        else:
-            price_per_kg = price_per_kg_usd(mat, brand, finish)
-        density = DENSITY_G_PER_MM3.get(mat, DENSITY_G_PER_MM3["PLA"])
-
-        weight_g = volume_mm3 * density
-        length_mm = volume_mm3 / cross_section_mm2 if cross_section_mm2 > 0 else 0.0
-        cost_usd = weight_g * (price_per_kg / 1000.0)
-
-        per_filament.append(FilamentCost(
-            slot=k,
-            name=getattr(fil, "name", f"slot {k}"),
-            hex=getattr(fil, "hex", "#888888"),
-            layers=int(tops[k] - bottoms[k]),
-            volume_mm3=volume_mm3,
-            weight_g=weight_g,
-            length_mm=length_mm,
-            cost_usd=cost_usd,
-        ))
-        total_volume_mm3 += volume_mm3
-        total_weight_g += weight_g
-        total_length_mm += length_mm
-        total_cost_usd += cost_usd
-
-    # Time = extrusion time + per-layer overhead + per-swap overhead.
-    extrusion_seconds = total_length_mm / max(MM_FILAMENT_PER_SECOND, 0.1)
     total_layers = int(np.max(layer_map)) if layer_map.size else 0
-    overhead_seconds = PER_LAYER_OVERHEAD_SEC * total_layers
-    swap_seconds = SWAP_OVERHEAD_SEC * max(0, len(swap_layer_indices))
-    total_seconds = extrusion_seconds + overhead_seconds + swap_seconds
-    total_time_minutes = total_seconds / 60.0
+    total_time_minutes = _print_time_minutes(
+        total_length_mm=total_length_mm,
+        total_layers=total_layers,
+        n_swaps=len(swap_layer_indices),
+    )
 
     return CostEstimate(
         total_time_minutes=total_time_minutes,

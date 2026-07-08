@@ -219,6 +219,9 @@ async def _probe_version(binp: Path) -> Optional[str]:
     'OrcaSlicer v2.3.2 (aarch64)'. Returns None if Orca doesn't respond
     in 5 s — version is decorative, never a blocker."""
     try:
+        # noqa: S603 — asyncio.create_subprocess_exec (NOT the exec()
+        # builtin). Trusted local OrcaSlicer binary path + hardcoded
+        # "--version" arg. No user-controlled shell injection surface.
         proc = await asyncio.create_subprocess_exec(
             str(binp), "--version",
             stdout=asyncio.subprocess.PIPE,
@@ -926,6 +929,9 @@ async def orca_reinstall(force: bool = False):
     # `.orca_install_lock` file (which the status endpoint already
     # surfaces), so we don't need to track the PID here.
     try:
+        # noqa: S603 — asyncio.create_subprocess_exec launching the
+        # installer script (fixed argv assembled from typed constants
+        # a few lines above). Not shell-invoked, no user input.
         await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.DEVNULL,
@@ -1154,6 +1160,9 @@ async def _perform_slice(
         logger.info("orca slice job=%s argv=%s", job_id, argv)
 
         t0 = _time.monotonic()
+        # noqa: S603 — asyncio.create_subprocess_exec running the
+        # bundled OrcaSlicer CLI with a fully-typed argv (job_id + printer
+        # profile file paths, both validated upstream). Not a shell call.
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
