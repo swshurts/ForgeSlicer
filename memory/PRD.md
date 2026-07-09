@@ -33,7 +33,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-135, 2026-07-06) — Crop viewport visual bug: no more black band
+### Recently completed (iter-127, 2026-07-09) — Ruler UX redesign: hover-then-click smart-snap + total 3D distance chip
+- **User report** (verbatim + illustration): "There are too many ruler selection points on a typical drawing." Screenshots showed 80+ orange rings blanketing the viewport whenever the workplane ruler was activated. RECURRING issue — third occurrence per the previous handoff.
+- **User's desired UX** (verbatim spec): "If I select a vertex (or very close to it), that should be my anchor point. If I select an edge, the center point should be my anchor point. If I select the body of a component, the center of the component should be my anchor point. […] The x,y,z distances should be displayed plus the direct distance from anchor to secondary points."
+- **New model — feature hierarchy** (`smartSnapForClick` in `/app/frontend/src/lib/rulerAnchor.js`):
+  - Corner within 15% of min-bbox-extent → snap corner
+  - Else edge midpoint within 30% of min-bbox-extent → snap edge midpoint
+  - Else → snap body centre
+  - Same rule applies to negative/subtracted shapes (they exist as components → centre wins).
+- **Hover preview** (rewrote `/app/frontend/src/components/viewport/RulerPlacementDots.jsx`): the 21-dot cloud is GONE. A single orange crosshair-in-ring appears at the point that WOULD be committed on click, driven by a new `rulerHoverSnap` store slice populated by `SceneObject.onPointerMove`. Ring outer radius scales with snap kind (corner 1.0mm / edge 1.4mm / centre 1.8mm) so the user can tell the snap kind at a glance.
+- **New total-distance chip** in `RulerAnchorLayer` + `PinnedRulerLayer` (`RulerLayers.jsx`): displays `√(Δx²+Δy²+Δz²)` with 4-decimal precision. Live ruler: cyan, `data-testid=ruler-dim-total`. Pinned: muted amber, `data-testid=pinned-dim-total-<id>`.
+- **Rewired click handlers** in `Viewport.jsx`: `onRulerHit`, `onWorkplaneRulerPlace`, and probing all use `smartSnapForClick`. Bed catch-plane now handles probing too (was placing-only).
+- **Testing (iter-127)**: **frontend 5/5 PASS · 6/6 unit tests PASS (`rulerAnchor.smartSnap.test.js`) · zero regressions.** Verified: zero pageerrors during hover-snap kind cycling, hover ring renders visually, ruler-dim-total = 34.6410 mm for a corner-to-diagonal-corner measurement on a default 20mm cube, all Δ chips = +20.00 mm, pin/unpin works, mode-toggle clears hover snap. R3F `data-testid` crash from initial run was fixed by removing DOM attributes from scene primitives (tests use `window.__forgeStore.getState().rulerHoverSnap.snapKind` for programmatic assertions).
+
+
 - **User report**: "If I crop an image, it should be cropped, not made black and then reappear in the lithophane." Screenshots showed a big black band in the source viewport above the visible crop rectangle when TOP:50% was applied. User was on production; suspected the crop was also being ignored by the generator.
 - **Root cause**: `Viewport.jsx` used CSS `clip-path` on a full-sized `<img>` inside a fixed-aspect wrapper. Pixels outside the clip were hidden but the DOM box remained the source's aspect ratio → dead space appeared as a black band. The actual generation pipeline (`ensureCurrentImageId → renderEditedImage → /optimize`) was already applying the crop correctly (confirmed by dimensional check: 200×200 source with cropT=45 → generated preview is 200×110).
 - **Fix**: replaced the clip-path approach with an `overflow: hidden` wrapper sized to the crop's aspect ratio (`aspectRatio: cw / ch`, `height: 70vh`), and scaled+shifted the underlying `<img>` (`width: 100/cw * 100%`, `height: 100/ch * 100%`, negative margin offsets) so only the crop region fills the wrapper. `CropOverlay` drag handles are now hidden when `cropActive` (users adjust via sliders) since the wrapper no longer represents the full source image's coordinate space.
