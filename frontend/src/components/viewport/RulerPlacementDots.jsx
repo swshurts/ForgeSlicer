@@ -72,8 +72,12 @@ export default function RulerPlacementDots() {
           points={[[0, 1.6, 0], [0, 3.2, 0]]}
           color={color} lineWidth={2} depthTest={false} transparent opacity={1}
         />
-        {/* Hollow ring — sized by snap kind. */}
-        <mesh renderOrder={1005} data-testid={`ruler-hover-ring-${kind}`}>
+        {/* Hollow ring — sized by snap kind. NOTE: no data-testid here
+            because react-three-fiber rejects DOM attributes on scene
+            primitives ("Cannot set data-testid" runtime error). Tests
+            can read `useScene.getState().rulerHoverSnap.snapKind`
+            instead (exposed via window.__forgeStore in dev/test). */}
+        <mesh renderOrder={1005}>
           <ringGeometry args={[ringInner, ringOuter, 24]} />
           <meshBasicMaterial color={color} transparent opacity={0.95} depthTest={false} side={2} />
         </mesh>

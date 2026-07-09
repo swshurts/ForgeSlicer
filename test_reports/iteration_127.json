@@ -1,0 +1,31 @@
+{
+  "summary": "Iter-127 regression re-test PASSES 5/5 acceptance criteria. Removing `data-testid` from the r3f <mesh> in RulerPlacementDots.jsx line 80 fixed the R3F crash reported in iter-126. Verified: (1) ZERO pageerrors across corner→edge→center hover-snap cycling AND full anchored-ruler + pinning flow; (2) hover ring RENDERS visually at the correct position (screenshot confirms an orange ring at cube corner-max-max-max, sized appropriately); (3) ruler-dim-total chip renders '34.6410 mm' for a default cube corner-to-diagonal-corner measurement, ΔX/ΔY/ΔZ chips each show '+20.00 mm'; (4) pinRulerMeasurement() populates pinnedRulerDims, and the pinned-dim-total-* DOM chip renders '34.6410 mm'; (5) setRulerMode(false) clears rulerHoverSnap. No new regressions introduced.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iter127_hoverring.jpg",
+    "/app/test_reports/iter127_ring_corner.jpg",
+    "/app/test_reports/iter127_ring_and_chip.jpg"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix in RulerPlacementDots.jsx L80 is minimal and correct — just removed the DOM-only `data-testid` attribute from the r3f <mesh>. The inline comment (L75-79) documents why (r3f rejects DOM props; use `useScene.getState().rulerHoverSnap.snapKind` for programmatic assertions instead) which prevents future regressions.",
+    "The `snapKind`-driven ring sizing (corner=1.0mm outer, edge=1.4mm, center=1.8mm) is intact and visible in screenshots — no visual regression from removing the testid.",
+    "The `rulerHoverSnap` store slice is properly cleared on setRulerMode toggle-off (rulerActions.js L47 sets both `rulerMode:false` and `rulerHoverSnap:null` atomically) — verified end-to-end."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only per review)",
+    "frontend": "100% — all 5 acceptance criteria in the review request PASS: (1) zero pageerrors during hover-snap kind cycling, (2) hover ring renders visually, (3) ruler-dim-total = 34.6410 mm + all Δ chips render, (4) pinned-dim-total DOM element = 34.6410 mm, (5) mode-toggle clears hover snap"
+  },
+  "test_credentials": "session_token cookie: st_iter127_1783635120673 (user_test1783635120673) — seeded via mongosh per /app/memory/test_credentials.md.",
+  "seed_data_creation": "1 test user + session token via test_database.users/user_sessions inserts.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-127 R3F crash regression is FULLY RESOLVED. All five acceptance criteria from the review request pass. Approach for next testers: seed a session token via mongosh, set the session_token cookie, load /workspace, use `window.__forgeStore.getState()` for direct state manipulation. Key data-testids in the ruler subsystem: `add-cube-positive-btn`, `ruler-anchor-mode-btn`, `ruler-dim-total`, `ruler-dim-x|y|z`, `pinned-dim-total-*`, `pinned-dim-x|y|z-*`, `pinned-dim-close-*`. The hover ring in RulerPlacementDots.jsx does NOT have a DOM testid — programmatic verification is via `window.__forgeStore.getState().rulerHoverSnap.snapKind`. Default cube: 20mm at [0,0,10] → bbox corners at (-10..10, -10..10, 0..20) with snap-key format `corner-min|max-min|max-min|max`. Diagonal corner-to-corner distance = 34.6410 mm.",
+  "rca of the issue": "N/A — regression from iter-126 was RESOLVED. The fix (removing `data-testid={\\`ruler-hover-ring-${kind}\\`}` from the r3f `<mesh>` in RulerPlacementDots.jsx line 80) addresses the r3f applyProps rejection at the source. Programmatic testing now goes via the exposed store (`window.__forgeStore.getState().rulerHoverSnap`) instead of DOM selectors on the r3f mesh."
+}
