@@ -44,7 +44,12 @@ export function rulerRefStillValid(rec, allObjects, removeSet) {
  */
 export function createRulerActions(set, get) {
   return {
-    setRulerMode: (on) => set({ rulerMode: !!on }),
+    setRulerMode: (on) => set({ rulerMode: !!on, rulerHoverSnap: null }),
+    // Iter-126 — single hover-preview snap. Set via SceneObject's
+    // onPointerMove; cleared on pointer-out and mode-change so we never
+    // leak a stale ring after the user disables the tool.
+    setRulerHoverSnap: (snap) => set({ rulerHoverSnap: snap || null }),
+    clearRulerHoverSnap: () => set({ rulerHoverSnap: null }),
     // Anchor snap-point — caller computes via nearestSnapPoint() and
     // hands us the full record. Resets the target on every new anchor
     // so the user starts the second-click flow fresh.

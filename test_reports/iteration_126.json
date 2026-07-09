@@ -1,0 +1,47 @@
+{
+  "summary": "Iter-126 ruler UX redesign (hover-then-click, smart-snap hierarchy vertex>edge>centre, total 3D distance chip) — mixed result. Unit tests 6/6 pass. Store slices, anchor/target chips, total-distance chip (4-decimal), pin/unpin, mode-toggle cleanup, and removal of the 21-dot cloud all VERIFY GREEN. HOWEVER a CRITICAL R3F error is thrown every time rulerHoverSnap becomes truthy: `<mesh data-testid=\"ruler-hover-ring-<kind>\">` in RulerPlacementDots.jsx line 76 causes react-three-fiber to log 'R3F: Cannot set \"data-testid\". Ensure it is an object before setting \"testid\".' In one repro (fresh workspace load, ruler ON, hoverSnap set) this bubbled up to React's error-boundary red 'Uncaught runtime errors' overlay covering the entire canvas — the anchored-ruler flow was completely broken (chips missing, ruler-toggle button detached from DOM). On repeat renders the error is silently suppressed but still logged as pageerror on every hover-kind transition. Additionally the `data-testid` on a Three.js <mesh> is UN-QUERYABLE via DOM (r3f meshes are not DOM elements) — the review request's assertion `[data-testid='ruler-hover-ring-corner|edge|center']` can never succeed via Playwright DOM selectors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "RulerPlacementDots.jsx (line 76)",
+        "issue": "<mesh renderOrder={1005} data-testid={`ruler-hover-ring-${kind}`}> triggers R3F pageerror 'Cannot set \"data-testid\". Ensure it is an object before setting \"testid\"' every time rulerHoverSnap is set/updated. In initial-mount scenarios this promotes to React's uncaught-runtime-errors overlay that unmounts the Canvas, wiping the ruler chips and detaching toolbar buttons. Even when suppressed, data-testid on an r3f <mesh> never reaches the DOM so the testid can NOT be located by Playwright/query_selector — the specified acceptance criterion in the review is un-testable.",
+        "selector": "[data-testid=\"ruler-hover-ring-corner\"] / -edge / -center",
+        "priority": "HIGH/CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Anchored Ruler hover preview (rulerMode ON → move cursor over cube)",
+        "issue": "Every hover snap change writes to store → RulerPlacementDots re-renders → r3f applyProps throws on the mesh's data-testid. Confirmed by page.on('pageerror'): two errors captured after setRulerHoverSnap(corner) then (edge)/(center). Root cause: react-three-fiber does not accept DOM attributes on scene primitives; only THREE.Object3D properties are recognised.",
+        "affected_selectors": ["[data-testid^=\"ruler-hover-ring-\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/src/lib/rulerAnchor.smartSnap.test.js"
+  ],
+  "action_items": [
+    "URGENT — Fix RulerPlacementDots.jsx line 76: remove `data-testid` from the r3f <mesh>. Options: (a) render an invisible <Html position={p} data-testid={`ruler-hover-ring-${kind}`}> sibling inside the <Billboard> — makes the ring queryable via DOM AND stops r3f from throwing; (b) drop the testid entirely and assert via `window.__forgeStore.getState().rulerHoverSnap.snapKind` from Playwright — no crash, testable via evaluate(). Preferred: option (a) since main agent explicitly promised DOM-level testids in the spec.",
+    "After the fix, re-run: (1) hover cube corner → hover-ring-corner testid queryable, (2) hover edge → -edge, (3) hover face → -center, (4) toggle ruler off → ring gone.",
+    "Consider making the smart-snap corner/edge thresholds relative to the object also apply to workplane-ruler probing consistently — logic looks correct in the source (`smartSnapForClick`) and unit-tested. Just confirm the Viewport.jsx wiring uses `smartSnapForClick` for BOTH `onRulerHit` and `onWorkplaneRulerPlace` / probing (per the E1 handoff)."
+  ],
+  "critical_code_review_comments": [
+    "RulerPlacementDots.jsx L76 is the sole regression source. Applying `data-testid` to a react-three-fiber <mesh> is a runtime error, not a warning — react-three-fiber's applyProps helper only accepts three.js property names. In dev-mode the error boundary shows the red overlay; in prod it will be a silent scene-tree tear-down.",
+    "Even without the crash, the assertion contract 'data-testid=ruler-hover-ring-<kind>' is IMPOSSIBLE to satisfy via DOM — r3f meshes are not DOM nodes. The main agent's spec needs adjustment.",
+    "Rest of the iter-126 code is clean: smartSnapForClick is unit-tested (6/6), thresholds scale with min bbox extent, rulerHoverSnap store slice is properly cleared on mode-toggle, and the pinned-dim-total chip mirrors the live ruler-dim-total chip with muted colours — all verified GREEN.",
+    "Suggestion: If keeping the ring in the Three.js scene, wrap the testid in a Drei <Html> pass-through so a real DOM node carries the id."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only per review)",
+    "frontend": "~85% — everything except the hover-ring visual/testid contract works; the ring itself renders correctly (crosshair + circle visible in screenshots) but throws on every render and its testid is unqueryable"
+  },
+  "test_credentials": "session_token cookie: st_test_1783634769503 (user_test_1783634769503) — seeded via mongosh per /app/memory/test_credentials.md.",
+  "seed_data_creation": "1 test user + session token via test_database.users/user_sessions inserts (see auth_testing.md).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The store is exposed on window.__forgeStore. Approach: (1) seed test session in mongosh, (2) set session_token cookie before navigating /workspace, (3) click [data-testid='add-cube-positive-btn'] to drop a cube (dimensions null on the object initially — the effective size is 20 mm × 20 mm × 20 mm at position [0,0,10]; use hx/hy/hz=10 for diagonal points), (4) click [data-testid='ruler-anchor-mode-btn'] to enter rulerMode, (5) manipulate anchor/target via `window.__forgeStore.getState().setRulerAnchor/setRulerTarget` — chips render immediately. Direct hover-ring testing via DOM data-testid IS NOT POSSIBLE because r3f meshes are not DOM. Verify ring rendering visually via screenshot instead. Verified GREEN: total-distance chip shows '34.6410 mm' for corner-to-diagonal-corner on the default cube, all Δ chips show '+20.00 mm'.",
+  "rca of the issue": "Root cause: react-three-fiber's applyProps(sceneObject, props) rejects unknown three.js properties. `data-testid` isn't a three property — r3f throws 'Cannot set \"data-testid\". Ensure it is an object before setting \"testid\"'. Reproduction: (1) Load /workspace with test session cookie. (2) Add cube via left-panel button. (3) Toggle rulerMode ON. (4) Evaluate `window.__forgeStore.getState().setRulerHoverSnap({snapKind:'corner', worldPoint:[0,0,0], ...})` — the very next render throws. Mitigation: replace `<mesh ... data-testid={...}>` with either an <Html>-wrapped DOM marker or drop the testid and use store-state assertions in tests. The 6 passing unit tests already lock the snap-hierarchy behaviour; only the DOM-attribute surface of the preview ring needs the fix."
+}

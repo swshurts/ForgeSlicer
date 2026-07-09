@@ -159,6 +159,54 @@ export function nearestSnapPoint(obj, clickPoint, kinds) {
 export const nearestCorner = (obj, clickPoint) => nearestSnapPoint(obj, clickPoint, ["corner"]);
 
 /**
+ * Iter-126 — Feature-hierarchy snap. Matches the user's mental model
+ * for a CAD ruler:
+ *
+ *   1. If a bbox CORNER is "close" to the click → snap to that corner.
+ *   2. Else if a bbox EDGE-MIDPOINT is "close" → snap to that edge-mid.
+ *   3. Else → snap to the object CENTRE.
+ *
+ * "Close" is defined relative to the object's own size so the same
+ * rule works for a 5 mm bolt and a 500 mm chassis panel. Given the
+ * shortest bbox extent `minE`:
+ *   • corner threshold = minE * 0.15   (e.g. 3 mm on a 20 mm cube)
+ *   • edge   threshold = minE * 0.30   (e.g. 6 mm on a 20 mm cube)
+ *
+ * Face-centres are intentionally NOT included — clicking on the middle
+ * of a face falls through to the body centre (per the user's spec:
+ * "if I select the body of a component, the center of the component
+ * should be my anchor point").
+ *
+ * Returns the winning snap point ({key, kind, x, y, z}) or null when
+ * the object has no bbox.
+ */
+export function smartSnapForClick(obj, clickPoint) {
+  const bb = worldBboxOf(obj);
+  if (!bb) return null;
+  const extX = bb.max[0] - bb.min[0];
+  const extY = bb.max[1] - bb.min[1];
+  const extZ = bb.max[2] - bb.min[2];
+  // Guard tiny/degenerate bboxes — clamp so a flat plate still gets
+  // a reasonable snap threshold instead of collapsing to zero.
+  const minE = Math.max(0.5, Math.min(extX, extY, extZ));
+  const cornerT2 = (minE * 0.15) ** 2;
+  const edgeT2 = (minE * 0.30) ** 2;
+
+  const nearestCornerP = nearestSnapPoint(obj, clickPoint, ["corner"]);
+  const nearestEdgeP = nearestSnapPoint(obj, clickPoint, ["edge"]);
+  const centerP = bboxCenterPoint(obj);
+
+  const cx = Array.isArray(clickPoint) ? clickPoint[0] : clickPoint.x;
+  const cy = Array.isArray(clickPoint) ? clickPoint[1] : clickPoint.y;
+  const cz = Array.isArray(clickPoint) ? clickPoint[2] : clickPoint.z;
+  const d2 = (p) => (p.x - cx) ** 2 + (p.y - cy) ** 2 + (p.z - cz) ** 2;
+
+  if (nearestCornerP && d2(nearestCornerP) <= cornerT2) return nearestCornerP;
+  if (nearestEdgeP && d2(nearestEdgeP) <= edgeT2) return nearestEdgeP;
+  return centerP;
+}
+
+/**
  * Given the clicked object + the full scene list, return a "logical
  * snap target": either the original object (when standalone) or a
  * synthetic stand-in whose bbox encompasses every sibling sharing the

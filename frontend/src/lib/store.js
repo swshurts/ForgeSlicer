@@ -459,6 +459,16 @@ export const useScene = create((set, get) => ({
   rulerTarget: null,            // {worldPoint:[x,y,z], objId, objName, snapKey, snapKind} | null
   rulerAxesMode: "xyz",         // 'xyz' | 'x' | 'y' | 'z'
   rulerSnapKinds: ["corner", "edge", "face", "center"],
+  // Iter-126 — Single hover-preview snap. As the user moves the cursor
+  // over an object with ANY ruler mode active (anchored ruler /
+  // workplane-ruler placing / workplane-ruler probing), we compute the
+  // snap point that WOULD be committed on click and stash it here. A
+  // single hover-ring is rendered at this point — replaces the old
+  // 21-dot cloud (iter-125.x) that overwhelmed complex drawings.
+  //   worldPoint : [x,y,z] snap in world space
+  //   snapKind   : 'corner' | 'edge' | 'center'  (used to size the ring)
+  //   objId      : source object id (for testing / debugging)
+  rulerHoverSnap: null,
   // Persistent pinned measurements — each entry stores a frozen
   // {anchor, target} snap-pair. Render layer recomputes their world
   // positions every frame from the live object positions so they track

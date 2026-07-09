@@ -10,7 +10,7 @@ import { buildCubeGeometryWithFillets, hasActiveEdgeFillets } from "../lib/parti
 import { onFontLoaded } from "../lib/textGeometry";
 import { cubeEdgeEndpoints, cubeFaceQuads, cubeVertexPositions } from "../lib/edgeFaceMeta";
 import { MULTICOLOR_PALETTE } from "../lib/presets";
-import { nearestSnapPoint, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
+import { smartSnapForClick, resolveSnapTargetForGroup } from "../lib/rulerAnchor";
 import { computePlaceOnFace } from "../lib/placeOnFace";
 import ContextMenu from "./ContextMenu";
 import { MeasurementsLayer } from "./viewport/MeasurementsOverlay";
@@ -46,7 +46,7 @@ function colorForObject(obj) {
   return (MULTICOLOR_PALETTE[idx] && MULTICOLOR_PALETTE[idx].hex) || POSITIVE_COLOR;
 }
 
-function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, placeOnFaceMode, onPlaceFaceHit, workplaneRulerPlacing, onWorkplaneRulerPlace, onContextMenu, scene }) {
+function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rulerMode, onRulerHit, placeOnFaceMode, onPlaceFaceHit, workplaneRulerPlacing, workplaneRulerProbing, onWorkplaneRulerPlace, onRulerHoverMove, onRulerHoverOut, onContextMenu, scene }) {
   // Font-load tick — when the text primitive's typeface.json arrives
   // we bump this counter, which invalidates the `geom` useMemo below
   // and rebuilds with real glyphs (instead of the placeholder slab
@@ -152,6 +152,20 @@ function SceneObject({ obj, isSelected, onSelect, measureMode, onMeasureHit, rul
         e.stopPropagation();
         // R3F event wraps a real React MouseEvent at e.nativeEvent.
         if (onContextMenu) onContextMenu(e.nativeEvent || e, obj.id);
+      }}
+      onPointerMove={(e) => {
+        // Iter-126 — Live hover-preview snap. Only wired when SOME
+        // ruler tool is active; otherwise it's a no-op so we don't
+        // pay for the smartSnap calc on every mouse-move in the normal
+        // selection workflow.
+        if (!rulerMode && !workplaneRulerPlacing && !workplaneRulerProbing) return;
+        if (!onRulerHoverMove) return;
+        e.stopPropagation();
+        onRulerHoverMove([e.point.x, e.point.y, e.point.z], obj.id);
+      }}
+      onPointerOut={() => {
+        if (!rulerMode && !workplaneRulerPlacing && !workplaneRulerProbing) return;
+        if (onRulerHoverOut) onRulerHoverOut(obj.id);
       }}
       castShadow
       receiveShadow
@@ -1421,7 +1435,14 @@ export default function Viewport() {
   // the ruler origin at that point. Snaps to the nearest snap point
   // on the clicked object via `nearestSnapPoint`.
   const workplaneRulerPlacing = useScene((s) => s.workplaneRuler?.placing);
+  const workplaneRulerProbing = useScene((s) => s.workplaneRuler?.probing);
   const placeWorkplaneRuler = useScene((s) => s.placeWorkplaneRuler);
+  const addWorkplaneRulerProbe = useScene((s) => s.addWorkplaneRulerProbe);
+  // Iter-126 — Hover-preview snap. SceneObject.onPointerMove pushes the
+  // current smart-snap point here so the RulerPlacementDots component
+  // can render a single preview ring — replaces the old dot cloud.
+  const setRulerHoverSnap = useScene((s) => s.setRulerHoverSnap);
+  const clearRulerHoverSnap = useScene((s) => s.clearRulerHoverSnap);
   // Canvas background tracks the global UI theme so the 3D scene
   // doesn't sit on a slate-800 island when the user picks Light/Dim.
   // Uses the *resolved* theme (concrete dark/dim/light) so "system"
@@ -1707,8 +1728,10 @@ export default function Viewport() {
               // mesh the cursor happened to land on.
               const probe = resolveSnapTargetForGroup(oo, objects);
               const cur = useScene.getState();
-              const kinds = cur.rulerSnapKinds || ["corner", "edge", "face", "center"];
-              const sp = nearestSnapPoint(probe, point, kinds);
+              // Iter-126 — Feature-hierarchy snap (vertex > edge > centre).
+              // Replaces the old raw-nearest-of-N snap which could pick
+              // a face-centre when the user clearly wanted a corner.
+              const sp = smartSnapForClick(probe, point);
               if (!sp) return;
               const snapRecord = {
                 worldPoint: [sp.x, sp.y, sp.z],
@@ -1727,6 +1750,23 @@ export default function Viewport() {
               }
               setRulerTarget(snapRecord);
             }}
+            onRulerHoverMove={(point, objId) => {
+              // Iter-126 — Compute the snap point that WOULD be committed
+              // if the user clicked right now, and stash it in the store
+              // so RulerPlacementDots can render a single preview ring.
+              const oo = objects.find((x) => x.id === objId);
+              if (!oo) return;
+              const probe = resolveSnapTargetForGroup(oo, objects);
+              const sp = smartSnapForClick(probe, point);
+              if (!sp) { clearRulerHoverSnap(); return; }
+              setRulerHoverSnap({
+                worldPoint: [sp.x, sp.y, sp.z],
+                objId: probe.id || oo.id,
+                snapKey: sp.key,
+                snapKind: sp.kind,
+              });
+            }}
+            onRulerHoverOut={() => clearRulerHoverSnap()}
             placeOnFaceMode={placeOnFaceMode}
             onPlaceFaceHit={(hitPoint, worldNormal, hitObjId) => {
               // Compute placement against the CURRENTLY-selected object —
@@ -1741,38 +1781,54 @@ export default function Viewport() {
               setPlaceOnFaceMode(false);
             }}
             workplaneRulerPlacing={workplaneRulerPlacing}
+            workplaneRulerProbing={workplaneRulerProbing}
             onWorkplaneRulerPlace={(hitPoint, hitObjId) => {
-              // Iter-114.2 — snap-to-snap-point on the clicked object's
-              // 27-point grid (8 corners + 12 edge midpoints + 6 face
-              // centres + 1 centre). Fallback: raw click point. The
-              // anchor-ruler infrastructure (nearestSnapPoint) already
-              // implements this picker; we reuse it for consistency.
+              // Iter-126 — Smart-snap on click. Feature hierarchy
+              // (vertex > edge > centre) replaces the raw-nearest-of-27
+              // pick that shipped in iter-114.2. Also handles probing:
+              // when the "+" (probe) button is active, we ADD a probe
+              // instead of moving the ruler origin.
               const obj = useScene.getState().objects.find((x) => x.id === hitObjId);
               let origin = [hitPoint.x, hitPoint.y, hitPoint.z];
               if (obj) {
                 try {
-                  const snap = nearestSnapPoint(obj, hitPoint);
+                  const probe = resolveSnapTargetForGroup(obj, objects);
+                  const snap = smartSnapForClick(probe, hitPoint);
                   if (snap) origin = [snap.x, snap.y, snap.z];
                 } catch { /* fallback to raw hit */ }
               }
-              placeWorkplaneRuler(origin);
+              const cur = useScene.getState();
+              if (cur.workplaneRuler?.probing) {
+                addWorkplaneRulerProbe(origin);
+              } else {
+                placeWorkplaneRuler(origin);
+              }
+              clearRulerHoverSnap();
             }}
             onContextMenu={handleContextMenu}
             scene={{ objects }}
           />
         ))}
 
-        {/* Iter-114.2 — invisible workplane catch-plane. Renders only
-            while the user is in ruler-placement mode and clicks on
-            the BED (no object underneath). Bounded to the build
-            volume so clicks outside still hit `onPointerMissed`. */}
-        {workplaneRulerPlacing && (
+        {/* Iter-114.2 — invisible workplane catch-plane. Renders while
+            the user is in ruler-placement OR probing mode and clicks on
+            the BED (no object underneath). Bounded to the build volume
+            so clicks outside still hit `onPointerMissed`. Iter-126
+            extended to cover probing so bed-to-mesh distances can be
+            probed from a workplane origin dropped anywhere on the bed. */}
+        {(workplaneRulerPlacing || workplaneRulerProbing) && (
           <mesh
             data-testid="workplane-ruler-placer-plane"
             position={[0, 0, 0.01]}
             onClick={(e) => {
               e.stopPropagation();
-              placeWorkplaneRuler([e.point.x, e.point.y, 0]);
+              const cur = useScene.getState();
+              if (cur.workplaneRuler?.probing) {
+                addWorkplaneRulerProbe([e.point.x, e.point.y, 0]);
+              } else {
+                placeWorkplaneRuler([e.point.x, e.point.y, 0]);
+              }
+              clearRulerHoverSnap();
             }}
           >
             <planeGeometry args={[buildVolume.x * 2, buildVolume.y * 2]} />

@@ -118,6 +118,28 @@ export function RulerAnchorLayer() {
           </div>
         </Html>
       )}
+      {/* Iter-126 — Total 3D (Euclidean) distance chip. Rendered at the
+          midpoint of the anchor→target segment, offset diagonally so it
+          doesn't overlap the axis-delta chips. Users asked for this in
+          addition to ΔX/ΔY/ΔZ ("...plus the direct distance from anchor
+          to secondary points"). Only shown when a target is set AND at
+          least one axis has a non-trivial delta. */}
+      {target && (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001 || Math.abs(dz) > 0.001) && (
+        <Html
+          position={[(ax + tx) / 2, (ay + ty) / 2 + 10, (az + tz) / 2 + 10]}
+          center
+          zIndexRange={[81, 0]}
+          sprite={false}
+        >
+          <div
+            data-testid="ruler-dim-total"
+            className="font-mono text-[11.5px] font-bold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/85 border border-cyan-400/70 text-cyan-200 shadow-lg"
+            style={{ pointerEvents: "none" }}
+          >
+            {`${Math.hypot(dx, dy, dz).toFixed(4)} mm`}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
@@ -209,6 +231,24 @@ export function PinnedRulerLayer() {
                   style={{ pointerEvents: "none", color: "#fff", textShadow: "0 0 3px #0008, 0 1px 1px #000c" }}
                 >
                   <span style={{ color: "#FBBF24", marginRight: 3 }}>•</span>{fmtSignedMm(dz)}
+                </div>
+              </Html>
+            )}
+            {/* Iter-126 — Pinned total 3D distance chip. Muted amber
+                vs the live ruler's cyan so the user can tell them apart. */}
+            {(Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001 || Math.abs(dz) > 0.001) && (
+              <Html
+                position={[(aPt.x + tPt.x) / 2, (aPt.y + tPt.y) / 2 + 10, (aPt.z + tPt.z) / 2 + 10]}
+                center
+                zIndexRange={[81, 0]}
+                sprite={false}
+              >
+                <div
+                  data-testid={`pinned-dim-total-${dim.id}`}
+                  className="font-mono text-[10.5px] font-bold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/85 border border-amber-400/60 text-amber-200 shadow-lg"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {`${Math.hypot(dx, dy, dz).toFixed(4)} mm`}
                 </div>
               </Html>
             )}
