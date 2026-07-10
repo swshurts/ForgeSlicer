@@ -1,0 +1,33 @@
+{
+  "summary": "Iter-131 Copy Dimensions Button — Frontend UI + clipboard payload verified. Visibility gating works correctly (DIMS off / no selection / multi-select all hide the button; DIMS on + single-select shows it in the bottom-right of viewport-main). Clipboard payload is correct for mm units, ruler-anchored state, and 'in' unit toggle (0.787 in conversion + 3-decimal precision confirmed). Button flips to 'Copied' emerald state and sonner toast 'Dimensions copied' fires. ONE BUG FOUND: the workplane-ruler 'Ruler origin' and 'Relative pos' lines are emitted UNCONDITIONALLY, even when the workplane ruler has never been placed — because store.workplaneRuler.origin defaults to [0,0,0] (truthy array reference), and the component uses `if (workplaneOrigin)` as its gate. Spec explicitly says '(if placed)'.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "CopyDimensionsButton",
+        "issue": "'Ruler origin: 0.00 mm, 0.00 mm, 0.00 mm' and 'Relative pos: ...' lines are ALWAYS emitted to the clipboard, even when the user has never invoked the workplane ruler. Root cause: workplaneRuler.origin defaults to [0,0,0] in store.js (line 201) and stays that way whenever the ruler is not active. The button's gate `if (workplaneOrigin)` treats the truthy array as 'placed'. Should test `workplaneRuler?.active` instead of the mere presence of origin. Fix: change `const workplaneOrigin = useScene((s) => s.workplaneRuler?.origin);` to also read active, e.g. `const workplaneRulerActive = useScene((s) => s.workplaneRuler?.active);` and gate the two lines behind `if (workplaneRulerActive && workplaneOrigin)`.",
+        "selector": "[data-testid='copy-dimensions-btn']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix CopyDimensionsButton.jsx L46 / L81 — gate 'Ruler origin' + 'Relative pos' clipboard lines behind `workplaneRuler.active`, not on the mere existence of origin (which is [0,0,0] by default). Verified reproducible: freshly-loaded workspace with DIMS on + a single cube selected already produces those lines in the clipboard on first Copy click."
+  ],
+  "critical_code_review_comments": [
+    "CopyDimensionsButton.jsx L46: reading only `workplaneRuler?.origin` (which defaults to [0,0,0]) is not enough to know if the ruler is placed. Also read `workplaneRuler?.active` (default false) and use that as the visibility gate for the two workplane-origin lines. Spec explicitly says '(if placed)'.",
+    "fmt/fmtSigned duplicate the same formatting scaffold; consider a single helper with a `signed` flag to trim the 15 lines of copy-paste. Minor.",
+    "The button is 100% covered by the 'What's New' popover on first workspace load for signed-out users (popover sits at ~bottom-right area). No functional overlap in my testing since the copy button sits well below the popover, but on a shorter viewport the two could collide. Consider `bottom-14` (56px) when the What's New popover is visible."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend-only run)", "frontend": "6/7 test cases pass (85%)" },
+  "test_credentials": "seed session token: st_test_1783719599479 (created via mongosh snippet from /app/memory/test_credentials.md).",
+  "seed_data_creation": "1 fresh user_sessions row (SESSION_TOKEN=st_test_1783719599479) — 7-day TTL.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Playwright can grant clipboard-read/write permissions AND install an addInitScript that redefines navigator.clipboard.writeText — both worked. To do so, override at *both* the instance and Object.getPrototypeOf(navigator.clipboard) level (see script that landed the 6-line mm clipboard payload). window.__forgeStore does not expose a `setSelection` — the review request note was inaccurate. Use `window.__forgeStore.setState({ selectedId, selectedIds })` directly, or the `selectObject(id)` action. The DIMS chip render (bottom-right of viewport) can occlude the button on ≤720px-tall viewports — recommend 1920x1080 for testing.",
+  "rca of the issue": "CopyDimensionsButton.jsx reads only `workplaneRuler?.origin` from the store. In store.js the initial workplaneRuler state ALWAYS carries `origin: [0, 0, 0]` (even when `active: false` and `placing: false`). Because `[0,0,0]` is a truthy array reference, the `if (workplaneOrigin)` branch inside handleCopy() always executes and appends 'Ruler origin' + 'Relative pos' lines to the clipboard — regardless of whether the user has actually placed the workplane ruler. Reproducing: (1) load /workspace with the seed session, (2) window.__forgeStore.getState().setDimLabelsEnabled(true), (3) addPrimitive('cube','positive'), (4) click [data-testid='copy-dimensions-btn'], (5) read clipboard. Observed 6 lines (with Ruler origin + Relative pos). Expected 3 lines (header + Bounding box + Position). Mitigation: subscribe to `workplaneRuler.active` (default false) in addition to origin and gate the two lines behind that flag."
+}

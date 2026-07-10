@@ -8,6 +8,7 @@ import RightPanel from "./RightPanel";
 import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
 import SketchOverlay from "./SketchOverlay";
+import CopyDimensionsButton from "./viewport/CopyDimensionsButton";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
 import HelpDialog from "./HelpDialog";
 import SettingsDialog from "./dialogs/SettingsDialog";
@@ -885,6 +886,7 @@ export default function Workspace() {
           <Viewport />
           <CutHUD />
           <SketchOverlay />
+          <CopyDimensionsButton />
         </main>
         <RightPanel onSavePrinter={() => setSavePrinterOpen(true)} />
       </div>
