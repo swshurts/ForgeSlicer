@@ -96,7 +96,7 @@ export function RulerAnchorLayer() {
       {target && showX && Math.abs(dx) > 0.001 && (() => {
         const off = Math.max(20, Math.abs(dx) * 0.15);
         return (
-          <Html position={[(ax + tx) / 2, ay - off, az + off * 0.6]} center zIndexRange={[80, 0]} sprite={false}>
+          <Html position={[(ax + tx) / 2, ay - off, az + off * 0.6]} center zIndexRange={[80, 0]} sprite={false} style={{ pointerEvents: "none" }}>
             <div
               data-testid="ruler-dim-x"
               className="font-mono text-[11px] font-semibold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/70 border border-rose-400/40"
@@ -113,7 +113,7 @@ export function RulerAnchorLayer() {
         // direction dx points, or +X if dx==0), and back on Z.
         const xDir = dx >= 0 ? 1 : -1;
         return (
-          <Html position={[tx + xDir * off, (ay + ty) / 2, az - off * 0.6]} center zIndexRange={[80, 0]} sprite={false}>
+          <Html position={[tx + xDir * off, (ay + ty) / 2, az - off * 0.6]} center zIndexRange={[80, 0]} sprite={false} style={{ pointerEvents: "none" }}>
             <div
               data-testid="ruler-dim-y"
               className="font-mono text-[11px] font-semibold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/70 border border-emerald-400/40"
@@ -128,7 +128,7 @@ export function RulerAnchorLayer() {
         const off = Math.max(20, Math.abs(dz) * 0.15);
         const xDir = dx >= 0 ? 1 : -1;
         return (
-          <Html position={[tx + xDir * off, ty + off * 0.6, (az + tz) / 2]} center zIndexRange={[80, 0]} sprite={false}>
+          <Html position={[tx + xDir * off, ty + off * 0.6, (az + tz) / 2]} center zIndexRange={[80, 0]} sprite={false} style={{ pointerEvents: "none" }}>
             <div
               data-testid="ruler-dim-z"
               className="font-mono text-[11px] font-semibold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/70 border border-amber-400/40"
@@ -152,6 +152,7 @@ export function RulerAnchorLayer() {
             center
             zIndexRange={[81, 0]}
             sprite={false}
+            style={{ pointerEvents: "none" }}
           >
             <div
               data-testid="ruler-dim-total"
@@ -231,7 +232,7 @@ export function PinnedRulerLayer() {
             {Math.abs(dx) > 0.001 && (() => {
               const off = Math.max(20, Math.abs(dx) * 0.15);
               return (
-                <Html position={[(aPt.x + tPt.x) / 2, aPt.y - off, aPt.z + off * 0.6]} center zIndexRange={[80, 0]} sprite={false}>
+                <Html position={[(aPt.x + tPt.x) / 2, aPt.y - off, aPt.z + off * 0.6]} center zIndexRange={[80, 0]} sprite={false} style={{ pointerEvents: "none" }}>
                   <div
                     data-testid={`pinned-dim-x-${dim.id}`}
                     className="font-mono text-[10.5px] font-semibold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/70 border border-rose-500/40"
@@ -246,7 +247,7 @@ export function PinnedRulerLayer() {
               const off = Math.max(20, Math.abs(dy) * 0.15);
               const xDir = dx >= 0 ? 1 : -1;
               return (
-                <Html position={[tPt.x + xDir * off, (aPt.y + tPt.y) / 2, aPt.z - off * 0.6]} center zIndexRange={[80, 0]} sprite={false}>
+                <Html position={[tPt.x + xDir * off, (aPt.y + tPt.y) / 2, aPt.z - off * 0.6]} center zIndexRange={[80, 0]} sprite={false} style={{ pointerEvents: "none" }}>
                   <div
                     data-testid={`pinned-dim-y-${dim.id}`}
                     className="font-mono text-[10.5px] font-semibold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/70 border border-emerald-500/40"
@@ -261,7 +262,7 @@ export function PinnedRulerLayer() {
               const off = Math.max(20, Math.abs(dz) * 0.15);
               const xDir = dx >= 0 ? 1 : -1;
               return (
-                <Html position={[tPt.x + xDir * off, tPt.y + off * 0.6, (aPt.z + tPt.z) / 2]} center zIndexRange={[80, 0]} sprite={false}>
+                <Html position={[tPt.x + xDir * off, tPt.y + off * 0.6, (aPt.z + tPt.z) / 2]} center zIndexRange={[80, 0]} sprite={false} style={{ pointerEvents: "none" }}>
                   <div
                     data-testid={`pinned-dim-z-${dim.id}`}
                     className="font-mono text-[10.5px] font-semibold whitespace-nowrap select-none px-1.5 py-0.5 rounded-md bg-slate-950/70 border border-amber-500/40"
@@ -282,6 +283,7 @@ export function PinnedRulerLayer() {
                   center
                   zIndexRange={[81, 0]}
                   sprite={false}
+                  style={{ pointerEvents: "none" }}
                 >
                   <div
                     data-testid={`pinned-dim-total-${dim.id}`}

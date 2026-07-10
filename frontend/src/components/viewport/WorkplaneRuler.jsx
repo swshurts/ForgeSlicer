@@ -376,7 +376,7 @@ export function WorkplaneRuler() {
           a bed-level placement, causing "readings look wrong"
           confusion when the selected part's distance chips reported
           numbers relative to an elevated reference plane. */}
-      <Html position={[ox, oy, oz + 1]} center zIndexRange={[60, 0]} sprite={false}>
+      <Html position={[ox, oy, oz + 1]} center zIndexRange={[60, 0]} sprite={false} style={{ pointerEvents: "none" }}>
         <div
           data-testid="workplane-ruler-origin-label"
           className="forge-chip-hover translate-y-10 translate-x-8 px-1.5 py-0.5 rounded border border-slate-700 font-mono text-[9.5px] text-slate-300 whitespace-nowrap select-none"

@@ -1,0 +1,27 @@
+{
+  "summary": "Iter-129 v2 REGRESSION FIX VERIFICATION — drei <Html> wrapper pointer-events barrier is FIXED. Full repro from previous iter-129 report: seeded session, /workspace, addPrimitive('cylinder','positive') + updateDims({r:1,h:7.2}) + updateObject({position:[10,10,3.6]}) + placeWorkplaneRuler([-31,92,16]) + setDimLabelsEnabled(true) + selectObject(id). ALL 5 acceptance criteria PASS: (a) page.hover('[data-testid=dim-label-h]') completes SUCCESS with NO 30s timeout (was: 'subtree intercepts pointer events' failure); (b) after hover, getComputedStyle(dim-label-h).zIndex === '200'; (c) el.matches(':hover') === true; (d) computed backgroundColor === 'rgba(255, 255, 255, 0.95)' — 0.95 hover override applied; (e) computed opacity === '1'. Additionally verified: peak-chip's IMMEDIATE parent (the drei <Html> wrapper DIV, rect 890x722 190×23) now has BOTH inline style.pointerEvents='none' AND computed pointerEvents='none' — the exact 190×23 pe:auto barrier at H chip's screen area from iter-129 is GONE. document.elementsFromPoint(H_center) now returns SPAN→BUTTON[data-testid=dim-label-h] as the topmost hit chain (was: unnamed pe:auto DIV = peak-chip wrapper). Origin-label wrapper's immediate parent also confirmed pointer-events:none. All 5 sibling chips (w, d, pos-x/y/z) still hover-flip correctly to z-index:200/opacity:1/bg:0.95 (regression pass).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iter129v2_state.jpg"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MINOR (non-blocking): The `data-testid='peak-chip-html'` prop on the <Html> element in SelectionDimLabels.jsx L654 does NOT appear in the DOM. drei's <Html> component only forwards `style`, `className` (as wrapperClass), and its own known props to the wrapper div — arbitrary attributes like `data-testid` are dropped. The functional fix works perfectly because `style={{pointerEvents:'none'}}` IS forwarded (verified: wrapper's inline style.pointerEvents === 'none'). Two options if you want the testid visible: (1) drop the data-testid on the Html element (it's redundant — the inner peak-chip div already carries data-testid='peak-chip'), or (2) migrate to a `wrapperClass` + separate document.querySelector approach. Neither is required — the fix behaves correctly today.",
+    "POSITIVE: The applied fix is idiomatic and minimal — adding `style={{pointerEvents:'none'}}` to the outer <Html> wrapper of every read-only label (peak-chip, workplane-ruler-origin-label, all 8 ruler-dim/pinned-dim chips per file L99/L116/L131/L150/L234/L249/L264/L281 in RulerLayers.jsx) removes the invisible hit-test barrier at each wrapper's un-translated layout position, while the interactive elements (DimChip/PositionChip buttons at L177/L297, pinned-dim-close X at L298 in RulerLayers) keep default pe:auto and remain fully clickable. Symmetric, easy to audit, low regression surface.",
+    "OBSERVATION: With this fix in place, all 8 chips + peak-chip + origin-label render simultaneously and each one is independently hoverable regardless of screen-space overlap. This delivers the iter-129 hover-to-front UX promise end-to-end."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only)",
+    "frontend": "100% — all 5 acceptance criteria from the review request PASS. HIGH pri hover bug from iter-129 report is FULLY RESOLVED."
+  },
+  "test_credentials": "session_token cookie st_iter129v2_1783711580791 bound to a fresh mongo-seeded test user (user_test1783711580791).",
+  "seed_data_creation": "1 user + 1 session_token in mongo test_database. Cylinder scene created transiently via window.__forgeStore.getState().addPrimitive+updateDims+updateObject+placeWorkplaneRuler+setDimLabelsEnabled+selectObject (no DB persistence for scene state).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-129 hover bug fully resolved by adding style={pointerEvents:'none'} to all read-only <Html> wrappers. No further hover-related work needed. Note that drei's <Html> drops arbitrary attributes like data-testid on its wrapper — only style/wrapperClass are forwarded. If a future iteration needs to inspect the peak-chip's Html wrapper via a testid, use the peak-chip's parentElement instead of querying for [data-testid=peak-chip-html] (which won't resolve). All 8 chips + peak + origin-label now hoverable independently on this seed scene.",
+  "rca of the issue": "Original bug (iter-129): drei's <Html> creates a DOM wrapper div at the projected screen coord of its `position` prop. CSS transforms applied to the CHILD (e.g. translate-y-[-44px]) shift visible content but not the wrapper's layout box, leaving an invisible pe:auto DOM box at the un-translated anchor that blocks hover on any chip below. Fix (iter-129 v2, verified by this run): added `style={{pointerEvents:'none'}}` directly to the outer <Html> element in all read-only labels (peak-chip, workplane-ruler-origin-label, 8 ruler-dim/pinned-dim chips). drei's <Html> forwards `style` onto the wrapper div — verified by DOM inspection: wrapper's `style.pointerEvents === 'none'` and `getComputedStyle().pointerEvents === 'none'`. Now `document.elementsFromPoint(H_chip_center)` returns dim-label-h as the topmost hit and `page.hover()` succeeds; getComputedStyle(dim-label-h).zIndex flips to '200' and the .forge-chip-hover:hover CSS override fires as intended."
+}
