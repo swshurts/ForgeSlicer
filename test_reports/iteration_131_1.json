@@ -1,0 +1,26 @@
+{
+  "summary": "Iter-131.1 — Copy Dimensions Button regression fix VERIFIED. The workplane-ruler gate now correctly reads workplaneRuler.active in addition to workplaneRuler.origin. With DIMS on + a single cube selected + the workplane ruler never placed, the clipboard payload is now EXACTLY 3 lines (header + Bounding box + Position) with NO ghost 'Ruler origin' / 'Relative pos' entries. When placeWorkplaneRuler([1,2,3]) is invoked the two lines DO appear with correct values. All previous iter-131 passing tests (visibility gating, mm/in unit conversion, anchored ruler ΔX/ΔY/ΔZ + Euclidean total) still work. 6/6 test cases pass.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/src/components/viewport/CopyDimensionsButton.jsx"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is minimal and correct: L52 adds `workplaneActive` selector, L87 gate is `if (workplaneActive && workplaneOrigin)`, L133 useCallback dep array includes workplaneActive. Behaviour matches spec.",
+    "Nice-to-have (carry-over from iter-131 review, not a blocker): fmt/fmtSigned still duplicate the same formatting scaffold — a single helper with a `signed` flag would trim ~15 lines. Purely cosmetic.",
+    "Nice-to-have (carry-over): on a shorter viewport the What's New popover (bottom-right) can visually crowd the Copy button — no functional overlap seen at 1920x1080, but consider `bottom-14` when the popover is visible."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend-only run)", "frontend": "6/6 test cases pass (100%)" },
+  "test_credentials": "seeded session token: st_test_1783719910580 (via mongosh snippet from /app/memory/test_credentials.md); user_id: user_test1783719910580; 7-day TTL.",
+  "seed_data_creation": "1 fresh user_sessions row (SESSION_TOKEN=st_test_1783719910580).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Clipboard override that works reliably here: install via `context.add_init_script` BEFORE navigation, using Object.defineProperty on both `navigator` and `Object.getPrototypeOf(navigator)` with `{ configurable: true, writable: true }`. Also stub `document.execCommand('copy')` as belt-and-braces. Confirm shim with a `writeText('__PROBE__')` round-trip before running the real tests. To bypass any transient popovers (What's New / auto-theme 'Got it' toast) covering the button at bottom-right, call `document.querySelector(\"[data-testid='copy-dimensions-btn']\").click()` directly via page.evaluate instead of Playwright's click. window.__forgeStore.getState() exposes setDimLabelsEnabled, addPrimitive, selectObject, placeWorkplaneRuler, removeWorkplaneRuler, setUnitSystem — all used in this run.",
+  "rca of the issue": "N/A — bug fixed by main agent in iter-131.1. The fix (adding a `workplaneActive` store selector and gating both 'Ruler origin' + 'Relative pos' clipboard lines behind `workplaneActive && workplaneOrigin`) is correct and complete. Verified via 6-case Playwright run: default-state emits exactly 3 lines; placeWorkplaneRuler([1,2,3]) then emits 5 lines with correct 1.00/2.00/3.00 mm origin + correct relative deltas; removing the ruler falls back to 3 lines; inch unit conversion (0.039 / 0.079 / 0.118 in) works; anchored ruler ΔX/ΔY/ΔZ + ‖34.6410 mm still emitted; DIMS-off and multi-select still hide the button."
+}

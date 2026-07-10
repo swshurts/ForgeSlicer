@@ -43,7 +43,13 @@ export default function CopyDimensionsButton() {
   const unitSystem = useScene((s) => s.unitSystem);
   const rulerAnchor = useScene((s) => s.rulerAnchor);
   const rulerTarget = useScene((s) => s.rulerTarget);
+  // Iter-131.1 — Must gate on `active` because `origin` defaults to
+  // [0,0,0] (a truthy array reference) even when the workplane ruler
+  // has never been placed. Reading only `origin` produced ghost
+  // "Ruler origin: 0.00 mm, 0.00 mm, 0.00 mm" lines in the clipboard
+  // (testing agent iter-131). Both must be present + `active === true`.
   const workplaneOrigin = useScene((s) => s.workplaneRuler?.origin);
+  const workplaneActive = useScene((s) => s.workplaneRuler?.active);
 
   const [copied, setCopied] = useState(false);
 
@@ -75,10 +81,10 @@ export default function CopyDimensionsButton() {
     // "bestCorner" convention: the min-min-min corner of the world bbox).
     lines.push(`Position:      X ${fmt(bbox.min[0], unitSystem)}  Y ${fmt(bbox.min[1], unitSystem)}  Z ${fmt(bbox.min[2], unitSystem)}`);
 
-    // If a workplane ruler is placed, position line above is relative
-    // to WORLD origin; also emit a "vs. ruler origin" line so users can
-    // paste inspection results grounded to their chosen reference.
-    if (workplaneOrigin) {
+    // Only emit workplane-origin lines when the user has actually
+    // PLACED the workplane ruler (active === true). See iter-131.1
+    // note in the store-selector block above.
+    if (workplaneActive && workplaneOrigin) {
       const [rox, roy, roz] = workplaneOrigin;
       lines.push(`Ruler origin:  ${fmt(rox, unitSystem)}, ${fmt(roy, unitSystem)}, ${fmt(roz, unitSystem)}`);
       lines.push(`Relative pos:  X ${fmtSigned(bbox.min[0] - rox, unitSystem)}  Y ${fmtSigned(bbox.min[1] - roy, unitSystem)}  Z ${fmtSigned(bbox.min[2] - roz, unitSystem)}`);
@@ -124,7 +130,7 @@ export default function CopyDimensionsButton() {
     } catch (err) {
       toast.error("Copy failed", { description: String(err?.message || err) });
     }
-  }, [obj, bbox, unitSystem, rulerAnchor, rulerTarget, workplaneOrigin]);
+  }, [obj, bbox, unitSystem, rulerAnchor, rulerTarget, workplaneOrigin, workplaneActive]);
 
   if (!obj || !bbox) return null;
 
