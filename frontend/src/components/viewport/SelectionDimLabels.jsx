@@ -651,7 +651,6 @@ export function SelectionDimLabels() {
             center
             zIndexRange={[70, 0]}
             sprite={false}
-            data-testid="peak-chip-html"
             style={{ pointerEvents: "none" }}
           >
             <div

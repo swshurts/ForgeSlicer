@@ -33,7 +33,19 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-127, 2026-07-09) — Ruler UX redesign: hover-then-click smart-snap + total 3D distance chip
+### Recently completed (iter-130, 2026-07-10) — Dimension label anti-collision + hover-to-front
+- **User report**: "The measurement I am trying to see is still covered by another label. I can spin the bed and around to finally see it; but, I shouldn't have to do that." — screenshot showed H/Y/Z position chips + TOP peak chip + workplane origin all cluttered, with some visually stacked and hidden.
+- **Root cause**: (a) dim H chip + all 3 position chips X/Y/Z were pushed to the same WEST screen quadrant (screenOffset x=-24..-54) causing predictable pile-ups; (b) drei `<Html>` wrappers for read-only chips had default `pointer-events:auto` DOM boxes at their un-translated screen anchors — invisible pointer barriers that blocked :hover on any chip whose bbox fell inside them.
+- **Fix** (`SelectionDimLabels.jsx`, `WorkplaneRuler.jsx`, `RulerLayers.jsx`):
+  - Position chips X/Y/Z moved from WEST (-54px) to SOUTH-EAST (+46px x) — opposite quadrant from H dim chip
+  - Dim chip separations bumped to ±32px so leader lines can breathe
+  - TOP/TIP peak chip pushed 44px up (was 24px); workplane origin label pushed diagonally SE
+  - Chip background opacity dropped to 0.32 (was 0.55) so occluded text bleeds through
+  - New `.forge-chip-hover` module-scope CSS: any hovered chip → opacity 1, z-index 200, bg 0.95
+  - All read-only `<Html>` wrappers (peak-chip, origin-label, ruler-dim ×4, pinned-dim ×4) got `style={{ pointerEvents: 'none' }}` so they no longer intercept hover on chips beneath
+- **Testing (iter-129 → 130)**: 100% pass. `page.hover(dim-label-h)` now succeeds; computed z-index flips to 200; every chip is independently hoverable regardless of screen-space overlap. 5/5 sibling chips (W/D/pos-x/y/z) verified working.
+
+
 - **User report** (verbatim + illustration): "There are too many ruler selection points on a typical drawing." Screenshots showed 80+ orange rings blanketing the viewport whenever the workplane ruler was activated. RECURRING issue — third occurrence per the previous handoff.
 - **User's desired UX** (verbatim spec): "If I select a vertex (or very close to it), that should be my anchor point. If I select an edge, the center point should be my anchor point. If I select the body of a component, the center of the component should be my anchor point. […] The x,y,z distances should be displayed plus the direct distance from anchor to secondary points."
 - **New model — feature hierarchy** (`smartSnapForClick` in `/app/frontend/src/lib/rulerAnchor.js`):
