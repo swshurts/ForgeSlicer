@@ -33,7 +33,23 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-130, 2026-07-10) — Dimension label anti-collision + hover-to-front
+### Recently completed (iter-131.1, 2026-07-10) — Copy Dimensions to Clipboard
+- **User request**: Instituted the enhancement idea from iter-130 — "Copy dimensions" one-click clipboard action.
+- **Behaviour**: Small pill-button in the bottom-right of the viewport (`data-testid='copy-dimensions-btn'`) that appears ONLY when (a) DIMS mode is on AND (b) exactly one component is selected. One click copies a multi-line, human-readable measurement summary to the clipboard:
+  ```
+  ForgeSlicer measurement — <object name>
+  Bounding box:  W 20.00 mm × D 20.00 mm × H 20.00 mm
+  Position:      X 0.00 mm  Y 0.00 mm  Z 0.00 mm
+  Ruler origin:  1.00 mm, 2.00 mm, 3.00 mm         (only if workplane ruler placed)
+  Relative pos:  X -1.00 mm  Y -2.00 mm  Z -3.00 mm (only if workplane ruler placed)
+  Ruler:         ΔX +20.00 mm  ΔY +20.00 mm  ΔZ +20.00 mm  ‖ 34.6410 mm  (only if anchor+target set)
+  ```
+- **Respects the mm/in unit toggle** (3-decimal precision + " in" suffix in inch mode).
+- **UX polish**: button flips to emerald "Copied ✓" state for 1.5s + sonner toast fires. Falls back to `execCommand('copy')` when the browser lacks a secure context.
+- **File**: `/app/frontend/src/components/viewport/CopyDimensionsButton.jsx` (new); mounted from `Workspace.jsx`.
+- **Testing (iter-131 → 131.1)**: 100% pass (6/6). Fixed one bug during dev — workplane-origin lines emitted unconditionally because `workplaneRuler.origin` defaults to `[0,0,0]` (truthy); added `workplaneRuler.active` gate.
+
+
 - **User report**: "The measurement I am trying to see is still covered by another label. I can spin the bed and around to finally see it; but, I shouldn't have to do that." — screenshot showed H/Y/Z position chips + TOP peak chip + workplane origin all cluttered, with some visually stacked and hidden.
 - **Root cause**: (a) dim H chip + all 3 position chips X/Y/Z were pushed to the same WEST screen quadrant (screenOffset x=-24..-54) causing predictable pile-ups; (b) drei `<Html>` wrappers for read-only chips had default `pointer-events:auto` DOM boxes at their un-translated screen anchors — invisible pointer barriers that blocked :hover on any chip whose bbox fell inside them.
 - **Fix** (`SelectionDimLabels.jsx`, `WorkplaneRuler.jsx`, `RulerLayers.jsx`):
