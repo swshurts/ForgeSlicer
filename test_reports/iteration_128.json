@@ -1,0 +1,33 @@
+{
+  "summary": "Iter-128 dimension-label UX polish PASSES 4/4 acceptance criteria. RulerLayers.jsx chip repositioning + semi-transparent chip styling verified via three measurement scales (default 20mm cube corner-to-corner, small 3mm, large 100mm) plus a full pin flow. All 4 data-testids (ruler-dim-x/y/z/total) render for the live ruler and all 4 pinned-dim-*-<id> testids render after pinRulerMeasurement(). Chips are visually OFF the anchor/target spheres at every scale including the small 3mm case (thanks to the max(20mm, 15%*len) floor). Semi-transparent slate backgrounds (bg-slate-950/70 Δ, bg-slate-950/75 total) with colored borders (rose/emerald/amber/cyan for live, rose-500/emerald-500/amber-500/amber-400 for pinned) verified via DOM className inspection.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iter128_default_cube.jpg",
+    "/app/test_reports/iter128_small_3mm.jpg",
+    "/app/test_reports/iter128_large_100mm.jpg",
+    "/app/test_reports/iter128_pinned.jpg"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RulerLayers.jsx changes are clean and well commented (L88-95, L142-145, L227-230 all describe WHY). Offset formulas max(20mm, 15% of |dx|) for Δ and max(30mm, 15% of hypot) for total are simple, symmetric, and provably clear the endpoints at any scale (verified with 3mm, 20mm, 100mm cases).",
+    "Consistency: pinned chips get identical positioning logic (same off computation, same perpendicular-push direction based on dx sign) — pinned vs live differ only in font size (10.5px vs 11px), opacity (0.88 vs 0.92), and border shade (border-{color}-500/40 vs border-{color}-400/40). Good separation of live vs pinned via muted colors.",
+    "Pre-existing (UNRELATED) fragility in /app/frontend/src/components/StatusBar.jsx:59 — `sel.modifier.toUpperCase()` will throw if `modifier` is ever not a string (e.g. if a caller passes an options object as the second arg to `addPrimitive`). Consider hardening to `String(sel.modifier || 'positive').toUpperCase()`. Encountered only when I mis-called `addPrimitive('cube', {positive:true})` — production callers all pass a string. Low priority, but easy defensive fix.",
+    "The `xDir = dx >= 0 ? 1 : -1` perpendicular-push logic for Y & Z chips (L114, L129, L247, L262) doesn't account for the case where `dx` is very small but non-zero — the chip could be pushed only marginally off if dx=0.5mm. In practice this is fine because dx is checked against 0.001 threshold BEFORE rendering the Y/Z chips independently, so a near-zero dx still gets the full `off` magnitude in the ±X direction. No fix needed."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only per review)",
+    "frontend": "100% — all 4 acceptance criteria PASS: (1) 20mm cube default: 4 chips render OFF the endpoint spheres with correct values (Δ*=+20.00 mm, total=34.6410 mm), bg-slate-950/70, colored borders, opacity 0.92; (2) small 3mm: chips still clear endpoints (max(20mm,...) floor works), all 4 render with correct values (Δ*=+3.00 mm, total=5.1962 mm); (3) large 100mm: chips scale up (rect separation ≥300px between adjacent chips), values correct (Δ*=+100.00 mm, total=173.2051 mm); (4) pinRulerMeasurement produces 4 pinned-dim-*-<id> chips with opacity 0.88, matching bg-slate-950/70+/75 styling, muted borders, correct value 34.6410 mm."
+  },
+  "test_credentials": "session_token cookie: st_iter128_1783696442187 (user_test1783696442187) — freshly seeded via mongosh per /app/memory/test_credentials.md.",
+  "seed_data_creation": "1 test user + 1 session_token via mongosh insertOne into test_database.users and test_database.user_sessions.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-128 dimension-label polish is COMPLETE and VERIFIED. Key testing tips: (a) When calling `window.__forgeStore.getState().addPrimitive(type, modifier)` from a test harness, `modifier` MUST be a STRING ('positive' or 'negative') — passing an object crashes StatusBar via `sel.modifier.toUpperCase()`. This is a pre-existing fragility, not a regression. (b) The Δ-chip offset formula is `off = max(20mm, 15%*|dΔ|)` per axis, pushed perpendicular to that axis segment. The total-chip offset is `off = max(30mm, 15%*hypot)` pushed +Y/+Z above the segment midpoint. (c) All chip DOM styles include `opacity: 0.92` (live Δ), `opacity: 0.92` (live total), and `opacity: 0.88` (pinned). All chip classes include either `bg-slate-950/70` (Δ) or `bg-slate-950/75` (total). (d) For pinned assertions, pass the pin `id` (e.g. `pin-<ts>-<rand>`) into the testid template as `pinned-dim-x-<id>` — the testid is dim-scoped, not global.",
+  "rca of the issue": "N/A — no regressions. Iter-128 UX polish (chip offsets moved from 6-8mm to max(20mm, 15%*len) + semi-transparent slate backgrounds) works as designed at every measurement scale tested (3mm, 20mm, 100mm)."
+}
