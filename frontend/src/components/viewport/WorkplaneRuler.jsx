@@ -379,8 +379,8 @@ export function WorkplaneRuler() {
       <Html position={[ox, oy, oz + 1]} center zIndexRange={[60, 0]} sprite={false}>
         <div
           data-testid="workplane-ruler-origin-label"
-          className="translate-y-5 px-1.5 py-0.5 rounded bg-slate-950/85 border border-slate-700 font-mono text-[9.5px] text-slate-300 whitespace-nowrap select-none"
-          style={{ pointerEvents: "none" }}
+          className="forge-chip-hover translate-y-10 translate-x-8 px-1.5 py-0.5 rounded border border-slate-700 font-mono text-[9.5px] text-slate-300 whitespace-nowrap select-none"
+          style={{ pointerEvents: "none", background: "rgba(2,6,23,0.55)", opacity: 0.85 }}
         >
           origin · {toDisplayLen(ox, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}, {toDisplayLen(oy, unitSystem).toFixed(unitSystem === "in" ? 2 : 1)}
           {Math.abs(oz) > 0.05 && (

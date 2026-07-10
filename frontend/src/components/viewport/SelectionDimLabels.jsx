@@ -27,9 +27,32 @@ const CHIP_TEXT = IS_COARSE ? "text-[13px]" : "text-[11px]";
 const CHIP_INPUT_W = IS_COARSE ? "w-20" : "w-14";
 // Translucent chips — geometry stays visible behind them; slight
 // backdrop blur keeps the digits readable over busy scenes.
-const CHIP_BG = "rgba(255,255,255,0.55)";
-const CHIP_BG_EDIT = "rgba(255,255,255,0.78)";
-const CHIP_BLUR = "blur(3px)";
+// Iter-129 — Reduced default opacity so overlapping chips no longer
+// completely occlude each other (the numbers behind read through the
+// glass). Chips that gain :hover pop to full opacity via
+// `:hover` styling on the wrapper (see below).
+const CHIP_BG = "rgba(255,255,255,0.32)";
+const CHIP_BG_EDIT = "rgba(255,255,255,0.82)";
+const CHIP_BLUR = "blur(2px)";
+// Iter-129 — Hover class attached to every chip button/wrapper. CSS
+// rule (injected once via <style>) pushes the hovered chip to full
+// opacity + top z-index so users can dig out a chip that got buried
+// under a neighbour without spinning the camera.
+const CHIP_HOVER_CLASS = "forge-chip-hover";
+
+// Iter-129 — Inject the hover-to-front rule once. Done in module scope
+// (not per-chip) so we don't spam the DOM with duplicate <style> tags.
+// The rule: any element with .forge-chip-hover flips to full opacity
+// and jumps to z-index 200 while hovered, revealing chips underneath.
+if (typeof document !== "undefined" && !document.getElementById("forge-chip-hover-style")) {
+  const st = document.createElement("style");
+  st.id = "forge-chip-hover-style";
+  st.textContent = `
+    .forge-chip-hover { transition: opacity 120ms ease, z-index 0ms; position: relative; z-index: 1; }
+    .forge-chip-hover:hover { opacity: 1 !important; z-index: 200 !important; background: rgba(255,255,255,0.95) !important; }
+  `;
+  document.head.appendChild(st);
+}
 
 function isAxisEditable(obj, axis) {
   if (!obj) return false;
@@ -191,7 +214,7 @@ function DimChip({ axis, worldMm, color, position, anchor, screenOffset, editabl
               title={editable
                 ? `${axisLabel} (${axis.toUpperCase()}) — click to edit`
                 : `${axisLabel} (${axis.toUpperCase()}) — read-only for this object type`}
-              className={`flex items-center gap-1 ${CHIP_PAD} rounded font-mono ${CHIP_TEXT} font-semibold select-none whitespace-nowrap ${
+              className={`${CHIP_HOVER_CLASS} flex items-center gap-1 ${CHIP_PAD} rounded font-mono ${CHIP_TEXT} font-semibold select-none whitespace-nowrap ${
                 editable ? "cursor-pointer" : "cursor-default"
               }`}
               style={{
@@ -311,7 +334,7 @@ function PositionChip({ axis, worldMm, color, position, screenOffset, unitSystem
             title={editable
               ? `${label} distance from ruler origin — click to edit (moves the part)`
               : `${label} distance from ruler origin — this object is locked`}
-            className={`flex items-center gap-1 ${CHIP_PAD} rounded font-mono ${CHIP_TEXT} font-semibold whitespace-nowrap select-none ${
+            className={`${CHIP_HOVER_CLASS} flex items-center gap-1 ${CHIP_PAD} rounded font-mono ${CHIP_TEXT} font-semibold whitespace-nowrap select-none ${
               editable ? "cursor-pointer" : "cursor-default"
             }`}
             style={{
@@ -490,14 +513,17 @@ export function SelectionDimLabels() {
 
   return (
     <group renderOrder={999}>
-      {/* W / D / H — dimension chips, each with a dashed leader line. */}
+      {/* W / D / H — dimension chips, each with a dashed leader line.
+          Iter-129 — Screen offsets bumped to 32px so chips don't sit
+          on top of their leader arrows AND to open a gap that the
+          position chips can occupy in the opposite quadrant. */}
       <DimChip
         axis="x"
         worldMm={bboxData.sizeX}
         color={COLOR_X}
         position={bboxData.posW}
         anchor={bboxData.anchorW}
-        screenOffset={{ x: 0, y: 24 }}
+        screenOffset={{ x: 0, y: 32 }}
         editable={editableX}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "x", mm, bboxData.sizeX, { updateDims, setImportedDim })}
@@ -509,7 +535,7 @@ export function SelectionDimLabels() {
         color={COLOR_Y}
         position={bboxData.posD}
         anchor={bboxData.anchorD}
-        screenOffset={{ x: 24, y: 0 }}
+        screenOffset={{ x: 32, y: 0 }}
         editable={editableY}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "y", mm, bboxData.sizeY, { updateDims, setImportedDim })}
@@ -521,7 +547,7 @@ export function SelectionDimLabels() {
         color={COLOR_Z}
         position={bboxData.posH}
         anchor={bboxData.anchorH}
-        screenOffset={{ x: -24, y: 0 }}
+        screenOffset={{ x: -32, y: 0 }}
         editable={editableZ}
         unitSystem={unitSystem}
         onCommit={(mm) => commitAxisLength(obj, "z", mm, bboxData.sizeZ, { updateDims, setImportedDim })}
@@ -561,12 +587,18 @@ export function SelectionDimLabels() {
           opacity={0.8}
         />
       )}
+      {/* iter-129 — Position chips moved from WEST (where they collided
+          with the H dim chip) to a SOUTH-EAST stack anchored at the
+          nearest bbox corner. Vertical spacing is 20px (up from 18)
+          so the labels never sit visually on top of each other even
+          at oblique camera angles. The horizontal +46px push places
+          them well clear of the object's silhouette in typical views. */}
       <PositionChip
         axis="x"
         worldMm={cornerX}
         color={COLOR_X}
         position={bestCorner}
-        screenOffset={{ x: -54, y: -2 }}
+        screenOffset={{ x: 46, y: 22 }}
         unitSystem={unitSystem}
         editable={posEditable}
         onCommit={commitCornerPos(0)}
@@ -577,7 +609,7 @@ export function SelectionDimLabels() {
         worldMm={cornerY}
         color={COLOR_Y}
         position={bestCorner}
-        screenOffset={{ x: -54, y: 16 }}
+        screenOffset={{ x: 46, y: 42 }}
         unitSystem={unitSystem}
         editable={posEditable}
         onCommit={commitCornerPos(1)}
@@ -588,7 +620,7 @@ export function SelectionDimLabels() {
         worldMm={cornerZ}
         color={COLOR_Z}
         position={bestCorner}
-        screenOffset={{ x: -54, y: 34 }}
+        screenOffset={{ x: 46, y: 62 }}
         unitSystem={unitSystem}
         editable={posEditable}
         onCommit={commitCornerPos(2)}
@@ -623,8 +655,8 @@ export function SelectionDimLabels() {
           >
             <div
               data-testid="peak-chip"
-              className="translate-y-[-24px] px-2 py-0.5 rounded-md bg-slate-950/90 border border-amber-400/60 font-mono text-[11px] text-amber-200 whitespace-nowrap select-none shadow-lg"
-              style={{ pointerEvents: "none" }}
+              className={`${CHIP_HOVER_CLASS} translate-y-[-44px] px-2 py-0.5 rounded-md border border-amber-400/60 font-mono text-[11px] text-amber-200 whitespace-nowrap select-none shadow-lg`}
+              style={{ pointerEvents: "none", background: "rgba(2,6,23,0.55)", opacity: 0.9 }}
               title={`3D distance from the ruler origin to the ${peakLabel.toLowerCase()} of this ${obj.type}`}
             >
               <span className="text-amber-400 font-bold mr-1">{peakLabel}</span>
