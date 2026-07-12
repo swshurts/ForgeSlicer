@@ -163,19 +163,41 @@ def _register_identity_routes(router: APIRouter, *, require_admin) -> None:
         }
 
 
-def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require_super_admin, audit) -> None:
+def _admin_user_row(u: dict, usage: Optional[dict]) -> dict:
+    """Iter-135 — Build the admin-facing user row. Extracted from
+    ``_register_user_admin_routes`` so the shape is a single, easy-to-audit
+    place — matters because the /admin/users listing feeds the frontend
+    that determines who can ban/unban/promote whom."""
+    return {
+        "user_id": u["user_id"],
+        "email": u.get("email", ""),
+        "name": u.get("name", ""),
+        "auth_methods": u.get("auth_methods", []),
+        "created_at": u.get("created_at", ""),
+        "last_login_at": u.get("last_login_at", ""),
+        "is_admin": bool(u.get("is_admin")),
+        "is_super_admin": bool(u.get("is_super_admin")),
+        "contributor_lifetime": bool(u.get("contributor_lifetime")),
+        "ai_quota_override": u.get("ai_quota_override"),  # None when not set
+        "ai_used_this_month": (usage or {}).get("count", 0),
+        "banned": bool(u.get("banned")),
+    }
+
+
+def _register_user_list_routes(router: APIRouter, *, db, require_admin) -> None:
+    """Iter-135 — Extracted from `_register_user_admin_routes`. Read-only
+    routes over the users collection (search + list). Split so each
+    sub-registrar covers a single concern: listing (here), privileges
+    (see below), and safety actions (ban / kill-sessions)."""
+
     @router.get("/users")
     async def list_users(
-        request: Request,
+        request: Request,  # noqa: ARG001 — kept for future audit hooks
         q: Optional[str] = None,
         limit: int = 100,
-        admin=Depends(require_admin),
+        admin=Depends(require_admin),  # noqa: ARG001 — dependency gate
     ):
-        """Paged user list. Supports a substring search across name + email.
-
-        Returns admin-only fields (last_login_at, is_admin, ai_quota_override,
-        banned) that are stripped from the public-user shape — admins need
-        them to do their job."""
+        """Paged user list. Supports a substring search across name + email."""
         limit = max(1, min(limit, 500))
         query: dict = {}
         if q:
@@ -188,40 +210,29 @@ def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require
         ).sort("created_at", -1).limit(limit)
         users = await cursor.to_list(limit)
         # Stamp usage counts onto each — cheap because we only fetched up
-        # to `limit` users. For 500 users this is ~500 doc reads on the
-        # `ai_usage` collection which has a `user_id` index implicitly via
-        # the `month_key` lookups.
+        # to `limit` users.
         month_key = f"{_now().year:04d}-{_now().month:02d}"
         result = []
         for u in users:
-            # Iter-133 — Guard against legacy user docs that were written
-            # by very old auth flows and never had `user_id` populated.
-            # Two such rows currently exist in the preview DB; without
-            # this guard the entire /admin/users listing 500s on the
-            # first legacy row and the admin dashboard is unusable.
             uid = u.get("user_id")
             if not uid:
+                # Iter-133 — legacy user docs without user_id would
+                # KeyError on the listing. Skip + warn.
                 logger.warning("admin/users: skipping legacy doc without user_id (email=%s)", u.get("email"))
                 continue
             usage = await db.ai_usage.find_one(
                 {"user_id": uid, "month_key": month_key},
                 {"_id": 0, "count": 1},
             )
-            result.append({
-                "user_id": uid,
-                "email": u.get("email", ""),
-                "name": u.get("name", ""),
-                "auth_methods": u.get("auth_methods", []),
-                "created_at": u.get("created_at", ""),
-                "last_login_at": u.get("last_login_at", ""),
-                "is_admin": bool(u.get("is_admin")),
-                "is_super_admin": bool(u.get("is_super_admin")),
-                "contributor_lifetime": bool(u.get("contributor_lifetime")),
-                "ai_quota_override": u.get("ai_quota_override"),  # None when not set
-                "ai_used_this_month": (usage or {}).get("count", 0),
-                "banned": bool(u.get("banned")),
-            })
+            result.append(_admin_user_row(u, usage))
         return result
+
+
+def _register_user_privilege_routes(router: APIRouter, *, db, require_admin, require_super_admin, audit) -> None:
+    """Iter-135 — Extracted from `_register_user_admin_routes`. Endpoints
+    that change what a user CAN do (admin flag, AI quota, contributor
+    grant). Kept separate from the destructive safety endpoints
+    (ban / session-kill) so the auth model of each group is obvious."""
 
     @router.post("/users/promote-admin")
     async def promote_admin(req: PromoteAdminRequest, super_admin=Depends(require_super_admin)):
@@ -272,6 +283,13 @@ def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require
         await audit(admin, "set_contributor", req.user_id, {"contributor_lifetime": req.contributor_lifetime})
         return {"ok": True}
 
+
+def _register_user_safety_routes(router: APIRouter, *, db, require_admin, audit) -> None:
+    """Iter-135 — Extracted from `_register_user_admin_routes`. Destructive
+    account controls: soft-ban (flag + kill live sessions) and forced
+    password reset (kill sessions only). Grouped so future changes to
+    the ban policy (e.g. rate limits, appeal windows) have one home."""
+
     @router.post("/users/ban")
     async def set_ban(req: BanUserRequest, admin=Depends(require_admin)):
         """Soft-ban a user. We don't delete their content — just flag the
@@ -308,6 +326,21 @@ def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require
         return {"ok": True, "sessions_killed": deleted.deleted_count}
 
 
+def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require_super_admin, audit) -> None:
+    """Iter-135 — Thin fan-out to the three focused sub-registrars.
+
+    Kept for API compatibility with the existing ``build_admin_router``
+    call site. The old ~145-line function became four functions
+    (~30 lines each) split by concern: read-only listing, privilege
+    changes, destructive safety actions."""
+    _register_user_list_routes(router, db=db, require_admin=require_admin)
+    _register_user_privilege_routes(
+        router, db=db, require_admin=require_admin,
+        require_super_admin=require_super_admin, audit=audit,
+    )
+    _register_user_safety_routes(router, db=db, require_admin=require_admin, audit=audit)
+
+
 def _register_moderation_routes(router: APIRouter, *, db, require_admin, audit) -> None:
     @router.post("/content/remove")
     async def remove_content(req: RemoveContentRequest, admin=Depends(require_admin)):
@@ -333,51 +366,66 @@ def _register_moderation_routes(router: APIRouter, *, db, require_admin, audit) 
         return {"ok": True}
 
 
+async def _serialize_pricing_row(db, pid: str, pkg: dict) -> dict:
+    """Iter-135 — Extracted from `_register_pricing_routes.get_pricing`.
+    Combines a catalog row with its live sold count into the shape the
+    Pricing tab consumes. Keeps the endpoint a one-line dict comp."""
+    import pricing  # local — avoid module-level circular
+    sold = await pricing.sold_count(db, pid)
+    early = pkg.get("early") or {}
+    return {
+        "name": pkg["name"],
+        "amount": float(pkg["amount"]),
+        "currency": pkg["currency"],
+        "period_days": pkg["period_days"],
+        "early_amount": float(early.get("amount")) if early.get("amount") else None,
+        "early_limit": int(early.get("limit") or 0),
+        "sold": sold,
+        "early_remaining": max(0, int(early.get("limit") or 0) - sold),
+    }
+
+
+def _build_pricing_override(pid: str, p, catalog: dict) -> Dict[str, Any]:
+    """Iter-135 — Validate + shape one package's pricing override.
+
+    Raises HTTPException(400) for unknown package or when early-adopter
+    price exceeds the base price. Returns the override dict ready for
+    ``pricing.save_overrides``."""
+    if pid not in catalog:
+        raise HTTPException(status_code=400, detail=f"Unknown package '{pid}'.")
+    if p.early_amount is not None and p.early_amount > p.amount:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Early-adopter price for '{pid}' must not exceed the regular price.",
+        )
+    ov: Dict[str, Any] = {"amount": float(p.amount)}
+    if p.early_amount is not None or p.early_limit is not None:
+        base_early = catalog[pid].get("early") or {}
+        ov["early"] = {
+            "amount": float(p.early_amount if p.early_amount is not None else base_early.get("amount") or p.amount),
+            "limit": int(p.early_limit if p.early_limit is not None else base_early.get("limit") or 0),
+        }
+    return ov
+
+
 def _register_pricing_routes(router: APIRouter, *, db, require_super_admin, audit) -> None:
     import pricing
 
     @router.get("/pricing")
-    async def get_pricing(admin=Depends(require_super_admin)):
+    async def get_pricing(admin=Depends(require_super_admin)):  # noqa: ARG001
         """Current catalog + live sold counts, for the /admin Pricing tab."""
         catalog = await pricing.get_catalog(db)
-        out = {}
-        for pid, pkg in catalog.items():
-            sold = await pricing.sold_count(db, pid)
-            early = pkg.get("early") or {}
-            out[pid] = {
-                "name": pkg["name"],
-                "amount": float(pkg["amount"]),
-                "currency": pkg["currency"],
-                "period_days": pkg["period_days"],
-                "early_amount": float(early.get("amount")) if early.get("amount") else None,
-                "early_limit": int(early.get("limit") or 0),
-                "sold": sold,
-                "early_remaining": max(0, int(early.get("limit") or 0) - sold),
-            }
-        return out
+        return {pid: await _serialize_pricing_row(db, pid, pkg) for pid, pkg in catalog.items()}
 
     @router.put("/pricing")
     async def update_pricing(req: PricingUpdateRequest, admin=Depends(require_super_admin)):
         """Super-admin only — adjust prices (and early-adopter tiers)
         without a redeploy. Names/perks/periods stay code-defined."""
         catalog = await pricing.get_catalog(db)
-        overrides: Dict[str, Any] = {}
-        for pid, p in req.packages.items():
-            if pid not in catalog:
-                raise HTTPException(status_code=400, detail=f"Unknown package '{pid}'.")
-            if p.early_amount is not None and p.early_amount > p.amount:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Early-adopter price for '{pid}' must not exceed the regular price.",
-                )
-            ov: Dict[str, Any] = {"amount": float(p.amount)}
-            if p.early_amount is not None or p.early_limit is not None:
-                base_early = catalog[pid].get("early") or {}
-                ov["early"] = {
-                    "amount": float(p.early_amount if p.early_amount is not None else base_early.get("amount") or p.amount),
-                    "limit": int(p.early_limit if p.early_limit is not None else base_early.get("limit") or 0),
-                }
-            overrides[pid] = ov
+        overrides: Dict[str, Any] = {
+            pid: _build_pricing_override(pid, p, catalog)
+            for pid, p in req.packages.items()
+        }
         await pricing.save_overrides(db, overrides, admin["user_id"])
         await audit(admin, "update_pricing", None, {"packages": overrides})
         return {"ok": True, "packages": overrides}

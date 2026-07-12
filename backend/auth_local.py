@@ -215,6 +215,39 @@ def _token_row(user: dict, email: str, token_hash: str, ttl_min: int, request: R
 def _register_password_routes(router: APIRouter, ctx) -> None:
     db = ctx.db
 
+    async def _attach_password_to_google_account(existing: dict, req) -> dict:
+        """Iter-135 — extracted from `register`. Merges a fresh
+        password + display name onto a user doc that was previously
+        Google-only. Keeps `register` a linear happy-path read."""
+        email = _norm_email(req.email)
+        await db.users.update_one(
+            {"email": email},
+            {"$set": {
+                "password_hash": _hash_password(req.password),
+                "name": (req.name or existing.get("name") or "User").strip()[:80],
+                "auth_methods": sorted(set((existing.get("auth_methods") or ["google"]) + ["password"])),
+            }},
+        )
+        return await db.users.find_one({"email": email}, {"_id": 0})
+
+    async def _create_password_user(req) -> dict:
+        """Iter-135 — extracted from `register`. Fresh user path:
+        allocate an id, insert the doc, strip Motor's `_id`."""
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        user = {
+            "user_id": user_id,
+            "email": _norm_email(req.email),
+            "name": req.name.strip()[:80],
+            "picture": "",
+            "password_hash": _hash_password(req.password),
+            "auth_methods": ["password"],
+            "created_at": _now().isoformat(),
+            "last_login_at": _now().isoformat(),
+        }
+        await db.users.insert_one(user)
+        user.pop("_id", None)
+        return user
+
     @router.post("/register")
     async def register(req: RegisterRequest, response: Response):
         if not PASSWORD_RE.match(req.password):
@@ -222,37 +255,13 @@ def _register_password_routes(router: APIRouter, ctx) -> None:
         email = _norm_email(req.email)
         existing = await db.users.find_one({"email": email}, {"_id": 0})
         if existing:
-            # If the user already has a Google-only account, let them attach
-            # a password to it (auth-method merge). Otherwise reject duplicate.
+            # Duplicate accounts blocked — but google-only accounts get a
+            # password attached instead of a hard error (auth-method merge).
             if existing.get("password_hash"):
                 raise HTTPException(status_code=409, detail="An account with that email already exists.")
-            # Attach password to existing Google account.
-            await db.users.update_one(
-                {"email": email},
-                {
-                    "$set": {
-                        "password_hash": _hash_password(req.password),
-                        "name": (req.name or existing.get("name") or "User").strip()[:80],
-                        "auth_methods": sorted(set((existing.get("auth_methods") or ["google"]) + ["password"])),
-                    }
-                },
-            )
-            user = await db.users.find_one({"email": email}, {"_id": 0})
+            user = await _attach_password_to_google_account(existing, req)
         else:
-            user_id = f"user_{uuid.uuid4().hex[:12]}"
-            user = {
-                "user_id": user_id,
-                "email": email,
-                "name": req.name.strip()[:80],
-                "picture": "",
-                "password_hash": _hash_password(req.password),
-                "auth_methods": ["password"],
-                "created_at": _now().isoformat(),
-                "last_login_at": _now().isoformat(),
-            }
-            await db.users.insert_one(user)
-            # Strip _id which Motor adds in place — never return it.
-            user.pop("_id", None)
+            user = await _create_password_user(req)
         await _issue_session(ctx, user, response)
         return ctx.public_user(user)
 

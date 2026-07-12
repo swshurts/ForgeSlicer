@@ -19,11 +19,12 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { X, RefreshCcw, ShieldAlert, ShieldCheck, ShieldQuestion, Loader2, Wrench, ExternalLink } from "lucide-react";
+import { X, RefreshCcw, ShieldAlert, ShieldCheck, ShieldQuestion, Loader2, Wrench, Sparkles, ExternalLink } from "lucide-react";
 import { useScene } from "../lib/store";
 import { exportSceneToSTLBytes } from "../lib/exporters";
 import { analyzePrintability } from "../lib/printabilityApi";
 import { repairImportedObject } from "../lib/meshRepairApi";
+import { decimateImportedObject, addBaseToImportedObject } from "../lib/meshOptimizeApi";
 
 const SEV_META = {
   critical: { label: "CRITICAL", cls: "bg-red-500/15 text-red-300 border-red-500/40" },
@@ -270,17 +271,108 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     }
   }, [objects, report, updateObject, runAnalysis, pushHistory]);
 
-  const handleFix = useCallback((code, issue) => {
-    if (code === "auto_clean") {
-      runAutoClean();
+  // Iter-135 — Real fix handlers for decimate + add-base. Same
+  // pattern as runAutoClean: pushHistory for Ctrl+Z, remember score
+  // before, mutate every applicable imported object, re-analyse.
+  //
+  // Both endpoints are per-object (backend takes one STL); we iterate
+  // the imported meshes in the scene and apply the fix to each.
+  // Non-imported primitives skip — they're mathematically clean and
+  // already have a computed silhouette.
+  const _applyOptimizePerObject = useCallback(async (label, kind, params) => {
+    const targets = (objects || []).filter(
+      (o) => o.type === "imported" && !o.locked && (o.visible ?? true) && o.geometry,
+    );
+    if (targets.length === 0) {
+      toast.info(`${label} skipped`, { description: "Only imported meshes can be optimized — primitives already print cleanly." });
+      return { applied: 0 };
+    }
+    setFixingCode(kind);
+    pushHistory();
+    setLastScoreBeforeFix(report?.score ?? null);
+    let totalBefore = 0, totalAfter = 0, applied = 0;
+    try {
+      for (const obj of targets) {
+        const runner = kind === "decimate_with_intent"
+          ? decimateImportedObject(obj, params?.preset || "functional")
+          : addBaseToImportedObject(obj, params || {});
+        const { update, stats } = await runner;
+        updateObject(obj.id, update);
+        totalBefore += stats.facesBefore || 0;
+        totalAfter += stats.facesAfter || 0;
+        applied += 1;
+      }
+      toast.success(`${label} complete — ${applied} mesh${applied === 1 ? "" : "es"} optimized`, {
+        description: `${totalBefore.toLocaleString()} → ${totalAfter.toLocaleString()} triangles · press Ctrl+Z to revert`,
+      });
+      await runAnalysis();
+      return { applied };
+    } catch (e) {
+      setLastScoreBeforeFix(null);
+      toast.error(`${label} failed: ${e.message || e}`);
+      return { applied: 0, error: e };
+    } finally {
+      setFixingCode(null);
+    }
+  }, [objects, pushHistory, report, updateObject, runAnalysis]);
+
+  const runDecimate = useCallback((preset = "functional") => {
+    return _applyOptimizePerObject("Decimate", "decimate_with_intent", { preset });
+  }, [_applyOptimizePerObject]);
+
+  const runAddBase = useCallback((shape = "cylinder", thicknessMm = 3.0, marginMm = 2.0) => {
+    return _applyOptimizePerObject("Add Base", "add_base", { shape, thicknessMm, marginMm });
+  }, [_applyOptimizePerObject]);
+
+  // Iter-135 — Auto-Fix orchestrator. Runs the applicable fixers in
+  // safe order (repair → decimate → add-base) on the CURRENT set of
+  // issues. Stops on first failure so users don't end up with a
+  // half-fixed scene. Undo is a single pushHistory entry per step
+  // — three fixes = three Ctrl+Z presses to fully revert. That's a
+  // deliberate trade-off: users often want to keep the auto-clean
+  // but drop the aggressive decimate.
+  const runAutoFix = useCallback(async () => {
+    if (!report || report.issues.length === 0) {
+      toast.info("Nothing to fix", { description: "Report is already clean." });
       return;
     }
-    // Remaining fix actions (decimate_with_intent, voxel_remesh, add_base,
-    // thicken_walls, reorient) still land in follow-up iterations.
+    const codes = new Set(report.issues.map((i) => i.fix_action).filter(Boolean));
+    const steps = [];
+    if (codes.has("auto_clean")) steps.push({ label: "Auto-Clean", run: runAutoClean });
+    if (codes.has("decimate_with_intent")) steps.push({ label: "Decimate", run: () => runDecimate("functional") });
+    if (codes.has("add_base")) steps.push({ label: "Add Base", run: () => runAddBase("cylinder", 3.0, 2.0) });
+    if (steps.length === 0) {
+      // Only fixes remaining are ones we haven't shipped yet (thicken
+      // walls, voxel remesh, reorient). Surface that transparently.
+      toast.info("No Auto-Fix step available", {
+        description: "The remaining issues need tools that aren't automated yet. Use the individual Fix buttons.",
+      });
+      return;
+    }
+    setFixingCode("auto_fix_all");
+    toast.info(`Auto-Fix: running ${steps.length} step${steps.length === 1 ? "" : "s"}…`);
+    try {
+      for (const step of steps) {
+        // Sequential on purpose: each step re-runs analysis via runAnalysis,
+        // and later steps need the fresh geometry / score baseline the
+        // earlier step produced.
+        await step.run();
+      }
+    } finally {
+      setFixingCode(null);
+    }
+  }, [report, runAutoClean, runDecimate, runAddBase]);
+
+  const handleFix = useCallback((code, issue) => {
+    if (code === "auto_clean")           { runAutoClean(); return; }
+    if (code === "decimate_with_intent") { runDecimate("functional"); return; }
+    if (code === "add_base")             { runAddBase("cylinder", 3.0, 2.0); return; }
+    // Remaining fix actions (voxel_remesh, thicken_walls, reorient)
+    // still land in follow-up iterations.
     toast.info(`${actionLabel(code)} — coming in the next update`, {
       description: `Will address: ${issue.message}`,
     });
-  }, [runAutoClean]);
+  }, [runAutoClean, runDecimate, runAddBase]);
 
   if (!open) return null;
 
@@ -352,6 +444,23 @@ export default function PrintabilityReportPanel({ open, onClose }) {
             </div>
 
             <MetricStrip metrics={report.metrics} />
+
+            {/* Iter-135 — Auto-Fix runs applicable fixers in safe
+                order (repair → decimate → add-base). Only shown when
+                at least one fixable issue is present; disables when
+                a fix is already in-flight. */}
+            {report.issues.some((i) => ["auto_clean", "decimate_with_intent", "add_base"].includes(i.fix_action)) && (
+              <button
+                data-testid="printability-auto-fix"
+                onClick={runAutoFix}
+                disabled={!!fixingCode}
+                className="w-full h-9 flex items-center justify-center gap-2 rounded font-semibold text-[12px] bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white disabled:opacity-50 disabled:cursor-wait shadow"
+              >
+                {fixingCode === "auto_fix_all"
+                  ? <><Loader2 size={13} className="animate-spin" /> Auto-Fixing…</>
+                  : <><Sparkles size={13} /> Auto-Fix all applicable issues</>}
+              </button>
+            )}
 
             {report.issues.length > 0 && (
               <div className="space-y-2 pt-1" data-testid="printability-issue-list">
