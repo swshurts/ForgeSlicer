@@ -1149,6 +1149,13 @@ async def ai_job_mesh(job_id: str, request: Request):
         data = await svc.download_mesh(job["model_url"])
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Mesh download failed: {e.response.status_code}")
+    except (httpx.TimeoutException, httpx.RequestError) as e:
+        # Iter-132.1 — hardened per testing agent's review. DNS
+        # failures / connection resets on a CDN URL previously leaked
+        # as a bare 500; now return a clean 504 with an actionable
+        # hint so the frontend can retry-with-backoff.
+        logger.warning("%s mesh download network error: %s", provider, e)
+        raise HTTPException(status_code=504, detail="Mesh download timed out. Please try again in a moment.")
     # Filename hint based on the URL's extension. Strip any query string
     # (Meshy CDN URLs end with .stl?Expires=...) before checking.
     url_path = job["model_url"].split("?")[0].lower()

@@ -33,7 +33,23 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-131.1, 2026-07-10) — Copy Dimensions to Clipboard
+### Recently completed (iter-132, 2026-07-12) — Default 3D AI provider swapped: Meshy → fal.ai Hunyuan3D v2 Pro (BYO Meshy preserved)
+- **User decision**: Chose Hunyuan3D **Pro** (`fal-ai/hunyuan3d/v2`, ~$0.16/gen) over Turbo for higher-fidelity geometry. Text-to-3D uses a 2-step pipeline: `fal-ai/flux/schnell` → Hunyuan3D v2.
+- **Selection order** (in `_pick_ai_provider(user)`):
+  1. User has a personal Meshy key (BYO) → **Meshy** (premium, no cap counter)
+  2. FAL_KEY configured → **fal.ai** (default, cap counter applies)
+  3. Platform MESHY_API_KEY configured → Meshy (legacy fallback)
+  4. Else → 503
+- **New backend module**: `/app/backend/fal_service.py` — mirrors Meshy interface (`is_configured`, `create_text_to_3d`, `create_image_to_3d`, `create_multi_image_to_3d`, `get_task`, `pick_model_url`, `download_mesh`, `FalHTTPError`). Text-mode returns `<request_id>|<flux_image_url>` so `/api/ai/jobs/{id}` can preview the intermediate reference image.
+- **Provider tracked per job**: `ai_jobs.provider` field ("fal"/"meshy"); polling & mesh-download route to the correct service via `_provider_module(name)`. Legacy jobs without the field default to Meshy for backward compat.
+- **`GET /api/ai/usage`** now returns `active_provider` ("fal"/"meshy") so the frontend UI can attribute correctly.
+- **Frontend** (`AIGenerateDialog.jsx`): "Powered by …" chip branches on `usage.active_provider` (`data-testid=ai-generate-provider-attribution`). Meshy attribution → fuchsia + "using your personal API key"; fal.ai → cyan + "3D generation integrated into ForgeSlicer".
+- **Error handling**: FalHTTPError translated to 502 with fal.ai's own message (e.g. "Exhausted balance. Top up..."). Network errors → 504 with retry hint. Mesh download route hardened per testing agent feedback (iter-132.1: `RequestError`/`TimeoutException` → 504 instead of bare 500).
+- **Testing (iter-132)**: **100% pass** — 25/25 (11 unit + 14 integration). All 9 acceptance criteria validated by `testing_agent_v3_fork`. Provider dispatch, refund logic on 502, `provider` persisted on new jobs, legacy jobs default to Meshy, active_provider correct for both BYO and default users.
+- **Multi-image caveat**: Hunyuan3D v2 on fal.ai is single-view; multi-image uploads use only the first image (documented). Meshy BYO users still get true multi-view fusion.
+- **Config**: `FAL_KEY` in `/app/backend/.env`. `fal_client==1.0.0` in `requirements.txt`.
+
+
 - **User request**: Instituted the enhancement idea from iter-130 — "Copy dimensions" one-click clipboard action.
 - **Behaviour**: Small pill-button in the bottom-right of the viewport (`data-testid='copy-dimensions-btn'`) that appears ONLY when (a) DIMS mode is on AND (b) exactly one component is selected. One click copies a multi-line, human-readable measurement summary to the clipboard:
   ```

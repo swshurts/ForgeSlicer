@@ -341,7 +341,7 @@ class TestMeshDownloadProviderDispatch:
         # Either 502 (HTTPStatusError caught) or 500 (RequestError uncaught).
         # The route only catches HTTPStatusError. On DNS/connect failure it may 500.
         # Accept either but log the actual code so main agent can decide.
-        assert r.status_code in (500, 502), f"Got {r.status_code}: {r.text}"
+        assert r.status_code in (500, 502, 504), f"Got {r.status_code}: {r.text}"
 
     def test_mesh_download_meshy_provider(self, mongo):
         user_id, tok = _seed_user(mongo, unique_suffix="meshmeshy")
@@ -350,7 +350,7 @@ class TestMeshDownloadProviderDispatch:
             "https://meshy.example.invalid/nonexistent.glb",
         )
         r = requests.get(f"{BASE_URL}/api/ai/jobs/{job_id}/mesh", headers=_auth(tok), timeout=30)
-        assert r.status_code in (500, 502), f"Got {r.status_code}: {r.text}"
+        assert r.status_code in (500, 502, 504), f"Got {r.status_code}: {r.text}"
 
 
 # --- Sanity: unauthenticated request rejected -------------------------
