@@ -114,6 +114,16 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
   // 1996mm test-fixture we saw during development.
   const [autoFit, setAutoFit] = useState(true);
   const [targetMaxMm, setTargetMaxMm] = useState(60);
+  // Iter-132.2 — Preview-then-commit UX (text mode, fal.ai only).
+  //   previewUrls        : string[]  — 4 CDN URLs from Flux Schnell
+  //   previewBusy        : bool      — request in flight
+  //   selectedPreviewIdx : int | null — user's chosen preview
+  // When `previewUrls` is populated the primary CTA switches from
+  // "Generate 3D" (direct text-to-3D) to "Preview images", and a
+  // grid renders below the prompt for the user to pick from.
+  const [previewUrls, setPreviewUrls] = useState([]);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [selectedPreviewIdx, setSelectedPreviewIdx] = useState(null);
   const pollTimer = useRef(null);
   const pollDeadline = useRef(0);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
@@ -128,6 +138,9 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
       setImagePreviewUrl(null);
       setMultiSlots([null, null, null, null]);
       setPendingAutoSubmit(false);
+      // Iter-132.2 — Also reset preview state so stale thumbnails
+      // don't reappear the next time the dialog opens.
+      setPreviewUrls([]); setSelectedPreviewIdx(null); setPreviewBusy(false);
     } else {
       // Load usage when opening
       axios.get(`${API}/ai/usage`, { withCredentials: true })
@@ -266,6 +279,58 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  // Iter-132.2 — Ask fal.ai for 4 cheap Flux-Schnell reference images
+  // (~$0.001 each) so the user can pick the best one before spending
+  // the ~$0.16 on the full Hunyuan3D generation. Called via the new
+  // "Preview images" CTA in text mode when active_provider==='fal'.
+  const handlePreviewImages = async () => {
+    if (!prompt.trim() || prompt.trim().length < 3) {
+      setError("Prompt must be at least 3 characters."); return;
+    }
+    setPreviewBusy(true); setError(""); setSelectedPreviewIdx(null);
+    try {
+      const { data } = await axios.post(`${API}/ai/preview/images`,
+        { prompt: prompt.trim(), art_style: artStyle, count: 4 },
+        { withCredentials: true });
+      setPreviewUrls(Array.isArray(data.urls) ? data.urls : []);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || "Preview generation failed");
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
+
+  // Iter-132.2 — Commit the selected preview to a full 3D generation.
+  // Uses the existing /ai/generate/image endpoint (which now accepts
+  // an image_url alongside the original image_b64 field) so no new
+  // client-side plumbing was needed for polling / import.
+  const handleCommitPreview = async () => {
+    if (selectedPreviewIdx == null || !previewUrls[selectedPreviewIdx]) {
+      setError("Pick a preview first."); return;
+    }
+    setBusy(true); setError(""); setJob(null);
+    try {
+      const { data } = await axios.post(`${API}/ai/generate/image`,
+        { image_url: previewUrls[selectedPreviewIdx] },
+        { withCredentials: true });
+      setJob({ job_id: data.job_id, status: "PENDING", progress: 0 });
+      pollDeadline.current = Date.now() + POLL_TIMEOUT_MS;
+      pollOnce(data.job_id);
+      refreshUsage();
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || "Generation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Clear the preview strip — used when the user edits the prompt so
+  // stale thumbnails don't imply they still reflect the new prompt.
+  const clearPreviews = () => {
+    setPreviewUrls([]);
+    setSelectedPreviewIdx(null);
   };
 
   const handleSubmitImage = async () => {
@@ -597,7 +662,7 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
                 <textarea
                   data-testid="ai-prompt-input"
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  onChange={(e) => { setPrompt(e.target.value); if (previewUrls.length) clearPreviews(); }}
                   placeholder="e.g. A small articulated dragon figurine for FDM 3D printing"
                   rows={4}
                   maxLength={600}
@@ -622,6 +687,88 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1 leading-snug">Low-poly look? Most slicers can decimate the mesh on import — pick that there.</p>
               </div>
+              {/* Iter-132.2 — Preview grid. Only shown for fal.ai users
+                  (Meshy has no Flux step). The grid appears once
+                  `previewUrls` is populated by handlePreviewImages,
+                  and stays visible until the user edits the prompt
+                  (which clears it). Selecting a thumbnail rings it
+                  in cyan and enables the "Generate 3D from preview"
+                  CTA below. */}
+              {(usage?.active_provider === "fal") && (
+                <div className="pt-1" data-testid="ai-preview-panel">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">
+                      Preview images {previewUrls.length ? `· pick one` : "· optional"}
+                    </label>
+                    {previewUrls.length > 0 && (
+                      <button
+                        type="button"
+                        data-testid="ai-preview-clear"
+                        onClick={clearPreviews}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+                      >Clear</button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mb-2 leading-snug">
+                    Generate 4 cheap Flux Schnell previews (~$0.004 total) so you can pick the best reference before spending on the full 3D generation.
+                  </p>
+                  {previewUrls.length === 0 && (
+                    <button
+                      type="button"
+                      data-testid="ai-preview-generate-btn"
+                      onClick={handlePreviewImages}
+                      disabled={previewBusy || busy || !prompt.trim() || prompt.trim().length < 3}
+                      className="w-full h-8 rounded text-xs font-semibold border border-cyan-500/60 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {previewBusy ? "Generating previews…" : "Preview images first"}
+                    </button>
+                  )}
+                  {previewUrls.length > 0 && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2" data-testid="ai-preview-grid">
+                        {previewUrls.map((url, idx) => {
+                          const selected = idx === selectedPreviewIdx;
+                          return (
+                            <button
+                              key={url}
+                              type="button"
+                              data-testid={`ai-preview-thumb-${idx}`}
+                              onClick={() => setSelectedPreviewIdx(idx)}
+                              className={
+                                "relative aspect-square rounded overflow-hidden border-2 transition-all " +
+                                (selected
+                                  ? "border-cyan-400 ring-2 ring-cyan-400/40"
+                                  : "border-slate-700 hover:border-slate-500")
+                              }
+                            >
+                              <img
+                                src={url}
+                                alt={`Preview ${idx + 1}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              {selected && (
+                                <div className="absolute top-1 right-1 bg-cyan-500 text-white text-[9px] px-1.5 py-0.5 rounded font-bold shadow-sm">
+                                  SELECTED
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="ai-preview-regenerate-btn"
+                        onClick={handlePreviewImages}
+                        disabled={previewBusy || busy}
+                        className="w-full mt-2 h-7 rounded text-[11px] font-medium border border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        {previewBusy ? "Regenerating…" : "Regenerate previews"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -787,15 +934,32 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
               </button>
             )}
             {!job && tab === "text" && (
-              <button
-                data-testid="ai-submit-text-btn"
-                onClick={handleSubmitText}
-                disabled={busy || !prompt.trim() || (usage && usage.remaining <= 0)}
-                className="h-9 px-4 text-xs font-bold bg-fuchsia-500 hover:bg-fuchsia-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              >
-                {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                Generate
-              </button>
+              // Iter-132.2 — When the user has picked a preview thumbnail,
+              // the primary CTA switches to "Generate 3D from preview"
+              // which submits the picked URL through /ai/generate/image
+              // (skipping the Flux step inside create_text_to_3d — saves
+              // ~$0.001 + ~1.5s that were already paid at preview time).
+              selectedPreviewIdx != null && previewUrls.length > 0 ? (
+                <button
+                  data-testid="ai-submit-preview-btn"
+                  onClick={handleCommitPreview}
+                  disabled={busy || (usage && usage.remaining <= 0)}
+                  className="h-9 px-4 text-xs font-bold bg-cyan-500 hover:bg-cyan-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  Generate 3D from preview
+                </button>
+              ) : (
+                <button
+                  data-testid="ai-submit-text-btn"
+                  onClick={handleSubmitText}
+                  disabled={busy || !prompt.trim() || (usage && usage.remaining <= 0)}
+                  className="h-9 px-4 text-xs font-bold bg-fuchsia-500 hover:bg-fuchsia-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  Generate
+                </button>
+              )
             )}
             {!job && tab === "image" && (
               <button

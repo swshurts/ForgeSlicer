@@ -95,6 +95,30 @@ async def _text_to_image(prompt: str) -> str:
     return images[0]["url"]
 
 
+async def generate_preview_images(prompt: str, num_images: int = 4) -> List[str]:
+    """Iter-132.2 — Generate ``num_images`` reference images from a text
+    prompt via Flux Schnell (~$0.001 each, ~1.5s each). Returns a list
+    of CDN URLs. Enables the "pick the best preview" UX: users iterate
+    on ~$0.004 previews before spending the ~$0.16 on Hunyuan3D.
+
+    ``num_images`` is clamped 1..4 to match Flux Schnell's max batch."""
+    _ensure_configured()
+    n = max(1, min(4, int(num_images)))
+    result = await fal_client.subscribe_async(  # type: ignore[union-attr]
+        TEXT_TO_IMAGE_MODEL,
+        arguments={
+            "prompt": prompt[:600],
+            "image_size": "square_hd",
+            "num_images": n,
+        },
+    )
+    images = result.get("images") or []
+    urls = [img.get("url") for img in images if isinstance(img, dict) and img.get("url")]
+    if not urls:
+        raise RuntimeError("Flux Schnell returned no images")
+    return urls
+
+
 async def create_text_to_3d(prompt: str, art_style: str = "realistic", api_key: Optional[str] = None) -> str:  # noqa: ARG001
     """Text prompt → 3D mesh via a 2-step pipeline.
 

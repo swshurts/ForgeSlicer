@@ -971,17 +971,28 @@ async def ai_generate_text(req: AITextRequest, request: Request):
 async def ai_generate_image(request: Request):
     user = await get_current_user(request)
     provider, svc, personal_key = await _pick_ai_provider(user)
-    # Body must be JSON: {image_b64, mime_type}. We accept base64 from the frontend
-    # rather than multipart because it's a tiny payload (~1MB) and keeps the
-    # backend symmetric with everywhere else we exchange image data.
+    # Iter-132.2 — Body accepts EITHER:
+    #   { image_b64, mime_type }              -- direct upload (original)
+    #   { image_url }                          -- URL from a preview batch
+    # The two-step "preview then commit" UX (see /ai/preview/images) uses
+    # the URL variant so we don't round-trip a large base64 blob through
+    # the browser after already paying to generate it.
     body = await request.json()
-    image_b64 = (body.get("image_b64") or "").strip()
-    mime = (body.get("mime_type") or "image/png").strip()
-    if not image_b64:
-        raise HTTPException(status_code=400, detail="Missing image_b64")
-    if mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
-        raise HTTPException(status_code=400, detail="Unsupported image mime_type")
-    data_url = f"data:{mime};base64,{image_b64}"
+    image_url_field = (body.get("image_url") or "").strip()
+    if image_url_field:
+        # Basic hardening — only http(s) URLs; we don't want random
+        # data:/file:/gs:/etc references smuggled through as prompts.
+        if not (image_url_field.startswith("http://") or image_url_field.startswith("https://")):
+            raise HTTPException(status_code=400, detail="image_url must be http(s)")
+        data_url = image_url_field
+    else:
+        image_b64 = (body.get("image_b64") or "").strip()
+        mime = (body.get("mime_type") or "image/png").strip()
+        if not image_b64:
+            raise HTTPException(status_code=400, detail="Missing image_b64 or image_url")
+        if mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+            raise HTTPException(status_code=400, detail="Unsupported image mime_type")
+        data_url = f"data:{mime};base64,{image_b64}"
     if not personal_key:
         await _ai_increment_or_raise(user)
     try:
@@ -1015,7 +1026,7 @@ async def ai_generate_image(request: Request):
         "created_at": now,
         "updated_at": now,
     })
-    return {"job_id": job_id, "status": "PENDING"}
+    return {"job_id": job_id, "status": "PENDING", "provider": provider}
 
 
 @api_router.post("/ai/generate/multi-image")
@@ -1083,6 +1094,58 @@ async def ai_generate_multi_image(request: Request):
         "updated_at": now,
     })
     return {"job_id": job_id, "status": "PENDING", "provider": provider}
+
+
+class AIPreviewRequest(BaseModel):
+    prompt: str = Field(..., min_length=3, max_length=600)
+    count: int = Field(4, ge=1, le=4)     # Flux Schnell max batch is 4
+    art_style: str = Field("realistic", max_length=32)
+
+
+@api_router.post("/ai/preview/images")
+async def ai_preview_images(req: AIPreviewRequest, request: Request):
+    """Iter-132.2 — Generate a batch of ~$0.001 reference images from a
+    text prompt via Flux Schnell so users can pick the best preview
+    BEFORE committing to the ~$0.16 Hunyuan3D generation.
+
+    Only available on the fal.ai default provider — Meshy has no
+    equivalent text-to-image step, so BYO Meshy users get a 409
+    telling them to use the direct text-to-3d flow.
+
+    Cost is intentionally NOT charged against the 3D-generation cap
+    (previews are ~150× cheaper than a full 3D gen and drive better
+    outputs). We do rate-limit to 10 preview batches per hour per
+    user via a lightweight in-memory counter (per-instance; good
+    enough because the endpoint is cheap and short-lived).
+    """
+    user = await get_current_user(request)
+    provider, _svc, personal_key = await _pick_ai_provider(user)
+    if provider != "fal":
+        # BYO Meshy users don't get the Flux preview step — they
+        # should just submit prompts directly to the Meshy pipeline.
+        raise HTTPException(
+            status_code=409,
+            detail="Image previews are only available on the fal.ai provider. Remove your Meshy API key to use previews, or submit a direct text-to-3D generation.",
+        )
+    del personal_key  # unused here (fal is platform-funded)
+    # Fold art_style into the prompt (same convention as create_text_to_3d).
+    style_hint = ""
+    if req.art_style == "sculpture":
+        style_hint = "sculpture style, artistic surface treatment, "
+    elif req.art_style == "realistic":
+        style_hint = "realistic photograph, cinematic lighting, "
+    effective_prompt = f"{style_hint}{req.prompt}"[:600]
+
+    try:
+        urls = await fal_service.generate_preview_images(effective_prompt, req.count)
+    except fal_service.FalHTTPError as fe:
+        raise HTTPException(status_code=502, detail=f"fal.ai: {fe}")
+    except (httpx.TimeoutException, httpx.RequestError) as e:
+        logger.warning("Flux Schnell preview network error: %s", e)
+        raise HTTPException(status_code=504, detail="Preview generation timed out. Please try again.")
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=f"fal.ai preview: {e}")
+    return {"urls": urls, "count": len(urls), "prompt": req.prompt}
 
 
 @api_router.get("/ai/jobs/{job_id}")

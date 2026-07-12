@@ -1,0 +1,41 @@
+{
+  "summary": "Iter-132.2 (Generate reference image from prompt) full-stack testing complete. Backend: 14/14 pytest tests pass covering POST /api/ai/preview/images (happy path, count validation, prompt length validation, auth gating, Meshy BYO 409 gating) and POST /api/ai/generate/image extended body (image_url happy, http(s)-only 400, missing-field 400, url-wins-over-b64, b64 regression). Frontend: end-to-end Playwright validation of all 6 UX flows — preview button gating on prompt length, 4-thumbnail grid render, selection ring + SELECTED badge + CTA switch (ai-submit-preview-btn), prompt-edit clears grid + selection, regenerate resets selection + reloads urls, Meshy BYO users don't see the preview panel, and dialog close/reopen fully resets preview state. Fal.ai balance confirmed funded — real Flux Schnell calls returned 4 URLs in ~3s.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai/preview/images (through public URL)", "issue": "Occasional 502 from CloudFlare when Flux Schnell + edge routing exceeds ~30s. Same edge-timeout pattern already documented in iter-132. Tests hit http://localhost:8001 directly for the happy-path assertions; the status-code paths (401/422/409/400) still pass over the public URL. Not a backend code bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter132_2_preview.py",
+    "/app/test_reports/pytest/iter132_2_results.xml"
+  ],
+  "action_items": [
+    "Optional hardening: consider raising the 502 CloudFlare timeout window (or moving Flux Schnell polling to a client-driven queue+poll pattern like Meshy) so the preview endpoint reliably completes through the public ingress. Currently works but sensitive to fal.ai upstream latency spikes."
+  ],
+  "critical_code_review_comments": [
+    "server.py L1099-1148: AIPreviewRequest correctly enforces prompt min_length=3 max_length=600 and count 1..4 via Pydantic. The provider!='fal' guard at L1123 returns 409 with a helpful detail before any fal.ai call. Clean.",
+    "server.py L970-1029: /ai/generate/image body-handling now supports both image_url (http/https only, hardened at L985) and image_b64+mime_type (with mime whitelist). image_url takes precedence when both present — verified by test_generate_image_url_wins_over_b64. Structure is sound.",
+    "fal_service.py L98-119: generate_preview_images clamps num_images to 1..4 defensively and raises RuntimeError if Flux returns no images, allowing the route to translate to a clean 502. Good.",
+    "AIGenerateDialog.jsx L124-143: preview state (previewUrls, previewBusy, selectedPreviewIdx) is properly reset on dialog close (L143). Prompt onChange (L665) also calls clearPreviews when previewUrls has content — verified end-to-end.",
+    "AIGenerateDialog.jsx L697: preview panel visibility gated on usage?.active_provider === 'fal' — correctly hides for Meshy BYO users. Verified via /api/ai/usage route mock.",
+    "AIGenerateDialog.jsx L942-962: primary CTA branch (submit-preview-btn vs submit-text-btn) driven by selectedPreviewIdx — verified switch happens on thumb click and reverts on regenerate.",
+    "handlePreviewImages (L292): correctly clears previous selection (setSelectedPreviewIdx(null)) before firing the request — no stale selection carrying over into a new batch.",
+    "handleCommitPreview (L309): correctly sends {image_url: previewUrls[selectedPreviewIdx]} to /ai/generate/image, then triggers the same polling path as text/image tabs. Clean reuse."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter132_2_preview.py (new — 14 integration tests, all passing)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (10/10 UX assertions)"},
+  "test_credentials": "Pre-seeded session st_prov132 for user_prov132_2 (p132test2@test.com). Session expiry refreshed to +7d during test setup.",
+  "seed_data_creation": "Used pre-seeded fal-default user. Meshy gating test seeds/unseeds meshy_api_key_enc via secrets_vault.encrypt() with a fake msy_test_* payload; cleanup in fixture + test-local try/finally.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter-132.2 preview + commit flow verified working end-to-end. If retesting: (1) The public URL can 502 on the /ai/preview/images route when fal.ai Flux Schnell is slow — hit http://localhost:8001 directly if you need JSON body inspection or predictable latency. (2) The Meshy-BYO frontend test uses page.route to mock /api/ai/usage → active_provider=meshy; alternatively you can encrypt() a fake key into users.meshy_api_key_enc (secrets_vault.encrypt requires FORGE_SECRET_ENC_KEY to be loaded — add `load_dotenv('/app/backend/.env')` at test-file top). (3) Fal.ai balance is currently funded, so real Flux Schnell calls succeed; expect ~3-8s for the 4-image batch.",
+  "rca of the issue": "N/A — no bug fixes required. All spec items (backend routes, validation, gating, frontend UX flows) verified working."
+}
