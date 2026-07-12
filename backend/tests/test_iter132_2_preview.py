@@ -46,8 +46,24 @@ def mongo():
 def _ensure_fal_default(mongo):
     """Ensure the seeded user is on the fal.ai provider path — remove any
     stale meshy_api_key_enc left over from other test runs BEFORE each
-    test. Individual gating tests will re-add it."""
-    mongo.users.update_one({"user_id": USER_ID}, {"$unset": {"meshy_api_key_enc": "", "meshy_api_key_saved_at": ""}})
+    test. Also lift the monthly AI cap so /ai/generate/image regression
+    tests can run repeatedly without the shared user exhausting quota
+    (iter-134 fix)."""
+    mongo.users.update_one(
+        {"user_id": USER_ID},
+        {
+            "$unset": {"meshy_api_key_enc": "", "meshy_api_key_saved_at": ""},
+            # Also clear the shared user's monthly counter so repeated
+            # test runs don't accumulate. The `ai_quota_override` field
+            # only accepts 1..300 (see `_ai_cap_for`); 250 is plenty
+            # of headroom for the ~6 image submissions per full run.
+            "$set": {"ai_quota_override": 250},
+        },
+    )
+    mongo.ai_usage.update_many(
+        {"user_id": USER_ID},
+        {"$set": {"count": 0}},
+    )
 
 
 # ---------- 1. POST /api/ai/preview/images (fal-default) ---------- #

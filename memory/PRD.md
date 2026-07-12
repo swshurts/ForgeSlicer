@@ -33,7 +33,31 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-132.2, 2026-07-13) — Preview images before committing to 3D (fal.ai only)
+### Recently completed (iter-134, 2026-07-12) — CI Green + Phase 1 AI Mesh Optimization (thin-wall + decimate + auto-base)
+
+**Part A — Pre-existing test failures fixed (P1 done)**
+- `test_projects.py` — hard `os.environ["TOKEN_A"]` requirement replaced with an in-file `_seed_session` helper that upserts ephemeral users + 7-day session tokens directly into Mongo. Test now runnable both in CI and locally without external prep. **8/8 pass.**
+- `test_iter15_smoke.py` — aarch64 Orca `version` banner assertion loosened: on preview pods the flatpak wrapper reports `installed=True` but the underlying binary can be absent, so `version` may legitimately be `None`. Test now asserts payload shape + a non-empty version when present. **All pass.**
+- `test_admin.py` — `/admin/users` returned 500 because two legacy user docs lacked a `user_id` field. `admin.py` now skips such rows with a warning log instead of KeyError-ing. **All pass.**
+- `test_iter132_2_preview.py` — shared test user accumulated 13 real fal.ai gens over prior runs and hit the 13/month cap. Fixture now sets `ai_quota_override: 250` and zeros `ai_usage.count` on the test user before each test. **14/14 pass.**
+- **Full backend suite: 476/476 pass, 0 failed.** Was 435 → +6 files re-enabled.
+
+**Part B — Phase 1 mesh optimization**
+- **Thin-wall detection** in `printability_service._check_thin_walls`. Ray-cast inward normals on a 2000-vertex random sample; flags vertices where wall thickness < 1.2 mm. Severity scales with thin-fraction (MINOR / MAJOR). New issue code `thin_walls` with `fix_action: thicken`.
+- **New service module** `/app/backend/mesh_optimize_service.py`:
+  - `DECIMATE_PRESETS` = `mini` (25 K faces, tabletop mini) / `functional` (12 K, mech parts) / `low_poly` (3 K, faceted art). Each has a `min_faces` floor so tiny meshes aren't destroyed.
+  - `decimate_with_intent(mesh_bytes, preset)` — quadric decimation via `simplify_quadric_decimation(face_count=…)`. Silhouette-preserving fallback to 5% simplification if mesh is already under target.
+  - `add_auto_base(mesh_bytes, shape, thickness_mm, margin_mm)` — cylinder or rectangle base sized to bbox footprint + margin, boolean-unioned via `manifold3d`. Concatenation fallback if union fails.
+- **New endpoints** on `/api/printability`:
+  - `GET /decimate-presets` — auth-gated listing of the 3 presets
+  - `POST /decimate` — multipart STL + preset → decimated STL + `X-Optimize-*` headers
+  - `POST /add-base` — multipart STL + shape/thickness/margin → fused STL + `X-Optimize-*` headers
+- **CORS** — added `expose_headers` list so the browser can read `X-Optimize-*` from the response via fetch.
+- **Deps**: `fast_simplification==0.1.13` added (trimesh backend for `simplify_quadric_decimation`).
+- **Tests**: `/app/backend/tests/test_mesh_optimize.py` — 17/17 tests locking presets, shape validation, thin-wall triggers on 0.5 mm plate, silence on bulky sphere, degenerate-mesh safety, STL round-trip.
+- **Smoke test**: curl'd both endpoints via preview URL — decimate 20 480 → 3 000 faces (85.35% reduction) in ~1s, add-base fused sphere + cylinder → 8 700 faces successfully.
+
+
 - **User request**: Implemented the iter-132 finish-summary enhancement — generate ~$0.001 Flux Schnell reference images so users can pick the best preview BEFORE spending ~$0.16 on the full Hunyuan3D generation.
 - **New backend**: `POST /api/ai/preview/images` (body: `prompt`, `art_style`, `count 1-4`) returns `{urls, count, prompt}`. Fal.ai-only — Meshy BYO users get 409 with an explanation. Not counted against the 3D-generation cap (previews are 150× cheaper).
 - **Extended backend**: `POST /api/ai/generate/image` now accepts EITHER `image_b64+mime_type` (original) OR `image_url` (from a preview). http(s) only; image_url wins when both present. Response includes `provider` field.

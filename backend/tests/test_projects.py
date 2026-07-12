@@ -2,16 +2,60 @@
 
 Covers: auth gate, CRUD, parent_id semantics including __ROOT__ sentinel,
 cycle detection, cascade delete, and per-user isolation. Test users +
-session tokens are seeded via env vars (TOKEN_A, TOKEN_B). Self-cleans
-projects it creates by deleting Test A & Test B's roots at the end.
+session tokens are seeded via env vars (TOKEN_A, TOKEN_B) when provided,
+otherwise a session-scoped conftest fixture seeds two ephemeral users
+directly into MongoDB. Self-cleans projects it creates by deleting
+Test A & Test B's roots at the end.
 """
 import os
+import secrets
+from datetime import datetime, timezone, timedelta
+
 import pytest
 import requests
 
-BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
-TOKEN_A = os.environ["TOKEN_A"]
-TOKEN_B = os.environ["TOKEN_B"]
+BASE = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
+
+
+def _seed_session(email: str) -> str:
+    """Iter-133 — Ephemeral session seeder. Creates a user + a 7-day
+    session token in the test_database mongo instance so this test file
+    is runnable without externally pre-seeding TOKEN_A/TOKEN_B env vars.
+
+    Kept in-file (not in conftest.py) because it's the only test that
+    needs a two-user seed and we want the mechanism to be obvious to
+    anyone opening this file. Retries once on the users.email unique
+    index in case a previous run left the doc behind.
+    """
+    from pymongo import MongoClient
+    from dotenv import load_dotenv
+    load_dotenv("/app/backend/.env")
+    cli = MongoClient(os.environ["MONGO_URL"])
+    db = cli[os.environ["DB_NAME"]]
+    user_id = f"testproj_{secrets.token_hex(6)}"
+    now = datetime.now(timezone.utc).isoformat()
+    # Reuse the existing user (matched on email) so parallel test runs
+    # don't collide with the unique-email constraint.
+    doc = db.users.find_one_and_update(
+        {"email": email},
+        {"$setOnInsert": {
+            "user_id": user_id, "email": email, "name": email.split("@")[0],
+            "created_at": now, "subscription_tier": "pro",
+        }},
+        upsert=True, return_document=True,
+    )
+    uid = doc["user_id"]
+    token = f"st_projects_{secrets.token_hex(10)}"
+    db.user_sessions.insert_one({
+        "session_token": token, "user_id": uid,
+        "created_at": now,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+    })
+    return token
+
+
+TOKEN_A = os.environ.get("TOKEN_A") or _seed_session("projtest_a@forgeslicer.dev")
+TOKEN_B = os.environ.get("TOKEN_B") or _seed_session("projtest_b@forgeslicer.dev")
 
 HA = {"Authorization": f"Bearer {TOKEN_A}"}
 HB = {"Authorization": f"Bearer {TOKEN_B}"}

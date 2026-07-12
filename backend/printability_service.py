@@ -219,6 +219,107 @@ def _check_degenerate(mesh: trimesh.Trimesh) -> list[PrintabilityIssue]:
     return issues
 
 
+def _check_thin_walls(mesh: trimesh.Trimesh, min_thickness_mm: float = 1.2) -> list[PrintabilityIssue]:
+    """Iter-134 — Detect walls thinner than the printer's practical
+    minimum (default 1.2 mm — safe for a 0.4 mm nozzle at 3-perimeter
+    walls). Thin walls print as fragile ribbons that peel or split.
+
+    Method (fast + robust):
+      1. Sample ``N`` vertices (or all if <2000) — full-mesh proximity
+         on a 200K-tri AI mesh would be > 30s, and this is called at
+         upload time in the printability report.
+      2. For each sample vertex, shoot a ray INWARDS along ``-normal``
+         and take the distance to the far side. This is the local
+         "wall thickness" at that point.
+      3. Count vertices where thickness < ``min_thickness_mm``.
+
+    Trade-offs:
+      - Uses ray-cast instead of trimesh.proximity.closest_point,
+        which is ~10× faster on typical meshes AND correctly measures
+        wall-thickness (closest_point can pick a nearby surface at the
+        same wall, not the opposite wall).
+      - Skips normals that aren't well-defined (zero-length).
+      - Bails silently on the odd empty-ray-cast so the whole report
+        never dies over one weird mesh.
+    """
+    tri = int(len(mesh.faces))
+    if tri < 12:
+        return []  # microscopic mesh — no meaningful thickness call
+
+    try:
+        vertices = mesh.vertices
+        normals = mesh.vertex_normals
+    except Exception:  # noqa: BLE001
+        return []
+    if len(vertices) == 0 or len(normals) != len(vertices):
+        return []
+
+    # Sample down for speed. Keep the sample deterministic for tests.
+    max_samples = 2000
+    if len(vertices) > max_samples:
+        rng = np.random.default_rng(seed=42)
+        idx = rng.choice(len(vertices), size=max_samples, replace=False)
+        sample_v = vertices[idx]
+        sample_n = normals[idx]
+    else:
+        sample_v = vertices
+        sample_n = normals
+
+    # Push origins ε inside so the ray doesn't immediately hit itself.
+    eps = 1e-4
+    origins = sample_v - eps * sample_n
+    directions = -sample_n  # inward
+
+    try:
+        locations, index_ray, _ = mesh.ray.intersects_location(
+            ray_origins=origins,
+            ray_directions=directions,
+            multiple_hits=False,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    if len(locations) == 0:
+        return []
+
+    # Thickness = distance from origin to first opposite-side hit.
+    hit_origins = origins[index_ray]
+    thickness = np.linalg.norm(locations - hit_origins, axis=1)
+    # Ignore near-zero hits (self-intersections we didn't escape) — they
+    # would incorrectly report thickness=0 everywhere.
+    valid = thickness > 0.01
+    if not valid.any():
+        return []
+    thin_mask = valid & (thickness < min_thickness_mm)
+    thin_count = int(thin_mask.sum())
+    sampled = int(valid.sum())
+    if thin_count == 0:
+        return []
+
+    thin_pct = 100.0 * thin_count / max(1, sampled)
+    thinnest = float(thickness[thin_mask].min())
+    # Severity scales with the fraction of the mesh that is thin.
+    if thin_pct > 25:
+        sev, weight = SEV_MAJOR, 15
+    elif thin_pct > 8:
+        sev, weight = SEV_MAJOR, 10
+    else:
+        sev, weight = SEV_MINOR, 5
+
+    return [PrintabilityIssue(
+        code="thin_walls",
+        severity=sev,
+        message=f"{thin_count} thin-wall sample(s) below {min_thickness_mm:.1f} mm ({thin_pct:.1f}% of surface)",
+        detail=(
+            f"Thinnest wall detected: {thinnest:.2f} mm. Walls below "
+            f"{min_thickness_mm:.1f} mm print as fragile ribbons on a 0.4 mm nozzle. "
+            f"Use the Thicken tool to extrude these regions before slicing."
+        ),
+        count=thin_count,
+        weight=weight,
+        fix_action=FIX_THICKEN,
+    )]
+
+
 def _check_flat_base(mesh: trimesh.Trimesh) -> list[PrintabilityIssue]:
     """Does the mesh have a stable footprint on Z=0? Detected as: is there
     at least a `bbox.width * bbox.depth * 0.02` (2%) planar contact area
@@ -331,6 +432,7 @@ def analyze_trimesh(mesh: trimesh.Trimesh) -> PrintabilityReport:
     issues += _check_fragments(mesh)
     issues += _check_degenerate(mesh)
     issues += _check_triangle_count(mesh)
+    issues += _check_thin_walls(mesh)
     issues += _check_flat_base(mesh)
 
     # Metrics

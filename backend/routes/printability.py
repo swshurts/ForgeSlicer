@@ -14,8 +14,10 @@ import logging
 from typing import Callable, Awaitable
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import Response
 
 import printability_service
+import mesh_optimize_service
 
 logger = logging.getLogger(__name__)
 
@@ -77,5 +79,150 @@ def build_printability_router(
             raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
         return printability_service.report_to_dict(report)
+
+    # ------------------- Iter-134 mesh-fix endpoints ---------------------
+    # These consume the same upload shape as /analyze (multipart file +
+    # optional file_type form field) but stream a decimated / based
+    # STL back as the response body. Auth-gated identical to analyze.
+
+    def _read_upload_and_type(file: UploadFile, file_type: str | None) -> tuple[bytes, str]:
+        ft = (file_type or "").strip().lower().lstrip(".")
+        if not ft and file.filename:
+            _, _, ext = file.filename.rpartition(".")
+            ft = ext.lower()
+        if ft not in ALLOWED_EXTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{ft or 'unknown'}'. Accepted: {', '.join(sorted(ALLOWED_EXTS))}.",
+            )
+        return ft, ft  # placeholder — real read happens on the coroutine
+
+    @router.post("/decimate")
+    async def decimate(
+        request: Request,
+        file: UploadFile = File(...),
+        preset: str = Form(...),
+        file_type: str | None = Form(default=None),
+    ):
+        """Decimate a mesh to a print-intent preset. See
+        ``mesh_optimize_service.DECIMATE_PRESETS`` for the tuning
+        matrix. Returns a binary STL alongside before/after metrics
+        in JSON-encoded ``X-Optimize-Meta`` and ``X-Optimize-Faces-*``
+        headers — the frontend uses those to update the report card
+        without a second request."""
+        await get_current_user(request)
+        ft = (file_type or "").strip().lower().lstrip(".")
+        if not ft and file.filename:
+            _, _, ext = file.filename.rpartition(".")
+            ft = ext.lower()
+        if ft not in ALLOWED_EXTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{ft or 'unknown'}'. Accepted: {', '.join(sorted(ALLOWED_EXTS))}.",
+            )
+        preset_key = (preset or "").strip().lower()
+        if preset_key not in mesh_optimize_service.DECIMATE_PRESETS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown preset {preset_key!r}. Valid: {', '.join(mesh_optimize_service.DECIMATE_PRESETS)}.",
+            )
+        content = await file.read()
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"Mesh exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB.")
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty file.")
+        try:
+            result = mesh_optimize_service.decimate_with_intent(content, preset_key, file_type=ft)
+        except ValueError as ve:
+            raise HTTPException(status_code=422, detail=str(ve))
+        except Exception as e:  # noqa: BLE001
+            logger.exception("decimate crashed on %s (preset=%s)", file.filename, preset_key)
+            raise HTTPException(status_code=500, detail=f"Decimation failed: {e}")
+
+        return Response(
+            content=result["stl_bytes"],
+            media_type="model/stl",
+            headers={
+                "X-Optimize-Preset": result["preset"],
+                "X-Optimize-Preset-Label": result["preset_label"],
+                "X-Optimize-Faces-Before": str(result["before"]["faces"]),
+                "X-Optimize-Faces-After": str(result["after"]["faces"]),
+                "X-Optimize-Reduction-Pct": str(result["reduction_pct"]),
+                "Content-Disposition": f'attachment; filename="decimated_{preset_key}.stl"',
+            },
+        )
+
+    @router.post("/add-base")
+    async def add_base(
+        request: Request,
+        file: UploadFile = File(...),
+        shape: str = Form("cylinder"),
+        thickness_mm: float = Form(3.0),
+        margin_mm: float = Form(2.0),
+        file_type: str | None = Form(default=None),
+    ):
+        """Fuse a printable pad under an unstable AI mesh. See
+        ``mesh_optimize_service.add_auto_base`` for parameter meanings
+        and units. Response headers carry the metadata so the report
+        card can update in-place."""
+        await get_current_user(request)
+        ft = (file_type or "").strip().lower().lstrip(".")
+        if not ft and file.filename:
+            _, _, ext = file.filename.rpartition(".")
+            ft = ext.lower()
+        if ft not in ALLOWED_EXTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{ft or 'unknown'}'. Accepted: {', '.join(sorted(ALLOWED_EXTS))}.",
+            )
+        shape_key = (shape or "").strip().lower()
+        if shape_key not in ("cylinder", "rectangle"):
+            raise HTTPException(status_code=400, detail=f"shape must be 'cylinder' or 'rectangle', got {shape_key!r}")
+        content = await file.read()
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"Mesh exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB.")
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty file.")
+        try:
+            result = mesh_optimize_service.add_auto_base(
+                content,
+                shape=shape_key,
+                thickness_mm=thickness_mm,
+                margin_mm=margin_mm,
+                file_type=ft,
+            )
+        except ValueError as ve:
+            raise HTTPException(status_code=422, detail=str(ve))
+        except Exception as e:  # noqa: BLE001
+            logger.exception("add_base crashed on %s (shape=%s)", file.filename, shape_key)
+            raise HTTPException(status_code=500, detail=f"Add-base failed: {e}")
+
+        return Response(
+            content=result["stl_bytes"],
+            media_type="model/stl",
+            headers={
+                "X-Optimize-Shape": result["shape"],
+                "X-Optimize-Thickness-Mm": str(result["thickness_mm"]),
+                "X-Optimize-Margin-Mm": str(result["margin_mm"]),
+                "X-Optimize-Base-Footprint-Mm2": str(result["base_footprint_mm2"]),
+                "X-Optimize-Faces-Before": str(result["before_faces"]),
+                "X-Optimize-Faces-After": str(result["after_faces"]),
+                "Content-Disposition": f'attachment; filename="based_{shape_key}.stl"',
+            },
+        )
+
+    @router.get("/decimate-presets")
+    async def decimate_presets(request: Request):
+        """List available decimate presets so the UI can render them
+        without hardcoding the tuning matrix. Auth-gated to match the
+        rest of the router — anonymous access isn't a leak but it's
+        also not useful."""
+        await get_current_user(request)
+        return {
+            "presets": [
+                {"key": k, "label": v["label"], "target_faces": v["target_faces"], "min_faces": v["min_faces"]}
+                for k, v in mesh_optimize_service.DECIMATE_PRESETS.items()
+            ],
+        }
 
     return router

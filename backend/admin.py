@@ -194,12 +194,21 @@ def _register_user_admin_routes(router: APIRouter, *, db, require_admin, require
         month_key = f"{_now().year:04d}-{_now().month:02d}"
         result = []
         for u in users:
+            # Iter-133 — Guard against legacy user docs that were written
+            # by very old auth flows and never had `user_id` populated.
+            # Two such rows currently exist in the preview DB; without
+            # this guard the entire /admin/users listing 500s on the
+            # first legacy row and the admin dashboard is unusable.
+            uid = u.get("user_id")
+            if not uid:
+                logger.warning("admin/users: skipping legacy doc without user_id (email=%s)", u.get("email"))
+                continue
             usage = await db.ai_usage.find_one(
-                {"user_id": u["user_id"], "month_key": month_key},
+                {"user_id": uid, "month_key": month_key},
                 {"_id": 0, "count": 1},
             )
             result.append({
-                "user_id": u["user_id"],
+                "user_id": uid,
                 "email": u.get("email", ""),
                 "name": u.get("name", ""),
                 "auth_methods": u.get("auth_methods", []),

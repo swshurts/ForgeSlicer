@@ -2504,6 +2504,18 @@ app.add_middleware(
     ),
     allow_methods=["*"],
     allow_headers=["*"],
+    # Iter-134 — Custom X-Optimize-* headers on /api/printability/{decimate,add-base}
+    # responses must be explicitly whitelisted for the browser to expose
+    # them via fetch().headers.get(). Without this the frontend can't
+    # read the before/after face counts + reduction% + preset label
+    # that we ship alongside the STL binary.
+    expose_headers=[
+        "X-Optimize-Preset", "X-Optimize-Preset-Label",
+        "X-Optimize-Faces-Before", "X-Optimize-Faces-After",
+        "X-Optimize-Reduction-Pct",
+        "X-Optimize-Shape", "X-Optimize-Thickness-Mm",
+        "X-Optimize-Margin-Mm", "X-Optimize-Base-Footprint-Mm2",
+    ],
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
