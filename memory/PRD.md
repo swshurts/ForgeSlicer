@@ -33,7 +33,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-134, 2026-07-12) — CI Green + Phase 1 AI Mesh Optimization (thin-wall + decimate + auto-base)
+### Recently completed (iter-135, 2026-07-12) — Frontend Fix buttons wired + Auto-Fix orchestrator + admin/auth refactor
+**Part A — Printability fix UI (P1)**
+- **New client** `/app/frontend/src/lib/meshOptimizeApi.js` — `decimateImportedObject(obj, preset)` and `addBaseToImportedObject(obj, {shape, thicknessMm, marginMm})`. Exports the object's geometry to binary STL, POSTs multipart to the iter-134 endpoints, parses the STL response back to a `BufferGeometry` update, and returns stats parsed from `X-Optimize-*` headers.
+- **`PrintabilityReportPanel.jsx`** — `handleFix` now dispatches `decimate_with_intent` → real `runDecimate("functional")` and `add_base` → real `runAddBase("cylinder", 3.0, 2.0)`. Same pushHistory-first pattern as `runAutoClean` (Ctrl+Z reverts). Skips non-imported primitives with a helpful toast.
+- **Auto-Fix orchestrator** — new orange-gradient button at the top of the report card (`data-testid="printability-auto-fix"`). Runs the safe fixers in sequence (auto_clean → decimate → add-base) based on which `fix_action` codes appear in the current report. Sequential (`await step.run()`) so later steps see fresh geometry.
+- **Testing: 100% pass** — 77/77 backend (64 existing + 13 new iter-135 targeted). Frontend Auto-Fix flow verified end-to-end via Playwright (real STL injection → click → toast sequence → mesh mutated → report re-ran).
+
+**Part B — admin.py + auth_local.py refactor (P2)**
+- **`admin.py`** `_register_user_admin_routes` (~145 LOC) split into 3 focused sub-registrars: `_register_user_list_routes` (read), `_register_user_privilege_routes` (promote/quota/contributor), `_register_user_safety_routes` (ban/session-kill). New `_admin_user_row(u, usage)` helper for row serialization.
+- **`admin.py`** `_register_pricing_routes` extracted `_serialize_pricing_row(db, pid, pkg)` and `_build_pricing_override(pid, p, catalog)` helpers. `get_pricing` becomes a one-line dict-comprehension.
+- **`auth_local.py`** `_register_password_routes.register` extracted `_attach_password_to_google_account(existing, req)` (auth-method merge) and `_create_password_user(req)` (fresh user) helpers. `register` body is now a clean happy-path read.
+- Behavior-preserving. 57/57 admin + auth tests continue to pass; testing agent verified endpoint response shapes are byte-identical.
+
+
 
 **Part A — Pre-existing test failures fixed (P1 done)**
 - `test_projects.py` — hard `os.environ["TOKEN_A"]` requirement replaced with an in-file `_seed_session` helper that upserts ephemeral users + 7-day session tokens directly into Mongo. Test now runnable both in CI and locally without external prep. **8/8 pass.**
