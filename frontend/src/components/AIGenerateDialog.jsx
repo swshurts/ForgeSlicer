@@ -504,28 +504,53 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
               </button>
             )}
           </div>
-          {/* Third-party attribution — sits right under the title so
-              every user opening this dialog learns the relationship.
-              Meshy.ai handles the generation; ForgeSlicer hands the
-              prompt off, fetches the result, and lands the mesh on
-              the plate. Tiny font keeps the chrome compact but is
-              still ≥10 px for legibility. */}
-          <div
-            className="mt-0.5 text-[10px] text-slate-400 flex items-center gap-1 pl-6"
-            data-testid="ai-generate-meshy-attribution"
-          >
-            Powered by{" "}
-            <a
-              href="https://www.meshy.ai"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
-            >
-              Meshy.ai
-            </a>
-            <span className="text-slate-500">·</span>
-            <span>third-party AI design tool integrated into ForgeSlicer</span>
-          </div>
+          {/* Iter-132 — Provider attribution reflects the ACTIVE provider
+              on `/api/ai/usage.active_provider`. Default: fal.ai (Hunyuan3D
+              v2 Pro). BYO Meshy key holders see the Meshy attribution
+              instead. Kept the label small (10px) so it doesn't crowd
+              the primary dialog title, and both provider links get a
+              proper rel="noopener noreferrer" for security. */}
+          {(() => {
+            const provider = usage?.active_provider || "fal";
+            if (provider === "meshy") {
+              return (
+                <div
+                  className="mt-0.5 text-[10px] text-slate-400 flex items-center gap-1 pl-6"
+                  data-testid="ai-generate-provider-attribution"
+                >
+                  Powered by{" "}
+                  <a
+                    href="https://www.meshy.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+                  >
+                    Meshy.ai
+                  </a>
+                  <span className="text-slate-500">·</span>
+                  <span>using your personal API key</span>
+                </div>
+              );
+            }
+            return (
+              <div
+                className="mt-0.5 text-[10px] text-slate-400 flex items-center gap-1 pl-6"
+                data-testid="ai-generate-provider-attribution"
+              >
+                Powered by{" "}
+                <a
+                  href="https://fal.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
+                >
+                  fal.ai · Hunyuan3D v2
+                </a>
+                <span className="text-slate-500">·</span>
+                <span>3D generation integrated into ForgeSlicer</span>
+              </div>
+            );
+          })()}
         </div>
 
         <div className="p-5 space-y-3">

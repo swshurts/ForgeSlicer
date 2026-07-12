@@ -17,6 +17,7 @@ import httpx
 
 from email_service import send_contributor_celebration
 import meshy_service
+import fal_service
 import email_service
 import auth_local
 import billing
@@ -811,6 +812,38 @@ class AITextRequest(BaseModel):
     art_style: str = Field("realistic", max_length=32)  # realistic | sculpture | low-poly
 
 
+# Iter-132 — AI provider selection. fal.ai (Hunyuan3D v2 Pro) is the
+# DEFAULT paid-tier provider (funded by us / counts against monthly cap);
+# Meshy is kept as an OPTIONAL "bring-your-own-key" premium path for
+# users who paid Meshy directly. Selection order:
+#   1. If user has a personal Meshy key → Meshy (BYO — no cap counter).
+#   2. Else if FAL_KEY configured → fal.ai (default — cap counter applies).
+#   3. Else if platform MESHY_API_KEY configured → Meshy (legacy fallback).
+#   4. Else → 503.
+#
+# Returned tuple: (provider_name, module, personal_meshy_key_or_None).
+# The route code stores the provider name on the ai_jobs doc so that
+# every subsequent poll / mesh download hits the correct service.
+async def _pick_ai_provider(user: dict) -> tuple[str, Any, Optional[str]]:
+    personal_meshy_key = await resolve_user_meshy_key(user)
+    if personal_meshy_key:
+        return ("meshy", meshy_service, personal_meshy_key)
+    if fal_service.is_configured():
+        return ("fal", fal_service, None)
+    if meshy_service.is_configured():
+        return ("meshy", meshy_service, None)
+    raise HTTPException(status_code=503, detail="AI generation not configured")
+
+
+def _provider_module(name: str):
+    """Given a provider name stored on an ai_jobs doc, return the
+    matching service module. Defaults to Meshy for legacy jobs that
+    were created before iter-132 introduced the provider field."""
+    if name == "fal":
+        return fal_service
+    return meshy_service
+
+
 @api_router.get("/ai/usage")
 async def ai_usage_for_user(request: Request):
     """Tells the frontend how many gens the user has used this month + their cap."""
@@ -819,6 +852,15 @@ async def ai_usage_for_user(request: Request):
     cur = await db.ai_usage.find_one({"user_id": user["user_id"], "month_key": _month_key()})
     used = (cur or {}).get("count", 0)
     has_personal_key = bool(user.get("meshy_api_key_enc"))
+    # Iter-132 — Active provider signals to the UI which service will
+    # be used for the next generation. Frontend shows "Powered by
+    # fal.ai Hunyuan3D" (default) vs "Using your Meshy key" (BYO).
+    if has_personal_key:
+        active_provider = "meshy"
+    elif fal_service.is_configured():
+        active_provider = "fal"
+    else:
+        active_provider = "meshy"  # legacy fallback
     return {
         "used": used,
         "cap": cap,
@@ -828,22 +870,33 @@ async def ai_usage_for_user(request: Request):
         # When True, the frontend shows "Unlimited (your Meshy key)" instead
         # of the used/cap counter, and never renders the "cap reached" toast.
         "has_personal_key": has_personal_key,
+        "active_provider": active_provider,
     }
 
 
 @api_router.post("/ai/generate/text")
 async def ai_generate_text(req: AITextRequest, request: Request):
     user = await get_current_user(request)
-    personal_key = await resolve_user_meshy_key(user)
-    if not personal_key and not meshy_service.is_configured():
-        raise HTTPException(status_code=503, detail="AI generation not configured")
-    # BYO key holders bypass the monthly quota — they pay Meshy directly.
+    provider, svc, personal_key = await _pick_ai_provider(user)
+    # BYO Meshy key holders bypass the monthly quota — they pay Meshy directly.
     # We still record the job in ai_jobs (for stats + status polling) but
-    # skip the ai_usage increment so their cap stays untouched.
+    # skip the ai_usage increment so their cap stays untouched. Fal.ai
+    # is platform-funded so it always counts against the cap.
     if not personal_key:
         await _ai_increment_or_raise(user)
     try:
-        meshy_task_id = await meshy_service.create_text_to_3d(req.prompt, req.art_style, api_key=personal_key)
+        task_id = await svc.create_text_to_3d(req.prompt, req.art_style, api_key=personal_key)
+    except fal_service.FalHTTPError as fe:
+        # fal.ai's typed HTTP error — most useful case is "Exhausted
+        # balance. Top up your balance at fal.ai/dashboard/billing."
+        # We surface fal.ai's own error text so admins know exactly
+        # what to do without digging in server logs.
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
+        raise HTTPException(status_code=502, detail=f"fal.ai: {fe}")
     except httpx.HTTPStatusError as e:
         if not personal_key:
             # Refund the usage counter — they didn't get a generation.
@@ -851,8 +904,8 @@ async def ai_generate_text(req: AITextRequest, request: Request):
                 {"user_id": user["user_id"], "month_key": _month_key()},
                 {"$inc": {"count": -1}},
             )
-        # Try to surface Meshy's own error message if it fits — it's
-        # usually more actionable than "Meshy submission failed: 500".
+        # Try to surface the provider's own error message if it fits — it's
+        # usually more actionable than "submission failed: 500".
         detail_extra = ""
         try:
             body = e.response.json() if e.response is not None else {}
@@ -863,24 +916,34 @@ async def ai_generate_text(req: AITextRequest, request: Request):
             pass
         raise HTTPException(
             status_code=502,
-            detail=f"Meshy submission failed: {e.response.status_code}{detail_extra}",
+            detail=f"{provider} submission failed: {e.response.status_code}{detail_extra}",
         )
     except (httpx.TimeoutException, httpx.RequestError) as e:
-        # iter-127.1 — Previously any Meshy network issue (timeout,
-        # connection reset) bubbled as a bare 500 and Cloudflare's
-        # gateway showed users its "origin returned invalid response"
-        # message. Now we translate cleanly to 504 with an actionable
-        # hint — and still refund the quota.
+        # iter-127.1 — Previously any network issue (timeout, connection
+        # reset) bubbled as a bare 500 and Cloudflare's gateway showed
+        # users its "origin returned invalid response" message. Now we
+        # translate cleanly to 504 with an actionable hint — and still
+        # refund the quota.
         if not personal_key:
             await db.ai_usage.update_one(
                 {"user_id": user["user_id"], "month_key": _month_key()},
                 {"$inc": {"count": -1}},
             )
-        logger.warning("Meshy text-to-3d network error: %s", e)
+        logger.warning("%s text-to-3d network error: %s", provider, e)
         raise HTTPException(
             status_code=504,
-            detail="Meshy took too long to respond. Please try again in a moment.",
+            detail=f"{provider} took too long to respond. Please try again in a moment.",
         )
+    except RuntimeError as e:
+        # fal_service raises RuntimeError if the reference-image step
+        # returns nothing usable. Refund + surface as 502 so the client
+        # can retry cleanly.
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
+        raise HTTPException(status_code=502, detail=f"{provider} pipeline error: {e}")
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db.ai_jobs.insert_one({
@@ -889,7 +952,11 @@ async def ai_generate_text(req: AITextRequest, request: Request):
         "kind": "text",
         "prompt": req.prompt,
         "art_style": req.art_style,
-        "meshy_task_id": meshy_task_id,
+        "provider": provider,
+        # Kept keyed as `meshy_task_id` for schema back-compat with legacy
+        # jobs (also with existing fixtures + a few admin views). This is
+        # the provider-agnostic task/request id.
+        "meshy_task_id": task_id,
         "status": "PENDING",
         "progress": 0,
         "model_url": None,
@@ -897,15 +964,13 @@ async def ai_generate_text(req: AITextRequest, request: Request):
         "created_at": now,
         "updated_at": now,
     })
-    return {"job_id": job_id, "status": "PENDING"}
+    return {"job_id": job_id, "status": "PENDING", "provider": provider}
 
 
 @api_router.post("/ai/generate/image")
 async def ai_generate_image(request: Request):
     user = await get_current_user(request)
-    personal_key = await resolve_user_meshy_key(user)
-    if not personal_key and not meshy_service.is_configured():
-        raise HTTPException(status_code=503, detail="AI generation not configured")
+    provider, svc, personal_key = await _pick_ai_provider(user)
     # Body must be JSON: {image_b64, mime_type}. We accept base64 from the frontend
     # rather than multipart because it's a tiny payload (~1MB) and keeps the
     # backend symmetric with everywhere else we exchange image data.
@@ -920,21 +985,29 @@ async def ai_generate_image(request: Request):
     if not personal_key:
         await _ai_increment_or_raise(user)
     try:
-        meshy_task_id = await meshy_service.create_image_to_3d(data_url, api_key=personal_key)
+        task_id = await svc.create_image_to_3d(data_url, api_key=personal_key)
+    except fal_service.FalHTTPError as fe:
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
+        raise HTTPException(status_code=502, detail=f"fal.ai: {fe}")
     except httpx.HTTPStatusError as e:
         if not personal_key:
             await db.ai_usage.update_one(
                 {"user_id": user["user_id"], "month_key": _month_key()},
                 {"$inc": {"count": -1}},
             )
-        raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
+        raise HTTPException(status_code=502, detail=f"{provider} submission failed: {e.response.status_code}")
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db.ai_jobs.insert_one({
         "job_id": job_id,
         "user_id": user["user_id"],
         "kind": "image",
-        "meshy_task_id": meshy_task_id,
+        "provider": provider,
+        "meshy_task_id": task_id,
         "status": "PENDING",
         "progress": 0,
         "model_url": None,
@@ -948,14 +1021,13 @@ async def ai_generate_image(request: Request):
 @api_router.post("/ai/generate/multi-image")
 async def ai_generate_multi_image(request: Request):
     """Multi-view image-to-3D — fuses 2-4 reference photos (top/front/side/etc)
-    into a single mesh via Meshy's multi-image endpoint. The rest of the
-    job lifecycle (polling, mesh download) reuses the existing /ai/jobs/*
-    handlers with kind='multi_image'.
+    into a single mesh. Meshy fuses all views natively; fal.ai's
+    Hunyuan3D v2 uses only the first view (see `fal_service` docstring).
+    The rest of the job lifecycle (polling, mesh download) reuses the
+    existing /ai/jobs/* handlers with kind='multi_image'.
     """
     user = await get_current_user(request)
-    personal_key = await resolve_user_meshy_key(user)
-    if not personal_key and not meshy_service.is_configured():
-        raise HTTPException(status_code=503, detail="AI generation not configured")
+    provider, svc, personal_key = await _pick_ai_provider(user)
     body = await request.json()
     images = body.get("images") or []
     if not isinstance(images, list) or not (2 <= len(images) <= 4):
@@ -972,14 +1044,21 @@ async def ai_generate_multi_image(request: Request):
     if not personal_key:
         await _ai_increment_or_raise(user)
     try:
-        meshy_task_id = await meshy_service.create_multi_image_to_3d(data_urls, api_key=personal_key)
+        task_id = await svc.create_multi_image_to_3d(data_urls, api_key=personal_key)
+    except fal_service.FalHTTPError as fe:
+        if not personal_key:
+            await db.ai_usage.update_one(
+                {"user_id": user["user_id"], "month_key": _month_key()},
+                {"$inc": {"count": -1}},
+            )
+        raise HTTPException(status_code=502, detail=f"fal.ai: {fe}")
     except httpx.HTTPStatusError as e:
         if not personal_key:
             await db.ai_usage.update_one(
                 {"user_id": user["user_id"], "month_key": _month_key()},
                 {"$inc": {"count": -1}},
             )
-        raise HTTPException(status_code=502, detail=f"Meshy submission failed: {e.response.status_code}")
+        raise HTTPException(status_code=502, detail=f"{provider} submission failed: {e.response.status_code}")
     except ValueError as ve:
         if not personal_key:
             await db.ai_usage.update_one(
@@ -994,7 +1073,8 @@ async def ai_generate_multi_image(request: Request):
         "user_id": user["user_id"],
         "kind": "multi_image",
         "view_count": len(data_urls),
-        "meshy_task_id": meshy_task_id,
+        "provider": provider,
+        "meshy_task_id": task_id,
         "status": "PENDING",
         "progress": 0,
         "model_url": None,
@@ -1002,13 +1082,13 @@ async def ai_generate_multi_image(request: Request):
         "created_at": now,
         "updated_at": now,
     })
-    return {"job_id": job_id, "status": "PENDING"}
+    return {"job_id": job_id, "status": "PENDING", "provider": provider}
 
 
 @api_router.get("/ai/jobs/{job_id}")
 async def ai_job_status(job_id: str, request: Request):
-    """Pull the latest status from Meshy; cache result locally so repeated
-    polls don't smash the upstream API."""
+    """Pull the latest status from the job's provider; cache result
+    locally so repeated polls don't smash the upstream API."""
     user = await get_current_user(request)
     job = await db.ai_jobs.find_one({"job_id": job_id, "user_id": user["user_id"]}, {"_id": 0})
     if not job:
@@ -1016,14 +1096,23 @@ async def ai_job_status(job_id: str, request: Request):
     # If we already have a terminal SUCCEEDED/FAILED status, return cached.
     if job["status"] in ("SUCCEEDED", "FAILED"):
         return job
+    # Iter-132 — Route to the provider that ORIGINALLY submitted this
+    # job. Legacy pre-iter-132 jobs have no `provider` field; default to
+    # Meshy so those keep polling correctly.
+    provider = job.get("provider", "meshy")
+    svc = _provider_module(provider)
     try:
         # Poll with the same key that submitted the task so BYO-key
-        # users can see their generation's status. Meshy tasks are
-        # namespaced by the API key that created them.
-        poll_key = await resolve_user_meshy_key(user) if job.get("used_personal_key") else None
-        task = await meshy_service.get_task(job["meshy_task_id"], job["kind"], api_key=poll_key)
+        # users can see their generation's status (Meshy tasks are
+        # namespaced by API key). Fal.ai jobs are platform-funded so
+        # the poll uses the server FAL_KEY.
+        poll_key = (await resolve_user_meshy_key(user)
+                    if provider == "meshy" and job.get("used_personal_key") else None)
+        task = await svc.get_task(job["meshy_task_id"], job["kind"], api_key=poll_key)
+    except fal_service.FalHTTPError as fe:
+        raise HTTPException(status_code=502, detail=f"fal.ai poll: {fe}")
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Meshy poll failed: {e.response.status_code}")
+        raise HTTPException(status_code=502, detail=f"{provider} poll failed: {e.response.status_code}")
     status = task.get("status", "PENDING")
     progress = task.get("progress", 0)
     update: dict = {
@@ -1032,9 +1121,13 @@ async def ai_job_status(job_id: str, request: Request):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if status == "SUCCEEDED":
-        update["model_url"] = meshy_service.pick_model_url(task)
+        update["model_url"] = svc.pick_model_url(task)
     elif status == "FAILED":
         update["error"] = (task.get("task_error") or {}).get("message", "unknown")
+    # Text-to-3D reference image (fal.ai only) — makes the frontend
+    # able to preview the intermediate Flux image while Hunyuan3D runs.
+    if task.get("reference_image_url"):
+        update["reference_image_url"] = task["reference_image_url"]
     await db.ai_jobs.update_one({"job_id": job_id}, {"$set": update})
     job.update(update)
     return job
@@ -1050,8 +1143,10 @@ async def ai_job_mesh(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Job not found")
     if job["status"] != "SUCCEEDED" or not job.get("model_url"):
         raise HTTPException(status_code=409, detail=f"Job not ready (status={job['status']})")
+    provider = job.get("provider", "meshy")
+    svc = _provider_module(provider)
     try:
-        data = await meshy_service.download_mesh(job["model_url"])
+        data = await svc.download_mesh(job["model_url"])
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=502, detail=f"Mesh download failed: {e.response.status_code}")
     # Filename hint based on the URL's extension. Strip any query string
