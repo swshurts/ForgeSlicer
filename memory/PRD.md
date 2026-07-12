@@ -33,7 +33,21 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-132, 2026-07-12) — Default 3D AI provider swapped: Meshy → fal.ai Hunyuan3D v2 Pro (BYO Meshy preserved)
+### Recently completed (iter-132.2, 2026-07-13) — Preview images before committing to 3D (fal.ai only)
+- **User request**: Implemented the iter-132 finish-summary enhancement — generate ~$0.001 Flux Schnell reference images so users can pick the best preview BEFORE spending ~$0.16 on the full Hunyuan3D generation.
+- **New backend**: `POST /api/ai/preview/images` (body: `prompt`, `art_style`, `count 1-4`) returns `{urls, count, prompt}`. Fal.ai-only — Meshy BYO users get 409 with an explanation. Not counted against the 3D-generation cap (previews are 150× cheaper).
+- **Extended backend**: `POST /api/ai/generate/image` now accepts EITHER `image_b64+mime_type` (original) OR `image_url` (from a preview). http(s) only; image_url wins when both present. Response includes `provider` field.
+- **New frontend UX** in `AIGenerateDialog.jsx` (text mode):
+  - "Preview images first" button (cyan) below the prompt (fal.ai users only)
+  - 4-thumbnail grid appears once previews load; click to select (cyan ring + "SELECTED" badge)
+  - Primary CTA switches from "Generate" (fuchsia, direct text-to-3D) to "Generate 3D from preview" (cyan, commits selected URL to Hunyuan3D)
+  - "Regenerate previews" & "Clear" secondary actions
+  - Prompt edits auto-clear the preview grid so stale thumbnails can't mislead
+  - Preview state resets on dialog close
+- **New service function**: `fal_service.generate_preview_images(prompt, num_images)` — Flux Schnell batch mode (max 4 images).
+- **Testing (iter-132.2): 100% pass** — 14/14 backend integration tests + 10/10 frontend UX assertions. Zero bugs, zero regressions. Real Flux Schnell calls succeed (~3-8s for 4-image batch).
+
+
 - **User decision**: Chose Hunyuan3D **Pro** (`fal-ai/hunyuan3d/v2`, ~$0.16/gen) over Turbo for higher-fidelity geometry. Text-to-3D uses a 2-step pipeline: `fal-ai/flux/schnell` → Hunyuan3D v2.
 - **Selection order** (in `_pick_ai_provider(user)`):
   1. User has a personal Meshy key (BYO) → **Meshy** (premium, no cap counter)
