@@ -146,3 +146,31 @@ export async function addBaseToImportedObject(obj, { shape = "cylinder", thickne
     },
   };
 }
+
+/**
+ * Run /api/printability/thicken-walls on an imported object.
+ *   obj       — imported scene object
+ *   offsetMm  — Minkowski-sum ball radius (mm). 0.5 → +1.0 mm total wall
+ *              thickness (both sides).
+ *
+ * Returns:
+ *   { update, stats: { offsetMm, facesBefore, facesAfter, preDecimated } }
+ */
+export async function thickenWallsImportedObject(obj, { offsetMm = 0.5 } = {}) {
+  const stl = _objToStlBlob(obj);
+  const fd = new FormData();
+  fd.append("file", stl, "input.stl");
+  fd.append("offset_mm", String(offsetMm));
+  fd.append("file_type", "stl");
+  const { bytes, headers } = await _postMultipart(`${API}/printability/thicken-walls`, fd);
+  const parsed = await _stlToGeometryUpdate(bytes);
+  return {
+    update: parsed.update,
+    stats: {
+      offsetMm: Number(headers.get("X-Optimize-Offset-Mm")) || offsetMm,
+      facesBefore: Number(headers.get("X-Optimize-Faces-Before")) || 0,
+      facesAfter: Number(headers.get("X-Optimize-Faces-After")) || parsed.faces,
+      preDecimated: headers.get("X-Optimize-Pre-Decimated") === "1",
+    },
+  };
+}

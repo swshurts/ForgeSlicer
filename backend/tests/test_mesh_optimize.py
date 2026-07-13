@@ -139,3 +139,50 @@ class TestThinWallDetector:
         mesh = trimesh.Trimesh(vertices=v, faces=f)
         issues = printability_service._check_thin_walls(mesh)
         assert issues == []
+
+
+class TestThickenWalls:
+    """Iter-137 — Minkowski-sum wall thickening. Verifies:
+      * bounding box grows by ~2·offset on each axis
+      * face count is non-trivial and STL parses back cleanly
+      * the "already-thick" mesh no longer trips the thin-wall
+        detector after thickening
+      * bad offsets are rejected up-front
+    """
+
+    def test_offset_grows_bbox(self, thin_plate_stl):
+        # thin_plate is 20 × 20 × 0.5 mm — after +0.5 mm offset all faces
+        # should sit outside by ~0.5 mm, so bbox size grows by ~1 mm on
+        # every axis.
+        out = mesh_optimize_service.thicken_walls(thin_plate_stl, offset_mm=0.5)
+        assert out["offset_mm"] == pytest.approx(0.5)
+        reloaded = trimesh.load(io.BytesIO(out["stl_bytes"]), file_type="stl", force="mesh")
+        assert isinstance(reloaded, trimesh.Trimesh) and len(reloaded.faces) > 0
+        bmin, bmax = reloaded.bounds
+        size = bmax - bmin
+        # Bbox grows by ~2·offset per axis (offset extends outward on both sides).
+        assert size[0] > 20 + 0.9, f"expected X growth ~1 mm, got {size[0] - 20}"
+        assert size[1] > 20 + 0.9, f"expected Y growth ~1 mm, got {size[1] - 20}"
+        assert size[2] > 0.5 + 0.9, f"expected Z growth ~1 mm, got {size[2] - 0.5}"
+        assert out["after_faces"] > 0
+
+    def test_thickened_plate_clears_thin_wall_detector(self, thin_plate_stl):
+        # 0.5 mm plate is flagged thin. Thicken by 0.5 mm → total 1.5 mm,
+        # above the 1.2 mm threshold → detector should stay quiet.
+        out = mesh_optimize_service.thicken_walls(thin_plate_stl, offset_mm=0.5)
+        report = printability_service.analyze_mesh_bytes(out["stl_bytes"], file_type="stl")
+        codes = {i.code for i in report.issues}
+        assert "thin_walls" not in codes, f"still thin after thicken: {codes}"
+
+    @pytest.mark.parametrize("bad_offset", [0.0, -0.1, 10.0])
+    def test_rejects_bad_offset(self, thin_plate_stl, bad_offset):
+        with pytest.raises(ValueError, match="offset_mm"):
+            mesh_optimize_service.thicken_walls(thin_plate_stl, offset_mm=bad_offset)
+
+    def test_pre_decimation_marker(self):
+        # A high-poly sphere (~5k faces) sits below the 6k ceiling so
+        # pre_decimated should be False. Confirms the flag reflects
+        # the actual branch taken.
+        stl = _mesh_to_stl_bytes(trimesh.creation.icosphere(subdivisions=3))
+        out = mesh_optimize_service.thicken_walls(stl, offset_mm=0.3)
+        assert out["pre_decimated"] is False

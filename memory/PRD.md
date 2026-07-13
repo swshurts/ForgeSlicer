@@ -31,7 +31,17 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-07-06)
+## Current Open Items (as of 2026-07-13)
+
+### Recently completed (iter-137, 2026-07-13) — Thicken Walls Auto-Fix + BasReliefTab extraction
+- **User request**: (P0) Extract `BasReliefTab.jsx` from `AIGenerateDialog.jsx` for maintainability. (P1) Ship the `thicken_walls` Printability Auto-Fix endpoint (was a placeholder toast). User chose Manifold-based Minkowski-sum offset (option 1b) over vertex-normal offset, batched with the refactor (option 2a).
+- **Backend** (`mesh_optimize_service.thicken_walls`): New function using `manifold3d.Manifold.minkowski_sum` (morphological dilation). Approach: `result = mesh ⊕ ball(offset_mm)` with a 20-segment low-poly ball. Meshes with >6000 faces are pre-decimated first (Minkowski scales as O(faces_A × faces_B) per the manifold3d docs — a 200K-tri AI mesh would explode). Validates offset in [0.05, 5.0]; rejects with 422 if mesh is non-manifold ("run Auto-Clean first"). Empirical: 20×20×0.5 mm plate → +0.5 mm offset → 21×21×1.5 mm output (bbox grows by 2·offset per axis, exactly as expected).
+- **Route** (`routes/printability.py`): `POST /api/printability/thicken-walls` — multipart form `file` + `offset_mm` (default 0.5) + `file_type`. Auth-gated identical to `decimate`/`add-base`. Response headers: `X-Optimize-Offset-Mm`, `X-Optimize-Faces-Before`, `X-Optimize-Faces-After`, `X-Optimize-Pre-Decimated`. 400 on unsupported ext, 413 on >100MB, 422 on bad offset / non-manifold input, 503 if manifold3d ever missing at runtime.
+- **Frontend** (`lib/meshOptimizeApi.js`): New `thickenWallsImportedObject(obj, { offsetMm })` that exports geometry → POSTs → parses response STL back into a merged BufferGeometry with re-computed bbox. Returns `{ update, stats: { offsetMm, facesBefore, facesAfter, preDecimated } }`.
+- **Frontend** (`PrintabilityReportPanel.jsx`): Wired up `runThickenWalls(0.5)`, added `thicken_walls` branch to `handleFix`, and included it in the Auto-Fix orchestrator between Auto-Clean and Decimate (Minkowski runs BEFORE decimate to preserve subtle wall geometry). Auto-Fix visibility check extended so the button appears whenever any of the 4 fixable codes is present. Placeholder "coming in the next update" toast now fires only for `voxel_remesh` / `reorient`.
+- **Refactor** (`components/BasReliefTab.jsx`): New 254-line component extracted from AIGenerateDialog. Uses `forwardRef` + `useImperativeHandle` to expose `submit()` so the shared footer CTA can still trigger generation without duplicating slider state. Parent `AIGenerateDialog.jsx` shrank 1241 → 1049 lines.
+- **Tests**: 4 new `TestThickenWalls` cases in `test_mesh_optimize.py` (bbox growth, thin_walls resolution end-to-end, offset bounds validation, pre-decimation flag). Full suite: **531 tests pass** (23 in this file). Manual curl smoke: thin-plate score 85 → 100 after thicken (`thin_walls` issue resolved).
+- **E2E smoke**: Bas-Relief tab still renders identically after extraction — all 7 test IDs (`bas-relief-diameter`, `-max`, `-base`, `-smooth`, `-invert`, `-ring-toggle`, `ai-submit-bas-relief-btn`) present, ring toggle reveals `bas-relief-ring-panel`, no console errors.
 
 ### Recently completed (iter-136.1, 2026-07-13) — Frame Ring on the Bas-Relief tab
 - **User request**: Enhance iter-136 by adding an optional raised outer ring (the wooden-circle border seen on traditional Japanese Cork Art pieces).

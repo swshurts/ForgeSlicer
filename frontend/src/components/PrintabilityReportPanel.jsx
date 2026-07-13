@@ -24,7 +24,7 @@ import { useScene } from "../lib/store";
 import { exportSceneToSTLBytes } from "../lib/exporters";
 import { analyzePrintability } from "../lib/printabilityApi";
 import { repairImportedObject } from "../lib/meshRepairApi";
-import { decimateImportedObject, addBaseToImportedObject } from "../lib/meshOptimizeApi";
+import { decimateImportedObject, addBaseToImportedObject, thickenWallsImportedObject } from "../lib/meshOptimizeApi";
 
 const SEV_META = {
   critical: { label: "CRITICAL", cls: "bg-red-500/15 text-red-300 border-red-500/40" },
@@ -293,9 +293,14 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     let totalBefore = 0, totalAfter = 0, applied = 0;
     try {
       for (const obj of targets) {
-        const runner = kind === "decimate_with_intent"
-          ? decimateImportedObject(obj, params?.preset || "functional")
-          : addBaseToImportedObject(obj, params || {});
+        let runner;
+        if (kind === "decimate_with_intent") {
+          runner = decimateImportedObject(obj, params?.preset || "functional");
+        } else if (kind === "thicken_walls") {
+          runner = thickenWallsImportedObject(obj, params || {});
+        } else {
+          runner = addBaseToImportedObject(obj, params || {});
+        }
         const { update, stats } = await runner;
         updateObject(obj.id, update);
         totalBefore += stats.facesBefore || 0;
@@ -324,6 +329,10 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     return _applyOptimizePerObject("Add Base", "add_base", { shape, thicknessMm, marginMm });
   }, [_applyOptimizePerObject]);
 
+  const runThickenWalls = useCallback((offsetMm = 0.5) => {
+    return _applyOptimizePerObject("Thicken", "thicken_walls", { offsetMm });
+  }, [_applyOptimizePerObject]);
+
   // Iter-135 — Auto-Fix orchestrator. Runs the applicable fixers in
   // safe order (repair → decimate → add-base) on the CURRENT set of
   // issues. Stops on first failure so users don't end up with a
@@ -338,12 +347,17 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     }
     const codes = new Set(report.issues.map((i) => i.fix_action).filter(Boolean));
     const steps = [];
+    // Order: watertight-repair first, then wall-thicken (needs a
+    // manifold to Minkowski-sum), then decimate, then base. Thicken
+    // BEFORE decimate because Minkowski on the pre-decimated mesh
+    // preserves more subtle wall geometry.
     if (codes.has("auto_clean")) steps.push({ label: "Auto-Clean", run: runAutoClean });
+    if (codes.has("thicken_walls")) steps.push({ label: "Thicken", run: () => runThickenWalls(0.5) });
     if (codes.has("decimate_with_intent")) steps.push({ label: "Decimate", run: () => runDecimate("functional") });
     if (codes.has("add_base")) steps.push({ label: "Add Base", run: () => runAddBase("cylinder", 3.0, 2.0) });
     if (steps.length === 0) {
-      // Only fixes remaining are ones we haven't shipped yet (thicken
-      // walls, voxel remesh, reorient). Surface that transparently.
+      // Only fixes remaining are ones we haven't shipped yet (voxel
+      // remesh, reorient). Surface that transparently.
       toast.info("No Auto-Fix step available", {
         description: "The remaining issues need tools that aren't automated yet. Use the individual Fix buttons.",
       });
@@ -361,18 +375,19 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     } finally {
       setFixingCode(null);
     }
-  }, [report, runAutoClean, runDecimate, runAddBase]);
+  }, [report, runAutoClean, runDecimate, runAddBase, runThickenWalls]);
 
   const handleFix = useCallback((code, issue) => {
     if (code === "auto_clean")           { runAutoClean(); return; }
     if (code === "decimate_with_intent") { runDecimate("functional"); return; }
     if (code === "add_base")             { runAddBase("cylinder", 3.0, 2.0); return; }
-    // Remaining fix actions (voxel_remesh, thicken_walls, reorient)
-    // still land in follow-up iterations.
+    if (code === "thicken_walls")        { runThickenWalls(0.5); return; }
+    // Remaining fix actions (voxel_remesh, reorient) still land in
+    // follow-up iterations.
     toast.info(`${actionLabel(code)} — coming in the next update`, {
       description: `Will address: ${issue.message}`,
     });
-  }, [runAutoClean, runDecimate, runAddBase]);
+  }, [runAutoClean, runDecimate, runAddBase, runThickenWalls]);
 
   if (!open) return null;
 
@@ -449,7 +464,7 @@ export default function PrintabilityReportPanel({ open, onClose }) {
                 order (repair → decimate → add-base). Only shown when
                 at least one fixable issue is present; disables when
                 a fix is already in-flight. */}
-            {report.issues.some((i) => ["auto_clean", "decimate_with_intent", "add_base"].includes(i.fix_action)) && (
+            {report.issues.some((i) => ["auto_clean", "decimate_with_intent", "add_base", "thicken_walls"].includes(i.fix_action)) && (
               <button
                 data-testid="printability-auto-fix"
                 onClick={runAutoFix}

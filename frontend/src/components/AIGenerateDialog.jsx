@@ -5,6 +5,7 @@ import { useScene } from "../lib/store";
 import { importAnyMeshFile } from "../lib/exporters";
 import { X, Sparkles, Loader2, Image as ImageIcon, Type, AlertCircle, RotateCw, Images, Plus, Circle } from "lucide-react";
 import { toast } from "sonner";
+import BasReliefTab from "./BasReliefTab";
 
 // Poll interval for /ai/jobs/{id}. Meshy's docs warn against aggressive
 // polling; 4 s strikes a balance between responsiveness and rate-limit safety.
@@ -125,20 +126,10 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [selectedPreviewIdx, setSelectedPreviewIdx] = useState(null);
 
-  // Iter-136 — Bas-Relief tab state. Sizing sliders default to the
-  // user's stated typical (220 mm × 12 mm relief on a 3 mm base = 15 mm
-  // total thickness). "dark_is_high" defaults false because most
-  // reference photos work better with light-is-high (bright subject
-  // pops out of a dark background).
-  const [basDiameter, setBasDiameter] = useState(220);
-  const [basRelief, setBasRelief] = useState(12);
-  const [basBaseThickness, setBasBaseThickness] = useState(3);
-  const [basDarkIsHigh, setBasDarkIsHigh] = useState(false);
-  const [basSmooth, setBasSmooth] = useState(1.0);
-  // Iter-136.1 — Frame ring (Japanese Cork Art wooden border).
-  const [basRingEnabled, setBasRingEnabled] = useState(false);
-  const [basRingWidth, setBasRingWidth] = useState(10);
-  const [basRingHeight, setBasRingHeight] = useState(5);
+  // Iter-137 — Bas-Relief tab now lives in ./BasReliefTab.jsx. The tab
+  // owns all slider state + submit pipeline internally; the parent
+  // only holds a ref so the shared footer CTA can trigger generation.
+  const basReliefRef = useRef(null);
   const pollTimer = useRef(null);
   const pollDeadline = useRef(0);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
@@ -437,58 +428,8 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
     }
   };
 
-  // Iter-136 — Bas-Relief pipeline. LOCAL geometry, no fal.ai / no
-  // Meshy — see /app/backend/bas_relief_service.py. Returns STL bytes
-  // directly (no polling). Imports the disk straight into the scene
-  // via the existing STL import pipeline; scaling is left alone
-  // because the user picked the exact mm diameter they want.
-  const handleSubmitBasRelief = async () => {
-    if (!imageB64) {
-      setError("Choose a reference image first (from the file picker below)."); return;
-    }
-    setBusy(true); setError(""); setJob(null);
-    try {
-      const resp = await axios.post(`${API}/ai/generate/bas-relief`, {
-        image_b64: imageB64,
-        mime_type: imageMime || "image/png",
-        diameter_mm: Number(basDiameter),
-        max_relief_mm: Number(basRelief),
-        base_thickness_mm: Number(basBaseThickness),
-        dark_is_high: !!basDarkIsHigh,
-        smooth_sigma: Number(basSmooth),
-        grid_size: 512,
-        // Iter-136.1 — Frame ring.
-        ring_enabled: !!basRingEnabled,
-        ring_width_mm: Number(basRingWidth),
-        ring_height_mm: Number(basRingHeight),
-      }, {
-        withCredentials: true,
-        responseType: "blob",
-      });
-      const file = new File(
-        [resp.data],
-        `bas-relief-${Date.now().toString(36)}.stl`,
-        { type: "model/stl" },
-      );
-      const mesh = await importAnyMeshFile(file);
-      // No scale — bas-relief is generated at the exact mm size requested.
-      addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-      toast?.success?.("Bas-relief disk ready", {
-        description: `${basDiameter} mm × ${(Number(basBaseThickness) + Number(basRelief)).toFixed(1)} mm thick · imported to the plate`,
-      });
-      onClose?.();
-    } catch (e) {
-      // Bas-relief 502 / 400 errors deliver a JSON blob when responseType
-      // is 'blob' — parse it back so the user sees a useful detail.
-      let detail = e?.response?.data?.detail || e.message || "Bas-relief generation failed";
-      if (e?.response?.data instanceof Blob) {
-        try { detail = JSON.parse(await e.response.data.text()).detail || detail; } catch { /* keep default */ }
-      }
-      setError(detail);
-    } finally {
-      setBusy(false);
-    }
-  };
+  // Iter-137 — handleSubmitBasRelief now lives inside BasReliefTab.jsx,
+  // triggered via basReliefRef.current.submit() from the shared footer.
 
   const handleImport = async () => {
     if (!job?.job_id || job.status !== "SUCCEEDED") return;
@@ -926,152 +867,18 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
             </div>
           )}
 
-          {/* Iter-136 — Bas-Relief tab body. Circular disk with shallow
-              subject relief on top. LOCAL geometry pipeline — no fal.ai /
-              Meshy quota consumed. Reuses the same file picker as the
-              From-Image tab so users don't relearn UI. */}
+          {/* Iter-137 — Bas-Relief tab body extracted to ./BasReliefTab.jsx. */}
           {!job && tab === "bas_relief" && (
-            <div className="space-y-3" data-testid="ai-bas-relief-panel">
-              <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Reference Image</label>
-              <input
-                data-testid="ai-bas-relief-image-input"
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/webp"
-                onChange={(e) => handleImagePick(e.target.files?.[0])}
-                className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-amber-500/20 file:text-amber-300 file:font-semibold hover:file:bg-amber-500/30"
-              />
-              {imagePreviewUrl && (
-                <div className="rounded-full border border-amber-600/30 overflow-hidden bg-slate-950 aspect-square max-w-[180px] mx-auto">
-                  <img src={imagePreviewUrl} alt="preview" className="w-full h-full object-cover" />
-                </div>
-              )}
-              <p className="text-[10px] text-slate-500 leading-snug">
-                Best results: high-contrast subject on plain background. Line art / illustrations often work better with <em>Invert</em> enabled.
-              </p>
-
-              {/* Sliders */}
-              <div className="space-y-2 pt-1">
-                <div>
-                  <div className="flex items-center justify-between text-[11px] mb-0.5">
-                    <label className="text-slate-300 font-semibold">Diameter</label>
-                    <span data-testid="bas-relief-diameter-value" className="text-amber-300 font-mono">{basDiameter} mm</span>
-                  </div>
-                  <input
-                    data-testid="bas-relief-diameter"
-                    type="range" min="60" max="380" step="5"
-                    value={basDiameter}
-                    onChange={(e) => setBasDiameter(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-[11px] mb-0.5">
-                    <label className="text-slate-300 font-semibold">Max relief height</label>
-                    <span data-testid="bas-relief-max-value" className="text-amber-300 font-mono">{basRelief} mm</span>
-                  </div>
-                  <input
-                    data-testid="bas-relief-max"
-                    type="range" min="1" max="30" step="0.5"
-                    value={basRelief}
-                    onChange={(e) => setBasRelief(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-[11px] mb-0.5">
-                    <label className="text-slate-300 font-semibold">Base thickness</label>
-                    <span data-testid="bas-relief-base-value" className="text-amber-300 font-mono">{basBaseThickness} mm</span>
-                  </div>
-                  <input
-                    data-testid="bas-relief-base"
-                    type="range" min="1" max="10" step="0.5"
-                    value={basBaseThickness}
-                    onChange={(e) => setBasBaseThickness(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-[11px] mb-0.5">
-                    <label className="text-slate-300 font-semibold">Smoothing</label>
-                    <span className="text-amber-300 font-mono">{basSmooth.toFixed(1)}</span>
-                  </div>
-                  <input
-                    data-testid="bas-relief-smooth"
-                    type="range" min="0" max="5" step="0.25"
-                    value={basSmooth}
-                    onChange={(e) => setBasSmooth(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-[11px] text-slate-300 mt-2 cursor-pointer">
-                  <input
-                    data-testid="bas-relief-invert"
-                    type="checkbox"
-                    checked={basDarkIsHigh}
-                    onChange={(e) => setBasDarkIsHigh(e.target.checked)}
-                    className="accent-amber-500"
-                  />
-                  Invert (dark pixels become the tallest peaks)
-                </label>
-
-                {/* Iter-136.1 — Frame ring block. Collapsed toggle at the
-                    top; expands to reveal the two sliders when enabled.
-                    Mirrors the "wooden circle around the temple" in
-                    traditional Japanese Cork Art. */}
-                <div className="mt-3 border-t border-slate-800 pt-2">
-                  <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
-                    <input
-                      data-testid="bas-relief-ring-toggle"
-                      type="checkbox"
-                      checked={basRingEnabled}
-                      onChange={(e) => setBasRingEnabled(e.target.checked)}
-                      className="accent-amber-500"
-                    />
-                    <span className="font-semibold">Add frame ring</span>
-                    <span className="text-slate-500 text-[10px]">(wooden-circle border)</span>
-                  </label>
-                  {basRingEnabled && (
-                    <div className="space-y-2 mt-2 pl-5" data-testid="bas-relief-ring-panel">
-                      <div>
-                        <div className="flex items-center justify-between text-[11px] mb-0.5">
-                          <label className="text-slate-300 font-semibold">Ring width</label>
-                          <span data-testid="bas-relief-ring-width-value" className="text-amber-300 font-mono">{basRingWidth} mm</span>
-                        </div>
-                        <input
-                          data-testid="bas-relief-ring-width"
-                          type="range" min="1" max="40" step="0.5"
-                          value={basRingWidth}
-                          onChange={(e) => setBasRingWidth(Number(e.target.value))}
-                          className="w-full accent-amber-500"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between text-[11px] mb-0.5">
-                          <label className="text-slate-300 font-semibold">Ring height</label>
-                          <span data-testid="bas-relief-ring-height-value" className="text-amber-300 font-mono">{basRingHeight} mm</span>
-                        </div>
-                        <input
-                          data-testid="bas-relief-ring-height"
-                          type="range" min="0.5" max="30" step="0.5"
-                          value={basRingHeight}
-                          onChange={(e) => setBasRingHeight(Number(e.target.value))}
-                          className="w-full accent-amber-500"
-                        />
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        Outer diameter with frame: <span className="text-amber-300 font-mono">{(Number(basDiameter) + 2 * Number(basRingWidth)).toFixed(0)} mm</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-[10px] text-slate-500 pt-1">
-                Total thickness at peak: <span className="text-amber-300 font-mono">{(Number(basBaseThickness) + Number(basRelief)).toFixed(1)} mm</span>
-                <span className="text-slate-600"> · </span>
-                <span>No quota consumed · generation is local</span>
-              </div>
-            </div>
+            <BasReliefTab
+              ref={basReliefRef}
+              imageB64={imageB64}
+              imageMime={imageMime}
+              imagePreviewUrl={imagePreviewUrl}
+              onImagePick={handleImagePick}
+              setBusy={setBusy}
+              setError={setError}
+              onSuccess={closeDialog}
+            />
           )}
 
           {/* Job state */}
@@ -1209,11 +1016,13 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
                 Fuse views
               </button>
             )}
-            {/* Iter-136 — Bas-Relief CTA. Amber to match the tab accent. */}
+            {/* Iter-136 — Bas-Relief CTA. Amber to match the tab accent.
+                Delegates the actual submit to the extracted BasReliefTab
+                which owns all slider state. */}
             {!job && tab === "bas_relief" && (
               <button
                 data-testid="ai-submit-bas-relief-btn"
-                onClick={handleSubmitBasRelief}
+                onClick={() => basReliefRef.current?.submit()}
                 disabled={busy || !imageB64}
                 className="h-9 px-4 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
               >
