@@ -27,13 +27,26 @@ export function loadImage(file) {
   });
 }
 
-// Sample image into a `resW × resH` luminance grid in [0,1]. Aspect
-// ratio preserved on the wider axis — the shorter axis gets fewer
-// rows/cols proportionally.
+// Sample image into a `resW × resH` luminance grid in [0,1] plus an
+// optional per-pixel alpha mask. Aspect ratio is preserved on the wider
+// axis — the shorter axis gets fewer rows/cols proportionally.
 //
 // `gain` widens or compresses the contrast curve around the midpoint.
 // `invert` flips the curve — used for lithophanes (dark = tall so
 // backlight shows through where pixels were dark).
+//
+// Iter-140 — alpha-aware:
+//   * When the source PNG carries a genuine alpha channel we return
+//     an `alpha` Float32Array alongside `lum`. `buildHeightmapMesh`
+//     consumes that so the mesh SILHOUETTE follows the transparent
+//     boundary instead of always emitting a rectangular plate.
+//   * Fully-transparent pixels (α = 0) were previously read as
+//     RGBA(0,0,0,0) → luminance 0 → after invert=1 the mesh grew a
+//     full-relief spike over every transparent pixel (the bug in the
+//     screenshots). We now composite the RGB over neutral grey (128)
+//     before the luminance calc so semi-transparent fringes contribute
+//     no height signal and the alpha mask cleanly carves out the
+//     boundary.
 export function imageToLuminance(img, resTarget, opts = {}) {
   const { gain = 1, invert = false } = opts;
   const aspect = img.width / img.height;
@@ -43,8 +56,34 @@ export function imageToLuminance(img, resTarget, opts = {}) {
   canvas.width = resW; canvas.height = resH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Couldn't get 2D context");
+  // Neutral-grey background so transparent pixels don't leak
+  // luminance=0 into the heightmap. We read alpha BEFORE this fill so
+  // the mask still knows which pixels were originally transparent.
   ctx.drawImage(img, 0, 0, resW, resH);
-  const { data } = ctx.getImageData(0, 0, resW, resH);
+  const raw = ctx.getImageData(0, 0, resW, resH).data;
+
+  // Detect alpha: scan pixels for any α < 250. Skipping this scan when
+  // the source is fully opaque avoids allocating the alpha array for
+  // JPGs and typical opaque PNGs.
+  let hasAlpha = false;
+  for (let i = 3; i < raw.length; i += 4) {
+    if (raw[i] < 250) { hasAlpha = true; break; }
+  }
+  let alpha = null;
+  if (hasAlpha) {
+    alpha = new Float32Array(resW * resH);
+    for (let i = 3, j = 0; i < raw.length; i += 4, j++) {
+      alpha[j] = raw[i] / 255;
+    }
+    // Re-composite the image over neutral grey so transparent pixels
+    // no longer contribute (0,0,0) to the luminance calc.
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.fillStyle = "rgb(128,128,128)";
+    ctx.fillRect(0, 0, resW, resH);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  const data = hasAlpha ? ctx.getImageData(0, 0, resW, resH).data : raw;
   const lum = new Float32Array(resW * resH);
   for (let i = 0, j = 0; i < data.length; i += 4, j++) {
     // ITU-R BT.709 luminance coefficients — accurate for sRGB photos.
@@ -55,25 +94,48 @@ export function imageToLuminance(img, resTarget, opts = {}) {
     if (invert) l = 1 - l;
     lum[j] = l;
   }
-  return { lum, resW, resH };
+  return { lum, alpha, resW, resH };
 }
 
 // Build a watertight heightmap mesh:
 //   - Top surface: grid of triangles deformed by `lum * reliefH + baseHeight`.
 //   - Bottom surface: flat grid at y = 0.
-//   - Four perimeter walls so the mesh is closed.
+//   - Perimeter walls sealing every solid-vs-transparent boundary so
+//     the mesh is closed regardless of how carved-out the silhouette is.
 // Output: Float32Array of contiguous triangle vertices [x,y,z,x,y,z,...].
 //
 // The returned mesh is hand-wound (no index buffer) — keeps shape
 // consistent with `addImportedMesh` which expects flat verts.
-export function buildHeightmapMesh(lum, resW, resH, widthMM, baseHeight, reliefH) {
+//
+// Iter-140 — alpha-aware: pass the `alpha` array returned by
+// `imageToLuminance` to carve the mesh silhouette out. Quads whose
+// 4 corners aren't all opaque (α ≥ 0.5) are skipped from both surfaces
+// and walls are emitted at the boundary between kept vs skipped quads.
+// Omitting `alpha` reproduces the pre-iter-140 rectangular plate.
+export function buildHeightmapMesh(lum, resW, resH, widthMM, baseHeight, reliefH, alpha = null) {
   if (resW < 2 || resH < 2) throw new Error("Resolution too small (need ≥ 2 in each axis)");
   if (lum.length !== resW * resH) throw new Error("Luminance length doesn't match grid size");
+  if (alpha && alpha.length !== resW * resH) throw new Error("Alpha length doesn't match grid size");
   const aspect = resW / resH;
   const sizeX = aspect >= 1 ? widthMM : widthMM * aspect;
   const sizeZ = aspect >= 1 ? widthMM / aspect : widthMM;
   const dx = sizeX / (resW - 1);
   const dz = sizeZ / (resH - 1);
+
+  // Alpha membership per vertex (opaque if α ≥ 0.5). A missing alpha
+  // channel means every vertex is opaque → keep_quad = true everywhere,
+  // reproducing the legacy rectangular plate.
+  const isOpaqueVert = alpha
+    ? (xi, zi) => alpha[zi * resW + xi] >= 0.5
+    : () => true;
+  // A quad is emitted only when all 4 corners are opaque; otherwise
+  // it's carved out. This gives a jagged pixel-edge silhouette which
+  // is fine at ≥ 100 grid — the pixel step is < 1 mm.
+  const keepQuad = (xi, zi) =>
+    isOpaqueVert(xi, zi) &&
+    isOpaqueVert(xi + 1, zi) &&
+    isOpaqueVert(xi + 1, zi + 1) &&
+    isOpaqueVert(xi, zi + 1);
 
   // Pre-compute top-grid positions (centered on origin in X/Z).
   const topVerts = new Float32Array(resW * resH * 3);
@@ -89,19 +151,13 @@ export function buildHeightmapMesh(lum, resW, resH, widthMM, baseHeight, reliefH
     }
   }
 
-  // Allocate output array. Two surfaces × (resW-1)(resH-1) quads × 2
-  // tris/quad. Plus 4 perimeter strips of length (resW-1) or (resH-1)
-  // each — also 2 tris/quad. Closed-form so we avoid array push.
-  const triCount = 2 * (resW - 1) * (resH - 1) * 2
-                 + 2 * (resW - 1) * 2
-                 + 2 * (resH - 1) * 2;
-  const out = new Float32Array(triCount * 9);
-  let p = 0;
-
+  // Dynamic sizing — with an alpha mask we don't know the quad count
+  // up front, so `out` uses a JS array and we convert to Float32Array
+  // at the end. When there's no alpha mask the sizing is cheap and the
+  // conversion cost is negligible.
+  const out = [];
   const writeTri = (ax, ay, az, bx, by, bz, cx, cy, cz) => {
-    out[p++] = ax; out[p++] = ay; out[p++] = az;
-    out[p++] = bx; out[p++] = by; out[p++] = bz;
-    out[p++] = cx; out[p++] = cy; out[p++] = cz;
+    out.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   };
   const top = (xi, zi) => {
     const i = (zi * resW + xi) * 3;
@@ -109,68 +165,63 @@ export function buildHeightmapMesh(lum, resW, resH, widthMM, baseHeight, reliefH
   };
   const bot = (xi, zi) => [xi * dx - sizeX / 2, 0, zi * dz - sizeZ / 2];
 
-  // Top surface — winding CCW when viewed from above (+Y up).
+  // Top + bottom surfaces (both restricted to the kept-quad mask).
   for (let zi = 0; zi < resH - 1; zi++) {
     for (let xi = 0; xi < resW - 1; xi++) {
+      if (!keepQuad(xi, zi)) continue;
       const [a0, a1, a2] = top(xi,     zi);
       const [b0, b1, b2] = top(xi + 1, zi);
       const [c0, c1, c2] = top(xi + 1, zi + 1);
       const [d0, d1, d2] = top(xi,     zi + 1);
+      // Top — CCW from +Y.
       writeTri(a0, a1, a2, d0, d1, d2, b0, b1, b2);
       writeTri(b0, b1, b2, d0, d1, d2, c0, c1, c2);
+      // Bottom — opposite winding.
+      const [ba0, ba1, ba2] = bot(xi,     zi);
+      const [bb0, bb1, bb2] = bot(xi + 1, zi);
+      const [bc0, bc1, bc2] = bot(xi + 1, zi + 1);
+      const [bd0, bd1, bd2] = bot(xi,     zi + 1);
+      writeTri(ba0, ba1, ba2, bb0, bb1, bb2, bd0, bd1, bd2);
+      writeTri(bb0, bb1, bb2, bc0, bc1, bc2, bd0, bd1, bd2);
     }
-  }
-  // Bottom surface — opposite winding.
-  for (let zi = 0; zi < resH - 1; zi++) {
-    for (let xi = 0; xi < resW - 1; xi++) {
-      const [a0, a1, a2] = bot(xi,     zi);
-      const [b0, b1, b2] = bot(xi + 1, zi);
-      const [c0, c1, c2] = bot(xi + 1, zi + 1);
-      const [d0, d1, d2] = bot(xi,     zi + 1);
-      writeTri(a0, a1, a2, b0, b1, b2, d0, d1, d2);
-      writeTri(b0, b1, b2, c0, c1, c2, d0, d1, d2);
-    }
-  }
-  // Perimeter walls connect each top edge vertex to its corresponding
-  // bottom edge vertex.
-  // Front edge (zi=0)
-  for (let xi = 0; xi < resW - 1; xi++) {
-    const [a0, a1, a2] = top(xi,     0);
-    const [b0, b1, b2] = top(xi + 1, 0);
-    const [c0, c1, c2] = bot(xi + 1, 0);
-    const [d0, d1, d2] = bot(xi,     0);
-    writeTri(a0, a1, a2, b0, b1, b2, c0, c1, c2);
-    writeTri(a0, a1, a2, c0, c1, c2, d0, d1, d2);
-  }
-  // Back edge (zi=resH-1) — reversed winding.
-  for (let xi = 0; xi < resW - 1; xi++) {
-    const [a0, a1, a2] = top(xi,     resH - 1);
-    const [b0, b1, b2] = top(xi + 1, resH - 1);
-    const [c0, c1, c2] = bot(xi + 1, resH - 1);
-    const [d0, d1, d2] = bot(xi,     resH - 1);
-    writeTri(b0, b1, b2, a0, a1, a2, d0, d1, d2);
-    writeTri(b0, b1, b2, d0, d1, d2, c0, c1, c2);
-  }
-  // Left edge (xi=0)
-  for (let zi = 0; zi < resH - 1; zi++) {
-    const [a0, a1, a2] = top(0, zi);
-    const [b0, b1, b2] = top(0, zi + 1);
-    const [c0, c1, c2] = bot(0, zi + 1);
-    const [d0, d1, d2] = bot(0, zi);
-    writeTri(b0, b1, b2, a0, a1, a2, d0, d1, d2);
-    writeTri(b0, b1, b2, d0, d1, d2, c0, c1, c2);
-  }
-  // Right edge (xi=resW-1)
-  for (let zi = 0; zi < resH - 1; zi++) {
-    const [a0, a1, a2] = top(resW - 1, zi);
-    const [b0, b1, b2] = top(resW - 1, zi + 1);
-    const [c0, c1, c2] = bot(resW - 1, zi + 1);
-    const [d0, d1, d2] = bot(resW - 1, zi);
-    writeTri(a0, a1, a2, b0, b1, b2, c0, c1, c2);
-    writeTri(a0, a1, a2, c0, c1, c2, d0, d1, d2);
   }
 
-  return { vertices: out, sizeX, sizeZ, height: baseHeight + reliefH };
+  // Iter-140 — Emit a wall wherever a kept quad borders a skipped
+  // quad (or the mesh's outer perimeter). This closes the silhouette
+  // regardless of shape. For each of the 4 edges of every kept quad
+  // we look at the neighbouring quad (across that edge) and emit a
+  // wall when that neighbour is NOT kept.
+  const isKept = (xi, zi) => xi >= 0 && xi < resW - 1 && zi >= 0 && zi < resH - 1 && keepQuad(xi, zi);
+
+  const emitWall = (xi0, zi0, xi1, zi1) => {
+    // xi0/zi0 and xi1/zi1 are adjacent grid VERTICES defining a wall
+    // segment. The winding is chosen so that the wall's outward
+    // normal points OUT of the mesh (i.e. from the kept quad toward
+    // the empty side).
+    const [t0x, t0y, t0z] = top(xi0, zi0);
+    const [t1x, t1y, t1z] = top(xi1, zi1);
+    const [b0x, b0y, b0z] = bot(xi0, zi0);
+    const [b1x, b1y, b1z] = bot(xi1, zi1);
+    writeTri(t0x, t0y, t0z, t1x, t1y, t1z, b1x, b1y, b1z);
+    writeTri(t0x, t0y, t0z, b1x, b1y, b1z, b0x, b0y, b0z);
+  };
+
+  for (let zi = 0; zi < resH - 1; zi++) {
+    for (let xi = 0; xi < resW - 1; xi++) {
+      if (!keepQuad(xi, zi)) continue;
+      // Top edge — quad above (zi-1) is NOT kept → wall between
+      // (xi, zi) and (xi+1, zi). Winding puts outward normal toward -Z.
+      if (!isKept(xi, zi - 1)) emitWall(xi + 1, zi, xi, zi);
+      // Bottom edge — quad below (zi+1) not kept → wall to +Z.
+      if (!isKept(xi, zi + 1)) emitWall(xi, zi + 1, xi + 1, zi + 1);
+      // Left edge — quad to the left (xi-1) not kept → wall to -X.
+      if (!isKept(xi - 1, zi)) emitWall(xi, zi, xi, zi + 1);
+      // Right edge — quad to the right (xi+1) not kept → wall to +X.
+      if (!isKept(xi + 1, zi)) emitWall(xi + 1, zi + 1, xi + 1, zi);
+    }
+  }
+
+  return { vertices: new Float32Array(out), sizeX, sizeZ, height: baseHeight + reliefH };
 }
 
 // Quick UI estimate for the "triangles ≈ N" footer label. Closed-form;

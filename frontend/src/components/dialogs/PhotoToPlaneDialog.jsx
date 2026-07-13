@@ -98,16 +98,31 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
     const ctx = previewCanvasRef.current.getContext("2d");
     const cw = previewCanvasRef.current.width;
     const ch = previewCanvasRef.current.height;
-    const { lum, resW, resH } = imageToLuminance(img, RESOLUTIONS.find((r) => r.key === resKey).res, { gain, invert });
+    const { lum, alpha, resW, resH } = imageToLuminance(img, RESOLUTIONS.find((r) => r.key === resKey).res, { gain, invert });
     // Render the luminance map as a grayscale preview so the user
     // sees exactly what extrusion they'll get (white = tall).
+    // Iter-140 — transparent pixels are rendered as a neutral-grey
+    // checkerboard so the user immediately sees the effective mesh
+    // silhouette (their alpha channel carves the outline).
     const imgData = ctx.createImageData(resW, resH);
     for (let i = 0; i < lum.length; i++) {
-      const g = Math.round(lum[i] * 255);
-      imgData.data[i * 4] = g;
-      imgData.data[i * 4 + 1] = g;
-      imgData.data[i * 4 + 2] = g;
-      imgData.data[i * 4 + 3] = 255;
+      const opaque = !alpha || alpha[i] >= 0.5;
+      if (opaque) {
+        const g = Math.round(lum[i] * 255);
+        imgData.data[i * 4] = g;
+        imgData.data[i * 4 + 1] = g;
+        imgData.data[i * 4 + 2] = g;
+        imgData.data[i * 4 + 3] = 255;
+      } else {
+        // Checkerboard for out-of-mesh pixels.
+        const xi = i % resW;
+        const zi = Math.floor(i / resW);
+        const c = (((xi >> 2) + (zi >> 2)) & 1) ? 55 : 30;
+        imgData.data[i * 4] = c;
+        imgData.data[i * 4 + 1] = c;
+        imgData.data[i * 4 + 2] = c;
+        imgData.data[i * 4 + 3] = 255;
+      }
     }
     // Stage to a small canvas, then upsample to the preview canvas.
     const tmp = document.createElement("canvas");
@@ -166,8 +181,8 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
     setError(null);
     try {
       const res = RESOLUTIONS.find((r) => r.key === resKey).res;
-      const { lum, resW, resH } = imageToLuminance(img, res, { gain, invert });
-      const { vertices, sizeX, sizeZ, height } = buildHeightmapMesh(lum, resW, resH, widthMM, baseH, reliefH);
+      const { lum, alpha, resW, resH } = imageToLuminance(img, res, { gain, invert });
+      const { vertices, sizeX, sizeZ, height } = buildHeightmapMesh(lum, resW, resH, widthMM, baseH, reliefH, alpha);
       const name = (file?.name || "photo-plane").replace(/\.[^.]+$/, "");
       addImportedMesh(
         `${name} (heightmap)`,
