@@ -58,32 +58,103 @@ def _to_heightmap(
     grid_size: int,
     dark_is_high: bool,
     smooth_sigma: float,
-) -> np.ndarray:
+) -> tuple[np.ndarray, "np.ndarray | None"]:
     """Convert an image to a `grid_size × grid_size` float32 array of
-    normalised heights in [0, 1]. Optionally blurs to hide banding
-    from low-bit-depth source images."""
+    normalised heights in [0, 1], plus an optional boolean silhouette
+    mask derived from the alpha channel.
+
+    Iter-139 — alpha-aware:
+      * When the source has an alpha channel we use it as the mesh
+        SILHOUETTE (transparent → outside the mesh). This "honours the
+        shape" the user cropped into the PNG.
+      * The alpha's bounding box becomes the crop rectangle so the
+        printed medallion fits the user-specified diameter regardless
+        of transparent padding around the subject.
+      * The RGB is composited onto neutral grey (128) BEFORE grayscale
+        conversion so semi-transparent pixels and the checkerboard-baked
+        transparent regions some viewers save into PNGs don't leak into
+        the heightmap.
+
+    Returns
+    -------
+    heights_norm : (N, N) float32 in [0, 1]. Bright RGB → 1.0, dark → 0.0
+                   by default (`dark_is_high=False`) — correct for a
+                   REFLECTIVE bas-relief where light bounces off the
+                   raised surface (bright subject sits proud of a
+                   recessed dark ground). `dark_is_high=True` flips
+                   this for lithophane use.
+    alpha_mask   : (N, N) bool, True where opacity ≥ 50%, or None when
+                   the source has no alpha channel.
+    """
     if not image_bytes:
         raise ValueError("empty image payload")
     try:
         img = Image.open(io.BytesIO(image_bytes))
     except Exception as e:  # noqa: BLE001
         raise ValueError(f"cannot parse image: {e}") from e
-    img = img.convert("L")  # grayscale
+
+    # Detect alpha. Palette-mode PNGs can carry transparency via the
+    # "transparency" info entry — convert them to RGBA to normalise.
+    has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+    if has_alpha:
+        rgba = img.convert("RGBA")
+        alpha_img = rgba.split()[-1]
+        # Composite over neutral grey (128) so transparent pixels
+        # contribute no height variation. Neutral grey → normalised 0.5
+        # is masked out later by ``alpha_mask`` anyway; the composite
+        # exists so the anti-aliased alpha fringe doesn't inject
+        # spurious highs/lows into the RGB before we take grayscale.
+        bg = Image.new("RGB", rgba.size, (128, 128, 128))
+        bg.paste(rgba.convert("RGB"), mask=alpha_img)
+        gray_img = bg.convert("L")
+        # Trim to the alpha's bounding box — the user-specified diameter
+        # then maps to the actual subject extent, not the transparent
+        # padding around it.
+        bbox = alpha_img.getbbox()
+        if bbox is not None:
+            gray_img = gray_img.crop(bbox)
+            alpha_img = alpha_img.crop(bbox)
+    else:
+        gray_img = img.convert("L")
+        alpha_img = None
+
     if smooth_sigma > 0:
-        img = img.filter(ImageFilter.GaussianBlur(radius=float(smooth_sigma)))
-    # Crop to a square (centre-crop) so a rectangular reference maps
-    # cleanly onto a circular disk without stretching one axis.
-    w, h = img.size
+        gray_img = gray_img.filter(ImageFilter.GaussianBlur(radius=float(smooth_sigma)))
+
+    # Centre-crop to square so a rectangular reference maps cleanly onto
+    # a circular disk without stretching one axis. The alpha mask (if
+    # present) rides along so it stays aligned with the grayscale.
+    w, h = gray_img.size
     if w != h:
         s = min(w, h)
         left = (w - s) // 2
         top = (h - s) // 2
-        img = img.crop((left, top, left + s, top + s))
-    img = img.resize((grid_size, grid_size), Image.LANCZOS)
-    arr = np.asarray(img, dtype=np.float32) / 255.0
+        gray_img = gray_img.crop((left, top, left + s, top + s))
+        if alpha_img is not None:
+            alpha_img = alpha_img.crop((left, top, left + s, top + s))
+
+    gray_img = gray_img.resize((grid_size, grid_size), Image.LANCZOS)
+    if alpha_img is not None:
+        alpha_img = alpha_img.resize((grid_size, grid_size), Image.LANCZOS)
+
+    arr = np.asarray(gray_img, dtype=np.float32) / 255.0
     if dark_is_high:
         arr = 1.0 - arr
-    return arr
+
+    if alpha_img is not None:
+        alpha_arr = np.asarray(alpha_img, dtype=np.float32) / 255.0
+        # 50% opacity threshold — anti-aliased edges (~10-90% alpha) get
+        # snapped to fully-in or fully-out so the boundary triangles
+        # form a clean edge rather than a fuzzy fringe.
+        alpha_mask = alpha_arr >= 0.5
+        # If the alpha exists but is empty (e.g. an all-transparent PNG)
+        # fall back to the geometric disc so the user still gets a mesh.
+        if not alpha_mask.any():
+            alpha_mask = None
+    else:
+        alpha_mask = None
+
+    return arr, alpha_mask
 
 
 def _build_disk_mesh(
@@ -326,9 +397,8 @@ def generate_bas_relief(
             raise ValueError(f"ring_height_mm must be 0.5..30.0, got {ring_height_mm}")
     grid_size = max(_MIN_GRID, min(_MAX_GRID, int(grid_size)))
 
-    # Step 1-3: image → heightmap (only covers the CENTRE relief area,
-    # never the ring — the ring is a constant-height band).
-    heights_norm = _to_heightmap(image_bytes, grid_size, dark_is_high, smooth_sigma)
+    # Step 1-3: image → heightmap + optional alpha silhouette mask.
+    heights_norm, alpha_mask = _to_heightmap(image_bytes, grid_size, dark_is_high, smooth_sigma)
 
     # Iter-138 — When the ring is enabled we emit TWO SEPARATE meshes
     # (medallion + ring) so users can print them in different colours
@@ -340,11 +410,29 @@ def generate_bas_relief(
     dist2 = (xx - cx) ** 2 + (yy - cy) ** 2
     disc_mask = dist2 <= (r_pix ** 2)
 
-    # Medallion is always built at ``diameter_mm`` with the full-resolution
-    # heightmap. The mask spans the entire grid (a bare disc, no ring band).
+    # Iter-139 — Silhouette source of truth:
+    #   * When the source PNG has a meaningful alpha channel, the mesh
+    #     honours THAT shape (user cropped their photo circular /
+    #     custom → the print silhouette matches).
+    #   * When there's no alpha (JPG, or PNG with no transparency), we
+    #     fall back to the geometric disc so behaviour matches the
+    #     pre-alpha-aware iterations exactly.
+    # Both masks are intersected with the inscribed disc so the mesh
+    # never spills over the requested diameter's bounding box.
+    if alpha_mask is not None:
+        shape_mask = alpha_mask & disc_mask
+        if not shape_mask.any():
+            # Alpha exists but doesn't overlap the disc after cropping —
+            # very rare, but keep the disc rather than emit an empty mesh.
+            shape_mask = disc_mask
+    else:
+        shape_mask = disc_mask
+
+    # Medallion is always built at ``diameter_mm``. Heights only inside
+    # the silhouette mask (rim vertices carry z=base only).
     heights_mm = np.zeros_like(heights_norm, dtype=np.float32)
-    heights_mm[disc_mask] = heights_norm[disc_mask] * float(max_relief_mm)
-    medallion_mesh = _build_disk_mesh(heights_mm, disc_mask, float(diameter_mm), base_thickness_mm)
+    heights_mm[shape_mask] = heights_norm[shape_mask] * float(max_relief_mm)
+    medallion_mesh = _build_disk_mesh(heights_mm, shape_mask, float(diameter_mm), base_thickness_mm)
 
     parts: list[dict] = [{"name": "medallion", "mesh": medallion_mesh}]
 

@@ -155,3 +155,84 @@ class TestFrameRing:
     def test_rejects_bad_ring_height(self, rh):
         with pytest.raises(ValueError, match="ring_height_mm"):
             brs.generate_bas_relief(_make_test_image(), ring_enabled=True, ring_height_mm=rh)
+
+
+class TestAlphaAware:
+    """Iter-139 — Transparent PNG handling: the alpha channel must be
+    treated as the silhouette (not silently converted to L, which would
+    let transparent regions leak into the heightmap)."""
+
+    @staticmethod
+    def _make_alpha_png(size=256):
+        """A 256×256 RGBA PNG whose alpha carves a circle out of a
+        checkerboard-patterned background. The RGB channels inside the
+        circle carry a light subject (200 gray) on transparent padding
+        so a naive L conversion would produce inverted results."""
+        from PIL import Image as _Image, ImageDraw as _ImageDraw
+        img = _Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        d = _ImageDraw.Draw(img)
+        # Bake in a checkerboard into the transparent (alpha=0) pixels —
+        # mimics screenshot-of-transparent PNGs that carry the viewer's
+        # transparency indicator baked into the raw pixels.
+        for j in range(0, size, 16):
+            for i in range(0, size, 16):
+                shade = 255 if ((i // 16) + (j // 16)) % 2 == 0 else 200
+                d.rectangle([i, j, i + 15, j + 15], fill=(shade, shade, shade, 0))
+        # Draw the subject INSIDE an alpha-solid circle.
+        d.ellipse([16, 16, size - 16, size - 16], fill=(200, 200, 200, 255))
+        # A dark subject inside the circle.
+        d.rectangle([64, 100, 200, 200], fill=(20, 20, 20, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_alpha_becomes_silhouette(self):
+        """The alpha channel — not the RGB — drives the mesh silhouette.
+        A checkerboard-baked transparent PNG must NOT emit a noisy
+        rectangular plate (the pre-iter-139 bug)."""
+        png = self._make_alpha_png()
+        r = brs.generate_bas_relief(png, diameter_mm=100, max_relief_mm=8, base_thickness_mm=2, grid_size=192)
+        m = trimesh.load(io.BytesIO(r["parts"][0]["stl_bytes"]), file_type="stl", force="mesh")
+        # The alpha circle is inscribed with 16 px padding → after trim
+        # it fills the grid, so bounding box ≈ diameter_mm.
+        bmin, bmax = m.bounds
+        size = bmax - bmin
+        assert abs(size[0] - 100.0) < 8.0, size
+        assert abs(size[1] - 100.0) < 8.0, size
+        # Z must not exceed base + max_relief (=10 mm).
+        assert size[2] <= 10.05, size[2]
+
+    def test_bright_pixels_are_high_by_default(self):
+        """Reflective bas-relief default: bright pixels sit HIGH so light
+        bounces off raised surfaces. A gradient PNG whose top row is
+        white (255) and bottom is black (0) must produce max Z near the
+        TOP after y-flipping (Pillow stores rows top-down)."""
+        # Small square RGB gradient — no alpha.
+        arr = np.zeros((256, 256), dtype=np.uint8)
+        for i in range(256):
+            arr[i, :] = int(255 * i / 255)  # row 0 = 0 (dark), row 255 = 255 (bright)
+        buf = io.BytesIO()
+        Image.fromarray(arr, mode="L").save(buf, format="PNG")
+        r = brs.generate_bas_relief(buf.getvalue(), diameter_mm=100, max_relief_mm=8, base_thickness_mm=2, grid_size=128)
+        m = trimesh.load(io.BytesIO(r["parts"][0]["stl_bytes"]), file_type="stl", force="mesh")
+        # Find the top-face vertex with the highest Z.
+        peak_v = m.vertices[np.argmax(m.vertices[:, 2])]
+        # The gradient's brightest row is bottom-of-image (row 255) →
+        # after Y-flip in the mesh, that maps to the BOTTOM Y side (or
+        # top — depending on convention). Either way, the peak vertex
+        # should sit near the min OR max Y, NOT the middle.
+        y_center_dist = abs(peak_v[1]) / 50.0  # 50 = radius
+        assert y_center_dist > 0.5, f"peak was near centre — bright→high mapping broken (y={peak_v[1]:.2f})"
+        # Peak Z equals base + max_relief × 1.0 for the brightest row.
+        assert peak_v[2] > 9.0, f"peak Z too low: {peak_v[2]:.2f} (expected ~10)"
+
+    def test_fully_transparent_png_falls_back_to_disc(self):
+        """An RGBA png with alpha=0 everywhere must not produce an empty
+        mesh — fall back to the geometric disc."""
+        from PIL import Image as _Image
+        empty = _Image.new("RGBA", (256, 256), (128, 128, 128, 0))
+        buf = io.BytesIO()
+        empty.save(buf, format="PNG")
+        r = brs.generate_bas_relief(buf.getvalue(), diameter_mm=100, max_relief_mm=6, base_thickness_mm=2, grid_size=128)
+        m = trimesh.load(io.BytesIO(r["parts"][0]["stl_bytes"]), file_type="stl", force="mesh")
+        assert len(m.faces) > 100

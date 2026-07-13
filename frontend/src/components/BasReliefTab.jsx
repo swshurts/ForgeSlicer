@@ -155,7 +155,8 @@ const BasReliefTab = forwardRef(function BasReliefTab(
         </div>
       )}
       <p className="text-[10px] text-slate-500 leading-snug">
-        Best results: high-contrast subject on plain background. Line art / illustrations often work better with <em>Invert</em> enabled.
+        For a <strong>reflective</strong> plaque (default), bright pixels sit proud of the surface — perfect for a photo where light bounces off the raised subject. Toggle <em>Invert</em> for <strong>lithophane</strong>-style backlit prints where dark pixels are tallest.
+        PNGs with transparency: the alpha channel becomes the mesh silhouette (transparent = outside the print).
       </p>
 
       {/* Sliders */}
