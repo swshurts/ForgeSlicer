@@ -1,0 +1,45 @@
+{
+  "summary": "Iter-136.1 Frame-Ring feature: BACKEND 7/8 API tests pass (1 spec-deviation), plus 17/17 existing bas-relief unit tests + 11/11 iter-136 API regression tests all pass — no regression. FRONTEND: full ring flow verified end-to-end via headless browser — toggle default OFF & panel not in DOM, enable → panel appears with rw=10/rh=5 defaults and live outer-diameter readout (220+2*10=240 mm), sliders update value chips + outer readout in realtime, main-diameter change also updates outer readout (150+2*15=180 mm), toggle off removes panel from DOM. Full submit flow: uploaded PNG + ring rw=8 rh=6 → generated STL imported into scene as 'bas-relief-mrijra4z' with originalBbox.x/y = 235.08 mm (expected outer 220+2*8 = 236 mm, within 1 mm tolerance from outer-corner mask clip) — exactly matches the review-request expectation of 'diameter + 16mm (2× ring_width)'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/ai/generate/bas-relief",
+        "issue": "Spec deviation from the review request bullet 'ring_enabled=false + ring_width_mm=0.5 should return 200'. Actual behaviour: Pydantic returns 422 with 'Input should be greater than or equal to 1' because AIBasReliefRequest declares `ring_width_mm: float = Field(10.0, ge=1.0, le=40.0)` as an UNCONDITIONAL bound. The bas_relief_service.generate_bas_relief() function DOES only enforce the bounds when ring_enabled=True (see lines 259-263), but the Pydantic layer rejects OOR values first. Same applies to ring_height_mm (ge=0.5, le=30). If the intended behaviour is 'ignore ring params when disabled', either (a) drop the ge/le bounds on the Pydantic field and let the service-level check handle it, or (b) use a model_validator that skips the bounds when ring_enabled is False. In practice the frontend slider min=1 for ring_width and min=0.5 for ring_height so no user-facing regression, but the API contract diverges from the review request."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter136_1_ring_api.py",
+    "/app/backend/tests/test_bas_relief_service.py",
+    "/app/backend/tests/test_iter136_bas_relief_api.py",
+    "/app/test_reports/pytest/iter136_1_ring.xml"
+  ],
+  "action_items": [
+    "Decide whether the 'ring_enabled=false accepts OOR ring params' behaviour in the review request is intended. If yes: relax the unconditional Pydantic ge/le bounds on ring_width_mm/ring_height_mm and let bas_relief_service.py's conditional check remain the single source of truth. If no: update the review-request spec — everything else is working as intended."
+  ],
+  "critical_code_review_comments": [
+    "AIBasReliefRequest Pydantic bounds on ring_width_mm (ge=1, le=40) and ring_height_mm (ge=0.5, le=30) are unconditional — they fire even when ring_enabled=False, contradicting the review request that says OOR ring params should be ignored when disabled. bas_relief_service.py:259-263 already applies the same bounds conditionally (only when ring_enabled=True), so the Pydantic layer is redundant AND stricter. Recommend removing the ge/le from the Pydantic Field decorator to defer to the service-level check.",
+    "AIGenerateDialog.jsx is 1241 lines (previously flagged at 1182 in iter-136 review; grew ~60 lines from ring UI). Continues to trend past the 700-line split threshold. Extracting a `BasReliefTab.jsx` sub-component would tidy this up.",
+    "Response headers stringify floats as '10.0', '5.0', '220.0' — same pattern as iter-136. Consumers must parseFloat().",
+    "The ring band uses a constant height across the entire annulus — no chamfer/fillet transition into the relief area. Not a bug (matches the Japanese Cork Art aesthetic per the problem statement) but if users report a visible 'ledge', a smoothing transition could be a follow-up."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter136_1_ring_api.py"
+  ],
+  "success_rate": {
+    "backend": "87.5% (7/8 new ring tests; 28/28 existing iter-136 + service tests still pass)",
+    "frontend": "100%"
+  },
+  "test_credentials": "Session token 'st_prov132' bound to user_id 'user_prov132_2' — still valid until 2026-07-20 per DB. Reused from iter-136.",
+  "seed_data_creation": "No new seed data — reused the iter-136 session.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter-136.1 ring feature tested at /app/backend/tests/test_iter136_1_ring_api.py (8 tests). One deliberate FAIL: TestRingParamsIgnoredWhenDisabled::test_disabled_ring_accepts_oor_width — encodes the spec bullet 'ring_enabled=false + ring_width=0.5 → 200' which Pydantic actually returns 422 for. Leave the assertion as-is; it will start passing once the main agent relaxes the field bounds. Frontend: __forgeStore.getState().objects[last].originalBbox is the canonical bbox read; for an all-black test PNG the Z extent is base+ring_height (not base+max_relief) because the interior heightmap is 0 — a real photo will exercise the full 3+12=15 mm Z.",
+  "rca_of_the_issue": "The ring_width_mm / ring_height_mm Pydantic bounds on AIBasReliefRequest (server.py:1116-1117) fire regardless of ring_enabled. The review request spec bullet 5 says a request with ring_enabled=false + ring_width_mm=0.5 should return 200 (values 'ignored'). Mitigation: either (a) drop `ge=1.0, le=40.0` from `ring_width_mm` and `ge=0.5, le=30.0` from `ring_height_mm` on the Pydantic Field decorator (bas_relief_service.py already validates these conditionally at lines 259-263), or (b) migrate the bounds to a `@model_validator(mode='after')` that only enforces them when self.ring_enabled is True. Option (a) is smaller/simpler."
+}

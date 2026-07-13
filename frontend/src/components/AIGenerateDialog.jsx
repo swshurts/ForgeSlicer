@@ -135,6 +135,10 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
   const [basBaseThickness, setBasBaseThickness] = useState(3);
   const [basDarkIsHigh, setBasDarkIsHigh] = useState(false);
   const [basSmooth, setBasSmooth] = useState(1.0);
+  // Iter-136.1 — Frame ring (Japanese Cork Art wooden border).
+  const [basRingEnabled, setBasRingEnabled] = useState(false);
+  const [basRingWidth, setBasRingWidth] = useState(10);
+  const [basRingHeight, setBasRingHeight] = useState(5);
   const pollTimer = useRef(null);
   const pollDeadline = useRef(0);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
@@ -453,6 +457,10 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
         dark_is_high: !!basDarkIsHigh,
         smooth_sigma: Number(basSmooth),
         grid_size: 512,
+        // Iter-136.1 — Frame ring.
+        ring_enabled: !!basRingEnabled,
+        ring_width_mm: Number(basRingWidth),
+        ring_height_mm: Number(basRingHeight),
       }, {
         withCredentials: true,
         responseType: "blob",
@@ -1005,6 +1013,57 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
                   />
                   Invert (dark pixels become the tallest peaks)
                 </label>
+
+                {/* Iter-136.1 — Frame ring block. Collapsed toggle at the
+                    top; expands to reveal the two sliders when enabled.
+                    Mirrors the "wooden circle around the temple" in
+                    traditional Japanese Cork Art. */}
+                <div className="mt-3 border-t border-slate-800 pt-2">
+                  <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                    <input
+                      data-testid="bas-relief-ring-toggle"
+                      type="checkbox"
+                      checked={basRingEnabled}
+                      onChange={(e) => setBasRingEnabled(e.target.checked)}
+                      className="accent-amber-500"
+                    />
+                    <span className="font-semibold">Add frame ring</span>
+                    <span className="text-slate-500 text-[10px]">(wooden-circle border)</span>
+                  </label>
+                  {basRingEnabled && (
+                    <div className="space-y-2 mt-2 pl-5" data-testid="bas-relief-ring-panel">
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] mb-0.5">
+                          <label className="text-slate-300 font-semibold">Ring width</label>
+                          <span data-testid="bas-relief-ring-width-value" className="text-amber-300 font-mono">{basRingWidth} mm</span>
+                        </div>
+                        <input
+                          data-testid="bas-relief-ring-width"
+                          type="range" min="1" max="40" step="0.5"
+                          value={basRingWidth}
+                          onChange={(e) => setBasRingWidth(Number(e.target.value))}
+                          className="w-full accent-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] mb-0.5">
+                          <label className="text-slate-300 font-semibold">Ring height</label>
+                          <span data-testid="bas-relief-ring-height-value" className="text-amber-300 font-mono">{basRingHeight} mm</span>
+                        </div>
+                        <input
+                          data-testid="bas-relief-ring-height"
+                          type="range" min="0.5" max="30" step="0.5"
+                          value={basRingHeight}
+                          onChange={(e) => setBasRingHeight(Number(e.target.value))}
+                          className="w-full accent-amber-500"
+                        />
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        Outer diameter with frame: <span className="text-amber-300 font-mono">{(Number(basDiameter) + 2 * Number(basRingWidth)).toFixed(0)} mm</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="text-[10px] text-slate-500 pt-1">

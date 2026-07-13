@@ -210,6 +210,15 @@ def generate_bas_relief(
     dark_is_high: bool = False,
     smooth_sigma: float = 1.0,
     grid_size: int = _DEFAULT_GRID,
+    # Iter-136.1 — Optional raised outer ring ("frame") that matches the
+    # wooden circle bordering a traditional Japanese Cork Art piece.
+    # When enabled the mesh's XY footprint becomes
+    # `diameter_mm + 2*ring_width_mm`; the subject relief lives inside
+    # the ORIGINAL diameter_mm circle, and the ring band sits at a
+    # constant `base_thickness_mm + ring_height_mm` height.
+    ring_enabled: bool = False,
+    ring_width_mm: float = 10.0,
+    ring_height_mm: float = 5.0,
 ) -> dict:
     """Produce a circular bas-relief disk STL from a reference image.
 
@@ -218,26 +227,28 @@ def generate_bas_relief(
     image_bytes : bytes
         JPEG / PNG / WebP source. Ideally 512²-4096² pre-crop.
     diameter_mm : float
-        Disk diameter in mm (default 220 — matches the user's typical
-        200-250 mm range).
+        Diameter of the RELIEF area (default 220). If `ring_enabled` is
+        True, the finished piece is `diameter_mm + 2*ring_width_mm` wide.
     max_relief_mm : float
-        Height of the tallest peak above the flat rim (default 12 —
-        matches the user's 12-15 mm max thickness target when combined
-        with a 3 mm base).
+        Height of the tallest peak above the flat rim (default 12).
     base_thickness_mm : float
-        Solid disk thickness beneath the relief (default 3). Total
-        thickness at the highest point = base + max_relief.
+        Solid disk thickness beneath the relief (default 3).
     dark_is_high : bool
         If True, black pixels become the tallest peaks (good for
-        line art / illustrations). If False, white pixels are tallest
-        (good for photographic subject-on-plain-background).
+        line art / illustrations).
     smooth_sigma : float
         Gaussian blur radius in pixels before heightmap generation.
-        1.0 removes JPEG banding; 0 disables. Higher values smooth
-        the relief further.
     grid_size : int
-        Surface resolution in vertices per axis. Default 512 gives
-        ~500K triangles on a fully-covered disk; 256 halves that.
+        Surface resolution in vertices per axis. Default 512.
+    ring_enabled : bool
+        Iter-136.1 — Add a raised outer ring around the relief area
+        (like the wooden frame on a Japanese Cork Art piece). Default False.
+    ring_width_mm : float
+        Iter-136.1 — Radial width of the ring band, in mm (default 10).
+        Ignored when `ring_enabled` is False.
+    ring_height_mm : float
+        Iter-136.1 — How far the ring rises above the base (default 5).
+        The ring's total height above z=0 is base_thickness + ring_height.
     """
     if not (_MIN_DIAMETER_MM <= diameter_mm <= _MAX_DIAMETER_MM):
         raise ValueError(f"diameter_mm must be {_MIN_DIAMETER_MM}..{_MAX_DIAMETER_MM}, got {diameter_mm}")
@@ -245,34 +256,67 @@ def generate_bas_relief(
         raise ValueError(f"max_relief_mm must be 0.5..40.0, got {max_relief_mm}")
     if not (0.6 <= base_thickness_mm <= 20.0):
         raise ValueError(f"base_thickness_mm must be 0.6..20.0, got {base_thickness_mm}")
+    if ring_enabled:
+        if not (1.0 <= ring_width_mm <= 40.0):
+            raise ValueError(f"ring_width_mm must be 1.0..40.0, got {ring_width_mm}")
+        if not (0.5 <= ring_height_mm <= 30.0):
+            raise ValueError(f"ring_height_mm must be 0.5..30.0, got {ring_height_mm}")
     grid_size = max(_MIN_GRID, min(_MAX_GRID, int(grid_size)))
 
-    # Step 1-3: image → heightmap.
+    # Step 1-3: image → heightmap (only covers the CENTRE relief area,
+    # never the ring — the ring is a constant-height band).
     heights_norm = _to_heightmap(image_bytes, grid_size, dark_is_high, smooth_sigma)
 
-    # Step 4: circular mask centred on the grid.
-    cx = (grid_size - 1) / 2.0
-    cy = (grid_size - 1) / 2.0
-    r_pix = (grid_size - 1) / 2.0
-    yy, xx = np.mgrid[0:grid_size, 0:grid_size]
-    circle_mask = ((xx - cx) ** 2 + (yy - cy) ** 2) <= (r_pix ** 2)
+    # Step 4: build the two nested masks. `outer_mask` defines the whole
+    # printed silhouette (includes the ring band); `centre_mask` is the
+    # relief area only. When ring is disabled the two are identical.
+    if ring_enabled:
+        # The grid now spans the full outer diameter so both circles fit.
+        outer_diameter = float(diameter_mm) + 2.0 * float(ring_width_mm)
+    else:
+        outer_diameter = float(diameter_mm)
 
-    # Step 5-6: scale + extrude.
-    heights_mm = heights_norm * float(max_relief_mm)
-    mesh = _build_disk_mesh(heights_mm, circle_mask, diameter_mm, base_thickness_mm)
+    cx = cy = (grid_size - 1) / 2.0
+    r_outer_pix = (grid_size - 1) / 2.0
+    yy, xx = np.mgrid[0:grid_size, 0:grid_size]
+    dist2 = (xx - cx) ** 2 + (yy - cy) ** 2
+    outer_mask = dist2 <= (r_outer_pix ** 2)
+    if ring_enabled:
+        # Radius of the CENTRE relief area in grid pixels.
+        r_centre_pix = r_outer_pix * (float(diameter_mm) / outer_diameter)
+        centre_mask = dist2 <= (r_centre_pix ** 2)
+    else:
+        centre_mask = outer_mask
+
+    # Step 5-6: build the per-pixel height array.
+    # Inside centre: base + heightmap (0..max_relief).
+    # Inside ring band: base + ring_height (flat).
+    # Outside outer: unused (mask filters them out).
+    heights_mm = np.zeros_like(heights_norm, dtype=np.float32)
+    heights_mm[centre_mask] = heights_norm[centre_mask] * float(max_relief_mm)
+    if ring_enabled:
+        ring_band = outer_mask & ~centre_mask
+        heights_mm[ring_band] = float(ring_height_mm)
+
+    mesh = _build_disk_mesh(heights_mm, outer_mask, outer_diameter, base_thickness_mm)
 
     # Emit STL.
     stl_bytes = mesh.export(file_type="stl")
 
+    # Peak height varies by whether the ring is taller than the relief.
+    peak_relief = float(ring_height_mm) if ring_enabled and ring_height_mm > max_relief_mm else float(max_relief_mm)
     return {
         "stl_bytes": stl_bytes,
         "diameter_mm": float(diameter_mm),
+        "outer_diameter_mm": outer_diameter,
         "max_relief_mm": float(max_relief_mm),
         "base_thickness_mm": float(base_thickness_mm),
         "dark_is_high": bool(dark_is_high),
         "grid_size": int(grid_size),
+        "ring_enabled": bool(ring_enabled),
+        "ring_width_mm": float(ring_width_mm) if ring_enabled else 0.0,
+        "ring_height_mm": float(ring_height_mm) if ring_enabled else 0.0,
         "faces": int(len(mesh.faces)),
         "vertices": int(len(mesh.vertices)),
-        # Convenience — the frontend uses this to auto-size the import.
-        "total_height_mm": float(base_thickness_mm + max_relief_mm),
+        "total_height_mm": float(base_thickness_mm) + peak_relief,
     }

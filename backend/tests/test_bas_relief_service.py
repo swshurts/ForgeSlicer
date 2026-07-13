@@ -95,3 +95,52 @@ class TestGenerate:
         assert r["grid_size"] == 128
         r2 = brs.generate_bas_relief(_make_test_image(), grid_size=2000)
         assert r2["grid_size"] == 800
+
+
+class TestFrameRing:
+    """Iter-136.1 — Frame ring (Japanese Cork Art wooden border)."""
+
+    def test_ring_off_by_default(self):
+        r = brs.generate_bas_relief(_make_test_image(), grid_size=128)
+        assert r["ring_enabled"] is False
+        assert r["outer_diameter_mm"] == r["diameter_mm"]
+
+    def test_ring_extends_outer_diameter(self):
+        r = brs.generate_bas_relief(
+            _make_test_image(),
+            diameter_mm=200,
+            ring_enabled=True,
+            ring_width_mm=10,
+            ring_height_mm=5,
+            grid_size=192,
+        )
+        assert r["ring_enabled"] is True
+        assert r["outer_diameter_mm"] == 220.0  # 200 + 2*10
+        m = trimesh.load(io.BytesIO(r["stl_bytes"]), file_type="stl", force="mesh")
+        bmin, bmax = m.bounds
+        # Outer XY extent grows to include the ring band.
+        assert abs((bmax[0] - bmin[0]) - 220.0) < 5.0
+        assert abs((bmax[1] - bmin[1]) - 220.0) < 5.0
+
+    def test_ring_taller_than_relief_wins_total_height(self):
+        # ring_height > max_relief → total = base + ring_height.
+        r = brs.generate_bas_relief(
+            _make_test_image(),
+            max_relief_mm=5,
+            base_thickness_mm=3,
+            ring_enabled=True,
+            ring_width_mm=8,
+            ring_height_mm=10,
+            grid_size=128,
+        )
+        assert r["total_height_mm"] == pytest.approx(13.0)  # 3 base + 10 ring
+
+    @pytest.mark.parametrize("rw", [0.5, 50])
+    def test_rejects_bad_ring_width(self, rw):
+        with pytest.raises(ValueError, match="ring_width_mm"):
+            brs.generate_bas_relief(_make_test_image(), ring_enabled=True, ring_width_mm=rw)
+
+    @pytest.mark.parametrize("rh", [0.1, 40])
+    def test_rejects_bad_ring_height(self, rh):
+        with pytest.raises(ValueError, match="ring_height_mm"):
+            brs.generate_bas_relief(_make_test_image(), ring_enabled=True, ring_height_mm=rh)

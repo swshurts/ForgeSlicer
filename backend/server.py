@@ -1111,6 +1111,10 @@ class AIBasReliefRequest(BaseModel):
     dark_is_high: bool = Field(False)
     smooth_sigma: float = Field(1.0, ge=0.0, le=10.0)
     grid_size: int = Field(512, ge=128, le=800)
+    # Iter-136.1 — Frame ring (wooden-circle border) toggle + params.
+    ring_enabled: bool = Field(False)
+    ring_width_mm: float = Field(10.0, ge=1.0, le=40.0)
+    ring_height_mm: float = Field(5.0, ge=0.5, le=30.0)
 
 
 @api_router.post("/ai/generate/bas-relief")
@@ -1158,6 +1162,9 @@ async def ai_generate_bas_relief(req: AIBasReliefRequest, request: Request):
             dark_is_high=req.dark_is_high,
             smooth_sigma=req.smooth_sigma,
             grid_size=req.grid_size,
+            ring_enabled=req.ring_enabled,
+            ring_width_mm=req.ring_width_mm,
+            ring_height_mm=req.ring_height_mm,
         )
     except ValueError as ve:
         raise HTTPException(status_code=422, detail=str(ve))
@@ -1170,9 +1177,13 @@ async def ai_generate_bas_relief(req: AIBasReliefRequest, request: Request):
         media_type="model/stl",
         headers={
             "X-Optimize-Diameter-Mm": str(result["diameter_mm"]),
+            "X-Optimize-Outer-Diameter-Mm": str(result["outer_diameter_mm"]),
             "X-Optimize-Max-Relief-Mm": str(result["max_relief_mm"]),
             "X-Optimize-Base-Thickness-Mm": str(result["base_thickness_mm"]),
             "X-Optimize-Total-Height-Mm": str(result["total_height_mm"]),
+            "X-Optimize-Ring-Enabled": "1" if result["ring_enabled"] else "0",
+            "X-Optimize-Ring-Width-Mm": str(result["ring_width_mm"]),
+            "X-Optimize-Ring-Height-Mm": str(result["ring_height_mm"]),
             "X-Optimize-Faces": str(result["faces"]),
             "X-Optimize-Grid-Size": str(result["grid_size"]),
             "Content-Disposition": 'attachment; filename="bas_relief_disk.stl"',
@@ -2603,6 +2614,9 @@ app.add_middleware(
         "X-Optimize-Diameter-Mm", "X-Optimize-Max-Relief-Mm",
         "X-Optimize-Base-Thickness-Mm", "X-Optimize-Total-Height-Mm",
         "X-Optimize-Faces", "X-Optimize-Grid-Size",
+        # Iter-136.1 — Frame ring.
+        "X-Optimize-Outer-Diameter-Mm", "X-Optimize-Ring-Enabled",
+        "X-Optimize-Ring-Width-Mm", "X-Optimize-Ring-Height-Mm",
     ],
 )
 
