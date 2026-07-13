@@ -24,6 +24,7 @@
  */
 import React, { forwardRef, useImperativeHandle, useState } from "react";
 import axios from "axios";
+import JSZip from "jszip";
 import { toast } from "sonner";
 import { API } from "../lib/api";
 import { useScene } from "../lib/store";
@@ -77,16 +78,48 @@ const BasReliefTab = forwardRef(function BasReliefTab(
         withCredentials: true,
         responseType: "blob",
       });
-      const file = new File(
-        [resp.data],
-        `bas-relief-${Date.now().toString(36)}.stl`,
-        { type: "model/stl" },
+
+      // Iter-138 — Backend bundles medallion + ring as a ZIP when the
+      // ring is enabled so we can import each as a SEPARATE scene
+      // object (user request: print in different colours / swap
+      // frames). Single-STL responses stay legacy-compatible.
+      const contentType = (resp.headers?.["content-type"] || resp.data?.type || "").toLowerCase();
+      const isZip = contentType.includes("zip");
+      const parts = [];
+      if (isZip) {
+        const zip = await JSZip.loadAsync(resp.data);
+        // Preserve a stable insertion order — medallion first, ring second.
+        for (const name of ["medallion.stl", "ring.stl"]) {
+          const entry = zip.file(name);
+          if (entry) parts.push({ name, blob: await entry.async("blob") });
+        }
+        // Fallback: iterate any *.stl entries the backend might rename later.
+        if (parts.length === 0) {
+          const stlEntries = Object.values(zip.files).filter((f) => !f.dir && f.name.toLowerCase().endsWith(".stl"));
+          for (const e of stlEntries) parts.push({ name: e.name, blob: await e.async("blob") });
+        }
+      } else {
+        parts.push({ name: `bas-relief-${Date.now().toString(36)}.stl`, blob: resp.data });
+      }
+      if (parts.length === 0) throw new Error("No STL parts returned by the server.");
+
+      for (const p of parts) {
+        const file = new File([p.blob], p.name, { type: "model/stl" });
+        const mesh = await importAnyMeshFile(file);
+        addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+      }
+
+      const isSplit = parts.length > 1;
+      toast?.success?.(
+        isSplit
+          ? `Bas-relief bundle imported (${parts.length} parts)`
+          : "Bas-relief disk ready",
+        {
+          description: isSplit
+            ? `${basDiameter} mm medallion + ${Number(basRingWidth) * 2 + Number(basDiameter)} mm ring · both dropped on the plate`
+            : `${basDiameter} mm × ${(Number(basBaseThickness) + Number(basRelief)).toFixed(1)} mm thick · imported to the plate`,
+        },
       );
-      const mesh = await importAnyMeshFile(file);
-      addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-      toast?.success?.("Bas-relief disk ready", {
-        description: `${basDiameter} mm × ${(Number(basBaseThickness) + Number(basRelief)).toFixed(1)} mm thick · imported to the plate`,
-      });
       onSuccess?.();
     } catch (e) {
       // Bas-relief 502 / 400 errors deliver a JSON blob when responseType
@@ -204,7 +237,7 @@ const BasReliefTab = forwardRef(function BasReliefTab(
               className="accent-amber-500"
             />
             <span className="font-semibold">Add frame ring</span>
-            <span className="text-slate-500 text-[10px]">(wooden-circle border)</span>
+            <span className="text-slate-500 text-[10px]">(separate part — colour it independently)</span>
           </label>
           {basRingEnabled && (
             <div className="space-y-2 mt-2 pl-5" data-testid="bas-relief-ring-panel">

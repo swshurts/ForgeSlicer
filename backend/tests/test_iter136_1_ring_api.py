@@ -82,11 +82,26 @@ class TestRingEnabled:
         assert r.headers.get("X-Optimize-Outer-Diameter-Mm") == "220.0"
         # Inner (relief) diameter unchanged
         assert r.headers.get("X-Optimize-Diameter-Mm") == "200.0"
-        # Parse STL — XY extents should be ~220 mm
-        m = trimesh.load(io.BytesIO(r.content), file_type="stl", force="mesh")
-        bmin, bmax = m.bounds
-        assert abs((bmax[0] - bmin[0]) - 220.0) < 5.0, m.bounds
-        assert abs((bmax[1] - bmin[1]) - 220.0) < 5.0, m.bounds
+        # Iter-138 — Response is now a ZIP with medallion.stl + ring.stl
+        # so the frontend can import each as a separate scene object
+        # (colour them / print them independently).
+        assert r.headers.get("X-Optimize-Parts") == "2"
+        ctype = (r.headers.get("Content-Type") or "").lower()
+        assert "zip" in ctype, ctype
+        import zipfile
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = sorted(zf.namelist())
+        assert names == ["medallion.stl", "ring.stl"], names
+        # Medallion spans the original diameter (200 mm)
+        med = trimesh.load(io.BytesIO(zf.read("medallion.stl")), file_type="stl", force="mesh")
+        mbmin, mbmax = med.bounds
+        assert abs((mbmax[0] - mbmin[0]) - 200.0) < 5.0, med.bounds
+        assert abs((mbmax[1] - mbmin[1]) - 200.0) < 5.0, med.bounds
+        # Ring spans the outer diameter (220 mm)
+        ring = trimesh.load(io.BytesIO(zf.read("ring.stl")), file_type="stl", force="mesh")
+        rbmin, rbmax = ring.bounds
+        assert abs((rbmax[0] - rbmin[0]) - 220.0) < 5.0, ring.bounds
+        assert abs((rbmax[1] - rbmin[1]) - 220.0) < 5.0, ring.bounds
 
 
 class TestRingDisabled:

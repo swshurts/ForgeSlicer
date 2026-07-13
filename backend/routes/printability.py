@@ -229,13 +229,13 @@ def build_printability_router(
     async def thicken_walls(
         request: Request,
         file: UploadFile = File(...),
-        offset_mm: float = Form(0.5),
+        target_thickness_mm: float = Form(1.2),
         file_type: str | None = Form(default=None),
     ):
-        """Dilate a mesh by ``offset_mm`` (Minkowski-sum with a ball
-        of that radius) so thin walls become printable. See
-        ``mesh_optimize_service.thicken_walls`` for the Minkowski
-        rationale and pre-decimation guards."""
+        """Selectively thicken walls thinner than ``target_thickness_mm``.
+        See ``mesh_optimize_service.thicken_walls`` for the per-vertex
+        ray-cast + normal-offset rationale. Only vertices in genuinely
+        thin regions move; the overall silhouette is preserved."""
         await get_current_user(request)
         ft = (file_type or "").strip().lower().lstrip(".")
         if not ft and file.filename:
@@ -253,25 +253,22 @@ def build_printability_router(
             raise HTTPException(status_code=400, detail="Empty file.")
         try:
             result = mesh_optimize_service.thicken_walls(
-                content, offset_mm=offset_mm, file_type=ft,
+                content, target_thickness_mm=target_thickness_mm, file_type=ft,
             )
         except ValueError as ve:
             raise HTTPException(status_code=422, detail=str(ve))
-        except RuntimeError as re:
-            # manifold3d import unavailable in this build.
-            raise HTTPException(status_code=503, detail=str(re))
         except Exception as e:  # noqa: BLE001
-            logger.exception("thicken_walls crashed on %s (offset=%s)", file.filename, offset_mm)
+            logger.exception("thicken_walls crashed on %s (target=%s)", file.filename, target_thickness_mm)
             raise HTTPException(status_code=500, detail=f"Thicken failed: {e}")
 
         return Response(
             content=result["stl_bytes"],
             media_type="model/stl",
             headers={
-                "X-Optimize-Offset-Mm": str(result["offset_mm"]),
+                "X-Optimize-Target-Mm": str(result["target_thickness_mm"]),
                 "X-Optimize-Faces-Before": str(result["before_faces"]),
                 "X-Optimize-Faces-After": str(result["after_faces"]),
-                "X-Optimize-Pre-Decimated": "1" if result["pre_decimated"] else "0",
+                "X-Optimize-Thin-Verts-Fixed": str(result["thin_verts_fixed"]),
                 "Content-Disposition": 'attachment; filename="thickened.stl"',
             },
         )

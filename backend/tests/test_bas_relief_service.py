@@ -116,11 +116,22 @@ class TestFrameRing:
         )
         assert r["ring_enabled"] is True
         assert r["outer_diameter_mm"] == 220.0  # 200 + 2*10
-        m = trimesh.load(io.BytesIO(r["stl_bytes"]), file_type="stl", force="mesh")
-        bmin, bmax = m.bounds
-        # Outer XY extent grows to include the ring band.
-        assert abs((bmax[0] - bmin[0]) - 220.0) < 5.0
-        assert abs((bmax[1] - bmin[1]) - 220.0) < 5.0
+        # Iter-138 — Result is split into TWO parts (medallion + ring).
+        # The medallion STL spans the original diameter (200 mm); the
+        # ring STL spans the outer diameter (220 mm).
+        assert len(r["parts"]) == 2
+        assert [p["name"] for p in r["parts"]] == ["medallion", "ring"]
+        medallion = trimesh.load(io.BytesIO(r["parts"][0]["stl_bytes"]), file_type="stl", force="mesh")
+        ring = trimesh.load(io.BytesIO(r["parts"][1]["stl_bytes"]), file_type="stl", force="mesh")
+        mbmin, mbmax = medallion.bounds
+        rbmin, rbmax = ring.bounds
+        assert abs((mbmax[0] - mbmin[0]) - 200.0) < 5.0
+        assert abs((mbmax[1] - mbmin[1]) - 200.0) < 5.0
+        assert abs((rbmax[0] - rbmin[0]) - 220.0) < 5.0
+        assert abs((rbmax[1] - rbmin[1]) - 220.0) < 5.0
+        # Legacy stl_bytes field points at the medallion (first part).
+        legacy = trimesh.load(io.BytesIO(r["stl_bytes"]), file_type="stl", force="mesh")
+        assert legacy.bounds[1][0] - legacy.bounds[0][0] < 210.0
 
     def test_ring_taller_than_relief_wins_total_height(self):
         # ring_height > max_relief → total = base + ring_height.

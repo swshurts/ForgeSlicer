@@ -149,28 +149,31 @@ export async function addBaseToImportedObject(obj, { shape = "cylinder", thickne
 
 /**
  * Run /api/printability/thicken-walls on an imported object.
- *   obj       — imported scene object
- *   offsetMm  — Minkowski-sum ball radius (mm). 0.5 → +1.0 mm total wall
- *              thickness (both sides).
+ *   obj                — imported scene object
+ *   targetThicknessMm  — minimum wall thickness (mm) to drive thin regions up
+ *                        to (default 1.2 — matches the analyzer's threshold).
+ *
+ * Only walls thinner than the target are displaced; the silhouette is
+ * preserved. See mesh_optimize_service.thicken_walls for the algorithm.
  *
  * Returns:
- *   { update, stats: { offsetMm, facesBefore, facesAfter, preDecimated } }
+ *   { update, stats: { targetThicknessMm, facesBefore, facesAfter, thinVertsFixed } }
  */
-export async function thickenWallsImportedObject(obj, { offsetMm = 0.5 } = {}) {
+export async function thickenWallsImportedObject(obj, { targetThicknessMm = 1.2 } = {}) {
   const stl = _objToStlBlob(obj);
   const fd = new FormData();
   fd.append("file", stl, "input.stl");
-  fd.append("offset_mm", String(offsetMm));
+  fd.append("target_thickness_mm", String(targetThicknessMm));
   fd.append("file_type", "stl");
   const { bytes, headers } = await _postMultipart(`${API}/printability/thicken-walls`, fd);
   const parsed = await _stlToGeometryUpdate(bytes);
   return {
     update: parsed.update,
     stats: {
-      offsetMm: Number(headers.get("X-Optimize-Offset-Mm")) || offsetMm,
+      targetThicknessMm: Number(headers.get("X-Optimize-Target-Mm")) || targetThicknessMm,
       facesBefore: Number(headers.get("X-Optimize-Faces-Before")) || 0,
       facesAfter: Number(headers.get("X-Optimize-Faces-After")) || parsed.faces,
-      preDecimated: headers.get("X-Optimize-Pre-Decimated") === "1",
+      thinVertsFixed: Number(headers.get("X-Optimize-Thin-Verts-Fixed")) || 0,
     },
   };
 }

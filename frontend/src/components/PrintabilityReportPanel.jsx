@@ -329,8 +329,8 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     return _applyOptimizePerObject("Add Base", "add_base", { shape, thicknessMm, marginMm });
   }, [_applyOptimizePerObject]);
 
-  const runThickenWalls = useCallback((offsetMm = 0.5) => {
-    return _applyOptimizePerObject("Thicken", "thicken_walls", { offsetMm });
+  const runThickenWalls = useCallback((targetThicknessMm = 1.2) => {
+    return _applyOptimizePerObject("Thicken", "thicken_walls", { targetThicknessMm });
   }, [_applyOptimizePerObject]);
 
   // Iter-135 — Auto-Fix orchestrator. Runs the applicable fixers in
@@ -352,7 +352,7 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     // BEFORE decimate because Minkowski on the pre-decimated mesh
     // preserves more subtle wall geometry.
     if (codes.has("auto_clean")) steps.push({ label: "Auto-Clean", run: runAutoClean });
-    if (codes.has("thicken_walls")) steps.push({ label: "Thicken", run: () => runThickenWalls(0.5) });
+    if (codes.has("thicken_walls")) steps.push({ label: "Thicken", run: () => runThickenWalls(1.2) });
     if (codes.has("decimate_with_intent")) steps.push({ label: "Decimate", run: () => runDecimate("functional") });
     if (codes.has("add_base")) steps.push({ label: "Add Base", run: () => runAddBase("cylinder", 3.0, 2.0) });
     if (steps.length === 0) {
@@ -381,7 +381,7 @@ export default function PrintabilityReportPanel({ open, onClose }) {
     if (code === "auto_clean")           { runAutoClean(); return; }
     if (code === "decimate_with_intent") { runDecimate("functional"); return; }
     if (code === "add_base")             { runAddBase("cylinder", 3.0, 2.0); return; }
-    if (code === "thicken_walls")        { runThickenWalls(0.5); return; }
+    if (code === "thicken_walls")        { runThickenWalls(1.2); return; }
     // Remaining fix actions (voxel_remesh, reorient) still land in
     // follow-up iterations.
     toast.info(`${actionLabel(code)} — coming in the next update`, {

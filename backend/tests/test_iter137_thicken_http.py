@@ -1,13 +1,14 @@
-"""Iter-137 — HTTP integration tests for /api/printability/thicken-walls.
+"""Iter-137/138 — HTTP integration tests for /api/printability/thicken-walls.
 
 Exercises the review-request assertions at the wire level:
-  - POST /thicken-walls with a thin 20x20x0.5 STL + offset_mm=0.5:
+  - POST /thicken-walls with a thin 20x20x0.5 STL + target_thickness_mm=1.2:
       * 200 + STL body
-      * X-Optimize-Offset-Mm=0.5
-      * X-Optimize-Faces-Before / -After / -Pre-Decimated headers present
-      * output STL parses and bbox grew by ~1 mm/axis
+      * X-Optimize-Target-Mm=1.2
+      * X-Optimize-Faces-Before / -After / -Thin-Verts-Fixed headers present
+      * output STL parses and the Z axis grew (thin dimension); the X/Y
+        silhouette is preserved (selective operator, not Minkowski)
       * /printability/analyze on the thickened STL no longer flags thin_walls
-  - Bad offset_mm (0.0, 10.0) → 422
+  - Bad target_thickness_mm (0.0, 10.0, 0.1) → 422
   - Unsupported extension (.xyz) → 400
   - Empty body → 400
   - Auth-gated: no session token → 401/403
@@ -114,14 +115,14 @@ class TestThickenWallsHTTP:
             f"{BASE_URL}/api/printability/thicken-walls",
             headers=self._headers(api_session),
             files={"file": ("thin.stl", stl, "model/stl")},
-            data={"offset_mm": "0.5", "file_type": "stl"},
+            data={"target_thickness_mm": "1.2", "file_type": "stl"},
             timeout=90,
         )
         assert r.status_code == 200, r.text
-        assert r.headers.get("X-Optimize-Offset-Mm", "").startswith("0.5"), r.headers
+        assert r.headers.get("X-Optimize-Target-Mm", "").startswith("1.2"), r.headers
         assert r.headers.get("X-Optimize-Faces-Before") is not None
         assert r.headers.get("X-Optimize-Faces-After") is not None
-        assert r.headers.get("X-Optimize-Pre-Decimated") in ("0", "1")
+        assert r.headers.get("X-Optimize-Thin-Verts-Fixed") is not None
         body = r.content
         assert len(body) > 100, "STL body too small"
         # Confirm output STL loads back
@@ -129,10 +130,11 @@ class TestThickenWallsHTTP:
         assert isinstance(reloaded, trimesh.Trimesh)
         bmin, bmax = reloaded.bounds
         size = bmax - bmin
-        # Bbox should have grown roughly 2*offset per axis (~1 mm per side)
-        assert size[0] > 20.5, f"X grew only {size[0] - 20} mm"
-        assert size[1] > 20.5, f"Y grew only {size[1] - 20} mm"
-        assert size[2] > 1.0, f"Z is {size[2]} — expected ~1.5 mm"
+        # Selective thicken: Z grows (that's the thin axis); X / Y stay
+        # near 20 because those sides were already 20 mm thick.
+        assert size[2] > 0.55, f"Z did not grow: {size[2]:.3f}"
+        assert size[0] <= 21.0, f"unexpected X growth: {size[0]:.3f}"
+        assert size[1] <= 21.0, f"unexpected Y growth: {size[1]:.3f}"
 
     def test_thickened_output_clears_thin_walls_via_analyze(self, api_session):
         stl = _thin_plate_stl_bytes()
@@ -140,7 +142,7 @@ class TestThickenWallsHTTP:
             f"{BASE_URL}/api/printability/thicken-walls",
             headers=self._headers(api_session),
             files={"file": ("thin.stl", stl, "model/stl")},
-            data={"offset_mm": "0.5", "file_type": "stl"},
+            data={"target_thickness_mm": "1.2", "file_type": "stl"},
             timeout=90,
         )
         assert r.status_code == 200, r.text
@@ -157,24 +159,24 @@ class TestThickenWallsHTTP:
         codes = {i["code"] for i in r2.json().get("issues", [])}
         assert "thin_walls" not in codes, f"thin_walls still present: {codes}"
 
-    @pytest.mark.parametrize("bad_offset", ["0.0", "10.0", "-0.1"])
-    def test_rejects_bad_offset(self, api_session, bad_offset):
+    @pytest.mark.parametrize("bad_target", ["0.0", "10.0", "0.1", "-0.1"])
+    def test_rejects_bad_target(self, api_session, bad_target):
         stl = _thin_plate_stl_bytes()
         r = requests.post(
             f"{BASE_URL}/api/printability/thicken-walls",
             headers=self._headers(api_session),
             files={"file": ("thin.stl", stl, "model/stl")},
-            data={"offset_mm": bad_offset, "file_type": "stl"},
+            data={"target_thickness_mm": bad_target, "file_type": "stl"},
             timeout=30,
         )
-        assert r.status_code == 422, f"expected 422 for offset={bad_offset}, got {r.status_code}: {r.text}"
+        assert r.status_code == 422, f"expected 422 for target={bad_target}, got {r.status_code}: {r.text}"
 
     def test_rejects_unsupported_extension(self, api_session):
         r = requests.post(
             f"{BASE_URL}/api/printability/thicken-walls",
             headers=self._headers(api_session),
             files={"file": ("bad.xyz", b"not-a-mesh", "application/octet-stream")},
-            data={"offset_mm": "0.5"},
+            data={"target_thickness_mm": "1.2"},
             timeout=30,
         )
         assert r.status_code == 400, r.text
@@ -184,7 +186,7 @@ class TestThickenWallsHTTP:
             f"{BASE_URL}/api/printability/thicken-walls",
             headers=self._headers(api_session),
             files={"file": ("empty.stl", b"", "model/stl")},
-            data={"offset_mm": "0.5", "file_type": "stl"},
+            data={"target_thickness_mm": "1.2", "file_type": "stl"},
             timeout=30,
         )
         assert r.status_code == 400, r.text
@@ -194,7 +196,7 @@ class TestThickenWallsHTTP:
         r = requests.post(
             f"{BASE_URL}/api/printability/thicken-walls",
             files={"file": ("thin.stl", stl, "model/stl")},
-            data={"offset_mm": "0.5", "file_type": "stl"},
+            data={"target_thickness_mm": "1.2", "file_type": "stl"},
             timeout=30,
         )
         assert r.status_code in (401, 403), f"expected 401/403 unauthenticated, got {r.status_code}"

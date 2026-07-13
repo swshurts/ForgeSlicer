@@ -8,6 +8,7 @@ import logging
 import asyncio
 import time
 import base64
+import io
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
@@ -1175,20 +1176,45 @@ async def ai_generate_bas_relief(req: AIBasReliefRequest, request: Request):
         logger.exception("bas-relief generation crashed")
         raise HTTPException(status_code=500, detail=f"Bas-relief generation failed: {e}")
 
+    common_headers = {
+        "X-Optimize-Diameter-Mm": str(result["diameter_mm"]),
+        "X-Optimize-Outer-Diameter-Mm": str(result["outer_diameter_mm"]),
+        "X-Optimize-Max-Relief-Mm": str(result["max_relief_mm"]),
+        "X-Optimize-Base-Thickness-Mm": str(result["base_thickness_mm"]),
+        "X-Optimize-Total-Height-Mm": str(result["total_height_mm"]),
+        "X-Optimize-Ring-Enabled": "1" if result["ring_enabled"] else "0",
+        "X-Optimize-Ring-Width-Mm": str(result["ring_width_mm"]),
+        "X-Optimize-Ring-Height-Mm": str(result["ring_height_mm"]),
+        "X-Optimize-Faces": str(result["faces"]),
+        "X-Optimize-Grid-Size": str(result["grid_size"]),
+        "X-Optimize-Parts": str(len(result["parts"])),
+    }
+
+    # Iter-138 — Multi-part responses (ring enabled) are bundled as a ZIP
+    # so the frontend imports the medallion and the ring as SEPARATE
+    # scene objects (user request: print in different colours / swap
+    # frames). Single-part responses keep the legacy STL body so any
+    # older client continues to work unmodified.
+    if len(result["parts"]) > 1:
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in result["parts"]:
+                zf.writestr(f"{p['name']}.stl", p["stl_bytes"])
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/zip",
+            headers={
+                **common_headers,
+                "Content-Disposition": 'attachment; filename="bas_relief_parts.zip"',
+            },
+        )
+
     return Response(
         content=result["stl_bytes"],
         media_type="model/stl",
         headers={
-            "X-Optimize-Diameter-Mm": str(result["diameter_mm"]),
-            "X-Optimize-Outer-Diameter-Mm": str(result["outer_diameter_mm"]),
-            "X-Optimize-Max-Relief-Mm": str(result["max_relief_mm"]),
-            "X-Optimize-Base-Thickness-Mm": str(result["base_thickness_mm"]),
-            "X-Optimize-Total-Height-Mm": str(result["total_height_mm"]),
-            "X-Optimize-Ring-Enabled": "1" if result["ring_enabled"] else "0",
-            "X-Optimize-Ring-Width-Mm": str(result["ring_width_mm"]),
-            "X-Optimize-Ring-Height-Mm": str(result["ring_height_mm"]),
-            "X-Optimize-Faces": str(result["faces"]),
-            "X-Optimize-Grid-Size": str(result["grid_size"]),
+            **common_headers,
             "Content-Disposition": 'attachment; filename="bas_relief_disk.stl"',
         },
     )
@@ -2620,6 +2646,11 @@ app.add_middleware(
         # Iter-136.1 — Frame ring.
         "X-Optimize-Outer-Diameter-Mm", "X-Optimize-Ring-Enabled",
         "X-Optimize-Ring-Width-Mm", "X-Optimize-Ring-Height-Mm",
+        # Iter-137 — Thicken walls response headers.
+        "X-Optimize-Offset-Mm", "X-Optimize-Pre-Decimated",
+        "X-Optimize-Target-Mm", "X-Optimize-Thin-Verts-Fixed",
+        # Iter-138 — Bas-relief multi-part bundling.
+        "X-Optimize-Parts",
     ],
 )
 

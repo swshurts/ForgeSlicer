@@ -202,6 +202,69 @@ def _build_disk_mesh(
     return mesh
 
 
+def _build_annulus_mesh(
+    outer_radius_mm: float,
+    inner_radius_mm: float,
+    height_mm: float,
+    segments: int = 128,
+) -> trimesh.Trimesh:
+    """Iter-138 — Build a flat annular ring (washer shape) mesh.
+
+    Used to emit the wooden-border ring as a SEPARATE part from the
+    medallion (user request iter-138: split the two so they can be
+    printed in different colours / materials / orientations).
+
+    Parameters
+    ----------
+    outer_radius_mm : outer edge of the ring, in mm.
+    inner_radius_mm : inner cutout radius, in mm.
+    height_mm       : total Z thickness (ring stands from z=0 to z=height).
+    segments        : circumferential subdivisions (default 128 → smooth).
+
+    Returns
+    -------
+    A closed, manifold trimesh.Trimesh centred on origin, bottom at z=0.
+    """
+    if outer_radius_mm <= inner_radius_mm:
+        raise ValueError(
+            f"outer_radius ({outer_radius_mm}) must exceed inner_radius ({inner_radius_mm})"
+        )
+    n = int(segments)
+    angles = np.linspace(0.0, 2.0 * np.pi, n, endpoint=False)
+    cos_a = np.cos(angles)
+    sin_a = np.sin(angles)
+
+    # Four vertex rings — outer/inner × bottom/top.
+    outer_bot = np.column_stack([outer_radius_mm * cos_a, outer_radius_mm * sin_a, np.zeros(n)])
+    inner_bot = np.column_stack([inner_radius_mm * cos_a, inner_radius_mm * sin_a, np.zeros(n)])
+    outer_top = np.column_stack([outer_radius_mm * cos_a, outer_radius_mm * sin_a, np.full(n, height_mm)])
+    inner_top = np.column_stack([inner_radius_mm * cos_a, inner_radius_mm * sin_a, np.full(n, height_mm)])
+    verts = np.vstack([outer_bot, inner_bot, outer_top, inner_top]).astype(np.float32)
+
+    # Index offsets for each ring in the flat vertex array.
+    OB, IB, OT, IT = 0, n, 2 * n, 3 * n
+
+    faces: list[list[int]] = []
+    for i in range(n):
+        ni = (i + 1) % n
+        # Outer wall (facing outward — CCW when viewed from +radial direction).
+        faces.append([OB + i, OT + i, OT + ni])
+        faces.append([OB + i, OT + ni, OB + ni])
+        # Inner wall (facing inward — reversed winding).
+        faces.append([IB + i, IT + ni, IT + i])
+        faces.append([IB + i, IB + ni, IT + ni])
+        # Top face (annular ring — outer_top → inner_top).
+        faces.append([OT + i, IT + i, IT + ni])
+        faces.append([OT + i, IT + ni, OT + ni])
+        # Bottom face — reversed so normal points down.
+        faces.append([OB + i, IB + ni, IB + i])
+        faces.append([OB + i, OB + ni, IB + ni])
+
+    mesh = trimesh.Trimesh(vertices=verts, faces=np.asarray(faces, dtype=np.int64), process=False)
+    mesh.merge_vertices()
+    return mesh
+
+
 def generate_bas_relief(
     image_bytes: bytes,
     diameter_mm: float = 220.0,
@@ -267,46 +330,59 @@ def generate_bas_relief(
     # never the ring — the ring is a constant-height band).
     heights_norm = _to_heightmap(image_bytes, grid_size, dark_is_high, smooth_sigma)
 
-    # Step 4: build the two nested masks. `outer_mask` defines the whole
-    # printed silhouette (includes the ring band); `centre_mask` is the
-    # relief area only. When ring is disabled the two are identical.
-    if ring_enabled:
-        # The grid now spans the full outer diameter so both circles fit.
-        outer_diameter = float(diameter_mm) + 2.0 * float(ring_width_mm)
-    else:
-        outer_diameter = float(diameter_mm)
-
+    # Iter-138 — When the ring is enabled we emit TWO SEPARATE meshes
+    # (medallion + ring) so users can print them in different colours
+    # / materials, or swap frames. Historic single-mesh behaviour is
+    # preserved when the ring is disabled (backwards compatible).
     cx = cy = (grid_size - 1) / 2.0
-    r_outer_pix = (grid_size - 1) / 2.0
+    r_pix = (grid_size - 1) / 2.0
     yy, xx = np.mgrid[0:grid_size, 0:grid_size]
     dist2 = (xx - cx) ** 2 + (yy - cy) ** 2
-    outer_mask = dist2 <= (r_outer_pix ** 2)
-    if ring_enabled:
-        # Radius of the CENTRE relief area in grid pixels.
-        r_centre_pix = r_outer_pix * (float(diameter_mm) / outer_diameter)
-        centre_mask = dist2 <= (r_centre_pix ** 2)
-    else:
-        centre_mask = outer_mask
+    disc_mask = dist2 <= (r_pix ** 2)
 
-    # Step 5-6: build the per-pixel height array.
-    # Inside centre: base + heightmap (0..max_relief).
-    # Inside ring band: base + ring_height (flat).
-    # Outside outer: unused (mask filters them out).
+    # Medallion is always built at ``diameter_mm`` with the full-resolution
+    # heightmap. The mask spans the entire grid (a bare disc, no ring band).
     heights_mm = np.zeros_like(heights_norm, dtype=np.float32)
-    heights_mm[centre_mask] = heights_norm[centre_mask] * float(max_relief_mm)
+    heights_mm[disc_mask] = heights_norm[disc_mask] * float(max_relief_mm)
+    medallion_mesh = _build_disk_mesh(heights_mm, disc_mask, float(diameter_mm), base_thickness_mm)
+
+    parts: list[dict] = [{"name": "medallion", "mesh": medallion_mesh}]
+
+    outer_diameter = float(diameter_mm)
     if ring_enabled:
-        ring_band = outer_mask & ~centre_mask
-        heights_mm[ring_band] = float(ring_height_mm)
+        outer_diameter = float(diameter_mm) + 2.0 * float(ring_width_mm)
+        # Ring is a flat annulus sitting at the same z=0 baseline as the
+        # medallion so they interlock naturally when placed concentric.
+        # Total ring height = base_thickness + ring_height (matches the
+        # legacy single-mesh recipe so print-height feels identical).
+        ring_mesh = _build_annulus_mesh(
+            outer_radius_mm=outer_diameter / 2.0,
+            inner_radius_mm=float(diameter_mm) / 2.0,
+            height_mm=float(base_thickness_mm) + float(ring_height_mm),
+            segments=128,
+        )
+        parts.append({"name": "ring", "mesh": ring_mesh})
 
-    mesh = _build_disk_mesh(heights_mm, outer_mask, outer_diameter, base_thickness_mm)
-
-    # Emit STL.
-    stl_bytes = mesh.export(file_type="stl")
+    # Emit STL bytes per part. Downstream serializer decides whether to
+    # ship a single STL (legacy behaviour) or bundle into a ZIP.
+    total_faces = 0
+    total_verts = 0
+    for p in parts:
+        m: trimesh.Trimesh = p["mesh"]
+        p["stl_bytes"] = m.export(file_type="stl")
+        p["faces"] = int(len(m.faces))
+        p["vertices"] = int(len(m.vertices))
+        total_faces += p["faces"]
+        total_verts += p["vertices"]
 
     # Peak height varies by whether the ring is taller than the relief.
     peak_relief = float(ring_height_mm) if ring_enabled and ring_height_mm > max_relief_mm else float(max_relief_mm)
     return {
-        "stl_bytes": stl_bytes,
+        # Legacy single-mesh field — kept as the FIRST part (medallion)
+        # so callers that expect ``stl_bytes`` and never enable the ring
+        # continue to work unmodified.
+        "stl_bytes": parts[0]["stl_bytes"],
+        "parts": parts,
         "diameter_mm": float(diameter_mm),
         "outer_diameter_mm": outer_diameter,
         "max_relief_mm": float(max_relief_mm),
@@ -316,7 +392,7 @@ def generate_bas_relief(
         "ring_enabled": bool(ring_enabled),
         "ring_width_mm": float(ring_width_mm) if ring_enabled else 0.0,
         "ring_height_mm": float(ring_height_mm) if ring_enabled else 0.0,
-        "faces": int(len(mesh.faces)),
-        "vertices": int(len(mesh.vertices)),
+        "faces": total_faces,
+        "vertices": total_verts,
         "total_height_mm": float(base_thickness_mm) + peak_relief,
     }
