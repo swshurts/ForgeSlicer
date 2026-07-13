@@ -1112,9 +1112,12 @@ class AIBasReliefRequest(BaseModel):
     smooth_sigma: float = Field(1.0, ge=0.0, le=10.0)
     grid_size: int = Field(512, ge=128, le=800)
     # Iter-136.1 — Frame ring (wooden-circle border) toggle + params.
+    # Bounds intentionally OMITTED here — the service layer enforces
+    # them conditionally (only when ring_enabled is True), so passing
+    # OOR values with ring_enabled=false is a no-op instead of a 422.
     ring_enabled: bool = Field(False)
-    ring_width_mm: float = Field(10.0, ge=1.0, le=40.0)
-    ring_height_mm: float = Field(5.0, ge=0.5, le=30.0)
+    ring_width_mm: float = Field(10.0)
+    ring_height_mm: float = Field(5.0)
 
 
 @api_router.post("/ai/generate/bas-relief")

@@ -33,7 +33,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-136, 2026-07-13) — Japanese Cork Art / Bas-Relief generation
+### Recently completed (iter-136.1, 2026-07-13) — Frame Ring on the Bas-Relief tab
+- **User request**: Enhance iter-136 by adding an optional raised outer ring (the wooden-circle border seen on traditional Japanese Cork Art pieces).
+- **Backend** (`bas_relief_service.py` + `server.py`): three new params — `ring_enabled` (bool), `ring_width_mm` (mm), `ring_height_mm` (mm). When enabled, the mesh's outer diameter becomes `diameter + 2*ring_width`; the ring band sits at a constant `base + ring_height` above the plate. Nested masks (`outer_mask`, `centre_mask`) keep the subject relief entirely inside the original diameter. `total_height_mm` returns the greater of `base + max_relief` and `base + ring_height` so importers auto-size correctly. Pydantic bounds intentionally OMITTED on the ring params — the service enforces them conditionally so `ring_enabled=false` requests never 422 on stale slider values.
+- **Response headers**: 4 new — `X-Optimize-Outer-Diameter-Mm`, `X-Optimize-Ring-Enabled`, `X-Optimize-Ring-Width-Mm`, `X-Optimize-Ring-Height-Mm`. CORS `expose_headers` updated.
+- **Frontend** (`AIGenerateDialog.jsx`): new "Add frame ring" toggle below the Invert checkbox on the Bas-Relief tab. When enabled a collapsible sub-panel reveals Ring Width and Ring Height sliders (`data-testid="bas-relief-ring-width"` / `-height`) and a live "Outer diameter with frame: X mm" readout.
+- **Testing (iter-136.1): 100% pass** — 17/17 service unit tests (6 new `TestFrameRing`), 8/8 new API integration tests, 11/11 iter-136 regression tests, 100% frontend flow verified (toggle default off + panel not in DOM → enable → sliders + realtime outer diameter → generate → mesh imported with expected bbox). **Full backend suite: 525/525 pass.**
+
+
 - **User request**: AI-to-3D providers stubbornly turn a reference image into a full stereoscopic model. User needs the OPPOSITE — a circular disk (200-250 mm ⌀, 12-15 mm max thickness) with the subject rendered as a shallow relief on top. Traditional "Japanese Cork Art" style, single-color print, wall/stand decorative.
 - **Solution — pure geometry pipeline (no AI, no cost)**:
   - `/app/backend/bas_relief_service.py` (new). Loads reference image → grayscale → optional invert (`dark_is_high`) → optional Gaussian smooth → down-sample to `grid_size²` (default 512) → circular mask → build a solid disk mesh: displaced-heightmap TOP + flat bottom + straight cylindrical rim → emit STL bytes.
