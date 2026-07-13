@@ -47,8 +47,16 @@ export function loadImage(file) {
 //     before the luminance calc so semi-transparent fringes contribute
 //     no height signal and the alpha mask cleanly carves out the
 //     boundary.
+//
+// Iter-141 — one-click background remover (`opts.bgRemove`):
+//   { enabled, tolerance /* 0-100 */, sample /* {r,g,b} | null */,
+//     result /* out param — set to the auto-sampled RGB */ }
+//   When enabled, samples the four corner patches of the source (or
+//   uses the caller-provided colour) and marks any pixel within
+//   `tolerance` of that colour as transparent. Merged into `alpha`
+//   so `buildHeightmapMesh` carves it out of the mesh silhouette.
 export function imageToLuminance(img, resTarget, opts = {}) {
-  const { gain = 1, invert = false } = opts;
+  const { gain = 1, invert = false, bgRemove = null } = opts;
   const aspect = img.width / img.height;
   const resW = aspect >= 1 ? resTarget : Math.max(8, Math.round(resTarget * aspect));
   const resH = aspect >= 1 ? Math.max(8, Math.round(resTarget / aspect)) : resTarget;
@@ -56,9 +64,6 @@ export function imageToLuminance(img, resTarget, opts = {}) {
   canvas.width = resW; canvas.height = resH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Couldn't get 2D context");
-  // Neutral-grey background so transparent pixels don't leak
-  // luminance=0 into the heightmap. We read alpha BEFORE this fill so
-  // the mask still knows which pixels were originally transparent.
   ctx.drawImage(img, 0, 0, resW, resH);
   const raw = ctx.getImageData(0, 0, resW, resH).data;
 
@@ -75,6 +80,54 @@ export function imageToLuminance(img, resTarget, opts = {}) {
     for (let i = 3, j = 0; i < raw.length; i += 4, j++) {
       alpha[j] = raw[i] / 255;
     }
+  }
+
+  // Iter-141 — background removal. Adds transparent pixels to `alpha`
+  // for every pixel within `tolerance` colour distance of the sample.
+  if (bgRemove && bgRemove.enabled) {
+    let sr, sg, sb;
+    if (bgRemove.sample) {
+      ({ r: sr, g: sg, b: sb } = bgRemove.sample);
+    } else {
+      // Auto-sample: median RGB across four corner patches (~6% each
+      // side, min 2 px). Median beats mean because it ignores stray
+      // signature marks / dust in a corner.
+      const patch = Math.max(2, Math.floor(Math.min(resW, resH) * 0.06));
+      const corners = [
+        [0, 0], [resW - patch, 0],
+        [0, resH - patch], [resW - patch, resH - patch],
+      ];
+      const rs = [], gs = [], bs = [];
+      for (const [cx, cy] of corners) {
+        for (let dy = 0; dy < patch; dy++) {
+          for (let dx = 0; dx < patch; dx++) {
+            const p = ((cy + dy) * resW + (cx + dx)) * 4;
+            rs.push(raw[p]); gs.push(raw[p + 1]); bs.push(raw[p + 2]);
+          }
+        }
+      }
+      const median = (a) => { a.sort((x, y) => x - y); return a[a.length >> 1]; };
+      sr = median(rs); sg = median(gs); sb = median(bs);
+    }
+    // Write the (possibly auto-sampled) colour back for the UI swatch.
+    if (bgRemove.result) { bgRemove.result.r = sr; bgRemove.result.g = sg; bgRemove.result.b = sb; }
+    // tolerance 0..100 → max colour-distance ~130 (about 30% of the
+    // theoretical max sqrt(3)·255 ≈ 442) — enough to catch soft studio
+    // gradients without eating the subject at typical values.
+    const thresh = (bgRemove.tolerance / 100) * 130;
+    const threshSq = thresh * thresh;
+    if (!alpha) alpha = new Float32Array(resW * resH).fill(1);
+    for (let j = 0; j < resW * resH; j++) {
+      const p = j * 4;
+      const dr = raw[p] - sr, dg = raw[p + 1] - sg, db = raw[p + 2] - sb;
+      if (dr * dr + dg * dg + db * db <= threshSq) {
+        alpha[j] = 0;
+      }
+    }
+    hasAlpha = true;
+  }
+
+  if (hasAlpha) {
     // Re-composite the image over neutral grey so transparent pixels
     // no longer contribute (0,0,0) to the luminance calc.
     ctx.globalCompositeOperation = "destination-over";

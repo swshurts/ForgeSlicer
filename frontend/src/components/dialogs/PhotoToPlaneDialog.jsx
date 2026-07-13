@@ -75,6 +75,12 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
   const [reliefH, setReliefH] = useState(3);
   const [invert, setInvert] = useState(true);
   const [gain, setGain] = useState(1.4);
+  // Iter-141 — one-click background remover. `bgSample` gets populated
+  // from the auto-corner-sample so the UI can render a swatch of the
+  // exact colour being keyed out.
+  const [removeBg, setRemoveBg] = useState(false);
+  const [bgTolerance, setBgTolerance] = useState(35);
+  const [bgSample, setBgSample] = useState({ r: 255, g: 255, b: 255 });
   // Iter-88: source mode. "photo" is the original flow. "text" swaps
   // the file dropzone for a text input + font picker, then routes the
   // rendered canvas through the same imageToLuminance pipeline.
@@ -98,7 +104,28 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
     const ctx = previewCanvasRef.current.getContext("2d");
     const cw = previewCanvasRef.current.width;
     const ch = previewCanvasRef.current.height;
-    const { lum, alpha, resW, resH } = imageToLuminance(img, RESOLUTIONS.find((r) => r.key === resKey).res, { gain, invert });
+    // `bgRemove.result` is an out-param — imageToLuminance writes the
+    // auto-sampled BG colour back so we can render the swatch.
+    const sampleOut = { r: 255, g: 255, b: 255 };
+    const { lum, alpha, resW, resH } = imageToLuminance(
+      img,
+      RESOLUTIONS.find((r) => r.key === resKey).res,
+      {
+        gain, invert,
+        bgRemove: removeBg
+          ? { enabled: true, tolerance: bgTolerance, sample: null, result: sampleOut }
+          : null,
+      },
+    );
+    if (removeBg) {
+      // Only update state if the colour actually changed — avoids a
+      // preview-loop feedback since bgSample is not a dep of this hook.
+      setBgSample((prev) =>
+        prev.r === sampleOut.r && prev.g === sampleOut.g && prev.b === sampleOut.b
+          ? prev
+          : sampleOut,
+      );
+    }
     // Render the luminance map as a grayscale preview so the user
     // sees exactly what extrusion they'll get (white = tall).
     // Iter-140 — transparent pixels are rendered as a neutral-grey
@@ -134,7 +161,7 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
     let drawW = cw, drawH = ch;
     if (ar >= 1) drawH = cw / ar; else drawW = ch * ar;
     ctx.drawImage(tmp, (cw - drawW) / 2, (ch - drawH) / 2, drawW, drawH);
-  }, [img, resKey, gain, invert]);
+  }, [img, resKey, gain, invert, removeBg, bgTolerance]);
 
   // Iter-88 — when source mode is "text", render the typed string into
   // a canvas and feed it through the SAME `img` slot. `imageToLuminance`
@@ -181,7 +208,10 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
     setError(null);
     try {
       const res = RESOLUTIONS.find((r) => r.key === resKey).res;
-      const { lum, alpha, resW, resH } = imageToLuminance(img, res, { gain, invert });
+      const { lum, alpha, resW, resH } = imageToLuminance(img, res, {
+        gain, invert,
+        bgRemove: removeBg ? { enabled: true, tolerance: bgTolerance, sample: null } : null,
+      });
       const { vertices, sizeX, sizeZ, height } = buildHeightmapMesh(lum, resW, resH, widthMM, baseH, reliefH, alpha);
       const name = (file?.name || "photo-plane").replace(/\.[^.]+$/, "");
       addImportedMesh(
@@ -414,6 +444,56 @@ export default function PhotoToPlaneDialog({ open, onClose }) {
                 Invert (lithophane mode — dark pixels print tall, light pixels stay thin so backlight passes through)
               </span>
             </label>
+
+            {/* Iter-141 — one-click background remover. Auto-samples the
+                four corner patches (median RGB) and keys out any pixel
+                within `tolerance` of that colour. Turns a JPG snapshot
+                on a clean background into a proper cut-out silhouette
+                with no external editing. */}
+            <div className="border border-slate-800 rounded p-2 space-y-2 bg-slate-950/50">
+              <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                <input
+                  data-testid="photo-to-plane-remove-bg"
+                  type="checkbox"
+                  checked={removeBg}
+                  onChange={(e) => setRemoveBg(e.target.checked)}
+                  className="accent-cyan-500"
+                />
+                <span className="font-semibold">Remove background</span>
+                <span className="text-[10px] text-slate-500">— auto-samples corners</span>
+              </label>
+              {removeBg && (
+                <div className="space-y-2 pl-5" data-testid="photo-to-plane-bg-panel">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">Sampled:</span>
+                    <div
+                      data-testid="photo-to-plane-bg-swatch"
+                      className="w-5 h-5 rounded border border-slate-600 shadow-inner"
+                      style={{ backgroundColor: `rgb(${bgSample.r},${bgSample.g},${bgSample.b})` }}
+                      title={`rgb(${bgSample.r}, ${bgSample.g}, ${bgSample.b})`}
+                    />
+                    <span className="text-[10px] font-mono text-slate-500">
+                      {bgSample.r},{bgSample.g},{bgSample.b}
+                    </span>
+                  </div>
+                  <label className="block">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                      Tolerance — {bgTolerance}
+                    </span>
+                    <input
+                      data-testid="photo-to-plane-bg-tolerance"
+                      type="range" min={0} max={100} step={1}
+                      value={bgTolerance}
+                      onChange={(e) => setBgTolerance(parseInt(e.target.value, 10))}
+                      className="w-full accent-cyan-500"
+                    />
+                  </label>
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    Nudge up if the background bleeds in, down if the subject gets eaten. The preview checkerboard shows what will be carved out.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="bg-slate-950 border border-slate-800 rounded p-2 text-[10px] text-slate-400 space-y-0.5">
               <div className="text-[9px] uppercase tracking-wider text-slate-500">Est. output</div>

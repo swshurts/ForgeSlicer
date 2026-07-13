@@ -33,6 +33,13 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-13)
 
+### Recently completed (iter-141, 2026-07-13) — One-click background remover in Photo-to-Plane
+- **User request**: Extend the Photo-to-Plane / Lithophane dialog with a background remover so JPGs (or PNGs without alpha) can produce silhouette meshes without external editing.
+- **Fix** (`lib/heightmap.js::imageToLuminance`): New optional `bgRemove: { enabled, tolerance /* 0-100 */, sample /* {r,g,b} | null */, result /* out param */ }`. When enabled, auto-samples the median RGB across four 6% corner patches (or uses the caller-provided colour), then marks any pixel within `tolerance × 130` colour-distance units as transparent (`alpha[i] = 0`). Merges with the existing alpha channel so it composes with an already-transparent PNG. Writes the auto-sampled colour back through the `result` out-param so the UI can render a swatch.
+- **UI** (`PhotoToPlaneDialog.jsx`): New "Remove background" checkbox with a collapsible sub-panel containing the auto-sampled colour swatch, RGB label, and a tolerance slider (default 35, range 0-100). Preview canvas already renders the checkerboard over transparent regions (iter-140), so the effective silhouette is visible instantly.
+- **E2E smoke**: JPG with a white background + a circular subject + dark rectangular features → auto-sample detects `rgb(255,255,255)`, preview corner turns from `(0,0,0)` → `(55,55,55)` (checkerboard), generated mesh is a **circular silhouette** of the subject (15,556 tris, 55.8×55.8×3.6 mm) — white background completely carved out.
+- **Tests**: 14/14 heightmap unit tests still pass. `bgRemove` internals rely on canvas which jsdom doesn't fully support — validated via playwright.
+
 ### Recently completed (iter-140, 2026-07-13) — Alpha-aware Lithophane / 2.5D Relief
 - **User feedback (with screenshots)**: The prior fix went to the wrong pipeline. The PNG heightmap on the "Lithophane / 2.5D Relief" tool (client-side `lib/heightmap.js`, NOT the backend `bas_relief_service`) produced a spiky rectangular plate because transparent PNG pixels read back as `RGBA(0,0,0,0)` → luminance 0 → after invert=1 → full relief height. JPG "worked" but still emitted a rectangular plate ignoring the intended circular subject.
 - **Fix** (`frontend/src/lib/heightmap.js`):
