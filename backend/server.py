@@ -18,6 +18,7 @@ import httpx
 from email_service import send_contributor_celebration
 import meshy_service
 import fal_service
+import bas_relief_service
 import email_service
 import auth_local
 import billing
@@ -1094,6 +1095,89 @@ async def ai_generate_multi_image(request: Request):
         "updated_at": now,
     })
     return {"job_id": job_id, "status": "PENDING", "provider": provider}
+
+
+# Iter-136 — Bas-Relief generation. Local (no fal.ai / no Meshy) because
+# it's pure geometry — takes a reference image and turns it into a
+# printable circular disk with the subject in shallow relief. Doesn't
+# count against the AI monthly cap (no external cost).
+class AIBasReliefRequest(BaseModel):
+    image_b64: Optional[str] = Field(None, description="Base64 image data. Provide OR image_url.")
+    image_url: Optional[str] = Field(None, description="http(s) URL to source image. Provide OR image_b64.")
+    mime_type: str = Field("image/png", max_length=32)
+    diameter_mm: float = Field(220.0, ge=60.0, le=380.0)
+    max_relief_mm: float = Field(12.0, ge=0.5, le=40.0)
+    base_thickness_mm: float = Field(3.0, ge=0.6, le=20.0)
+    dark_is_high: bool = Field(False)
+    smooth_sigma: float = Field(1.0, ge=0.0, le=10.0)
+    grid_size: int = Field(512, ge=128, le=800)
+
+
+@api_router.post("/ai/generate/bas-relief")
+async def ai_generate_bas_relief(req: AIBasReliefRequest, request: Request):
+    """Generate a printable circular bas-relief disk from a reference image.
+
+    Unlike text/image/multi-image, this is LOCAL — no external API. AI-to-3D
+    providers stubbornly produce full stereoscopic 3D models; for wall-mount
+    or standing decorative art we need a bas-relief (2.5D shallow-depth
+    heightmap on a solid disk). Returns the STL directly + metadata via
+    both response body and headers.
+    """
+    await get_current_user(request)
+
+    # Resolve image_b64 (either directly provided OR fetched from image_url).
+    if not req.image_b64 and not req.image_url:
+        raise HTTPException(status_code=400, detail="Provide image_b64 OR image_url.")
+    if req.image_url:
+        if not (req.image_url.startswith("http://") or req.image_url.startswith("https://")):
+            raise HTTPException(status_code=400, detail="image_url must be http(s)")
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as cx:
+                r = await cx.get(req.image_url)
+                r.raise_for_status()
+                image_bytes = r.content
+        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch image_url: {e}")
+    else:
+        try:
+            image_bytes = base64.b64decode(req.image_b64)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Invalid image_b64: {e}")
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty image payload.")
+    if len(image_bytes) > 16 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Reference image exceeds 16MB.")
+
+    try:
+        result = bas_relief_service.generate_bas_relief(
+            image_bytes,
+            diameter_mm=req.diameter_mm,
+            max_relief_mm=req.max_relief_mm,
+            base_thickness_mm=req.base_thickness_mm,
+            dark_is_high=req.dark_is_high,
+            smooth_sigma=req.smooth_sigma,
+            grid_size=req.grid_size,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("bas-relief generation crashed")
+        raise HTTPException(status_code=500, detail=f"Bas-relief generation failed: {e}")
+
+    return Response(
+        content=result["stl_bytes"],
+        media_type="model/stl",
+        headers={
+            "X-Optimize-Diameter-Mm": str(result["diameter_mm"]),
+            "X-Optimize-Max-Relief-Mm": str(result["max_relief_mm"]),
+            "X-Optimize-Base-Thickness-Mm": str(result["base_thickness_mm"]),
+            "X-Optimize-Total-Height-Mm": str(result["total_height_mm"]),
+            "X-Optimize-Faces": str(result["faces"]),
+            "X-Optimize-Grid-Size": str(result["grid_size"]),
+            "Content-Disposition": 'attachment; filename="bas_relief_disk.stl"',
+        },
+    )
 
 
 class AIPreviewRequest(BaseModel):
@@ -2515,6 +2599,10 @@ app.add_middleware(
         "X-Optimize-Reduction-Pct",
         "X-Optimize-Shape", "X-Optimize-Thickness-Mm",
         "X-Optimize-Margin-Mm", "X-Optimize-Base-Footprint-Mm2",
+        # Iter-136 — Bas-relief route headers.
+        "X-Optimize-Diameter-Mm", "X-Optimize-Max-Relief-Mm",
+        "X-Optimize-Base-Thickness-Mm", "X-Optimize-Total-Height-Mm",
+        "X-Optimize-Faces", "X-Optimize-Grid-Size",
     ],
 )
 
