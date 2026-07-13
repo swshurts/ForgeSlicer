@@ -33,7 +33,18 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-06)
 
-### Recently completed (iter-135, 2026-07-12) — Frontend Fix buttons wired + Auto-Fix orchestrator + admin/auth refactor
+### Recently completed (iter-136, 2026-07-13) — Japanese Cork Art / Bas-Relief generation
+- **User request**: AI-to-3D providers stubbornly turn a reference image into a full stereoscopic model. User needs the OPPOSITE — a circular disk (200-250 mm ⌀, 12-15 mm max thickness) with the subject rendered as a shallow relief on top. Traditional "Japanese Cork Art" style, single-color print, wall/stand decorative.
+- **Solution — pure geometry pipeline (no AI, no cost)**:
+  - `/app/backend/bas_relief_service.py` (new). Loads reference image → grayscale → optional invert (`dark_is_high`) → optional Gaussian smooth → down-sample to `grid_size²` (default 512) → circular mask → build a solid disk mesh: displaced-heightmap TOP + flat bottom + straight cylindrical rim → emit STL bytes.
+  - Runs on trimesh + PIL + numpy. ~2 s for a 220 mm × 512-grid disk (~800K triangles).
+  - No fal.ai / no Meshy → does NOT count against the monthly AI quota.
+- **New endpoint `POST /api/ai/generate/bas-relief`** accepts `image_b64` OR `image_url`. Parameters: `diameter_mm 60..380` (default 220), `max_relief_mm 0.5..40` (default 12), `base_thickness_mm 0.6..20` (default 3), `dark_is_high`, `smooth_sigma 0..10`, `grid_size 128..800`. Streams STL back with `X-Optimize-Diameter-Mm / Max-Relief-Mm / Base-Thickness-Mm / Total-Height-Mm / Faces / Grid-Size` headers.
+- **New AI dialog tab** (`AIGenerateDialog.jsx`): amber-accented "Bas-Relief" tab with `data-testid="ai-tab-bas-relief"`. Panel has 4 sliders (diameter / max relief / base thickness / smoothing), an Invert checkbox, and a circular image preview. CTA: amber "Generate Bas-Relief" button. STL streams back → auto-imports at exact mm scale → dialog auto-closes with a "Bas-relief disk ready · 220 mm × 15.0 mm thick" toast.
+- **Testing (iter-136): 100% pass** — 11/11 new backend API tests, 10 new unit tests, 31 frontend UI checks (all sliders realtime, quota unchanged, mesh imported at correct dimensions). Zero regressions on existing tabs.
+- **Note for future**: `_build_disk_mesh` currently uses Python for-loops; vectorising with numpy stride tricks would drop ~2s → ~0.3s at max grid. Deferred until users report the current latency.
+
+
 **Part A — Printability fix UI (P1)**
 - **New client** `/app/frontend/src/lib/meshOptimizeApi.js` — `decimateImportedObject(obj, preset)` and `addBaseToImportedObject(obj, {shape, thicknessMm, marginMm})`. Exports the object's geometry to binary STL, POSTs multipart to the iter-134 endpoints, parses the STL response back to a `BufferGeometry` update, and returns stats parsed from `X-Optimize-*` headers.
 - **`PrintabilityReportPanel.jsx`** — `handleFix` now dispatches `decimate_with_intent` → real `runDecimate("functional")` and `add_base` → real `runAddBase("cylinder", 3.0, 2.0)`. Same pushHistory-first pattern as `runAutoClean` (Ctrl+Z reverts). Skips non-imported primitives with a helpful toast.
