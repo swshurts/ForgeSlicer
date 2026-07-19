@@ -45,15 +45,22 @@ export default function ReleaseNotesDialog() {
   // route guard keeps the marketing landing, SEO landings, Learn
   // lessons, and Trust pages free of update-modal interruption so
   // first-time visitors can read the value proposition uninterrupted.
+  //
+  // Iter-142 — the manual-trigger event listener is now registered
+  // UNCONDITIONALLY (even on marketing routes). A previous version
+  // returned early from the whole useEffect when the route was
+  // disallowed, which silently killed the topbar "What's new" pin
+  // on the landing page. Auto-open is still route-gated.
   useEffect(() => {
-    try {
-      if (!isAllowedRoute(location.pathname)) return;
-      const latest = latestReleaseVersion();
-      const seen = window.localStorage.getItem(STORAGE_KEY) || "";
-      if (seen && latest && seen !== latest) {
-        setOpen(true);
-      }
-    } catch (err) { void err; }
+    if (isAllowedRoute(location.pathname)) {
+      try {
+        const latest = latestReleaseVersion();
+        const seen = window.localStorage.getItem(STORAGE_KEY) || "";
+        if (seen && latest && seen !== latest) {
+          setOpen(true);
+        }
+      } catch (err) { void err; }
+    }
     const onShow = () => setOpen(true);
     window.addEventListener("forgeslicer:show-release-notes", onShow);
     return () => window.removeEventListener("forgeslicer:show-release-notes", onShow);

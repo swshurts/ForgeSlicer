@@ -31,7 +31,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-07-13)
+## Current Open Items (as of 2026-07-19)
+
+### Recently completed (iter-142, 2026-07-19) — Phase A · Marketing site trust + clarity
+- **Scope**: First phase of the ChatLLM-driven marketing review. Focus was quick wins on the homepage, working around scaffolding that already existed (Trust hub, changelog, roadmap, Learn, SEO landings, ReleaseNotesDialog, SplashScreen).
+- **A1 · What's-new bell button on the landing header** (`Landing.jsx`): Added a Sparkles icon button (`landing-whats-new-btn`) that dispatches `forgeslicer:show-release-notes` — same event the workspace `whats-new-btn` fires. Also fixed a latent bug in `ReleaseNotesDialog.jsx` where an early return inside the useEffect skipped registering the manual-trigger event listener on non-product routes, silently killing the topbar pin on the landing page. Manual triggers now work everywhere; auto-open remains route-gated to `/workspace`, `/gallery`, `/profile`.
+- **A2 · 4-step workflow strip** (`Landing.jsx`): New `landing-workflow-strip` section between the hero and the tab content. Renders "Design or import → Edit in the browser → Check printability → Export or slice" with per-step accent colours + icons. Explains the actual pipeline while keeping the "Design. Speak. Slice. Print." tagline for personality.
+- **A2 · AI provider messaging fix**: Hero subheadline + Design-by-Conversation attribution now correctly credit **fal.ai (default, Hunyuan3D) + Meshy.ai (optional fallback)** as third-party providers, aligning with the iter-132 provider swap. Removes the stale "Meshy.ai only" language.
+- **A4 · Use case card strip** (`Landing.jsx`): 6 benefit-focused cards — Name tag, Replacement part, Drawer organiser, Bracket, Photo lithophane, Classroom project — each linking directly into the workspace with an `intent` query param the workspace can hook into later for preset selection.
+- **A3 · Trust footer**: Already comprehensive from iter-105.38 — no changes needed. 6-link Trust column, Workflows column, Product column, brand summary. Confirmed via screenshot.
+- **E2E smoke** (playwright): landing loads with no auto-modal, sparkle button opens ReleaseNotesDialog with 40 entries newest-first (v1.23.1 top), workflow strip renders 4 steps, use case grid renders 6 cards. All lint clean.
+
+### Deferred / next phases
+- **Phase B** (SEO / Learn / AI positioning): SEO landings already exist at `/tinkercad-alternative`, `/edit-stl-online`, `/ai-3d-design`, `/browser-cad`, `/orcaslicer-workflow`, `/bambu-studio-workflow`, `/prusaslicer-workflow` — content pass to be done. `/learn` scaffolded (8 lessons per footer). AI panel example-prompt cards not yet added.
+- **Phase C** (Gallery + in-app polish): Gallery tag/category filter, Featured Creators strip, "Customize in ForgeSlicer" CTA, in-app triangle-count guardrails, group/ungroup + align/distribute, competitive comparison strip.
 
 ### Recently completed (iter-141, 2026-07-13) — One-click background remover in Photo-to-Plane
 - **User request**: Extend the Photo-to-Plane / Lithophane dialog with a background remover so JPGs (or PNGs without alpha) can produce silhouette meshes without external editing.

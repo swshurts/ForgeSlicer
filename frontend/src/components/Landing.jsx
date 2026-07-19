@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock, Image as ImageIcon, Palette, ShoppingBag } from "lucide-react";
+import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock, Image as ImageIcon, Palette, ShoppingBag, ShieldCheck, Tag, Package, Cog, Baby } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
 import { useAuth } from "../contexts/AuthContext";
@@ -339,6 +339,20 @@ export default function Landing() {
         <Link to="/workspace" data-testid="landing-launch-btn" className="h-8 px-4 ml-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center gap-1.5">
           Launch Workspace <ChevronRight size={14} />
         </Link>
+        {/* Iter-142 — "What's new" bell/sparkle button on the marketing
+            header. Mirrors the workspace `whats-new-btn` and opens the
+            same ReleaseNotesDialog via a window event so first-time
+            visitors can browse the release history on demand without
+            being interrupted by an auto-modal. */}
+        <button
+          data-testid="landing-whats-new-btn"
+          onClick={() => window.dispatchEvent(new CustomEvent("forgeslicer:show-release-notes"))}
+          title="What's new — release notes"
+          aria-label="What's new"
+          className="h-8 w-8 ml-1 rounded text-slate-400 hover:text-amber-300 hover:bg-slate-800 flex items-center justify-center"
+        >
+          <Sparkles size={15} />
+        </button>
         <ThemeSwitcher />
         <UserMenu returnPath="/workspace" />
       </header>
@@ -366,9 +380,9 @@ export default function Landing() {
             <p className="mt-5 text-slate-300 text-base leading-relaxed max-w-xl" data-testid="landing-hero-subheadline">
               Design 3D-printable objects with{" "}
               <span className="text-white font-semibold">simple CAD tools</span>,{" "}
-              <span className="text-white font-semibold">voice commands</span>, and{" "}
-              <span className="text-white font-semibold">Meshy.ai</span> &mdash; a{" "}
-              <span className="text-fuchsia-300">third-party AI design tool integrated into the ForgeSlicer workflow</span>. Say{" "}
+              <span className="text-white font-semibold">voice commands</span>, and integrated{" "}
+              <span className="text-white font-semibold">AI design assistants</span> &mdash;{" "}
+              <span className="text-fuchsia-300">fal.ai (default) and Meshy.ai are third-party providers woven into the ForgeSlicer workflow</span>. Say{" "}
               <em className="text-orange-200 not-italic">&ldquo;create a simple phone stand&rdquo;</em>,{" "}
               <em className="text-orange-200 not-italic">&ldquo;add a 5&nbsp;mm keyring hole&rdquo;</em>, or{" "}
               <em className="text-orange-200 not-italic">&ldquo;make this box hollow with 2&nbsp;mm walls&rdquo;</em> &mdash; no CAD experience required. Slice in your browser, on our server&apos;s OrcaSlicer engine, or export STL / 3MF to your desktop slicer.
@@ -492,6 +506,142 @@ export default function Landing() {
           </div>
         </div>
 
+        {/* ─── Iter-142 · 4-step workflow ──────────────────────────
+            A concrete "Design → Edit → Check → Export" strip anchored
+            just below the hero so visitors immediately see the end-
+            to-end path from idea/import to printable file. Complements
+            (does NOT replace) the "Design. Speak. Slice. Print." brand
+            tagline in the hero — the tagline stays for personality,
+            this section explains the actual pipeline. */}
+        <section
+          data-testid="landing-workflow-strip"
+          className="mt-16 rounded-2xl border border-slate-800 bg-slate-950/60 px-6 py-8"
+        >
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-[10px] uppercase tracking-widest text-cyan-300 font-semibold">
+              <LayoutGrid size={11} /> End-to-end in the browser
+            </div>
+            <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight">
+              From idea to printable file — <span className="text-orange-400">four steps</span>.
+            </h2>
+            <p className="mt-2 text-slate-400 text-sm max-w-2xl mx-auto">
+              No installs, no plugins, no CAD career change. Bring an STL you already have, or start from a voice prompt.
+            </p>
+          </div>
+          <ol className="grid sm:grid-cols-4 gap-3" data-testid="landing-workflow-steps">
+            {[
+              { n: 1, Icon: Pencil, title: "Design or import",
+                body: "Start from primitives, a voice prompt, an AI provider, or drop in an STL / 3MF / OBJ / SVG.",
+                accent: "text-orange-300 border-orange-500/40 bg-orange-500/[0.06]" },
+              { n: 2, Icon: Wrench, title: "Edit in the browser",
+                body: "Booleans, extrude, cut, fillet, chamfer, text, holes, mirror, ruler & dimensions — all live.",
+                accent: "text-cyan-300 border-cyan-500/40 bg-cyan-500/[0.06]" },
+              { n: 3, Icon: ShieldCheck, title: "Check printability",
+                body: "Thin walls, non-manifold geometry, overhangs, floating parts flagged with one-click Auto-Fix.",
+                accent: "text-emerald-300 border-emerald-500/40 bg-emerald-500/[0.06]" },
+              { n: 4, Icon: Download, title: "Export or slice",
+                body: "STL / 3MF locally, or Send to OrcaSlicer / Bambu Studio / PrusaSlicer with one click.",
+                accent: "text-amber-300 border-amber-500/40 bg-amber-500/[0.06]" },
+            ].map((s) => (
+              <li
+                key={s.n}
+                data-testid={`landing-workflow-step-${s.n}`}
+                className={`relative rounded-xl border ${s.accent} px-4 py-4`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-mono text-[10px] uppercase tracking-widest opacity-70">Step {s.n}</span>
+                  <div className="h-px flex-1 bg-current opacity-20" />
+                  <s.Icon size={16} className="opacity-80" />
+                </div>
+                <div className="text-white text-sm font-semibold mb-1">{s.title}</div>
+                <div className="text-[11px] text-slate-400 leading-snug">{s.body}</div>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-6 text-center text-[11px] text-slate-500">
+            All four steps run in your browser — the same tab, the same session, no round-trip to another tool.
+          </div>
+        </section>
+
+        {/* ─── Iter-142 · Concrete use cases ──────────────────────
+            Six benefit-focused cards so a first-time visitor immediately
+            recognises "oh, I could make X". Each links straight into
+            the workspace with a preset that opens the relevant tool —
+            reduces the cold-start problem where beginners open the
+            workspace and don't know what to click. */}
+        <section
+          data-testid="landing-usecases"
+          className="mt-14"
+        >
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-full text-[10px] uppercase tracking-widest text-fuchsia-300 font-semibold">
+              <Sparkles size={11} /> Real projects, real users
+            </div>
+            <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight">
+              What people build with ForgeSlicer
+            </h2>
+            <p className="mt-2 text-slate-400 text-sm max-w-2xl mx-auto">
+              Pick a starting point and dive in — every card opens the workspace with the right tool preselected.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4" data-testid="landing-usecase-grid">
+            {[
+              { Icon: Tag, title: "Name tag / keychain",
+                body: "Type a name, pick a font, add a 5 mm keyring hole — done in under a minute.",
+                cta: "Start from template", to: "/workspace?intent=text-nametag", accent: "orange" },
+              { Icon: Wrench, title: "Replacement part",
+                body: "Import a scanned STL of the broken part, tune dimensions, re-print in your material of choice.",
+                cta: "Import & fit", to: "/workspace?intent=import-repair", accent: "cyan" },
+              { Icon: Package, title: "Drawer organiser",
+                body: "Boolean-cut compartments into a slab. Add labels or dividers with the Text tool.",
+                cta: "Customize this", to: "/workspace?intent=drawer-organizer", accent: "emerald" },
+              { Icon: Cog, title: "Bracket or mount",
+                body: "Combine box + cylinder primitives, add screw holes with countersink, check the wall thickness.",
+                cta: "Start from template", to: "/workspace?intent=bracket", accent: "amber" },
+              { Icon: ImageIcon, title: "Photo lithophane / medallion",
+                body: "Drop in any photo — auto-remove background, choose reflective or backlit, print in colour.",
+                cta: "Open Lithophane", to: "/litho", accent: "fuchsia" },
+              { Icon: Baby, title: "Classroom project",
+                body: "Turn an SVG logo or hand-drawn shape into a printable object. Great for STEM demos.",
+                cta: "Learn how", to: "/learn", accent: "sky" },
+            ].map((u, i) => {
+              const border = {
+                orange: "border-orange-500/40 hover:border-orange-500/70 bg-orange-500/[0.03]",
+                cyan: "border-cyan-500/40 hover:border-cyan-500/70 bg-cyan-500/[0.03]",
+                emerald: "border-emerald-500/40 hover:border-emerald-500/70 bg-emerald-500/[0.03]",
+                amber: "border-amber-500/40 hover:border-amber-500/70 bg-amber-500/[0.03]",
+                fuchsia: "border-fuchsia-500/40 hover:border-fuchsia-500/70 bg-fuchsia-500/[0.03]",
+                sky: "border-sky-500/40 hover:border-sky-500/70 bg-sky-500/[0.03]",
+              }[u.accent];
+              const iconCls = {
+                orange: "text-orange-300",
+                cyan: "text-cyan-300",
+                emerald: "text-emerald-300",
+                amber: "text-amber-300",
+                fuchsia: "text-fuchsia-300",
+                sky: "text-sky-300",
+              }[u.accent];
+              return (
+                <Link
+                  key={i}
+                  to={u.to}
+                  data-testid={`landing-usecase-${i}`}
+                  className={`group relative flex flex-col rounded-xl border transition-all p-4 ${border}`}
+                >
+                  <div className={`w-9 h-9 rounded border ${border} flex items-center justify-center mb-2.5 ${iconCls}`}>
+                    <u.Icon size={16} />
+                  </div>
+                  <div className="text-white text-sm font-semibold mb-1">{u.title}</div>
+                  <div className="text-[11px] text-slate-400 leading-snug flex-1">{u.body}</div>
+                  <div className={`mt-3 text-[11px] font-semibold inline-flex items-center gap-1 ${iconCls} group-hover:gap-1.5 transition-all`}>
+                    {u.cta} <ChevronRight size={12} />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+
         </>)}
 
         {activeTab === "start" && (<>
@@ -535,6 +685,16 @@ export default function Landing() {
             >
               Generative model creation is powered by{" "}
               <a
+                href="https://fal.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+                data-testid="landing-fal-link"
+              >
+                fal.ai
+              </a>
+              {" "}(default — Hunyuan3D) with{" "}
+              <a
                 href="https://www.meshy.ai"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -543,7 +703,7 @@ export default function Landing() {
               >
                 Meshy.ai
               </a>
-              {" "}— an independent third-party AI design tool integrated into the ForgeSlicer workflow, not a ForgeSlicer-owned product. Voice edits and boolean ops run on ForgeSlicer&apos;s own engine.
+              {" "}as an optional fallback — both are independent third-party AI providers integrated into the ForgeSlicer workflow, not ForgeSlicer-owned products. Voice edits and boolean ops run on ForgeSlicer&apos;s own engine.
             </p>
           </div>
 
