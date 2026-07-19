@@ -1805,6 +1805,50 @@ async def admin_feature_design(req: FeaturedDesignRequest, request: Request):
     return {"id": req.item_id, "is_featured": bool(req.featured)}
 
 
+# Iter-146 — Admin taxonomy backfill audit endpoint.
+#
+# The CLI at ``scripts/backfill_gallery_categories.py`` needs shell
+# access. This endpoint exposes the same shared logic via HTTP so an
+# operator can audit + apply against production directly from a curl
+# call once the app is deployed. Admin-gated with the existing
+# ``_require_admin_for_upstream`` dep.
+@api_router.post("/admin/taxonomy-backfill")
+async def admin_taxonomy_backfill(
+    request: Request,
+    dry_run: bool = True,
+):
+    """Scan ``db.gallery`` and ``db.components`` for documents whose
+    ``category`` is missing OR outside the current
+    ``gallery_taxonomy.CATEGORY_IDS`` set. When ``dry_run=true``
+    (default) we only report what WOULD change. When ``dry_run=false``
+    the same reclassification runs against the DB.
+
+    Response shape:
+    ```json
+    {
+      "dry_run": true,
+      "gallery":    {"matched": 3, "remaps": [{"old":"electronics","new":"organizers","count":1}, ...]},
+      "components": {"matched": 1, "remaps": [...]},
+      "total_matched": 4
+    }
+    ```
+
+    Idempotent: after an ``dry_run=false`` run, subsequent dry-runs
+    should report 0 matched. Use this to verify the migration landed.
+    """
+    from taxonomy_backfill import process_collection, summarise
+    await _require_admin_for_upstream(request)
+    apply = not dry_run
+    g_matched, g_remaps = await process_collection(db.gallery, label="gallery", apply=apply)
+    c_matched, c_remaps = await process_collection(db.components, label="components", apply=apply)
+    return {
+        "dry_run": bool(dry_run),
+        "gallery":    summarise(g_matched, g_remaps),
+        "components": summarise(c_matched, c_remaps),
+        "total_matched": int(g_matched + c_matched),
+    }
+
+
 # ---------- Community Printer Profiles ----------
 @api_router.post("/printers", response_model=CommunityPrinter)
 async def create_community_printer(p: CommunityPrinterCreate):

@@ -38,63 +38,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv  # noqa: E402
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-import gallery_taxonomy  # noqa: E402
+import gallery_taxonomy  # noqa: E402,F401  (imported for side-effect / CATEGORY_IDS sanity)
+from taxonomy_backfill import process_collection  # noqa: E402
 
 # Load /app/backend/.env from the repo root so MONGO_URL / DB_NAME
 # resolve identically to server.py.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
-
-async def process_collection(
-    coll,
-    *,
-    label: str,
-    apply: bool,
-) -> tuple[int, Counter]:
-    """Scan a collection for docs whose category is missing or not in
-    the current valid taxonomy. Returns (num_matched, remap_counter)
-    where the counter tallies ``old_category → new_category`` moves so
-    a dry run can print a useful summary."""
-    valid = list(gallery_taxonomy.CATEGORY_IDS)
-    match_filter = {
-        "$or": [
-            {"category": {"$exists": False}},
-            {"category": {"$nin": valid}},
-        ],
-    }
-    # We intentionally cap at 5000 to match the server-startup migration
-    # so the two paths never disagree on which docs are eligible in
-    # environments with pathological volumes.
-    cursor = coll.find(
-        match_filter,
-        {"_id": 0, "id": 1, "name": 1, "category": 1},
-    ).limit(5000)
-
-    remaps: Counter = Counter()
-    matched = 0
-    async for doc in cursor:
-        old = doc.get("category") or "(none)"
-        new = gallery_taxonomy.guess_category(doc.get("name"))
-        remaps[(old, new)] += 1
-        matched += 1
-        if apply:
-            tags = gallery_taxonomy.guess_tags(doc.get("name"))
-            update = {"category": new, "tags": tags}
-            # Gallery items get is_featured=false when the field is
-            # absent (so the featured chip stays honest); leave existing
-            # is_featured values alone.
-            if label == "gallery":
-                await coll.update_one(
-                    {"id": doc["id"], "is_featured": {"$exists": False}},
-                    {"$set": {**update, "is_featured": False}},
-                )
-                await coll.update_one(
-                    {"id": doc["id"], "is_featured": {"$exists": True}},
-                    {"$set": update},
-                )
-            else:
-                await coll.update_one({"id": doc["id"]}, {"$set": update})
-    return matched, remaps
 
 
 def print_summary(label: str, matched: int, remaps: Counter) -> None:

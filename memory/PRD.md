@@ -33,6 +33,24 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-19)
 
+### Recently completed (iter-146, 2026-07-19) — Admin taxonomy-backfill endpoint (production audit)
+- **Context**: Preview DB was already clean after iter-131. To audit + migrate the production DB without shell access, exposed the same iter-145 backfill logic via HTTP.
+- **Shared module** (`backend/taxonomy_backfill.py`): Extracted `process_collection(coll, label, apply, limit=5000)` and `summarise(matched, remaps)` from the CLI script into a shared module. Both the CLI (`scripts/backfill_gallery_categories.py`) and the new HTTP endpoint import it — so they can never disagree on which docs are eligible or how they get re-classified.
+- **Admin route** (`server.py`): `POST /api/admin/taxonomy-backfill?dry_run=<bool>` — gated by `_require_admin_for_upstream`. Runs against both `db.gallery` + `db.components`, returns a JSON audit report with per-collection `matched` count and `remaps: [{old, new, count}]`. `dry_run=true` (default) writes nothing; `dry_run=false` applies the migration.
+- **E2E**: Seeded 3 legacy docs (electronics, brackets, fasteners) → dry-run returned correct old→new remaps + `total_matched: 3` — apply wrote them — idempotency dry-run reported `total_matched: 0` — non-admin user hit `HTTP 403`. CLI still works via the shared module.
+
+### Production usage
+```
+# Dry-run (safe — writes nothing):
+curl -X POST 'https://forgeslicer.com/api/admin/taxonomy-backfill?dry_run=true' \
+  -H "Authorization: Bearer <admin session token>"
+
+# Apply the migration:
+curl -X POST 'https://forgeslicer.com/api/admin/taxonomy-backfill?dry_run=false' \
+  -H "Authorization: Bearer <admin session token>"
+```
+Admin session tokens live in `db.user_sessions` for any user whose `is_admin` flag is true.
+
 ### Recently completed (iter-145, 2026-07-19) — Taxonomy backfill + Decimate deep-link
 - **Taxonomy backfill migration** (`server.py`, `scripts/backfill_gallery_categories.py`): Extended the startup backfill to cover **legacy category ids** (rack, mounting, fasteners, electronics, brackets, hinges, gears, miniatures, structural) as well as missing-category docs — re-classifies via `gallery_taxonomy.guess_category(name)`. Runs against both `db.gallery` AND `db.components` collections. Fully idempotent: re-runs are ~0-cost no-ops once the DB is fully tagged. Added a standalone CLI at `scripts/backfill_gallery_categories.py` with `--dry-run`, `--apply`, and `--only {gallery,components}` flags so operators can preview + verify without a redeploy. Dry-run prints a plan grouped by `(old → new)` count.
 - **Decimate deep-link** (`PrintabilityReportPanel.jsx`, `toolbar/projectActions.js`): The "Very heavy mesh" import warning's **"Decimate now"** toast action now (1) opens the Printability report dialog, (2) fires a `forgeslicer:printability-focus` event with `detail.focus="decimate"`. The panel listens for that event, scrolls its Decimate preset row into view, and pulses `animate-pulse ring-2 border-orange-400/70` for 4 s so the user lands directly on the target-face-count picker. Three preset chips (Mini/25k, Functional/12k, Low-poly/3k) call `runDecimate(preset)` immediately — no confirmation, undo via Ctrl+Z. Row is only rendered when the scene contains at least one imported mesh.
