@@ -52,8 +52,15 @@ export function makeProjectActions({ store, setBusyMsg }) {
         action: {
           label: "Decimate now",
           onClick: () => {
-            // Opens the Printability report dialog where Decimate lives.
+            // Open the Printability report AND focus the Decimate
+            // preset row so the user lands directly on the target
+            // face-count picker (iter-145).
             window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", { detail: { name: "printability" } }));
+            // Dispatched on the next tick so the panel has finished
+            // mounting before the focus event lands.
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent("forgeslicer:printability-focus", { detail: { focus: "decimate" } }));
+            }, 60);
           },
         },
       });

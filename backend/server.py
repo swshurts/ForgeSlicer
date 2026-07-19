@@ -2715,34 +2715,77 @@ async def ensure_auth_indexes():
 async def backfill_gallery_categories():
     """One-shot backfill — apply the gallery-taxonomy heuristics to
     legacy items that were saved before the category/tags fields
-    existed. Idempotent: we only touch documents that have no category
-    set, so re-running this on every boot is safe and a fast no-op
-    once the database is fully tagged.
+    existed OR whose category id is no longer in the taxonomy.
+
+    Idempotent: we only touch documents that lack `category` OR whose
+    `category` is not in the current `CATEGORY_IDS` set, so re-running
+    this on every boot is safe and a fast no-op once the database is
+    fully tagged with valid values.
 
     Why on startup vs. a script: the Mongo pod doesn't ship with a
     persistent migration tool, and the heuristics live in the Python
     code anyway. Folding the backfill into startup means a fresh
     environment hydrates correctly without any operator action.
 
-    Cost: one indexed scan over `db.gallery` filtered on missing
-    `category`; one update per matched doc. Bounded to 5000 items per
-    run so a truly massive legacy table never blocks startup."""
-    try:
-        cursor = db.gallery.find(
+    Iter-145: the taxonomy shrank from 15 legacy category ids
+    (mechanical, rack, mounting, fasteners, electronics, brackets,
+    hinges, gears, decorative, organizers, miniatures, structural,
+    toys, misc, cosplay/education/etc.) to a 10-entry shoppable set.
+    Items tagged with an OBSOLETE id (rack, mounting, fasteners,
+    electronics, brackets, hinges, gears, miniatures, structural)
+    would otherwise be invisible on the new Gallery chip row — this
+    migration re-classifies them via `guess_category(name)`.
+
+    Bounded to 5000 items per collection per run so a truly massive
+    legacy table never blocks startup."""
+    valid = list(gallery_taxonomy.CATEGORY_IDS)
+    # Match either "no category field at all" OR "category not in the
+    # current valid set" — same Mongo query for both collections.
+    match_filter = {
+        "$or": [
             {"category": {"$exists": False}},
-            {"_id": 0, "id": 1, "name": 1},
-        ).limit(5000)
+            {"category": {"$nin": valid}},
+        ],
+    }
+
+    async def _backfill(collection, name: str) -> int:
         touched = 0
-        async for doc in cursor:
-            cid = gallery_taxonomy.guess_category(doc.get("name"))
-            tags = gallery_taxonomy.guess_tags(doc.get("name"))
-            await db.gallery.update_one(
-                {"id": doc["id"]},
-                {"$set": {"category": cid, "tags": tags, "is_featured": False}},
+        try:
+            cursor = collection.find(
+                match_filter,
+                {"_id": 0, "id": 1, "name": 1, "category": 1},
+            ).limit(5000)
+            async for doc in cursor:
+                cid = gallery_taxonomy.guess_category(doc.get("name"))
+                tags = gallery_taxonomy.guess_tags(doc.get("name"))
+                update = {"$set": {"category": cid, "tags": tags}}
+                # gallery items also carry `is_featured` — set it only
+                # when the field is missing (preserve featured picks).
+                if name == "gallery":
+                    update["$setOnInsert"] = {"is_featured": False}
+                    await collection.update_one(
+                        {"id": doc["id"], "is_featured": {"$exists": False}},
+                        {"$set": {**update["$set"], "is_featured": False}},
+                    )
+                    await collection.update_one(
+                        {"id": doc["id"], "is_featured": {"$exists": True}},
+                        {"$set": update["$set"]},
+                    )
+                else:
+                    await collection.update_one({"id": doc["id"]}, {"$set": update["$set"]})
+                touched += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("%s taxonomy backfill skipped: %s", name, exc)
+        return touched
+
+    try:
+        g = await _backfill(db.gallery, "gallery")
+        c = await _backfill(db.components, "components")
+        if g or c:
+            logger.info(
+                "gallery taxonomy backfill: tagged %d design(s) + %d component(s)",
+                g, c,
             )
-            touched += 1
-        if touched:
-            logger.info("gallery taxonomy backfill: tagged %d legacy item(s)", touched)
     except Exception as exc:  # noqa: BLE001
         # Backfill is best-effort: never block startup if the DB hiccups.
         logger.warning("gallery taxonomy backfill skipped: %s", exc)

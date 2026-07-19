@@ -174,6 +174,29 @@ export default function PrintabilityReportPanel({ open, onClose }) {
   // so we can surface a satisfying "42 → 78" delta toast after each run.
   const [fixingCode, setFixingCode] = useState(null);
   const [lastScoreBeforeFix, setLastScoreBeforeFix] = useState(null);
+  // Iter-145 — the toolbar "Decimate now" toast opens this panel via
+  // `forgeslicer:open-dialog { name: "printability", focus: "decimate" }`.
+  // We latch the requested focus for ~5 s so the Decimate preset row
+  // pulses/rings when the user arrives, then quietly fades — no
+  // permanent highlight once the user has clearly landed here.
+  const [focusFlash, setFocusFlash] = useState(null);
+  useEffect(() => {
+    const onFocusEvent = (e) => {
+      const focus = e?.detail?.focus;
+      if (!focus) return;
+      setFocusFlash(focus);
+      const t = setTimeout(() => setFocusFlash(null), 4000);
+      return () => clearTimeout(t);
+    };
+    window.addEventListener("forgeslicer:printability-focus", onFocusEvent);
+    return () => window.removeEventListener("forgeslicer:printability-focus", onFocusEvent);
+  }, []);
+  const decimateRowRef = React.useRef(null);
+  useEffect(() => {
+    if (focusFlash === "decimate" && decimateRowRef.current) {
+      decimateRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focusFlash]);
 
   const runAnalysis = useCallback(async () => {
     setErr("");
@@ -459,7 +482,54 @@ export default function PrintabilityReportPanel({ open, onClose }) {
             </div>
 
             <MetricStrip metrics={report.metrics} />
+          </>
+        )}
 
+        {/* Iter-145 — Decimate preset picker. Always visible so users
+            can pre-emptively tune target face count regardless of
+            whether the analyzer has produced a report (the toolbar
+            "Decimate now" toast opens this panel + focuses this row
+            before an analysis may have finished running). */}
+        {(objects || []).some((o) => o.type === "imported") && (
+          <div
+            ref={decimateRowRef}
+            data-testid="printability-decimate-row"
+            className={`rounded border ${focusFlash === "decimate" ? "border-orange-400/70 ring-2 ring-orange-500/50 animate-pulse" : "border-slate-800"} p-2 bg-slate-900/40 transition-all`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                Decimate — target face count
+              </div>
+              <span className="text-[9px] text-slate-500">applies to imported meshes</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5" data-testid="printability-decimate-presets">
+              {[
+                { key: "mini",       label: "Mini",       tris: "25k", desc: "Tabletop miniature — keeps fine surface detail." },
+                { key: "functional", label: "Functional", tris: "12k", desc: "Balanced default for mechanical / print parts." },
+                { key: "low_poly",   label: "Low-poly",   tris: "3k",  desc: "Faceted / stylised look with the smallest STL." },
+              ].map((p) => (
+                <button
+                  key={p.key}
+                  data-testid={`printability-decimate-${p.key}`}
+                  disabled={!!fixingCode}
+                  onClick={() => runDecimate(p.key)}
+                  title={p.desc}
+                  className={`flex flex-col items-center gap-0.5 py-1.5 rounded border text-[10px] font-medium transition-colors disabled:opacity-50 disabled:cursor-wait ${
+                    fixingCode === "decimate_with_intent"
+                      ? "border-orange-500/50 bg-orange-500/10 text-orange-200"
+                      : "border-slate-700 bg-slate-800/50 hover:bg-orange-500/10 hover:border-orange-500/40 text-slate-300 hover:text-orange-200"
+                  }`}
+                >
+                  <span className="font-semibold">{p.label}</span>
+                  <span className="text-[9px] text-slate-500">{p.tris} tris</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {report && !loading && (
+          <>
             {/* Iter-135 — Auto-Fix runs applicable fixers in safe
                 order (repair → decimate → add-base). Only shown when
                 at least one fixable issue is present; disables when
