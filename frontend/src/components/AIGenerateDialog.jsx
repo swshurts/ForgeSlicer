@@ -691,6 +691,35 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
                   <span>Describe what you want — shape, scale, style</span>
                   <span>{prompt.length}/600</span>
                 </div>
+                {/* Iter-143 · Example-prompt chips. Concrete, tested
+                    prompts a beginner can crib. Click to overwrite the
+                    textarea — the preview grid clears automatically
+                    (setPrompt fires clearPreviews via the input
+                    onChange side-effect above? No — direct edits skip
+                    it, so we clear manually here). */}
+                <div className="mt-2 flex flex-wrap gap-1.5" data-testid="ai-prompt-examples">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 self-center mr-1">Try:</span>
+                  {[
+                    "a simple phone stand",
+                    "a low-poly fox keychain",
+                    "a cable clip for a desk edge",
+                    "a hex-shaped planter, 60 mm wide",
+                    "a nametag base with rounded corners",
+                  ].map((ex) => (
+                    <button
+                      key={ex}
+                      type="button"
+                      data-testid={`ai-prompt-example-${ex.slice(0, 12).replace(/\s+/g, "-")}`}
+                      onClick={() => {
+                        setPrompt(ex);
+                        if (previewUrls.length) clearPreviews();
+                      }}
+                      className="h-6 px-2 rounded-full bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/30 text-fuchsia-200 text-[10px] font-medium transition-colors"
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
                 <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">Style</label>

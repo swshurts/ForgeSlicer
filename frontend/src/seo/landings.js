@@ -47,7 +47,7 @@ export const SEO_LANDINGS = {
             },
             {
                 title: "AI mesh generation built in",
-                desc: "Generate starter models from a plain-language prompt via Meshy.ai (third-party AI design tool integrated into the ForgeSlicer workflow). Refine the result with normal CAD tools.",
+                desc: "Generate starter models from a plain-language prompt via integrated AI providers (fal.ai default with Meshy.ai as an optional fallback — both are third-party services woven into the ForgeSlicer workflow). Refine the result with normal CAD tools.",
             },
         ],
         howSteps: [
@@ -60,7 +60,7 @@ export const SEO_LANDINGS = {
             { feature: "Boolean operations", a: true, b: true },
             { feature: "Parametric edit-after-boolean", a: false, b: true },
             { feature: "Voice-controlled editing", a: false, b: true },
-            { feature: "AI mesh generation (Meshy.ai)", a: false, b: true },
+            { feature: "AI mesh generation (fal.ai + Meshy.ai)", a: false, b: true },
             { feature: "Built-in slicer + OrcaSlicer hand-off", a: false, b: true },
             { feature: "Free public community gallery", a: true, b: true },
         ],
@@ -113,11 +113,11 @@ export const SEO_LANDINGS = {
         eyebrowBg: "bg-fuchsia-500/10 border-fuchsia-500/30",
         headline: "AI 3D design generator",
         headlineAccent: "in a CAD tool that can actually print it.",
-        intro: "Most AI 3D generators give you a mesh you can't really use. ForgeSlicer bundles Meshy.ai \u2014 an independent third-party AI design tool \u2014 with a real CAD workspace so the generated model lands on a build plate, ready to refine with primitives, Booleans, voice edits, and slicing.",
+        intro: "Most AI 3D generators give you a mesh you can't really use. ForgeSlicer integrates fal.ai's Hunyuan3D (default) with Meshy.ai as an optional fallback \u2014 both are independent third-party AI providers \u2014 alongside a real CAD workspace so the generated model lands on a build plate, ready to refine with primitives, Booleans, voice edits, and slicing.",
         features: [
             {
                 title: "Prompt \u2192 printable mesh",
-                desc: "Type \u201Ca simple phone stand\u201D or \u201Ca low-poly fox keychain\u201D and Meshy.ai returns a starter model in 30\u201390 seconds.",
+                desc: "Type \u201Ca simple phone stand\u201D or \u201Ca low-poly fox keychain\u201D and fal.ai's Hunyuan3D (or Meshy.ai as a fallback) returns a starter model in 30\u201390 seconds.",
             },
             {
                 title: "Refine in CAD",
@@ -133,13 +133,13 @@ export const SEO_LANDINGS = {
             },
         ],
         howSteps: [
-            { title: "Type a prompt", desc: "\u201CA simple phone stand\u201D \u2014 Meshy.ai (third-party AI integrated into ForgeSlicer) returns a printable starter mesh." },
+            { title: "Type a prompt", desc: "\u201CA simple phone stand\u201D \u2014 fal.ai / Meshy.ai (independent third-party AI providers integrated into ForgeSlicer) returns a printable starter mesh." },
             { title: "Refine in CAD", desc: "Resize, add holes, emboss text, set wall thickness with ForgeSlicer's own tools." },
             { title: "Slice and print", desc: "In browser, on our OrcaSlicer server, or exported to your desktop slicer." },
         ],
         title: "AI 3D Design Generator + CAD Workspace | ForgeSlicer",
-        description: "ForgeSlicer pairs an AI 3D design generator (Meshy.ai \u2014 third-party AI integrated into the workflow) with real browser CAD: prompt your starter mesh, refine with Booleans and voice edits, then slice and print.",
-        keywords: "AI 3D design generator, AI 3D model generator, text to 3D, image to 3D, Meshy.ai, prompt to STL, AI CAD for 3D printing",
+        description: "ForgeSlicer pairs an AI 3D design generator (fal.ai default + Meshy.ai fallback \u2014 independent third-party providers integrated into the workflow) with real browser CAD: prompt your starter mesh, refine with Booleans and voice edits, then slice and print.",
+        keywords: "AI 3D design generator, AI 3D model generator, text to 3D, image to 3D, fal.ai, Meshy.ai, Hunyuan3D, prompt to STL, AI CAD for 3D printing",
     },
 
     "browser-cad": {
@@ -197,7 +197,7 @@ export const SEO_LANDINGS = {
             },
             {
                 title: "Voice + AI for non-CAD-natives",
-                desc: "Type or speak what you want. AI generates starter meshes (Meshy.ai \u2014 third-party AI integrated into the workflow); voice handles edits.",
+                desc: "Type or speak what you want. AI generates starter meshes via fal.ai (default) + Meshy.ai (optional fallback) \u2014 independent third-party providers integrated into the workflow; voice handles edits.",
             },
             {
                 title: "Slice, hand off, or both",
@@ -305,7 +305,7 @@ export const SEO_LANDINGS = {
             },
             {
                 title: "Voice + AI for the CAD half",
-                desc: "ForgeSlicer's voice editing + AI mesh generation (via Meshy.ai \u2014 third-party AI integrated into the workflow) gives PrusaSlicer users a modern modelling layer to feed their slicer.",
+                desc: "ForgeSlicer's voice editing + AI mesh generation via fal.ai (default) + Meshy.ai (optional fallback) \u2014 independent third-party providers integrated into the workflow \u2014 gives PrusaSlicer users a modern modelling layer to feed their slicer.",
             },
             {
                 title: "Original Prusa printer profiles",

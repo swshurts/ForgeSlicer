@@ -33,6 +33,13 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-19)
 
+### Recently completed (iter-143, 2026-07-19) — Intent-wiring + Phase B · SEO/AI polish
+- **Intent-wiring** (`Workspace.jsx`): Wired the homepage use-case cards. `?intent=text-nametag` drops a Text primitive + hint toast, `?intent=drawer-organizer` and `?intent=bracket` drop a Box primitive with tailored next-step guidance, `?intent=import-repair` triggers the topbar Import button. Handled-ref guards against effect re-runs; URL is scrubbed with `replace: true` after handling so a refresh doesn't re-fire.
+- **B1 · SEO landing content pass** (`seo/landings.js`): Corrected the AI provider messaging across all Meshy-referencing pages (tinkercad-alternative, ai-3d-design, 3d-printing-cad, prusaslicer-workflow). Every reference now credits **fal.ai (default, Hunyuan3D) + Meshy.ai (optional fallback)** as independent third-party providers, matches iter-132 provider swap + iter-142 marketing sweep.
+- **B2 · /learn audit**: 8 lessons in `learn/lessons.js` (365 lines, ~45 lines each) — content is already comprehensive and Meshy-free. No changes needed.
+- **B3 · AI panel example-prompt chips** (`AIGenerateDialog.jsx`): Added `ai-prompt-examples` row below the Text tab textarea with 5 tested prompts ("a simple phone stand", "a low-poly fox keychain", "a cable clip for a desk edge", "a hex-shaped planter, 60 mm wide", "a nametag base with rounded corners"). Clicking a chip populates the textarea and clears any stale preview thumbnails.
+- **E2E playwright**: `/workspace?intent=text-nametag` → text primitive dropped, URL cleaned. `/ai-3d-design` intro contains fal.ai + Meshy.ai + "independent third-party AI providers". AI dialog Text tab shows 5 chips; clicking populates the input.
+
 ### Recently completed (iter-142, 2026-07-19) — Phase A · Marketing site trust + clarity
 - **Scope**: First phase of the ChatLLM-driven marketing review. Focus was quick wins on the homepage, working around scaffolding that already existed (Trust hub, changelog, roadmap, Learn, SEO landings, ReleaseNotesDialog, SplashScreen).
 - **A1 · What's-new bell button on the landing header** (`Landing.jsx`): Added a Sparkles icon button (`landing-whats-new-btn`) that dispatches `forgeslicer:show-release-notes` — same event the workspace `whats-new-btn` fires. Also fixed a latent bug in `ReleaseNotesDialog.jsx` where an early return inside the useEffect skipped registering the manual-trigger event listener on non-product routes, silently killing the topbar pin on the landing page. Manual triggers now work everywhere; auto-open remains route-gated to `/workspace`, `/gallery`, `/profile`.

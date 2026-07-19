@@ -138,8 +138,10 @@ export default function Workspace() {
   const remixFit = searchParams.get("fit") === "1";
   const addComponentParam = searchParams.get("addComponent");
   const templateParam = searchParams.get("template");
+  const intentParam = searchParams.get("intent");
   const addImportedMesh = useScene((s) => s.addImportedMesh);
   const addRawObject = useScene((s) => s.addRawObject);
+  const addPrimitive = useScene((s) => s.addPrimitive);
   const setProjectName = useScene((s) => s.setProjectName);
   const setRemixOf = useScene((s) => s.setRemixOf);
   const loadProject = useScene((s) => s.loadProject);
@@ -850,6 +852,70 @@ export default function Workspace() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam]);
+
+  // Iter-143 — homepage "use case" intents (landing.jsx cards). Each
+  // card links to /workspace?intent=<slug>; on arrival we auto-drop
+  // the right primitive / open the right tool + surface a one-line
+  // hint toast so the user knows what to do next. We strip the param
+  // after handling so a refresh doesn't fire the intent a second
+  // time and a `handled` ref guards against effect re-runs.
+  const handledIntentRef = React.useRef(null);
+  useEffect(() => {
+    if (!intentParam) return;
+    if (handledIntentRef.current === intentParam) return;
+    handledIntentRef.current = intentParam;
+
+    switch (intentParam) {
+      case "text-nametag": {
+        addPrimitive("text");
+        toast.success("Name tag started", {
+          description: "Type your name in the Inspector, add a 5 mm hole with the Cylinder primitive → Boolean subtract.",
+        });
+        break;
+      }
+      case "drawer-organizer": {
+        addPrimitive("box");
+        toast.success("Slab dropped", {
+          description: "Add compartments: place smaller boxes on top, mark them Negative, then Boolean subtract to carve the pockets.",
+        });
+        break;
+      }
+      case "bracket": {
+        addPrimitive("box");
+        toast.success("Bracket base ready", {
+          description: "Combine with Cylinder primitives, add screw holes (Cylinder → Negative → Boolean subtract), check wall thickness in the Health tab.",
+        });
+        break;
+      }
+      case "import-repair": {
+        // Trigger the topbar Import button — same path as clicking it
+        // manually. Falls back to a hint toast if the button hasn't
+        // mounted yet (very unlikely — happens in <10 ms).
+        const btn = document.querySelector('[data-testid="file-import-btn"]');
+        if (btn) {
+          btn.click();
+          toast.info("Import a broken part", {
+            description: "Pick the STL you want to fix. ForgeSlicer will Auto-Clean and flag print issues on import.",
+          });
+        } else {
+          toast.info("Ready to import", {
+            description: "Click the Import button in the top toolbar and choose your STL / 3MF / OBJ.",
+          });
+        }
+        break;
+      }
+      default:
+        // Unknown intent — ignore silently so future landing changes
+        // don't fail loudly against an old workspace build.
+        break;
+    }
+
+    // Drop the intent from the URL so refreshes don't re-fire.
+    const next = new URLSearchParams(searchParams);
+    next.delete("intent");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intentParam]);
 
   const handleSendTo = (slicer) => {
     setTargetSlicer(slicer);
