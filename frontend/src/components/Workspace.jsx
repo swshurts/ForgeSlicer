@@ -904,6 +904,41 @@ export default function Workspace() {
         }
         break;
       }
+      // Iter-144 — voice-command shortcuts driven from marketing use
+      // cases. Route to the existing parseTranscript/executeCommand
+      // pipeline so the user immediately sees the "AI-like edit"
+      // magic that the landing page promised. Requires a selected
+      // object; if the scene is empty we show a hint instead of
+      // dispatching to avoid a silent no-op.
+      case "hollow":
+      case "add-hole":
+      case "printable": {
+        const phrases = {
+          "hollow":     "make this hollow with 2 mm walls",
+          "add-hole":   "add a 5 mm hole through the top",
+          "printable":  "make this printable without supports",
+        };
+        const phrase = phrases[intentParam];
+        // Give React a beat to render the workspace before we probe
+        // the store — otherwise on cold load `objects` can still be [].
+        setTimeout(async () => {
+          const s = useScene.getState();
+          if (!s.objects || s.objects.length === 0) {
+            toast.info(`"${phrase}" ready`, {
+              description: "Drop or generate a model first, select it, then try the voice command — or say it into the microphone.",
+            });
+            return;
+          }
+          try {
+            const cmd = await parseTranscript(phrase);
+            const result = await executeCommand(cmd);
+            toast.success(`Voice: ${result || phrase}`);
+          } catch (e) {
+            toast.error(`Voice failed: ${e.message || e}`);
+          }
+        }, 300);
+        break;
+      }
       default:
         // Unknown intent — ignore silently so future landing changes
         // don't fail loudly against an old workspace build.

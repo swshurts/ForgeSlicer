@@ -250,7 +250,11 @@ export function readFileAsArrayBuffer(file) {
 // pipeline; numbers above ~2M routinely make the browser unresponsive
 // during slicing and ~4M (the LithoForge bug we saw) tips into the
 // "wait 30+ s per action" range.
-export const HEAVY_MESH_TRIANGLE_THRESHOLD = 500_000;
+export const HEAVY_MESH_TRIANGLE_THRESHOLD = 150_000;
+// Iter-144 — above this, warn with more urgency and recommend
+// decimation as the first step (the user is likely to hit noticeable
+// UI stutter and >5s boolean latency at this size on a typical laptop).
+export const VERY_HEAVY_MESH_TRIANGLE_THRESHOLD = 500_000;
 
 // Counts triangles for either an indexed mesh (preferred — `indices`
 // is a Uint32Array of length 3*tri-count) or a non-indexed mesh where

@@ -604,6 +604,21 @@ export default function Landing() {
               { Icon: Baby, title: "Classroom project",
                 body: "Turn an SVG logo or hand-drawn shape into a printable object. Great for STEM demos.",
                 cta: "Learn how", to: "/learn", accent: "sky" },
+              // Iter-144 — voice-command shortcut cards. Each links to
+              // /workspace?intent=<verb>; the workspace parses the intent
+              // and runs a canned voice command against the current
+              // selection so the user immediately sees the "AI does the
+              // edit" magic. If the scene is empty we surface a hint
+              // instead of failing silently.
+              { Icon: Wand2, title: "Hollow a solid model",
+                body: "Voice-command shortcut: 'make this hollow with 2 mm walls' — turns any solid into a print-ready shell instantly.",
+                cta: "Try the shortcut", to: "/workspace?intent=hollow", accent: "orange" },
+              { Icon: Combine, title: "Add a mounting hole",
+                body: "Voice-command shortcut: 'add a 5 mm hole through the top' — perfect for keychains, wall hangers, and cable management.",
+                cta: "Try the shortcut", to: "/workspace?intent=add-hole", accent: "cyan" },
+              { Icon: ShieldCheck, title: "Print without supports",
+                body: "Voice-command shortcut: 'make this printable without supports' — auto-reorients + trims overhangs to save filament and time.",
+                cta: "Try the shortcut", to: "/workspace?intent=printable", accent: "emerald" },
             ].map((u, i) => {
               const border = {
                 orange: "border-orange-500/40 hover:border-orange-500/70 bg-orange-500/[0.03]",
@@ -639,6 +654,75 @@ export default function Landing() {
                 </Link>
               );
             })}
+          </div>
+        </section>
+
+        {/* ─── Iter-144 · Competitive comparison strip ────────────
+            Non-combative "when to pick ForgeSlicer vs Tinkercad /
+            Fusion / Blender" so a comparison-shopping visitor lands
+            on the right tool for their use-case. Kept as a compact
+            table — deeper drill-down lives on /tinkercad-alternative. */}
+        <section
+          data-testid="landing-comparison"
+          className="mt-14"
+        >
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-sky-500/10 border border-sky-500/30 rounded-full text-[10px] uppercase tracking-widest text-sky-300 font-semibold">
+              <Wrench size={11} /> Which CAD tool fits?
+            </div>
+            <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight">Why <span className="text-orange-400">ForgeSlicer</span>?</h2>
+            <p className="mt-2 text-slate-400 text-sm max-w-2xl mx-auto">
+              We're not for everyone — but if you print more than you engineer, we're probably the fastest path from idea to plate.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 overflow-hidden" data-testid="landing-comparison-table">
+            <table className="w-full text-sm">
+              <thead className="text-[10px] uppercase tracking-widest text-slate-500 bg-slate-900/60">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">Feature</th>
+                  <th className="text-center px-3 py-2 font-medium text-orange-300">ForgeSlicer</th>
+                  <th className="text-center px-3 py-2 font-medium">Tinkercad</th>
+                  <th className="text-center px-3 py-2 font-medium">Fusion 360</th>
+                  <th className="text-center px-3 py-2 font-medium">Blender</th>
+                </tr>
+              </thead>
+              <tbody className="text-slate-300">
+                {[
+                  { f: "Runs in the browser, no install", a: "✓", b: "✓", c: "—", d: "—" },
+                  { f: "Boolean ops (add / subtract / intersect)", a: "✓", b: "✓", c: "✓", d: "✓" },
+                  { f: "3D printing focus (STL / 3MF / slicer handoff)", a: "✓", b: "partial", c: "partial", d: "—" },
+                  { f: "Voice-controlled CAD edits", a: "✓", b: "—", c: "—", d: "—" },
+                  { f: "AI mesh generation (fal.ai + Meshy.ai)", a: "✓", b: "—", c: "—", d: "—" },
+                  { f: "Built-in printability report + Auto-Fix", a: "✓", b: "—", c: "partial", d: "—" },
+                  { f: "Free tier without account", a: "✓", b: "—", c: "hobbyist", d: "✓" },
+                  { f: "Beginner-friendly UI", a: "✓", b: "✓", c: "—", d: "—" },
+                ].map((row, i) => (
+                  <tr
+                    key={i}
+                    data-testid={`landing-comparison-row-${i}`}
+                    className={i % 2 ? "bg-slate-950/30" : ""}
+                  >
+                    <td className="px-3 py-2 text-slate-200">{row.f}</td>
+                    {["a", "b", "c", "d"].map((k) => {
+                      const v = row[k];
+                      const emphasise = k === "a";
+                      const cls = v === "✓"
+                        ? (emphasise ? "text-emerald-300 font-semibold" : "text-emerald-400/60")
+                        : v === "—"
+                          ? "text-slate-600"
+                          : "text-amber-400/70";
+                      return (
+                        <td key={k} className={`text-center px-3 py-2 ${cls}`}>{v}</td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 text-[11px] text-slate-500 text-center">
+            Tinkercad, Fusion&nbsp;360, and Blender are excellent tools — this table is only about the 3D-printing-first workflow. Full deep-dive on the{" "}
+            <Link to="/tinkercad-alternative" className="text-orange-300 hover:text-orange-200 underline underline-offset-2">Tinkercad alternative page</Link>.
           </div>
         </section>
 

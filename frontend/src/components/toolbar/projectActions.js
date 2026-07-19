@@ -15,7 +15,7 @@ import {
   saveProjectJSON, openFileDialog,
   importSTLFile, importOBJFile, import3MFFile, import3MFFileMulti, readFileAsText,
   downloadBlob,
-  countMeshTriangles, HEAVY_MESH_TRIANGLE_THRESHOLD,
+  countMeshTriangles, HEAVY_MESH_TRIANGLE_THRESHOLD, VERY_HEAVY_MESH_TRIANGLE_THRESHOLD,
 } from "../../lib/exporters";
 import { toast } from "sonner";
 import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "../../lib/workerClient";
@@ -39,15 +39,28 @@ export function makeProjectActions({ store, setBusyMsg }) {
 
   // Iter-96 — Heavy-mesh warning helper shared by every import path
   // in this module. A persistent (12 s) sonner toast is the right
-  // surface here because the toolbar-import flow doesn't have access
-  // to the Workspace's in-component banner state — and a regular
-  // ephemeral toast would evaporate before the user notices that
-  // subsequent slicing/boolean ops feel slow.
+  // Iter-144 — two-tier heavy-mesh warning. 150k is the first
+  // threshold where beginners on a typical laptop notice slicing +
+  // boolean latency. Above 500k we upgrade the tone to a hard warn
+  // and surface a direct "Open Printability → Decimate" CTA in the
+  // toast so the user isn't left hunting for the fix.
   const warnIfHeavy = (triangleCount) => {
-    if (triangleCount > HEAVY_MESH_TRIANGLE_THRESHOLD) {
+    if (triangleCount > VERY_HEAVY_MESH_TRIANGLE_THRESHOLD) {
+      toast.warning("Very heavy mesh", {
+        description: `${triangleCount.toLocaleString()} triangles — slicing and Booleans will be sluggish and may hit browser memory limits. Decimate before continuing.`,
+        duration: 15000,
+        action: {
+          label: "Decimate now",
+          onClick: () => {
+            // Opens the Printability report dialog where Decimate lives.
+            window.dispatchEvent(new CustomEvent("forgeslicer:open-dialog", { detail: { name: "printability" } }));
+          },
+        },
+      });
+    } else if (triangleCount > HEAVY_MESH_TRIANGLE_THRESHOLD) {
       toast.warning("Heavy mesh", {
-        description: `${triangleCount.toLocaleString()} triangles — slicing and boolean ops will be slow. Consider decimating the mesh before importing.`,
-        duration: 12000,
+        description: `${triangleCount.toLocaleString()} triangles — Booleans and slicing may feel slow. Use Printability → Decimate if you notice stutter.`,
+        duration: 10000,
       });
     }
   };

@@ -24,20 +24,16 @@ const PLACEHOLDERS = [
 
 const COMPONENT_CATEGORIES = [
   { key: "all", label: "All categories" },
-  { key: "mechanical", label: "Mechanical" },
-  { key: "rack", label: "Rack / Enclosure" },
-  { key: "mounting", label: "Mounting" },
-  { key: "fasteners", label: "Fasteners" },
-  { key: "electronics", label: "Electronics" },
-  { key: "brackets", label: "Brackets" },
-  { key: "hinges", label: "Hinges" },
-  { key: "gears", label: "Gears" },
-  { key: "decorative", label: "Decorative" },
-  { key: "organizers", label: "Organizers" },
-  { key: "miniatures", label: "Miniatures" },
-  { key: "structural", label: "Structural" },
-  { key: "toys", label: "Toys" },
-  { key: "misc", label: "Misc" },
+  { key: "household",         label: "Household" },
+  { key: "tools",             label: "Tools" },
+  { key: "organizers",        label: "Organizers" },
+  { key: "replacement_parts", label: "Replacement Parts" },
+  { key: "toys",              label: "Toys" },
+  { key: "education",         label: "Education" },
+  { key: "cosplay",           label: "Cosplay" },
+  { key: "mechanical",        label: "Mechanical" },
+  { key: "decorative",        label: "Decorative" },
+  { key: "misc",              label: "Misc" },
 ];
 
 function timeAgo(iso) {
