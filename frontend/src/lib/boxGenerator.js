@@ -302,32 +302,30 @@ export async function buildBoxAssembly(p) {
   }
 
   if (lidMode === "sliding") {
-    // iter-150.1 — Sliding-lid captured groove (user feedback):
-    //   Previous version cut the groove all the way to the top of the
-    //   side walls, so the lid could just lift out. The lid needs to
-    //   be TRAPPED under a strip of wall material (the "overhang").
-    //
-    //   Design: T-slot cut into inner top of each side wall, whose TOP
-    //   sits capH mm BELOW the wall top — that cap is the overhang
-    //   that captures the lid. Front wall notch matches the slot's
-    //   vertical range exactly (also stops below the wall top), so
-    //   the lid slides IN through that opening only. Back wall is
-    //   solid → stops the lid.
-    const grooveDepth = Math.min(1.5, wall * 0.55);       // slot depth INTO wall from inner face
-    const grooveH     = Math.max(lidThickness + 0.4, 2);  // slot height
-    const capH        = Math.max(0.8, Math.min(1.4, lidThickness * 0.5));  // material above groove
-    const grooveTopZ  = bodyH - capH;                     // top of groove (below wall top)
-    const slideStop   = wall + 0.5;                       // stop distance in Y from back wall interior
-    const grooveLenY  = D - slideStop;                    // slot Y-length
-    const grooveCentY = -D / 2 + grooveLenY / 2;          // shifted toward front
+    // iter-150.5 — Sliding-lid clearance widened (user feedback):
+    //   Previous version had only 0.4 mm vertical + 0.25 mm horizontal
+    //   slop. Real FDM prints shrunk that down to near-zero after
+    //   first-layer squish so the lid physically wouldn't slide.
+    //   Now every mating gap scales with the user's "clearance" knob
+    //   AND has a fixed 0.35 mm floor added on top, so even at the
+    //   default 0.25 mm setting the lid has ~0.85 mm vertical and
+    //   ~0.4 mm per-side horizontal clearance — plenty for a 0.4 mm
+    //   nozzle print.
+    const grooveDepth    = Math.min(1.5, wall * 0.55);        // slot depth INTO wall from inner face
+    const railClearance  = clearance + 0.15;                  // per-side horizontal slop on the rails
+    const slotClearance  = clearance + 0.35;                  // total vertical slop between lid + slot
+    const grooveH        = Math.max(lidThickness + slotClearance, 2);
+    const capH           = Math.max(0.8, Math.min(1.4, lidThickness * 0.5));  // overhang material above slot
+    const grooveTopZ     = bodyH - capH;                      // top of groove (below wall top)
+    const slideStop      = wall + 0.5;                        // stop distance in Y from back wall interior
+    const grooveLenY     = D - slideStop;                     // slot Y-length
+    const grooveCentY    = -D / 2 + grooveLenY / 2;           // shifted toward front
 
     // Slot cutter — over-cut sideways into the cavity, NO over-cut in Z
     // (else we'd break through the overhang cap).
-    const cutW = grooveDepth + 6;   // 6 mm of over-cut into the cavity (safe empty space)
+    const cutW = grooveDepth + 6;
     for (const xSign of [-1, 1]) {
       const cutter = new THREE.BoxGeometry(cutW, grooveLenY, grooveH);
-      // Cutter's outer edge sits at (W/2 - wall) + grooveDepth. Its
-      // Z spans grooveTopZ - grooveH  →  grooveTopZ (top face flush).
       cutter.translate(
         xSign * (W / 2 - wall + grooveDepth - cutW / 2),
         grooveCentY,
@@ -350,18 +348,14 @@ export async function buildBoxAssembly(p) {
   }
 
   if (lidMode === "hinged") {
-    // iter-149.4 — Piano-hinge rewrite (user feedback):
-    //   - Previous design had 2 side tabs on the box + 1 disconnected
-    //     block on the lid → hinge didn't function, lid knuckle wasn't
-    //     even attached to the lid.
-    //   - New design uses N alternating knuckles (odd on box, even on
-    //     lid) all sharing one axle. Axle hole Ø = 1.85 mm (slip fit
-    //     for a 1.75 mm filament piece — the user's exact suggestion).
-    //   - Each knuckle is connected to its host part via a solid rib
-    //     so the printed part stays a single manifold.
+    // iter-150.5 — Piano-hinge axle-hole clearance (user feedback):
+    //   1.85 mm Ø was too tight for a 1.75 mm filament rod after
+    //   FDM first-layer squish + horizontal shrinkage. Bumped to
+    //   Ø 2.20 mm (0.45 mm total clearance) which is the standard
+    //   "generous slip fit" for filament pins in printed hinges.
     const numKnuckles  = 5;                          // total; 3 box + 2 lid
-    const knuckleR     = Math.max(2.5, lidThickness * 0.9);
-    const axleR        = 1.85 / 2;                   // 1.85 mm ⌀ hole → 1.75 mm filament axle
+    const knuckleR     = Math.max(2.6, lidThickness * 0.9);
+    const axleR        = 2.20 / 2;                   // Ø 2.20 mm hole → 1.75 mm filament axle
     const kSegLen      = (W - 2) / numKnuckles;
     const kGap         = 0.4;                        // clearance between adjacent knuckles
     const knuckleY     = D / 2 + knuckleR;           // sits proud of back wall
@@ -433,9 +427,14 @@ export async function buildBoxAssembly(p) {
     }
 
     if (lidMode === "friction") {
-      // A tapered inner skirt that press-fits into the box cavity.
+      // iter-150.5 — friction-fit skirt clearance widened (user feedback).
+      // Previous per-side gap was just `clearance` (0.25 mm) which is
+      // sub-nozzle after FDM shrinkage — the lid physically wouldn't
+      // press-fit. Now the skirt is inset `wall + clearance + 0.25` per
+      // side (total 1.0+ mm gap at the mouth), enough to actually
+      // squeeze in and out.
       const skirtH = Math.max(3, lidThickness * 1.4);
-      const skirtInset = wall + clearance;
+      const skirtInset = wall + clearance + 0.25;
       const skirtW = W - 2 * skirtInset;
       const skirtD = D - 2 * skirtInset;
       if (skirtW > 2 && skirtD > 2) {
@@ -460,26 +459,29 @@ export async function buildBoxAssembly(p) {
     }
 
     if (lidMode === "sliding") {
-      // iter-149.4 — new sliding-lid: the lid ITSELF is smaller than
-      // the box outer, sized to fit exactly into the T-slot pocket on
-      // both sides. Rails are integral with the lid slab (no
-      // free-hanging tabs). The prior version has been replaced —
-      // hollow lid was completely wrong.
-      const grooveDepth = Math.min(1.5, wall * 0.55);
-      const grooveH     = Math.max(lidThickness + 0.4, 2);
-      const slideStop   = wall + 0.5;
-      const grooveLenY  = D - slideStop;
+      // iter-150.5 — Sliding-lid slab sized to the widened box slot.
+      //   Rails now extend `grooveDepth - railClearance` per side, and
+      //   the lid's Y-depth is `grooveLenY - 2 * clearance - 0.4` — 
+      //   so there's proper slop at every mating face. Also uses
+      //   `lidThickness` directly (fine, effLidThickness == lidThickness
+      //   for non-magnet lid modes).
+      const grooveDepth   = Math.min(1.5, wall * 0.55);
+      const railClearance = clearance + 0.15;                  // per-side horizontal
+      const slideStop     = wall + 0.5;
+      const grooveLenY    = D - slideStop;
 
       // New lid dimensions — width extends into the wall grooves by
-      // (grooveDepth - clearance), depth stops at the slot's back end.
-      const lidActualW  = W - 2 * wall + 2 * (grooveDepth - clearance);
-      const lidActualD  = grooveLenY - clearance;
+      // (grooveDepth - railClearance), depth stops (2 * clearance + 0.4)
+      // short of the slot's back wall so the lid doesn't wedge.
+      const lidActualW  = W - 2 * wall + 2 * (grooveDepth - railClearance);
+      const lidActualD  = grooveLenY - (2 * clearance + 0.4);
 
       // Discard the earlier (full-size) lidManifold and rebuild.
       lidManifold.delete();
       const newLid = new THREE.BoxGeometry(lidActualW, lidActualD, lidThickness);
-      // Shift front-flush with the box front (matches slot front-open).
-      const lidYCentre = -D / 2 + wall + lidActualD / 2 + clearance / 2;
+      // Front-flush position, plus half of the total depth clearance
+      // so the pull-tab side is aligned with the notch opening.
+      const lidYCentre = -D / 2 + wall + lidActualD / 2 + clearance + 0.2;
       newLid.translate(0, lidYCentre, lidThickness / 2);
       lidManifold = _geomToMesh(wasm, _weld(newLid));
 
@@ -495,13 +497,12 @@ export async function buildBoxAssembly(p) {
     }
 
     if (lidMode === "hinged") {
-      // iter-149.4 — piano-hinge lid knuckles.
-      // Odd indices (1, 3, ...) belong to the lid — 2 knuckles on a
-      // 5-segment hinge. Same axle centre-line as the box knuckles so
-      // the whole assembly rotates around a single 1.75 mm filament pin.
+      // iter-150.5 — piano-hinge lid knuckles (axle hole Ø 2.20 mm).
+      // Same axle centre-line as the box knuckles so the whole assembly
+      // rotates around a single 1.75 mm filament pin with proper slip fit.
       const numKnuckles = 5;
-      const knuckleR    = Math.max(2.5, lidThickness * 0.9);
-      const axleR       = 1.85 / 2;
+      const knuckleR    = Math.max(2.6, lidThickness * 0.9);
+      const axleR       = 2.20 / 2;
       const kSegLen     = (W - 2) / numKnuckles;
       const kGap        = 0.4;
       const knuckleY    = D / 2 + knuckleR;

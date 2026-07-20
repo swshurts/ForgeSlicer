@@ -33,6 +33,15 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-150.5, 2026-07-20) — Lid clearance widening (user feedback)
+
+After a real print, all three "captured" lid modes needed extra clearance to compensate for FDM shrinkage & first-layer squish:
+
+- **Hinged**: axle hole Ø bumped from 1.85 mm → **2.20 mm** (0.45 mm total slip fit for a 1.75 mm filament pin). Knuckle radius floor bumped to 2.6 mm.
+- **Sliding**: rewrote clearance math so every gap scales with the user's Clearance knob PLUS a fixed floor. Vertical slot slop is now `clearance + 0.35` (~0.6 mm at default). Per-side rail slop is `clearance + 0.15` (~0.4 mm at default). Depth slop at the back stop is `2 × clearance + 0.4` (~0.9 mm at default). Lid slab shrunk from 57.7 × 40.24 → 57.4 × 39.59 mm at defaults.
+- **Friction**: skirt inset widened to `wall + clearance + 0.25` per side (was `wall + clearance`) so a default clearance produces a real slip fit rather than a jam fit.
+- **UI**: each lid-mode hint now spells out the exact clearance the user is getting so they can bump the global Clearance value if their printer runs tight.
+
 ### Recently completed (iter-150.4, 2026-07-20) — Sliding-lid stackable-foot bug
 
 User reported the sliding lid built with a raised platform on top ("cyan portion" from the slicer's planar-cut view) that physically prevented the lid from sliding under the box's overhang.

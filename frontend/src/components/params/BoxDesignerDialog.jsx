@@ -346,13 +346,18 @@ export default function BoxDesignerDialog({ open, onClose }) {
               {/* Hinged lid — inform the user about the axle pin. */}
               {params.lid === "hinged" && (
                 <p className="mt-2 text-[10px] text-sky-300/80 leading-snug bg-sky-500/5 border border-sky-500/30 rounded p-1.5" data-testid="box-hinge-hint">
-                  Piano-style hinge — 5 knuckles (3 on box, 2 on lid) with a 1.85&nbsp;mm axle hole. Slip a length of <span className="font-mono">1.75&nbsp;mm</span> filament through as the pin after printing.
+                  Piano-style hinge — 5 knuckles (3 on box, 2 on lid) with a <span className="font-mono">Ø 2.2 mm</span> axle hole. Slip a length of <span className="font-mono">1.75 mm</span> filament through as the pin after printing (0.45 mm slip fit).
                 </p>
               )}
               {/* Sliding lid — inform the user how to install. */}
               {params.lid === "sliding" && (
                 <p className="mt-2 text-[10px] text-sky-300/80 leading-snug bg-sky-500/5 border border-sky-500/30 rounded p-1.5" data-testid="box-sliding-hint">
-                  Front-loading slide — the lid slides in through the notched front, rides the T-slots along both side walls, and stops against the back wall.
+                  Front-loading slide with captured overhang. Lid clearance scales with the Clearance setting — at the default 0.25 mm you get ~0.6 mm vertical + 0.4 mm per-side horizontal slop, enough to slide freely on a 0.4 mm nozzle print.
+                </p>
+              )}
+              {params.lid === "friction" && (
+                <p className="mt-2 text-[10px] text-sky-300/80 leading-snug bg-sky-500/5 border border-sky-500/30 rounded p-1.5" data-testid="box-friction-hint">
+                  Press-fit skirt. Skirt is inset <span className="font-mono">(wall + clearance + 0.25) mm</span> per side so the lid squeezes in without seizing. Bump the Clearance value if your printer runs tight.
                 </p>
               )}
             </section>
