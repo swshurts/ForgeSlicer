@@ -41,15 +41,17 @@ function parseBinarySTL(bytes) {
 }
 
 function PreviewMesh({ geometry }) {
-  // Center the part above the bed so the viewer can spin freely around it.
+  // iter-149.1 — Preview is Z-up (matches the exported STL frame:
+  // apex-up pyramids, +Z is height). Centre on X + Y, drop bb.min.z
+  // to the grid so the mesh rests on Z=0.
   const centered = useMemo(() => {
     if (!geometry) return null;
     const g = geometry.clone();
     g.computeBoundingBox();
     const bb = g.boundingBox;
     const cx = (bb.min.x + bb.max.x) / 2;
-    const cz = (bb.min.z + bb.max.z) / 2;
-    g.translate(-cx, -bb.min.y, -cz);
+    const cy = (bb.min.y + bb.max.y) / 2;
+    g.translate(-cx, -cy, -bb.min.z);
     return g;
   }, [geometry]);
   if (!centered) return null;
@@ -208,14 +210,29 @@ export default function STLPreviewDialog({ open, onClose }) {
           )}
           <Canvas
             shadows
-            camera={{ position: [120, 90, 120], fov: 50, near: 1, far: 2000 }}
+            // iter-149.1 — Match the workspace convention (Z-up, matches
+            // the exported STL). Otherwise the pyramid + wedge + text
+            // all appear tilted because the default three.js camera is
+            // Y-up. Setting camera.up here also drives the axis gizmo
+            // in the bottom-right so it labels Z as "up" and matches
+            // what the user sees in Orca.
+            camera={{ position: [140, -160, 110], up: [0, 0, 1], fov: 50, near: 1, far: 2000 }}
+            onCreated={({ camera }) => {
+              camera.up.set(0, 0, 1);
+              camera.lookAt(0, 0, 20);
+              camera.updateProjectionMatrix();
+            }}
             dpr={[1, 1.5]}
             style={{ background: "#0F172A" }}
           >
             <ambientLight intensity={0.6} />
-            <directionalLight position={[120, 200, 80]} intensity={0.7} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
-            <directionalLight position={[-120, 60, -80]} intensity={0.25} />
+            <directionalLight position={[120, 80, 200]} intensity={0.7} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+            <directionalLight position={[-120, -80, 60]} intensity={0.25} />
             <Grid
+              // Grid draws on its local XZ plane. For a Z-up world we
+              // rotate it 90° around X so it lays flat on the XY plane
+              // (Z=0 = the build-plate surface).
+              rotation={[Math.PI / 2, 0, 0]}
               args={[300, 300]}
               cellSize={10}
               cellThickness={0.5}
@@ -227,7 +244,7 @@ export default function STLPreviewDialog({ open, onClose }) {
               infiniteGrid
             />
             {parsed && <PreviewMesh geometry={parsed.geometry} />}
-            <OrbitControls makeDefault enablePan enableZoom enableRotate target={[0, 20, 0]} />
+            <OrbitControls makeDefault enablePan enableZoom enableRotate target={[0, 0, 20]} />
             <GizmoHelper alignment="bottom-right" margin={[68, 68]}>
               <GizmoViewport axisColors={["#F97316", "#10B981", "#06B6D4"]} labelColor="white" />
             </GizmoHelper>

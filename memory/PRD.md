@@ -33,7 +33,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
-### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B
+### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B + STL Preview Z-up fix
+
+**iter-149.1 fix — STL Preview axes orientation**
+- User flagged the STL Preview axis gizmo was inconsistent with the exported STL. Root cause: the preview `<Canvas>` used the three.js default Y-up camera (`up = [0,1,0]`) plus a Y-up centring / drop transform in `PreviewMesh`, while the exported STL is Z-up (matches the workspace + Orca + PrusaSlicer). Pyramids and wedges therefore appeared tilted in the preview even though the STL was correct in Orca.
+- Fix: forced `camera.up = [0,0,1]`, moved the OrbitControls target to `[0,0,20]`, rotated the drei `<Grid>` 90° around X so it lays on the XY plane, swapped light positions to Z-up, and updated `PreviewMesh` to centre on X/Y and drop `bb.min.z` (was dropping `bb.min.y`).
+- Result: Pyramid apex points straight up, grid is flat, axis gizmo shows Z (blue) up matching Orca. Verified via screenshot.
 
 **Release A (§1 + §2 — Foundations)**
 - **Custom Build Plate** (PDF §1): New "Printer build plate" section in the Snap/Plate popover with X/Y/Z inputs (mm ↔ inch toggle), 6 preset chips (Mini 180 / Std 220 / Mid 256 / Large 300 / XL 350 / 500). Writes straight into `buildVolume` — no need to save a full OrcaSlicer printer profile for a quick "does this fit?" test.
