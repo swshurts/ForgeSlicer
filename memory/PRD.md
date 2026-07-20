@@ -31,7 +31,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-07-19)
+## Current Open Items (as of 2026-07-20)
+
+### Recently completed (iter-147, 2026-07-20) — Decimate preview tooltip + Gallery health dashboard
+- **Decimate preview tooltip** (`PrintabilityReportPanel.jsx`): The 3 preset chips now show a before/after triangle-count preview instead of a static "25k tris" label. Header shows `Current: <n> tris` derived from `report.metrics.triangle_count` (with a per-object geometry fallback for the brief pre-analyzer window). Each chip's `title` tooltip renders `<current> → <target> tris (±%)` so hovering reveals the exact math. Presets grey out and label their target in muted colour when the current mesh is already below the target (guards against no-op reductions). Emerald accent + percentage tag when the preset would actually shrink.
+- **`/api/admin/gallery-stats`** (`server.py`): New admin-gated endpoint returning per-collection health for `db.gallery` + `db.components`. One MongoDB `$facet` per collection: totals, featured count, per-category histogram, missing_thumbnail, missing_stl, oversized_stl (>20 MB raw base64), orphaned_no_owner (docs whose `user_id` no longer resolves to a user), oldest/newest timestamps, plus public/private split on gallery. Verified live against preview DB — surfaced 33 gallery + 78 component items missing thumbnails, 2 broken components with empty STL blobs.
+- **Access**: Both endpoints share the same `_require_admin_for_upstream` guard. Non-admin → 403.
+- **E2E**: Preview DB reveals real drift; PowerShell curl already used successfully by the operator to run the taxonomy audit endpoint against production (returned `total_matched: 0` — production is fully migrated).
+
+### Production usage
+```
+# Health snapshot:
+curl 'https://forgeslicer.com/api/admin/gallery-stats' \
+     -H "Authorization: Bearer <YOUR_ADMIN_SESSION_TOKEN>"
+```
 
 ### Recently completed (iter-146, 2026-07-19) — Admin taxonomy-backfill endpoint (production audit)
 - **Context**: Preview DB was already clean after iter-131. To audit + migrate the production DB without shell access, exposed the same iter-145 backfill logic via HTTP.

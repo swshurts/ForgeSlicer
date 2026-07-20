@@ -489,44 +489,92 @@ export default function PrintabilityReportPanel({ open, onClose }) {
             can pre-emptively tune target face count regardless of
             whether the analyzer has produced a report (the toolbar
             "Decimate now" toast opens this panel + focuses this row
-            before an analysis may have finished running). */}
-        {(objects || []).some((o) => o.type === "imported") && (
-          <div
-            ref={decimateRowRef}
-            data-testid="printability-decimate-row"
-            className={`rounded border ${focusFlash === "decimate" ? "border-orange-400/70 ring-2 ring-orange-500/50 animate-pulse" : "border-slate-800"} p-2 bg-slate-900/40 transition-all`}
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-                Decimate — target face count
-              </div>
-              <span className="text-[9px] text-slate-500">applies to imported meshes</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5" data-testid="printability-decimate-presets">
-              {[
-                { key: "mini",       label: "Mini",       tris: "25k", desc: "Tabletop miniature — keeps fine surface detail." },
-                { key: "functional", label: "Functional", tris: "12k", desc: "Balanced default for mechanical / print parts." },
-                { key: "low_poly",   label: "Low-poly",   tris: "3k",  desc: "Faceted / stylised look with the smallest STL." },
-              ].map((p) => (
-                <button
-                  key={p.key}
-                  data-testid={`printability-decimate-${p.key}`}
-                  disabled={!!fixingCode}
-                  onClick={() => runDecimate(p.key)}
-                  title={p.desc}
-                  className={`flex flex-col items-center gap-0.5 py-1.5 rounded border text-[10px] font-medium transition-colors disabled:opacity-50 disabled:cursor-wait ${
-                    fixingCode === "decimate_with_intent"
-                      ? "border-orange-500/50 bg-orange-500/10 text-orange-200"
-                      : "border-slate-700 bg-slate-800/50 hover:bg-orange-500/10 hover:border-orange-500/40 text-slate-300 hover:text-orange-200"
-                  }`}
+            before an analysis may have finished running).
+            Iter-147 — before/after triangle preview per preset. */}
+        {(() => {
+          const imported = (objects || []).filter((o) => o.type === "imported" && (o.visible ?? true));
+          if (!imported.length) return null;
+          // Prefer the analyzer's authoritative triangle count when a
+          // report exists — it counts what the backend sees, which is
+          // what Decimate will operate on. Falls back to a per-object
+          // geometry scan (position or `data.indices`) when the
+          // analyzer hasn't run yet (very brief window on cold open).
+          let currentTris = report?.metrics?.triangle_count;
+          if (!Number.isFinite(currentTris) || currentTris <= 0) {
+            currentTris = imported.reduce((acc, o) => {
+              const g = o.geometry;
+              if (g?.index) return acc + Math.floor(g.index.count / 3);
+              if (g?.attributes?.position) return acc + Math.floor(g.attributes.position.count / 3);
+              // Legacy imported objects hold raw arrays in `data`.
+              const idx = o.data?.indices;
+              const verts = o.data?.vertices;
+              if (idx?.length) return acc + Math.floor(idx.length / 3);
+              if (verts?.length) return acc + Math.floor(verts.length / 9);
+              return acc;
+            }, 0);
+          }
+          const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
+          const pct = (target) => {
+            if (currentTris === 0) return "";
+            const delta = 100 * (target - currentTris) / currentTris;
+            return delta < -1 ? `${delta.toFixed(0)}%` : delta > 1 ? `+${delta.toFixed(0)}%` : "0%";
+          };
+          return (
+            <div
+              ref={decimateRowRef}
+              data-testid="printability-decimate-row"
+              className={`rounded border ${focusFlash === "decimate" ? "border-orange-400/70 ring-2 ring-orange-500/50 animate-pulse" : "border-slate-800"} p-2 bg-slate-900/40 transition-all`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                  Decimate — target face count
+                </div>
+                <span
+                  className="text-[9px] text-slate-500"
+                  data-testid="printability-decimate-current"
+                  title={`Current total across ${imported.length} imported mesh${imported.length === 1 ? "" : "es"}`}
                 >
-                  <span className="font-semibold">{p.label}</span>
-                  <span className="text-[9px] text-slate-500">{p.tris} tris</span>
-                </button>
-              ))}
+                  Current: <span className="text-slate-300 font-mono">{currentTris.toLocaleString()}</span> tris
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5" data-testid="printability-decimate-presets">
+                {[
+                  { key: "mini",       label: "Mini",       target: 25_000, desc: "Tabletop miniature — keeps fine surface detail." },
+                  { key: "functional", label: "Functional", target: 12_000, desc: "Balanced default for mechanical / print parts." },
+                  { key: "low_poly",   label: "Low-poly",   target: 3_000,  desc: "Faceted / stylised look with the smallest STL." },
+                ].map((p) => {
+                  const p_pct = pct(p.target);
+                  const willShrink = currentTris > p.target;
+                  const currentIsBelow = currentTris > 0 && currentTris < p.target;
+                  return (
+                    <button
+                      key={p.key}
+                      data-testid={`printability-decimate-${p.key}`}
+                      disabled={!!fixingCode}
+                      onClick={() => runDecimate(p.key)}
+                      title={`${p.desc}\n${currentTris.toLocaleString()} → ${p.target.toLocaleString()} tris${p_pct ? ` (${p_pct})` : ""}${currentIsBelow ? "\nNote: mesh is already below this target — no reduction will occur." : ""}`}
+                      className={`flex flex-col items-center gap-0.5 py-1.5 rounded border text-[10px] font-medium transition-colors disabled:opacity-50 disabled:cursor-wait ${
+                        fixingCode === "decimate_with_intent"
+                          ? "border-orange-500/50 bg-orange-500/10 text-orange-200"
+                          : currentIsBelow
+                            ? "border-slate-800 bg-slate-900/50 text-slate-500 hover:bg-slate-800"
+                            : "border-slate-700 bg-slate-800/50 hover:bg-orange-500/10 hover:border-orange-500/40 text-slate-300 hover:text-orange-200"
+                      }`}
+                    >
+                      <span className="font-semibold">{p.label}</span>
+                      <span className="text-[9px] font-mono">
+                        <span className="text-slate-500">→</span> <span className={willShrink ? "text-emerald-300" : "text-slate-500"}>{fmt(p.target)}</span>
+                        {p_pct && willShrink && (
+                          <span className="text-emerald-400/70 ml-0.5">{p_pct}</span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {report && !loading && (
           <>

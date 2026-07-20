@@ -1849,6 +1849,133 @@ async def admin_taxonomy_backfill(
     }
 
 
+# Iter-147 — Gallery health dashboard. Small aggregation endpoint so an
+# admin can spot drift (broken thumbnails, oversized STLs, orphaned
+# ownership) without stitching together three separate curl calls.
+# Kept in a single MongoDB `$facet` per collection so the whole thing
+# is one round-trip per collection.
+@api_router.get("/admin/gallery-stats")
+async def admin_gallery_stats(request: Request):
+    """At-a-glance health of `db.gallery` + `db.components`.
+
+    Returns:
+    ```json
+    {
+      "gallery": {
+        "total": 123, "public": 100, "private": 23, "featured": 5,
+        "by_category": { "toys": 12, "misc": 30, ... },
+        "missing_thumbnail": 3,
+        "missing_stl": 0,
+        "orphaned_no_owner": 1,
+        "oversized_stl": 2,
+        "oldest": "2025-04-01T00:00:00+00:00",
+        "newest": "2026-07-18T12:34:56+00:00"
+      },
+      "components": { ...same shape... }
+    }
+    ```
+
+    `oversized_stl` counts entries whose base64 STL payload exceeds
+    ~15 MB (roughly 20 MB raw — the practical browser render / boolean
+    ceiling on typical laptops). `orphaned_no_owner` catches docs
+    whose `user_id` no longer resolves to a user record — these were
+    usually created by a deleted account and can safely be pruned.
+    """
+    await _require_admin_for_upstream(request)
+
+    # Base64 length threshold ≈ 20 MB raw (base64 encodes 3 bytes → 4 chars).
+    OVERSIZED_LEN = int(20 * 1024 * 1024 * 4 / 3)  # ~28 MB of base64
+
+    async def summarise_collection(coll, kind: str) -> dict:
+        # One aggregation pipeline: MongoDB does the heavy lifting so
+        # we don't pull entire STL blobs across the wire.
+        facet_stages = {
+            "total": [{"$count": "n"}],
+            "featured": [{"$match": {"is_featured": True}}, {"$count": "n"}],
+            "by_category": [
+                {"$group": {"_id": "$category", "n": {"$sum": 1}}},
+                {"$project": {"_id": 0, "category": "$_id", "n": 1}},
+            ],
+            "missing_thumbnail": [
+                {"$match": {"$or": [
+                    {"thumbnail_base64": {"$exists": False}},
+                    {"thumbnail_base64": ""},
+                ]}},
+                {"$count": "n"},
+            ],
+            "missing_stl": [
+                {"$match": {"$or": [
+                    {"stl_base64": {"$exists": False}},
+                    {"stl_base64": ""},
+                ]}},
+                {"$count": "n"},
+            ],
+            "oversized_stl": [
+                {"$match": {"$expr": {"$gt": [{"$strLenCP": {"$ifNull": ["$stl_base64", ""]}}, OVERSIZED_LEN]}}},
+                {"$count": "n"},
+            ],
+            "date_range": [
+                {"$group": {
+                    "_id": None,
+                    "oldest": {"$min": "$created_at"},
+                    "newest": {"$max": "$created_at"},
+                }},
+            ],
+        }
+        # Gallery has visibility/private flags; components don't.
+        if kind == "gallery":
+            facet_stages["public"] = [{"$match": {"$or": [
+                {"visibility": "public"},
+                {"$and": [{"private": {"$ne": True}}, {"visibility": {"$ne": "private"}}]},
+            ]}}, {"$count": "n"}]
+            facet_stages["private"] = [{"$match": {"$or": [
+                {"visibility": "private"},
+                {"private": True},
+            ]}}, {"$count": "n"}]
+
+        pipeline = [{"$facet": facet_stages}]
+        agg = await coll.aggregate(pipeline).to_list(1)
+        f = agg[0] if agg else {}
+        get_n = lambda key: (f.get(key, [{}]) or [{}])[0].get("n", 0)
+
+        # Orphaned owner check — cheap because we already indexed user_id.
+        # Distinct user_ids in the collection minus users that exist.
+        user_ids = await coll.distinct("user_id")
+        # Filter out None / empty to avoid a huge $in query.
+        candidate_ids = [u for u in user_ids if u]
+        orphan_count = 0
+        if candidate_ids:
+            existing = set()
+            async for u in db.users.find({"user_id": {"$in": candidate_ids}}, {"user_id": 1, "_id": 0}):
+                existing.add(u["user_id"])
+            missing = [u for u in candidate_ids if u not in existing]
+            if missing:
+                orphan_count = await coll.count_documents({"user_id": {"$in": missing}})
+
+        by_cat = {row["category"] or "(none)": row["n"] for row in f.get("by_category", [])}
+        date_range = (f.get("date_range", [{}]) or [{}])[0]
+        result = {
+            "total": get_n("total"),
+            "featured": get_n("featured"),
+            "by_category": by_cat,
+            "missing_thumbnail": get_n("missing_thumbnail"),
+            "missing_stl": get_n("missing_stl"),
+            "oversized_stl": get_n("oversized_stl"),
+            "orphaned_no_owner": int(orphan_count),
+            "oldest": date_range.get("oldest") or None,
+            "newest": date_range.get("newest") or None,
+        }
+        if kind == "gallery":
+            result["public"] = get_n("public")
+            result["private"] = get_n("private")
+        return result
+
+    return {
+        "gallery":    await summarise_collection(db.gallery,    "gallery"),
+        "components": await summarise_collection(db.components, "components"),
+    }
+
+
 # ---------- Community Printer Profiles ----------
 @api_router.post("/printers", response_model=CommunityPrinter)
 async def create_community_printer(p: CommunityPrinterCreate):
