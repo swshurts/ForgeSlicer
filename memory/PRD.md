@@ -33,7 +33,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
-### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B + STL Preview Z-up fix
+### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B + STL Preview Z-up fix + Pyramid winding fix
+
+**iter-149.2 fix — Pyramid flatten produced translucent / empty mesh**
+- User reported: creating a diamond (two pyramids) and clicking "Flatten to single mesh" produced a translucent ghosted mesh that reported the scene as empty on export.
+- Root cause: my hand-built pyramid index buffer wound every face **inward** (side normals pointed into the pyramid, base normal pointed +Z). Three.js with `side=DoubleSide` rendered the workspace mesh fine, so the bug hid until the flatten hit `manifold-3d` — which treats an inward-wound mesh as an inverted solid (negative volume). Union of an inverted solid with itself → 0-volume manifold → STL export sees empty scene; the flatten still writes a "1 positive component" imported mesh, but its geometry is a hollow inverted hull.
+- Fix (`geometry.js`): swapped both side + base triangle winding to (apex, a, b) and (baseCentre, b, a). Verified via viewport render + flatten → export cycle: pyramid, ngon prism, and 2-pyramid diamond all produce correct solid meshes with expected bbox.
 
 **iter-149.1 fix — STL Preview axes orientation**
 - User flagged the STL Preview axis gizmo was inconsistent with the exported STL. Root cause: the preview `<Canvas>` used the three.js default Y-up camera (`up = [0,1,0]`) plus a Y-up centring / drop transform in `PreviewMesh`, while the exported STL is Z-up (matches the workspace + Orca + PrusaSlicer). Pyramids and wedges therefore appeared tilted in the preview even though the STL was correct in Orca.

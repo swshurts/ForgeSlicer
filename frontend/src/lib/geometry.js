@@ -481,10 +481,17 @@ export function buildGeometry(obj, scene = null) {
     for (let i = 0; i < N; i++) {
       const a = i;
       const b = (i + 1) % N;
-      // Side face (apex, next base, this base) — CCW seen from outside.
-      indices.push(apexIdx, b, a);
-      // Base triangle (centre, this, next) — CCW seen from below.
-      indices.push(baseCentreIdx, a, b);
+      // Side face (apex, this base, next base) — CCW seen from OUTSIDE
+      // the pyramid, i.e. from the +radial direction of each face.
+      // iter-149.2: earlier order (apex, b, a) produced INWARD normals,
+      // which rendered fine in the workspace (DoubleSide material) but
+      // made manifold-3d treat the pyramid as an inverted solid, so
+      // Flatten produced a translucent hull and STL export reported the
+      // scene as empty. Correct outward winding restores both paths.
+      indices.push(apexIdx, a, b);
+      // Base triangle (centre, next, this) — CCW seen from BELOW so the
+      // face normal points -Z (outward from the pyramid).
+      indices.push(baseCentreIdx, b, a);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
