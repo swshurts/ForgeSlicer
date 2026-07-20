@@ -42,6 +42,21 @@ export const PRIMITIVE_DEFAULTS = {
   //        the X axis; ramps along +Z, height along +Y. Great for
   //        chamfered bases, draft angles, ergonomic grips.
   wedge:    { dims: { x: 24, y: 16, z: 24 } },
+  // ---- Pyramid + N-gon Prism (iter-149, Release A of the enhancements PDF) ----
+  // pyramid    : n-sided base + apex. `r` is the circumradius of the
+  //              base polygon; `h` is the apex height above the base;
+  //              `sides` picks how many faces the base has (3–24).
+  //              Default is a square pyramid (4 sides) so the initial
+  //              drop matches the classic pyramid silhouette users
+  //              expect. Apex is centred over the base.
+  pyramid:  { dims: { r: 14, h: 20, sides: 4 } },
+  // ngon_prism : an n-sided polygon extruded to a printable height
+  //              (as opposed to the 2D `polygon` primitive which drops
+  //              at h=1 mm and is meant to be extruded via the
+  //              Inspector). Same knobs (`r`, `sides`) plus a full
+  //              `h`. Useful for hex nuts, decorative columns, drum
+  //              stands. Renders through geometry.js via ExtrudeGeometry.
+  ngon_prism: { dims: { r: 12, h: 20, sides: 6 } },
   // ---- Threaded fasteners (v1.15) ----
   // bolt:  cylinder body + triangular thread helix swept around it.
   //        Models ISO-metric profile so it screws into the matching

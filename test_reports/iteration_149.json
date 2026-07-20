@@ -1,0 +1,30 @@
+{
+  "summary": "ForgeSlicer iter-149 Release A frontend E2E — all 6 test flows PASS. Verified §1 (custom build plate w/ 6 presets + mm/in toggle) and §2 (SAS/ASA/SSS triangle calculator), pyramid + ngon_prism 3D primitives, 'Rect. Solid'/'Rectangle' nomenclature, and regression on all 10 existing primitives + design plate + snap fields.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/tests/test_iter149_release_a.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RightPanel.jsx is 1363 lines — approaching size threshold. Consider splitting the Inspector-per-primitive-type sections into per-type components (PyramidInspector.jsx, NgonPrismInspector.jsx, etc.) for maintainability.",
+    "SnapAndPlatePopover: preset chip data would be cleaner as a top-level PRESETS constant rather than inline in the JSX map (minor)."
+  ],
+  "updated_files": ["/app/tests/test_iter149_release_a.py"],
+  "success_rate": {"frontend": "100%"},
+  "test_credentials": "session_token cookie: st_admin_health_1784561381387 (seeded admin, from problem statement)",
+  "seed_data_creation": "None — feature is scene-local frontend state.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Zustand store is exposed as window.__forgeStore (NOT window.__scene). Use window.__forgeStore.getState() to introspect scene objects/buildVolume/unitSystem. NumberField (from popovers/PopoverShell) puts data-testid directly on the <input>, so `[data-testid=\"custom-plate-x-field\"]` is the input itself. NumInput inside TriangleFromAngles puts data-testid on the wrapping <label>, so use `[data-testid=\"tri-sss-a\"] input` — and for programmatic value sets, use the native prototype descriptor pattern (Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set) since PostHog patches the setter and Playwright's page.evaluate raises 'Illegal invocation'. Six preset chip testids: custom-plate-preset-{mini-180,std-220,mid-256,large-300,xl-350,500}. Triangle calc testids: triangle-{from-angles, mode-SAS/-ASA/-SSS, preview, apply-btn}, tri-{sas,asa,sss}-{a,b,c}. Verified pyramid dims={r:14,h:20,sides:4} and ngon_prism dims={r:12,h:20,sides:6}. Slider testid pattern: dim-{type}-sides-slider (min=3,max=24).",
+  "detailed_results": {
+    "T1_labels": "PASS — 3D 'Rect. Solid' button (title starts 'Rectangular Solid…'), 2D 'Rectangle' button (title starts 'Rectangle — set width/depth…').",
+    "T2_pyramid": "PASS — add-pyramid-positive-btn spawns object with type='pyramid', dims={r:14,h:20,sides:4}. Slider range 3..24 (initial 4). Setting slider→6 updates store sides and readout to 6.",
+    "T3_ngon_prism": "PASS — spawns type='ngon_prism', dims={r:12,h:20,sides:6}. Slider→8 updates store sides=8.",
+    "T4_triangle_calculator": "PASS — Calculator visible when triangle selected. SAS default preview: '→ base 30 · height 25.981 · apex +0'. ASA default identical. SSS default identical. Apply writes {base:30, height:25.981, apexShift:0} into dims (stored as 25.981; Inspector displays 26 due to rounded NumberField). Invalid SSS(1,1,100) → preview shows 'Invalid — angles or side lengths don't form a triangle.' and triangle-apply-btn is disabled.",
+    "T5_build_plate": "PASS — snap-plate-settings-btn opens popover, custom-build-plate-section rendered. All 6 preset chips (Mini 180, Std 220, Mid 256, Large 300, XL 350, 500) present and clickable. Mini 180 → buildVolume={180,180,180} + StatusBar '180×180×180'. Manual X→320, Z→400 propagate to store and StatusBar. Toggling to 'in' switches unitSystem and StatusBar to '12.60×8.66×15.75'. Toggle back to 'mm' restores. Toggle chips: custom-build-plate-unit-mm / -in.",
+    "T6_regression": "PASS — sphere/cylinder/cone/torus/helix/wedge/pipe/bolt/nut/spline all still add via add-{type}-positive-btn without console errors. Design plate section (design-plate-enable-toggle + presets) still present in popover. snap-translate-field still functional. Triangle direct base/height/apexShift Inspector fields still work independently."
+  }
+}

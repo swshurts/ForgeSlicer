@@ -7,6 +7,7 @@
 // the entire RightPanel internal toolkit.
 import React from "react";
 import { useScene } from "../../lib/store";
+import { TriangleFromAngles } from "./TriangleFromAngles";
 
 export function Shape2DControls({ obj, updateDims, NumberField }) {
   const d = obj.dims || {};
@@ -69,6 +70,7 @@ export function Shape2DControls({ obj, updateDims, NumberField }) {
             <div className="text-[9.5px] text-slate-500 leading-tight">
               0 = isoceles · +half base = right triangle (right angle on left) · −half base = right triangle (right angle on right)
             </div>
+            <TriangleFromAngles objId={obj.id} updateDims={updateDims} />
           </div>
         )}
         {obj.type === "polygon" && (

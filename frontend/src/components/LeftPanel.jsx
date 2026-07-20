@@ -19,7 +19,7 @@ import { MessageCircle } from "lucide-react";
 import { COMPONENTS, COMPONENT_CATEGORIES } from "../lib/componentLibrary";
 
 const PRIMS_3D = [
-  { type: "cube", label: "Cube", icon: Box },
+  { type: "cube", label: "Rect. Solid", icon: Box, title: "Rectangular Solid — width × depth × height. Set each axis independently in the Inspector (a cube is just the special case where W=D=H)." },
   { type: "sphere", label: "Sphere", icon: Circle },
   { type: "cylinder", label: "Cylinder", icon: Cylinder },
   { type: "cone", label: "Cone", icon: Cone },
@@ -28,6 +28,12 @@ const PRIMS_3D = [
   { type: "helix", label: "Helix", icon: Tornado },
   { type: "pipe", label: "Pipe", icon: CircleDashed },
   { type: "wedge", label: "Wedge", icon: TriangleRight },
+  // ---- Pyramid & N-gon Prism (iter-149, Release A) ----
+  //   pyramid    → n-sided base + single apex (default n=4 → square pyramid).
+  //   ngon_prism → n-sided base extruded to `h` mm (default n=6 → hex prism).
+  // Both surface via PrimitiveButton like any other 3D shape.
+  { type: "pyramid", label: "Pyramid", icon: TriangleIcon, title: "Pyramid — n-sided base + apex. Choose base sides (3–24) and height in the Inspector." },
+  { type: "ngon_prism", label: "Prism", icon: HexagonIcon, title: "N-gon Prism — n-sided polygon extruded. Choose sides (3–24) and height in the Inspector." },
   // ---- Threaded fasteners (1.15) — keep in sync with AddPrimitiveButton.PRIMITIVES ----
   { type: "bolt", label: "Bolt", icon: Bolt },
   { type: "nut", label: "Nut", icon: Nut },
@@ -46,7 +52,11 @@ const PRIMS_3D = [
 // inspector when the sketch is ready.
 const PRIMS_2D = [
   { type: "circle", label: "Circle", icon: Circle },
-  { type: "square2d", label: "Square", icon: SquareIcon },
+  // iter-149 — user PDF §2c: "Square" is technically a rectangle
+  // (independent X/Y in `dims.side` isn't even fixed square). Renamed
+  // to "Rectangle"; the internal type stays `square2d` so persisted
+  // scenes + gallery entries still load. Tooltip clarifies.
+  { type: "square2d", label: "Rectangle", icon: SquareIcon, title: "Rectangle — set width/depth independently in the Inspector; a square is just the special case where W = D." },
   { type: "triangle", label: "Triangle", icon: TriangleIcon },
   { type: "polygon", label: "Polygon", icon: HexagonIcon },
 ];
@@ -64,7 +74,7 @@ function PrimitiveButton({ p, modifier, compact = false }) {
           ? "border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-400"
           : "border-orange-500/30 hover:border-orange-500 hover:bg-orange-500/10 text-orange-400"
       }`}
-      title={`Add ${isNeg ? "Negative" : "Positive"} ${p.label}`}
+      title={p.title ? p.title : `Add ${isNeg ? "Negative" : "Positive"} ${p.label}`}
     >
       <Icon size={compact ? 14 : 18} strokeWidth={1.8} />
       <span className={`${compact ? "text-[8.5px]" : "text-[10px]"} uppercase tracking-wide font-medium text-slate-300`}>{p.label}</span>
@@ -400,7 +410,7 @@ export default function LeftPanel() {
   }, []);
 
   const TABS = [
-    { id: "3d",         label: "3D",    icon: Box,       title: "3D primitives — cube, sphere, cylinder, cone, torus" },
+    { id: "3d",         label: "3D",    icon: Box,       title: "3D primitives — rectangular solid, sphere, cylinder, cone, pyramid, prism, torus, etc." },
     { id: "2d",         label: "2D",    icon: SquareIcon, title: "2D shapes — extrude in the inspector to give them depth" },
     { id: "composites", label: "Combo", icon: Pill,      title: "Pre-built composite assemblies (slots etc.)" },
     { id: "library",    label: "Lib",   icon: Boxes,     title: "Component Library — reusable parts (standoffs, brackets, hinges, gears)" },

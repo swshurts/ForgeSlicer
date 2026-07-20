@@ -23,7 +23,7 @@
 // pattern as the Position / Rotation / Scale popovers so it inherits
 // the standard close/escape/anchor behaviour.
 import React from "react";
-import { Settings2, LayoutGrid } from "lucide-react";
+import { Settings2, LayoutGrid, Printer } from "lucide-react";
 import { PopoverShell, NumberField } from "./PopoverShell";
 import { useScene } from "../../lib/store";
 
@@ -38,6 +38,14 @@ export default function SnapAndPlatePopover({ anchor, onClose }) {
   const setSnapScale = useScene((s) => s.setSnapScale);
   const designPlate = useScene((s) => s.designPlate);
   const setDesignPlate = useScene((s) => s.setDesignPlate);
+  // iter-149 — Custom Build Plate (PDF §1 Release A). Lets a user
+  // override the printer bed dimensions without having to save a full
+  // OrcaSlicer printer profile — great for hobbyist printers not in
+  // the preset library, or for a quick "does this fit?" test.
+  const buildVolume = useScene((s) => s.buildVolume);
+  const setBuildVolume = useScene((s) => s.setBuildVolume);
+  const unitSystem = useScene((s) => s.unitSystem);
+  const setUnitSystem = useScene((s) => s.setUnitSystem);
 
   return (
     <PopoverShell
@@ -123,6 +131,100 @@ export default function SnapAndPlatePopover({ anchor, onClose }) {
               {v}°
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-800 my-1" />
+
+      {/* ── Custom build plate (iter-149, PDF §1 Release A) ────────────
+          Lets a user override the printer bed dimensions inline (X/Y/Z
+          in mm or inches — respects the StatusBar units toggle). Chip
+          presets cover the most common hobbyist bed sizes. `setBuildVolume`
+          writes straight into the store, so ObjectView / grid render
+          picks up the new bounds on the next frame. */}
+      <div className="flex flex-col gap-2" data-testid="custom-build-plate-section">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Printer size={12} className="text-orange-400" />
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Printer build plate</span>
+          </div>
+          <div className="flex items-center gap-1" data-testid="custom-build-plate-units">
+            {["mm", "in"].map((u) => (
+              <button
+                key={u}
+                data-testid={`custom-build-plate-unit-${u}`}
+                onClick={() => setUnitSystem(u)}
+                className={`px-1.5 h-5 rounded text-[10px] font-mono border ${
+                  unitSystem === u
+                    ? "border-orange-500/70 text-orange-300 bg-orange-500/10"
+                    : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                }`}
+                title={u === "mm" ? "Metric — millimetres" : "Standard — inches"}
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[10px] text-slate-500 leading-snug">
+          Override the bed size directly — no need to save a full printer profile.
+          Applies immediately to the visible plate + bounds checks.
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          <NumberField
+            label="Width"
+            value={buildVolume.x}
+            onChange={(v) => setBuildVolume({ ...buildVolume, x: Math.max(20, v) })}
+            step={10}
+            suffix={unitSystem === "in" ? "in" : "mm"}
+            testid="custom-plate-x-field"
+            inUnit="length"
+          />
+          <NumberField
+            label="Depth"
+            value={buildVolume.y}
+            onChange={(v) => setBuildVolume({ ...buildVolume, y: Math.max(20, v) })}
+            step={10}
+            suffix={unitSystem === "in" ? "in" : "mm"}
+            testid="custom-plate-y-field"
+            inUnit="length"
+          />
+          <NumberField
+            label="Height"
+            value={buildVolume.z}
+            onChange={(v) => setBuildVolume({ ...buildVolume, z: Math.max(20, v) })}
+            step={10}
+            suffix={unitSystem === "in" ? "in" : "mm"}
+            testid="custom-plate-z-field"
+            inUnit="length"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {[
+            { label: "Mini 180", x: 180, y: 180, z: 180 },
+            { label: "Std 220",  x: 220, y: 220, z: 250 },
+            { label: "Mid 256",  x: 256, y: 256, z: 256 },
+            { label: "Large 300",x: 300, y: 300, z: 300 },
+            { label: "XL 350",   x: 350, y: 350, z: 400 },
+            { label: "500",      x: 500, y: 500, z: 500 },
+          ].map((preset) => {
+            const active = buildVolume.x === preset.x && buildVolume.y === preset.y && buildVolume.z === preset.z;
+            return (
+              <button
+                key={preset.label}
+                data-testid={`custom-plate-preset-${preset.label.toLowerCase().replace(/[\s.]+/g, "-")}`}
+                onClick={() => setBuildVolume({ ...buildVolume, x: preset.x, y: preset.y, z: preset.z })}
+                className={`px-2 h-6 rounded text-[10px] font-mono border ${
+                  active
+                    ? "border-orange-500 text-orange-300 bg-orange-500/10"
+                    : "border-slate-700 text-slate-400 hover:border-orange-500/70 hover:text-orange-300 hover:bg-orange-500/10"
+                }`}
+                title={`${preset.x} × ${preset.y} × ${preset.z} mm`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

@@ -663,6 +663,11 @@ function estimateHalfExtents(o) {
     return [(d.r || 12) * s[0], (d.r || 12) * s[1], (d.h || 30) / 2 * s[2]];
   }
   if (o.type === "wedge") return [(d.x || 24) / 2 * s[0], (d.y || 16) / 2 * s[1], (d.z || 24) / 2 * s[2]];
+  // iter-149 — pyramid + n-gon prism have the same radial half-extent
+  // conventions as cylinder/cone: circumradius on X/Y, height/2 on Z.
+  if (o.type === "pyramid" || o.type === "ngon_prism") {
+    return [(d.r || 12) * s[0], (d.r || 12) * s[1], (d.h || 20) / 2 * s[2]];
+  }
   if (o.type === "bolt") {
     // Long axis = +Z. Outer radius dominates X/Y.
     const outerR = Math.max(d.r || 5, d.headR || 8);
@@ -1079,6 +1084,69 @@ function Inspector() {
           </div>
           <div className="mt-1 text-[10px] text-slate-500">
             Ramps from y=0 at +z to y={(obj.dims.y || 16).toFixed(1)} at −z.
+          </div>
+        </div>
+      )}
+
+      {/* Pyramid + N-gon Prism (iter-149, Release A). Same three knobs
+          for both — `sides`, base circumradius, height — so the
+          controls collapse into one block. */}
+      {(obj.type === "pyramid" || obj.type === "ngon_prism") && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1">
+            Dimensions ({unitSystem})
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField
+              inUnit="length"
+              testid={`dim-${obj.type}-r`}
+              label="Base radius"
+              value={obj.dims.r || 12}
+              onChange={(v) => updateDims(obj.id, { r: Math.max(0.5, v) })}
+              step={0.5}
+            />
+            <NumberField
+              inUnit="length"
+              testid={`dim-${obj.type}-h`}
+              label={obj.type === "pyramid" ? "Apex height" : "Height"}
+              value={obj.dims.h || 20}
+              onChange={(v) => updateDims(obj.id, { h: Math.max(0.5, v) })}
+              step={0.5}
+            />
+          </div>
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Sides</span>
+              <span data-testid={`dim-${obj.type}-sides-readout`} className="text-[10px] font-mono text-orange-400">
+                {obj.dims.sides | 0}
+              </span>
+            </div>
+            <input
+              data-testid={`dim-${obj.type}-sides-slider`}
+              type="range"
+              min={3}
+              max={24}
+              step={1}
+              value={(obj.dims.sides | 0) || (obj.type === "pyramid" ? 4 : 6)}
+              onChange={(e) => updateDims(obj.id, { sides: parseInt(e.target.value, 10) })}
+              className="w-full accent-orange-500"
+            />
+            <div className="mt-1">
+              <NumberField
+                testid={`dim-${obj.type}-sides-input`}
+                label=""
+                value={(obj.dims.sides | 0) || (obj.type === "pyramid" ? 4 : 6)}
+                onChange={(v) => updateDims(obj.id, { sides: Math.max(3, Math.min(24, Math.round(v))) })}
+                step={1}
+                min={3}
+                suffix="sides"
+              />
+            </div>
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500">
+            {obj.type === "pyramid"
+              ? `${(obj.dims.sides | 0) || 4}-sided pyramid — base at Z=0, apex ${(obj.dims.h || 20).toFixed(1)} mm above.`
+              : `${(obj.dims.sides | 0) || 6}-sided prism — ${(obj.dims.h || 20).toFixed(1)} mm tall.`}
           </div>
         </div>
       )}

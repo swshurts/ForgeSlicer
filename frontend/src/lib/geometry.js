@@ -449,6 +449,72 @@ export function buildGeometry(obj, scene = null) {
     return g;
   }
 
+  // ---- Pyramid (iter-149) — n-sided base + apex.
+  //   Base sits at Z = -h/2, apex at Z = +h/2 (so the primitive is
+  //   centred on origin, matching every other 3D primitive's centroid
+  //   convention). Constructed by hand from vertex + index arrays so
+  //   we don't drag in ConvexGeometry.
+  if (t === "pyramid") {
+    const r = Math.max(0.1, d.r || 12);
+    const H = Math.max(0.1, d.h || 20);
+    const N = Math.max(3, Math.min(24, (d.sides | 0) || 4));
+    const half = H / 2;
+    const positions = [];
+    const indices = [];
+    // Base vertices — polygon in XY plane at Z = -half.
+    for (let i = 0; i < N; i++) {
+      // Start angle offset so a 4-sided pyramid reads as an axis-aligned
+      // square (corners on the axes) rather than a diamond.
+      const off = N === 4 ? Math.PI / 4 : Math.PI / 2;
+      const a = (i / N) * Math.PI * 2 + off;
+      positions.push(r * Math.cos(a), r * Math.sin(a), -half);
+    }
+    // Apex vertex — centred, at +half.
+    const apexIdx = N;
+    positions.push(0, 0, half);
+    // Base centre vertex — used to fan-triangulate the base face so
+    // every base triangle winds the same direction (avoids the
+    // artefacting mergeVertices sometimes causes with a shared base
+    // corner). Winding: viewed from below (-Z), CW → normal points -Z.
+    const baseCentreIdx = N + 1;
+    positions.push(0, 0, -half);
+    for (let i = 0; i < N; i++) {
+      const a = i;
+      const b = (i + 1) % N;
+      // Side face (apex, next base, this base) — CCW seen from outside.
+      indices.push(apexIdx, b, a);
+      // Base triangle (centre, this, next) — CCW seen from below.
+      indices.push(baseCentreIdx, a, b);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    return g;
+  }
+
+  // ---- N-gon Prism (iter-149) — n-sided polygon extruded.
+  // Same construction path as `polygon` but sourced from its own type
+  // defaults so the initial drop is a print-ready prism (h ≫ 1 mm) not
+  // a 2D wafer.
+  if (t === "ngon_prism") {
+    const r = Math.max(0.1, d.r || 12);
+    const H = Math.max(0.1, d.h || 20);
+    const N = Math.max(3, Math.min(24, (d.sides | 0) || 6));
+    const shape = new THREE.Shape();
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2 + Math.PI / 2;
+      const x = r * Math.cos(a), y = r * Math.sin(a);
+      if (i === 0) shape.moveTo(x, y);
+      else shape.lineTo(x, y);
+    }
+    shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, { depth: H, bevelEnabled: false });
+    g.translate(0, 0, -H / 2);
+    g.computeVertexNormals();
+    return g;
+  }
+
   // ---- 2D shapes (thin wafer / slabs stacked along Z) ----
   if (t === "circle") {
     // Thin cylinder with axis +Z.
@@ -547,6 +613,14 @@ export function getBaseSize(obj) {
   }
   if (t === "wedge") {
     return { x: d.x || 24, y: d.y || 16, z: d.z || 24 };
+  }
+  // iter-149 — Pyramid + N-gon Prism (Release A).
+  if (t === "pyramid" || t === "ngon_prism") {
+    const r = d.r || 12;
+    // Base polygon is inscribed in a circle of radius r, so x/y extent
+    // is 2·r (over-estimates for high-side counts but matches every
+    // other radial primitive's convention).
+    return { x: 2 * r, y: 2 * r, z: d.h || 20 };
   }
   if (t === "bolt") {
     const R = d.r || 5, headR = d.headR || 8;
