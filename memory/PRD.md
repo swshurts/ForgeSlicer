@@ -33,7 +33,15 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
-### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B + STL Preview Z-up fix + Pyramid winding fix
+### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B + C + STL Preview / Pyramid fixes
+
+**Release C (§4a + §4b — Menu reorg + Box Designer)**
+- **Menu reorganization** (PDF §4a): Left palette now has exactly 5 tabs in this order — 3D · 2D · COMBO · PARAM · AI. The standalone LIB tab was folded into COMBO (composites section on top, component library with cat filter on the bottom). New PARAM tab hosts parametric generators.
+- **Box Designer** (PDF §4b): New PARAM-tab launcher opens a full-screen dialog (`BoxDesignerDialog.jsx`) with a left form column + right live 3D preview + footer action bar. Knobs cover every parameter from Figure 2 of the PDF: outside W/D/H, wall thickness, floor thickness, corner radius, 5 lid modes (none / drop / sliding / hinged / friction fit), lid thickness, clearance, compartments cols×rows (1–8), stackable lip, side handles (cylindrical finger scoops), label recess (front-face pad with configurable depth).
+- **Parametric geometry** (`lib/boxGenerator.js`): client-side manifold-3d unions + differences. Handles the special-case geometry each lid mode requires — sliding rails ride in grooves cut into the box top, hinged tabs pair with a lid knuckle around a 1.5 mm axle hole, friction fit adds a tapered skirt with a hollow interior. Every returned part is a welded `THREE.BufferGeometry` with `bbox` for reporting.
+- **Multi-part exports** (`jszip`): Four action buttons — Add to workspace / Download Box.stl / Download Lid.stl / Download ZIP bundle. ZIP includes a `README.txt` with the exact parameters used so users can rebuild an identical box later.
+- **Live rebuild**: 220 ms debounce on every parameter change. Build token guards against stale results overwriting a newer build.
+- **Testing**: Testing-agent 10/10 flows PASS after a 1-line fix (JSZip doesn't accept DataView — convert to Uint8Array before `zip.file()`). Individual STL downloads use `new Blob([dv], ...)` which handles DataView natively.
 
 **iter-149.2 fix — Pyramid flatten produced translucent / empty mesh**
 - User reported: creating a diamond (two pyramids) and clicking "Flatten to single mesh" produced a translucent ghosted mesh that reported the scene as empty on export.

@@ -193,8 +193,9 @@ export async function buildBoxAssembly(p) {
   // ---- Side handle scoops ----
   if (sideHandles) {
     const scoopR = Math.min(bodyH * 0.25, W * 0.06);
-    const scoopH = Math.min(D * 0.5, 20);
-    // Cylinder along Y through both walls.
+    // Cylinder along Y through both walls creates a clean cylindrical
+    // finger recess. (An oval scoop is a future enhancement — the
+    // cylinder already gives a comfortable arc for hobbyist prints.)
     for (const xSign of [-1, 1]) {
       const c = new THREE.CylinderGeometry(scoopR, scoopR, D + 4, 24);
       c.rotateX(Math.PI / 2);   // axis → +Y
@@ -203,10 +204,6 @@ export async function buildBoxAssembly(p) {
       const carved = wasm.Manifold.difference([boxManifold, m]);
       boxManifold.delete(); m.delete();
       boxManifold = carved;
-      // suppress unused-var lint for the scoopH placeholder (reserved
-      // for future oval-shaped handles — cylinder gives us a clean
-      // arc for now).
-      void scoopH;
     }
   }
 
