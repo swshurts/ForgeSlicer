@@ -707,17 +707,42 @@ function TabAI({ onOpenAi, onOpenPhotoPlane, onOpenDesignChat }) {
           </p>
         </div>
         <div className="pt-2 border-t border-slate-800/80">
+          {/* Iter-149 Release B (PDF §3) — "Lithophane / 2.5D Relief"
+              used to open the small PhotoToPlaneDialog, which the user
+              flagged as *not* the LithoForge.net-equivalent flow they
+              expect. The primary button now launches the full
+              LithoStudio (/litho — hue-optimised multi-filament with
+              3MF export, matches LithoForge.net feature parity). A
+              smaller secondary link keeps the tiny 1-click photo→plate
+              tool available for users who don't need the full studio. */}
+          <button
+            data-testid="lithophane-studio-btn"
+            onClick={() => {
+              // Open in a new tab so the workspace scene isn't lost —
+              // LithoStudio has its own save state / palette workflow.
+              window.open("/litho", "_blank", "noopener,noreferrer");
+            }}
+            className="w-full h-11 rounded-md border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 text-teal-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
+            title="Open Lithophane Studio — full multi-filament optimiser with 3MF export, palette suggestions, and lightbox geometry. Opens in a new tab."
+          >
+            <ImageDown size={13} />
+            Lithophane Studio
+            <span className="text-[9px] font-normal text-teal-400/70 ml-0.5">↗</span>
+          </button>
+          <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
+            Full lithophane / hue-forge flow with palette suggestions, layer preview &amp; multi-filament 3MF export. Opens in a new tab.
+          </p>
           <button
             data-testid="photo-to-plane-btn"
             onClick={onOpenPhotoPlane}
-            className="w-full h-11 rounded-md border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 text-teal-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
-            title="Convert a photo to a 2.5D heightmap relief — lithophane, keychain, sign. NOT a real 3D mesh."
+            className="mt-2 w-full h-8 rounded-md border border-slate-700 bg-slate-800/60 hover:bg-slate-700/60 hover:border-slate-500 text-slate-300 flex items-center justify-center gap-1.5 text-[11px] font-medium transition-colors"
+            title="Quick single-filament 2.5D relief — photo or text stays on this workspace as a mesh."
           >
-            <ImageDown size={13} />
-            Lithophane / 2.5D Relief
+            <ImageDown size={11} />
+            Quick 2.5D Relief <span className="text-[10px] font-normal text-slate-500">— single filament</span>
           </button>
-          <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
-            Photo &rarr; flat plate with bright pixels tall, dark pixels thin. For lithophanes, keychains &amp; name plates — <span className="text-teal-400/80">not</span> a true 3D mesh.
+          <p className="mt-1 text-[9.5px] text-slate-500 leading-snug">
+            One-shot photo →&nbsp;heightmap plate. Bright pixels tall, dark thin. Lives on the current workspace.
           </p>
         </div>
       </div>

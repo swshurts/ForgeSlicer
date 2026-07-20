@@ -33,6 +33,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B
+
+**Release A (§1 + §2 — Foundations)**
+- **Custom Build Plate** (PDF §1): New "Printer build plate" section in the Snap/Plate popover with X/Y/Z inputs (mm ↔ inch toggle), 6 preset chips (Mini 180 / Std 220 / Mid 256 / Large 300 / XL 350 / 500). Writes straight into `buildVolume` — no need to save a full OrcaSlicer printer profile for a quick "does this fit?" test.
+- **Triangle ASA / SAS / SSS calculator** (PDF §2a): New `TriangleFromAngles.jsx` mounted under the Triangle inputs. Users pick a mode (SAS / ASA / SSS), enter the appropriate angles + sides, see a live derived base/height/apex-shift preview, and click Apply. Invalid combos (triangle-inequality failure, angle sum ≥ 180°) surface as a red "Invalid" hint with the Apply button disabled.
+- **Pyramid + N-gon Prism 3D primitives** (PDF §2b): Two new primitives in the 3D palette. Pyramid = n-sided base + apex height (default 4-sided so it reads as classic pyramid). Prism = n-sided polygon extruded to a printable height (default 6-sided hex). Inspector exposes base-radius, height, and a 3–24 side slider.
+- **Nomenclature** (PDF §2c): 3D "Cube" button labelled "Rect. Solid", 2D "Square" labelled "Rectangle". Internal type strings (`cube`, `square2d`) unchanged so gallery + scene JSON continue to load. Tooltips clarify that a cube/square is just the special case where all axes match.
+- **Testing**: Testing agent 6/6 flows PASS, 100 % frontend success rate. All 10 pre-existing primitives regression-clean.
+
+**Release B (§3 — Lithophane parity with LithoForge.net)**
+- **AI-menu Lithophane rewiring**: The "Lithophane / 2.5D Relief" button used to open the tiny PhotoToPlaneDialog (heightmap on the current workspace). It now opens the full `LithoStudio` (`/litho`) in a new tab — that's ForgeSlicer's LithoForge.net-equivalent: multi-filament palette optimiser, layer timeline, HueForge-style vibrancy, 3MF export.
+- **Secondary "Quick 2.5D Relief"** button remains for the one-shot single-filament use case; smaller styling makes the studio the visual default.
+- **Testing**: Smoke test confirms the new tab opens `/litho` and both buttons render with the expected labels + tooltips.
+
 ### Recently completed (iter-148, 2026-07-20) — Gallery Health UI + Decimate size/FPS estimates
 - **`/admin/health` dashboard** (`AdminHealth.jsx` + route in `App.js`): Renders `/api/admin/gallery-stats` as two cards (Gallery / Components) with colour-coded stat tiles (missing thumbnail = warn, missing STL = danger, orphaned = warn). By-category histogram chips, oldest/newest timestamps. Header link (`data-testid="admin-health-link"`) added to `/admin` for quick access.
 - **Thumbnail regeneration background job**: New `POST /api/admin/regenerate-thumbnails` starts a worker; `GET .../status` polls progress (idle → running → done/error). Worker streams every missing-thumbnail doc, renders a PNG via `thumbnail_service.render_stl_thumbnail` (matplotlib Agg headless, 256×256, slate-900 background matching UI), and updates `db.gallery` / `db.components`. Errors are per-item and accumulated on the job so a bad row can't kill the whole batch. Live progress bar + expandable error list in the UI.
