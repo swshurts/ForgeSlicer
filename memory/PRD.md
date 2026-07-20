@@ -33,6 +33,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-150.6, 2026-07-20) — Add-to-Workspace overlap bug (user reported: hinged export produced tiny fragment)
+
+- **Root cause**: `handleAddToWorkspace` dropped both Box body and Lid at world origin `[0, 0, 0]`. For hinged lids, the box + lid knuckles interlock (as designed for the assembled hinge), so the two "imported positive" meshes physically overlapped in the workspace scene. When the user then hit Export STL / 3MF, `evaluateSceneAsync` ran `wasm.Manifold.union([box, lid])` on the interlocking meshes, which choked and collapsed the result down to only a fragment (~346 tris) — matching the "tiny knuckles + tiny slab" that appeared in Flashforge slicer.
+- **Fix** (`components/params/BoxDesignerDialog.jsx`): After each `addImportedMesh` call we now shift the just-added part by its own bbox width + a 10 mm padding along +X so each part lands cleanly next to (not on top of) the previous one. Box body → 0…60 mm, Lid → 70…130 mm. Workspace STL export now produces the expected 1428 triangles with correct dimensions.
+- Direct BOX / LID / ZIP downloads inside the Box Designer dialog were never affected (each was a single-part STL) and continue to work.
+
 ### Recently completed (iter-150.5, 2026-07-20) — Lid clearance widening (user feedback)
 
 After a real print, all three "captured" lid modes needed extra clearance to compensate for FDM shrinkage & first-layer squish:

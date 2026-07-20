@@ -219,7 +219,17 @@ export default function BoxDesignerDialog({ open, onClose }) {
   const handleAddToWorkspace = () => {
     if (!parts.length) return;
     let added = 0;
-    for (const part of parts) {
+    // iter-150.6 — Space parts out on the build plate so they don't
+    // overlap (the hinged-lid box + lid share knuckle geometry, so
+    // dropping them both at origin makes their meshes interlock and
+    // any downstream boolean union in the STL/3MF export path can
+    // corrupt or drop faces).
+    let cursorX = 0;
+    const padding = 10;   // mm gap between parts
+    const firstBox = parts[0]?.geometry?.boundingBox;
+    if (firstBox) cursorX = -(firstBox.max.x + firstBox.min.x) / 2;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
       const pos = part.geometry.attributes.position.array;
       const idx = part.geometry.index?.array;
       const bb = part.geometry.boundingBox;
@@ -228,12 +238,26 @@ export default function BoxDesignerDialog({ open, onClose }) {
         y: bb.max.y - bb.min.y,
         z: bb.max.z - bb.min.z,
       } : null;
-      addImportedMesh(
+      const id = addImportedMesh(
         `${part.label}`,
         pos instanceof Float32Array ? pos : new Float32Array(pos),
         idx ? (idx instanceof Uint32Array ? idx : new Uint32Array(idx)) : null,
         originalBbox,
       );
+      // Shift the just-added part so its bbox left edge sits at cursorX.
+      if (bb && id) {
+        const partW = bb.max.x - bb.min.x;
+        const partCentreX = (bb.max.x + bb.min.x) / 2;
+        const targetCentreX = cursorX + partW / 2;
+        useScene.setState((s) => ({
+          objects: s.objects.map((o) =>
+            o.id === id
+              ? { ...o, position: [o.position[0] + (targetCentreX - partCentreX), o.position[1], o.position[2]] }
+              : o
+          ),
+        }));
+        cursorX += partW + padding;
+      }
       added++;
     }
     toast.success(`Added ${added} part${added === 1 ? "" : "s"} to workspace`);
