@@ -33,6 +33,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-150.3, 2026-07-20) — Magnet-mount rewrite (user spec)
+
+Rebuilt drop-on-lid magnet mounts to a proper hardware spec:
+- **Magnet thickness lookup**: 5 mm Ø disc → 3 mm thick, 10 mm Ø disc → 2 mm thick. Pocket depth exactly matches the nominal magnet thickness (with a 0.5 mm over-cut for a clean drill).
+- **Pocket position**: pocket EDGE is inset 2.5 mm from each outer wall so there is always a 2.5 mm barrier of material between the magnet and the box exterior. Pocket centre = `2.5 + magR` in from each outer wall. Box bbox stays at the nominal 60×40 regardless of magnet size (previous version made a 5 mm magnet bump the box to 63.4×43.4 and 10 mm to 68.4×48.4).
+- **Wall-mount geometry**: replaced the full-height cylindrical post with a 5 mm-deep lathed boss. Profile: cylindrical section (mountR = magR + 1.5, 4 mm tall) with a 45°-ish chamfered bottom (1 mm chamfer height, 0.8 mm radial reduction) that softens the transition from boss to cavity floor — better print bridging and less stress concentration.
+- **Lid auto-bump**: when magnets are enabled, lid thickness is silently raised to `magnet_thickness + 0.8 mm` (3.8 mm for 5 mm magnets, 2.8 mm for 10 mm) so the pocket never breaks the top surface. UI shows an amber hint whenever a bump was applied.
+
 ### Recently completed (iter-150.2, 2026-07-20) — Sliding-lid follow-up
 
 - **Printability false-positive guard** (`lib/printabilityChecks.js`): the "too thin to print reliably" check was surfacing a nonsense `Shortest dimension is -Infinity mm` when the imported mesh's bounding-box computation produced an empty `THREE.Box3` (min=+Inf, max=-Inf). Added `!isFinite(...)` guards in both `worldBBox()` and `checkSmallFeatures()` so degenerate / empty geometries are silently skipped rather than displayed as a scary red banner.

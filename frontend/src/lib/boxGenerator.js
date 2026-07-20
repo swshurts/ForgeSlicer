@@ -229,35 +229,71 @@ export async function buildBoxAssembly(p) {
   }
 
   // ---- Lid-specific box-side modifications ----
-  // Shared corner positions for drop-on magnet pockets. Each entry is
-  // the CENTRE of a corner post — placed just inside the wall so the
-  // post welds into two adjacent walls for maximum strength.
-  const magR = magnetSize / 2 + 0.2;                      // slip fit (0.4 mm total clearance)
-  const magDepth = magnetSize === 10 ? 3.0 : 2.5;         // deep enough to hold a 3 mm-thick disc
-  const postR   = magR + 1.2;                             // solid material around the pocket
-  const postInset = wall + postR - 0.4;                   // post overlaps 0.4 mm into wall so it welds
+  // iter-150.3 — Magnet-mount rewrite (user spec, 2026-07-20):
+  //   - Pocket EDGE inset 2.5 mm from each outer corner edge (so there
+  //     is always a 2.5 mm wall between the magnet and the box exterior).
+  //   - 10 mm Ø magnet is 2 mm thick → pocket depth = 2 mm.
+  //   - 5 mm Ø magnet is 3 mm thick → pocket depth = 3 mm.
+  //   - Wall-mount posts are 5 mm deep with a chamfered (rounded)
+  //     bottom edge for print strength & aesthetics.
+  //   - Lid thickness is auto-bumped to (magnet_thickness + 0.8 mm cap)
+  //     so the lid top face never has a through-hole.
+  const magR       = magnetSize / 2 + 0.2;                  // slip fit (0.2 mm/side)
+  const magDepth   = magnetSize === 10 ? 2.0 : 3.0;         // nominal magnet thickness
+  const edgeToWall = 2.5;                                   // pocket EDGE distance from outer wall
+  const mountR     = magR + 1.5;                            // wall around magnet inside the mount
+  const mountH     = 5.0;                                   // wall-mount vertical depth
+  const mountChamferH = 1.0;                                // chamfer height at bottom of mount
+  const mountChamferR = 0.8;                                // radial reduction at the chamfer
+
+  // Pocket CENTRE is (edgeToWall + magR) in from each outer wall — that
+  // way `edgeToWall` mm of solid material always separates the magnet
+  // from the box exterior.
+  const magOffset = edgeToWall + magR;
   const magCorners = (magnetPockets && lidMode === "drop")
     ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => [
-        sx * (W / 2 - postInset),
-        sy * (D / 2 - postInset),
+        sx * (W / 2 - magOffset),
+        sy * (D / 2 - magOffset),
       ])
     : [];
 
+  // Effective lid thickness — auto-bumped when magnets are enabled so
+  // no pocket ever breaks the top surface. Also enforces a floor of
+  // (magDepth + 0.8) mm which is enough to keep at least one full
+  // print layer + wall over the magnet.
+  const minLidForMagnet = magDepth + 0.8;
+  const effLidThickness = (magnetPockets && lidMode === "drop")
+    ? Math.max(lidThickness, minLidForMagnet)
+    : lidThickness;
+
   if (magCorners.length) {
-    // 1) Add a corner post from floor to top rim at each corner.
-    // 2) Drill a magnet pocket straight down into the post from the top.
+    // Build a lathed wall-mount post with a chamfered bottom.
+    // Profile (R, Y) from bottom centre to top centre:
+    //   (0, 0)                            — bottom centre
+    //   (mountR - mountChamferR, 0)       — bottom outer edge of chamfer
+    //   (mountR, mountChamferH)           — chamfer top / cylinder base
+    //   (mountR, mountH)                  — cylinder top edge
+    //   (0, mountH)                       — top centre
+    const bossProfile = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(Math.max(0.01, mountR - mountChamferR), 0),
+      new THREE.Vector2(mountR, mountChamferH),
+      new THREE.Vector2(mountR, mountH),
+      new THREE.Vector2(0, mountH),
+    ];
     for (const [px, py] of magCorners) {
-      const post = new THREE.CylinderGeometry(postR, postR, bodyH, 24);
-      post.rotateX(Math.PI / 2);   // axis Y→Z (make it vertical)
-      post.translate(px, py, bodyH / 2);
-      const postM = _geomToMesh(wasm, _weld(post));
-      const merged = wasm.Manifold.union([boxManifold, postM]);
-      boxManifold.delete(); postM.delete();
+      const boss = new THREE.LatheGeometry(bossProfile, 32);
+      boss.rotateX(Math.PI / 2);   // lathe's Y-axis → Z-axis
+      boss.translate(px, py, bodyH - mountH);
+      const bossM = _geomToMesh(wasm, _weld(boss));
+      const merged = wasm.Manifold.union([boxManifold, bossM]);
+      boxManifold.delete(); bossM.delete();
       boxManifold = merged;
 
-      const pocket = new THREE.CylinderGeometry(magR, magR, magDepth + 1, 32);
-      pocket.rotateX(Math.PI / 2);   // axis Y→Z (vertical pocket)
-      pocket.translate(px, py, bodyH - magDepth / 2 + 0.5);
+      // Drill the magnet pocket straight down from the top rim.
+      const pocket = new THREE.CylinderGeometry(magR, magR, magDepth + 0.5, 32);
+      pocket.rotateX(Math.PI / 2);   // Y→Z, vertical pocket
+      pocket.translate(px, py, bodyH - magDepth / 2 + 0.25);
       const pM = _geomToMesh(wasm, _weld(pocket));
       const carved = wasm.Manifold.difference([boxManifold, pM]);
       boxManifold.delete(); pM.delete();
@@ -373,18 +409,22 @@ export async function buildBoxAssembly(p) {
   // ---- Build the lid (if any) ----
   let lidGeom = null;
   if (lidMode !== "none") {
-    // Lid outer slab.
-    const lidGeomOuter = _weld(_roundedSlab(W, D, lidThickness, cornerR));
-    lidGeomOuter.translate(0, 0, lidThickness / 2);
+    // Lid outer slab — uses `effLidThickness` so magnet pockets don't
+    // break through the top face.
+    const lidGeomOuter = _weld(_roundedSlab(W, D, effLidThickness, cornerR));
+    lidGeomOuter.translate(0, 0, effLidThickness / 2);
     let lidManifold = _geomToMesh(wasm, lidGeomOuter);
 
     if (lidMode === "drop" && magCorners.length) {
-      // Matching magnet pockets in the lid's UNDERSIDE (Z=0 face). Cylinder
-      // axis must be Z (default is Y) so it drills straight up into the lid.
+      // Matching magnet pockets in the lid's UNDERSIDE (Z=0 face).
+      // Cylinder axis rotated Y→Z so it drills straight up into the lid.
+      // Depth matches the magnet's own thickness so the two disc magnets
+      // (one in the box mount, one in the lid pocket) sit face-to-face
+      // with zero gap when the lid is closed.
       for (const [cx, cy] of magCorners) {
-        const pocket = new THREE.CylinderGeometry(magR, magR, magDepth + 1, 32);
-        pocket.rotateX(Math.PI / 2);       // axis Y→Z
-        pocket.translate(cx, cy, magDepth / 2 - 0.5);
+        const pocket = new THREE.CylinderGeometry(magR, magR, magDepth + 0.5, 32);
+        pocket.rotateX(Math.PI / 2);
+        pocket.translate(cx, cy, magDepth / 2 - 0.25);
         const m = _geomToMesh(wasm, _weld(pocket));
         const carved = wasm.Manifold.difference([lidManifold, m]);
         lidManifold.delete(); m.delete();

@@ -301,7 +301,7 @@ export default function BoxDesignerDialog({ open, onClose }) {
                   <NumField testid="box-clearance" label="Clearance" value={params.clearance} onChange={(v) => update("clearance", v)} step={0.05} min={0.1} max={0.6} suffix="mm" hint="Slip fit gap between parts" />
                 </div>
               )}
-              {/* Drop-on lid magnet pockets — user feedback iter-149.4 */}
+              {/* Drop-on lid magnet pockets — user feedback iter-150.3 */}
               {params.lid === "drop" && (
                 <div className="mt-2 space-y-1.5" data-testid="box-magnets-group">
                   <CheckField
@@ -309,7 +309,7 @@ export default function BoxDesignerDialog({ open, onClose }) {
                     label="Magnet pockets (corners)"
                     value={params.magnetPockets}
                     onChange={(v) => update("magnetPockets", v)}
-                    hint="Cut matching cylindrical pockets in the box + lid corners for disc magnets"
+                    hint="5 mm Ø disc = 3 mm thick · 10 mm Ø disc = 2 mm thick. 5 mm-deep wall mount with chamfered bottom; lid thickness auto-bumps to prevent through-holes."
                   />
                   {params.magnetPockets && (
                     <div className="flex items-center gap-2 pl-6" data-testid="box-magnet-size">
@@ -330,6 +330,17 @@ export default function BoxDesignerDialog({ open, onClose }) {
                       ))}
                     </div>
                   )}
+                  {params.magnetPockets && (() => {
+                    const magT = params.magnetSize === 10 ? 2.0 : 3.0;
+                    const minLid = magT + 0.8;
+                    const bumped = params.lidThickness < minLid;
+                    return (
+                      <p className={`pl-6 text-[9.5px] leading-tight ${bumped ? "text-amber-300" : "text-slate-500"}`} data-testid="box-magnet-info">
+                        Pocket depth {magT.toFixed(1)} mm · edge 2.5 mm from outer corner · mount 5 mm deep, chamfered.
+                        {bumped && <> Lid auto-bumped to <span className="font-mono">{minLid.toFixed(1)}</span> mm to keep top face solid.</>}
+                      </p>
+                    );
+                  })()}
                 </div>
               )}
               {/* Hinged lid — inform the user about the axle pin. */}
