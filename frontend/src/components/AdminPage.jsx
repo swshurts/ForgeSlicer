@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Hexagon, Loader2, RefreshCw, Search, Shield, ShieldCheck,
   Sparkles, Award, Ban, KeyRound, Trash2, ListChecks, BarChart3, Users,
-  AlertCircle, CheckCircle2, Clock, Download, GitBranch,
+  AlertCircle, CheckCircle2, Clock, Download, GitBranch, Activity,
 } from "lucide-react";
 import OrcaUpstreamTab from "./admin/OrcaUpstreamTab";
 import SharedPrintersModerationTab from "./admin/SharedPrintersModerationTab";
@@ -429,6 +429,13 @@ export default function AdminPage() {
           {adminInfo.is_super_admin && (
             <span className="px-1.5 py-0.5 bg-fuchsia-500/20 text-fuchsia-300 rounded text-[9px] font-semibold tracking-wider" data-testid="admin-super-badge">SUPER</span>
           )}
+          <Link
+            to="/admin/health"
+            data-testid="admin-health-link"
+            className="ml-3 h-8 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 rounded text-[11px] font-semibold text-emerald-300 hover:text-emerald-200 flex items-center gap-1.5"
+          >
+            <Activity size={12} /> Health
+          </Link>
         </div>
       </header>
 

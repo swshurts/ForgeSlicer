@@ -59,6 +59,23 @@ export const adminApi = {
     const { data } = await axios.post(`${API}/admin/content/remove`, { item_id, item_type, reason }, cfg);
     return data;
   },
+  // Iter-148 — Gallery health dashboard endpoints.
+  galleryStats: async () => {
+    const { data } = await axios.get(`${API}/admin/gallery-stats`, cfg);
+    return data;
+  },
+  regenerateThumbnails: async () => {
+    const { data } = await axios.post(`${API}/admin/regenerate-thumbnails`, null, cfg);
+    return data;
+  },
+  regenerateThumbnailsStatus: async () => {
+    const { data } = await axios.get(`${API}/admin/regenerate-thumbnails/status`, cfg);
+    return data;
+  },
+  aiErrors: async (limit = 50) => {
+    const { data } = await axios.get(`${API}/admin/ai-errors`, { ...cfg, params: { limit } });
+    return data;
+  },
   // Iter-85 — OrcaSlicer upstream profile sync.
   orcaUpstream: {
     sync: async () => {

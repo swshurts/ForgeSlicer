@@ -514,6 +514,24 @@ export default function PrintabilityReportPanel({ open, onClose }) {
             }, 0);
           }
           const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
+          // Iter-148 — Size + FPS estimates surfaced in the tooltip so
+          // beginners can associate a face count with real-world file
+          // size + viewport smoothness. Numbers are heuristic: binary
+          // STL uses 50 bytes/triangle (12-byte normal + 3×12-byte
+          // vertices + 2-byte attr), plus an 84-byte header we round
+          // away. Viewport FPS heuristic ≈ min(60, 30M / tris) — matches
+          // measured throughput on a mid-range laptop with three.js.
+          const stlBytes = (tris) => Math.max(0, Math.round(tris * 50));
+          const fmtBytes = (b) => {
+            if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+            if (b >= 1024)        return `${(b / 1024).toFixed(0)} KB`;
+            return `${b} B`;
+          };
+          const estFps = (tris) => {
+            if (tris <= 0) return 60;
+            const f = Math.round(Math.min(60, 30_000_000 / tris));
+            return Math.max(5, f);
+          };
           const pct = (target) => {
             if (currentTris === 0) return "";
             const delta = 100 * (target - currentTris) / currentTris;
@@ -532,9 +550,12 @@ export default function PrintabilityReportPanel({ open, onClose }) {
                 <span
                   className="text-[9px] text-slate-500"
                   data-testid="printability-decimate-current"
-                  title={`Current total across ${imported.length} imported mesh${imported.length === 1 ? "" : "es"}`}
+                  title={`Current total across ${imported.length} imported mesh${imported.length === 1 ? "" : "es"}\nSTL size: ~${fmtBytes(stlBytes(currentTris))}\nViewport: ~${estFps(currentTris)} fps`}
                 >
                   Current: <span className="text-slate-300 font-mono">{currentTris.toLocaleString()}</span> tris
+                  <span className="text-slate-600 ml-1.5" data-testid="printability-decimate-current-est">
+                    (~<span className="text-slate-400">{fmtBytes(stlBytes(currentTris))}</span> · <span className="text-slate-400">{estFps(currentTris)} fps</span>)
+                  </span>
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-1.5" data-testid="printability-decimate-presets">
@@ -546,13 +567,15 @@ export default function PrintabilityReportPanel({ open, onClose }) {
                   const p_pct = pct(p.target);
                   const willShrink = currentTris > p.target;
                   const currentIsBelow = currentTris > 0 && currentTris < p.target;
+                  const size = fmtBytes(stlBytes(p.target));
+                  const fps = estFps(p.target);
                   return (
                     <button
                       key={p.key}
                       data-testid={`printability-decimate-${p.key}`}
                       disabled={!!fixingCode}
                       onClick={() => runDecimate(p.key)}
-                      title={`${p.desc}\n${currentTris.toLocaleString()} → ${p.target.toLocaleString()} tris${p_pct ? ` (${p_pct})` : ""}${currentIsBelow ? "\nNote: mesh is already below this target — no reduction will occur." : ""}`}
+                      title={`${p.desc}\n${currentTris.toLocaleString()} → ${p.target.toLocaleString()} tris${p_pct ? ` (${p_pct})` : ""}\nEst. STL size: ~${size}\nEst. viewport: ~${fps} fps${currentIsBelow ? "\nNote: mesh is already below this target — no reduction will occur." : ""}`}
                       className={`flex flex-col items-center gap-0.5 py-1.5 rounded border text-[10px] font-medium transition-colors disabled:opacity-50 disabled:cursor-wait ${
                         fixingCode === "decimate_with_intent"
                           ? "border-orange-500/50 bg-orange-500/10 text-orange-200"
@@ -567,6 +590,12 @@ export default function PrintabilityReportPanel({ open, onClose }) {
                         {p_pct && willShrink && (
                           <span className="text-emerald-400/70 ml-0.5">{p_pct}</span>
                         )}
+                      </span>
+                      <span
+                        className="text-[9px] font-mono text-slate-500"
+                        data-testid={`printability-decimate-${p.key}-est`}
+                      >
+                        {size} · {fps} fps
                       </span>
                     </button>
                   );

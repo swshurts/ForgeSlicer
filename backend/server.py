@@ -1976,6 +1976,186 @@ async def admin_gallery_stats(request: Request):
     }
 
 
+# Iter-148 — Backfill missing thumbnails as a background job.
+#
+# Rendering an STL to a PNG can take a few hundred milliseconds per
+# item, so we run the batch off-request and expose a small status
+# endpoint the admin health UI polls to draw a progress bar. The job
+# state is held in memory — good enough for a one-shot admin action
+# (the process runs on a single supervisor-managed worker; a fresh
+# regen simply starts a new run).
+_thumbnail_job: dict[str, Any] = {
+    "status": "idle",   # idle | running | done | error
+    "started_at": None,
+    "finished_at": None,
+    "total": 0,
+    "processed": 0,
+    "regenerated": 0,
+    "skipped_no_stl": 0,
+    "errors": [],       # list of {kind, id, reason}
+    "last_error": None,
+}
+_thumbnail_job_lock = asyncio.Lock()
+
+
+async def _regenerate_thumbnails_worker() -> None:
+    """Iterate every doc in `db.gallery` + `db.components`, rerender any
+    that are missing a thumbnail and have a usable STL blob. Never
+    raises — errors accumulate on ``_thumbnail_job["errors"]`` so the UI
+    can render a partial-success state."""
+    from thumbnail_service import (
+        has_usable_stl,
+        is_missing_thumbnail,
+        render_stl_thumbnail,
+    )
+    job = _thumbnail_job
+    job["status"] = "running"
+    job["started_at"] = datetime.now(timezone.utc).isoformat()
+    job["finished_at"] = None
+    job["total"] = 0
+    job["processed"] = 0
+    job["regenerated"] = 0
+    job["skipped_no_stl"] = 0
+    job["errors"] = []
+    job["last_error"] = None
+
+    try:
+        # Two collections — same schema for the fields we care about.
+        for coll, kind in ((db.gallery, "gallery"), (db.components, "components")):
+            missing_filter = {"$or": [
+                {"thumbnail_base64": {"$exists": False}},
+                {"thumbnail_base64": ""},
+                # Broken tiny placeholders left over from failed saves.
+                {"$expr": {"$lt": [{"$strLenCP": {"$ifNull": ["$thumbnail_base64", ""]}}, 200]}},
+            ]}
+            total = await coll.count_documents(missing_filter)
+            job["total"] += total
+            # Stream the results — never pull all blobs into memory.
+            cursor = coll.find(missing_filter, {
+                "id": 1, "stl_base64": 1, "thumbnail_base64": 1, "_id": 0,
+            })
+            async for doc in cursor:
+                job["processed"] += 1
+                item_id = doc.get("id") or "(unknown)"
+                if not has_usable_stl(doc):
+                    job["skipped_no_stl"] += 1
+                    continue
+                if not is_missing_thumbnail(doc):
+                    # Racy — a concurrent PUT could have healed it. Skip.
+                    continue
+                try:
+                    # Rendering is CPU-bound; hop to a thread so we don't
+                    # block the event loop the way trimesh + matplotlib
+                    # would if we called them inline.
+                    png = await asyncio.to_thread(
+                        render_stl_thumbnail, doc["stl_base64"]
+                    )
+                except Exception as e:  # noqa: BLE001
+                    job["errors"].append({
+                        "kind": kind, "id": item_id, "reason": str(e)[:200],
+                    })
+                    job["last_error"] = f"{kind}/{item_id}: {e}"[:280]
+                    logging.getLogger(__name__).warning(
+                        "thumbnail regen failed for %s/%s: %s", kind, item_id, e,
+                    )
+                    continue
+                await coll.update_one(
+                    {"id": item_id},
+                    {"$set": {"thumbnail_base64": png}},
+                )
+                job["regenerated"] += 1
+        job["status"] = "done"
+    except Exception as e:  # noqa: BLE001 — never blow up the worker
+        job["status"] = "error"
+        job["last_error"] = str(e)[:280]
+        logging.getLogger(__name__).exception("thumbnail regen worker crashed")
+    finally:
+        job["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
+@api_router.post("/admin/regenerate-thumbnails")
+async def admin_regenerate_thumbnails(request: Request):
+    """Kick off a batch job that (re)renders PNG thumbnails for every
+    gallery item + component whose ``thumbnail_base64`` is empty or a
+    broken placeholder. Idempotent — items that already have a thumbnail
+    are skipped, so the operator can hit this button as many times as
+    they like. Returns immediately with the initial status snapshot."""
+    await _require_admin_for_upstream(request)
+    async with _thumbnail_job_lock:
+        if _thumbnail_job["status"] == "running":
+            return {
+                "started": False,
+                "reason": "A regeneration job is already running.",
+                **_thumbnail_job,
+            }
+        asyncio.create_task(_regenerate_thumbnails_worker())
+    # Give the worker a tick to update its state before we snapshot.
+    await asyncio.sleep(0.05)
+    return {"started": True, **_thumbnail_job}
+
+
+@api_router.get("/admin/regenerate-thumbnails/status")
+async def admin_regenerate_thumbnails_status(request: Request):
+    """Return the current thumbnail regeneration progress. Polling this
+    every second gives the frontend a live count + error list. Never 404s
+    — an idle state is a valid response."""
+    await _require_admin_for_upstream(request)
+    return dict(_thumbnail_job)
+
+
+@api_router.get("/admin/ai-errors")
+async def admin_ai_errors(request: Request, limit: int = 50):
+    """Recent AI generation failures — sourced from `db.ai_jobs` where
+    ``status == 'FAILED'``. Surfaces the provider, kind, error message,
+    and timestamp so an admin can spot spikes (e.g. fal.ai billing
+    lapse, Meshy outage) without diving into MongoDB. Also returns a
+    24 h + 7 d aggregated failure rate so the health page can show a
+    trend line."""
+    await _require_admin_for_upstream(request)
+    limit = max(1, min(int(limit), 200))
+    now = datetime.now(timezone.utc)
+    since_24h = (now - timedelta(hours=24)).isoformat()
+    since_7d = (now - timedelta(days=7)).isoformat()
+
+    fail_cursor = db.ai_jobs.find(
+        {"status": "FAILED"},
+        {"_id": 0, "job_id": 1, "kind": 1, "provider": 1, "error": 1,
+         "created_at": 1, "updated_at": 1, "user_id": 1},
+    ).sort("updated_at", -1).limit(limit)
+    recent_failures = []
+    async for j in fail_cursor:
+        recent_failures.append({
+            "job_id": j.get("job_id"),
+            "kind": j.get("kind"),
+            "provider": j.get("provider") or "meshy",
+            "error": (j.get("error") or "")[:280],
+            "created_at": j.get("created_at"),
+            "updated_at": j.get("updated_at"),
+            "user_id": j.get("user_id"),
+        })
+
+    async def _count(match: dict) -> int:
+        return await db.ai_jobs.count_documents(match)
+
+    failed_24h = await _count({"status": "FAILED", "updated_at": {"$gte": since_24h}})
+    total_24h = await _count({"updated_at": {"$gte": since_24h}})
+    failed_7d = await _count({"status": "FAILED", "updated_at": {"$gte": since_7d}})
+    total_7d = await _count({"updated_at": {"$gte": since_7d}})
+
+    def _rate(fail: int, total: int) -> float:
+        return round(100.0 * fail / total, 2) if total else 0.0
+
+    return {
+        "recent_failures": recent_failures,
+        "failed_24h": failed_24h,
+        "total_24h": total_24h,
+        "failure_rate_24h_pct": _rate(failed_24h, total_24h),
+        "failed_7d": failed_7d,
+        "total_7d": total_7d,
+        "failure_rate_7d_pct": _rate(failed_7d, total_7d),
+    }
+
+
 # ---------- Community Printer Profiles ----------
 @api_router.post("/printers", response_model=CommunityPrinter)
 async def create_community_printer(p: CommunityPrinterCreate):

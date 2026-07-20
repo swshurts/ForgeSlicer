@@ -13,6 +13,7 @@ import ResetPassword from "@/components/ResetPassword";
 import MagicLinkLanding from "@/components/MagicLinkLanding";
 import AuthorProfile from "@/components/AuthorProfile";
 import AdminPage from "@/components/AdminPage";
+import AdminHealth from "@/components/AdminHealth";
 import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
 import LithoStudio from "@/components/litho/LithoStudio";
@@ -84,6 +85,7 @@ function AppRouter() {
       <Route path="/magic-link" element={<MagicLinkLanding />} />
       <Route path="/u/:userId" element={<AuthorProfile />} />
       <Route path="/admin" element={<AdminPage />} />
+      <Route path="/admin/health" element={<AdminHealth />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/billing/success" element={<BillingSuccessPage />} />
       <Route
