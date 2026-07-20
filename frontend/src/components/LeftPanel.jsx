@@ -6,7 +6,7 @@ import {
   Trash2, Copy, PlusSquare, MinusSquare, ChevronRight, ChevronDown, Layers,
   Square as SquareIcon, Triangle as TriangleIcon, Hexagon as HexagonIcon, Pill,
   Sparkles, Tornado, CircleDashed, TriangleRight, Save, Bolt, Nut, Cog, Waves, Grid3X3, Type, Box as BoxIcon, ImageDown,
-  Boxes,
+  Boxes, SlidersHorizontal, Package,
 } from "lucide-react";
 import ContextMenu from "./ContextMenu";
 import AIGenerateDialog from "./AIGenerateDialog";
@@ -15,6 +15,7 @@ import HardwareLibraryDialog from "./dialogs/HardwareLibraryDialog";
 import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
 import DesignChatDialog from "./dialogs/DesignChatDialog";
 import HoleDialog from "./dialogs/HoleDialog";
+import BoxDesignerDialog from "./params/BoxDesignerDialog";
 import { MessageCircle } from "lucide-react";
 import { COMPONENTS, COMPONENT_CATEGORIES } from "../lib/componentLibrary";
 
@@ -383,6 +384,7 @@ export default function LeftPanel() {
   // with it — it just overlays the viewport when open, and the only
   // trigger is the Hardware button on the Composites tab.
   const [hardwareLibOpen, setHardwareLibOpen] = useState(false);
+  const [boxDesignerOpen, setBoxDesignerOpen] = useState(false);
   // Texture Library dialog state lives on the global store so the
   // right-click "Apply texture to face..." menu item can request it
   // to open even though the context menu unmounts on click. Local
@@ -412,8 +414,13 @@ export default function LeftPanel() {
   const TABS = [
     { id: "3d",         label: "3D",    icon: Box,       title: "3D primitives — rectangular solid, sphere, cylinder, cone, pyramid, prism, torus, etc." },
     { id: "2d",         label: "2D",    icon: SquareIcon, title: "2D shapes — extrude in the inspector to give them depth" },
-    { id: "composites", label: "Combo", icon: Pill,      title: "Pre-built composite assemblies (slots etc.)" },
-    { id: "library",    label: "Lib",   icon: Boxes,     title: "Component Library — reusable parts (standoffs, brackets, hinges, gears)" },
+    // iter-149.3 (PDF §4a) — the old standalone "LIB" tab is folded
+    // into COMBO so users don't have to hunt across two similar-looking
+    // palettes. LIB content now renders as a second section in COMBO,
+    // and a new PARAM tab hosts the parametric generators (Box, Drawer
+    // Chest — Drawer Chest ships next release).
+    { id: "composites", label: "Combo", icon: Pill,      title: "Composites & Component Library — pre-built parametric assemblies (slots, fasteners, hardware, brackets, gears, ...)" },
+    { id: "params",     label: "Param", icon: SlidersHorizontal, title: "Parametric generators — Box Designer, Drawer Chest, custom builders. Fill in the knobs, get a ready-to-print STL." },
     { id: "ai",         label: "AI",    icon: Sparkles,  title: "AI generation — text or image to 3D mesh" },
   ];
 
@@ -448,7 +455,7 @@ export default function LeftPanel() {
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} onOpenHoleDialog={() => setHoleDialogOpen(true)} />}
-        {tab === "library" && <TabLibrary />}
+        {tab === "params" && <TabParam onOpenBoxDesigner={() => setBoxDesignerOpen(true)} />}
         {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} />}
       </div>
 
@@ -476,6 +483,7 @@ export default function LeftPanel() {
       <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
       <DesignChatDialog open={designChatOpen} onClose={() => setDesignChatOpen(false)} />
       <HoleDialog open={holeDialogOpen} onClose={() => setHoleDialogOpen(false)} />
+      <BoxDesignerDialog open={boxDesignerOpen} onClose={() => setBoxDesignerOpen(false)} />
       <TextureLibraryDialog
         open={textureLibraryOpen}
         targetObjectId={textureLibraryTargetId}
@@ -545,6 +553,15 @@ function Tab2D() {
 }
 
 function TabComposites({ onOpenHardwareLib, onOpenTextureLib, onOpenHoleDialog }) {
+  // iter-149.3 (PDF §4a) — Composites + Component Library merged.
+  // Top half: pre-built composites (slots, fasteners, holes, hex pockets).
+  // Bottom half: filterable component library (former standalone LIB tab).
+  const [selectedCat, setSelectedCat] = useState("all");
+  const filteredComponents = selectedCat === "all"
+    ? COMPONENTS
+    : COMPONENTS.filter((c) => c.category === selectedCat);
+  const cats = [{ id: "all", label: "All" }, ...COMPONENT_CATEGORIES];
+
   return (
     <>
       <SectionHeader
@@ -566,6 +583,95 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib, onOpenHoleDialog }
       </div>
       <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
         Tip — composites are pre-grouped assemblies. Ungroup any of them to fine-tune individual members.
+      </p>
+
+      <SectionHeader
+        icon={Boxes}
+        accent="text-emerald-400"
+        label="Component Library"
+        right={<span className="text-[9px] uppercase tracking-wider text-slate-500" title="Click to drop into the scene. Each component is parametric — edit any dimension in the Inspector after.">parametric</span>}
+      />
+      <div className="px-3 pt-2 pb-1 flex flex-wrap gap-1" data-testid="library-cat-filter">
+        {cats.map((c) => (
+          <button
+            key={c.id}
+            data-testid={`library-cat-${c.id}`}
+            onClick={() => setSelectedCat(c.id)}
+            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+              selectedCat === c.id
+                ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
+                : "bg-slate-800/40 border-slate-700 text-slate-400 hover:text-white hover:border-slate-500"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-1.5 p-3" data-testid="library-grid">
+        {filteredComponents.length === 0 ? (
+          <p className="text-[11px] text-slate-500 italic p-2">No components in this category yet.</p>
+        ) : (
+          filteredComponents.map((c) => <ComponentCard key={c.id} component={c} />)
+        )}
+      </div>
+      <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
+        Tip — every dimension stays editable after the drop. Resize, recolour, ungroup, mix &amp; match into custom assemblies.
+      </p>
+    </>
+  );
+}
+
+// iter-149.3 (PDF §4b) — Parametric generators tab.
+// Ships with the Box Designer for now; Drawer Chest (§4c) lands in the
+// next release. Each card is a one-click launcher into a full-blown
+// dialog that produces a printable multi-part assembly (host mesh +
+// optional lid / drawer / feet / label — user picks which parts to
+// download and in what mode).
+function TabParam({ onOpenBoxDesigner }) {
+  return (
+    <>
+      <SectionHeader
+        icon={SlidersHorizontal}
+        accent="text-sky-400"
+        label="Parametric generators"
+        right={<span className="text-[9px] uppercase tracking-wider text-slate-500" title="Fill in the knobs, download a print-ready STL bundle.">no-CAD</span>}
+      />
+      <div className="grid grid-cols-1 gap-2 p-3">
+        <button
+          data-testid="param-open-box-designer-btn"
+          onClick={onOpenBoxDesigner}
+          className="group flex items-start gap-2.5 p-3 rounded-md border border-slate-700 hover:border-sky-400 hover:bg-sky-500/5 text-left transition-colors"
+          title="Parametric box with 5 lid styles, compartments, label recess, side handles, stackable lip. Multi-part ZIP export."
+        >
+          <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-slate-800 group-hover:bg-sky-500/15 text-sky-300">
+            <Package size={19} strokeWidth={1.6} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-semibold text-slate-100">Box Designer</div>
+            <div className="text-[10px] text-slate-400 leading-snug">
+              Width × depth × height, wall + floor, corner radius, 5 lid types, compartments, label recess, side handles, stackable lip. Export box, lid, or the whole ZIP.
+            </div>
+          </div>
+        </button>
+
+        <div
+          data-testid="param-drawer-chest-soon"
+          className="flex items-start gap-2.5 p-3 rounded-md border border-slate-800 bg-slate-900/40 opacity-70 cursor-not-allowed"
+          title="Ships next release (§4c). Multi-drawer chest with biscuit joints and glide nubs."
+        >
+          <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-slate-800/60 text-slate-500">
+            <Boxes size={19} strokeWidth={1.6} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-semibold text-slate-400">Drawer Chest <span className="ml-1 text-[9px] font-mono uppercase tracking-wider bg-slate-800 text-slate-500 px-1 rounded">soon</span></div>
+            <div className="text-[10px] text-slate-500 leading-snug">
+              Multi-drawer chest with biscuit joints, glide nubs, detachable caps. Ships next release.
+            </div>
+          </div>
+        </div>
+      </div>
+      <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
+        Tip — every generator produces a ready-to-print STL. Preview live before downloading; drop into the workspace for further edits.
       </p>
     </>
   );
@@ -620,52 +726,6 @@ function ComponentCard({ component }) {
         <div className="text-[10px] text-slate-500 leading-snug line-clamp-2">{component.blurb}</div>
       </div>
     </button>
-  );
-}
-
-function TabLibrary() {
-  const [selectedCat, setSelectedCat] = useState("all");
-  const filtered = selectedCat === "all"
-    ? COMPONENTS
-    : COMPONENTS.filter((c) => c.category === selectedCat);
-  const cats = [{ id: "all", label: "All" }, ...COMPONENT_CATEGORIES];
-
-  return (
-    <>
-      <SectionHeader
-        icon={Boxes}
-        accent="text-emerald-400"
-        label="Component Library"
-        right={<span className="text-[9px] uppercase tracking-wider text-slate-500" title="Click to drop into the scene. Each component is parametric — edit any dimension in the Inspector after.">parametric</span>}
-      />
-      {/* Category filter */}
-      <div className="px-3 pt-2 pb-1 flex flex-wrap gap-1" data-testid="library-cat-filter">
-        {cats.map((c) => (
-          <button
-            key={c.id}
-            data-testid={`library-cat-${c.id}`}
-            onClick={() => setSelectedCat(c.id)}
-            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
-              selectedCat === c.id
-                ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200"
-                : "bg-slate-800/40 border-slate-700 text-slate-400 hover:text-white hover:border-slate-500"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-      <div className="grid grid-cols-1 gap-1.5 p-3" data-testid="library-grid">
-        {filtered.length === 0 ? (
-          <p className="text-[11px] text-slate-500 italic p-2">No components in this category yet.</p>
-        ) : (
-          filtered.map((c) => <ComponentCard key={c.id} component={c} />)
-        )}
-      </div>
-      <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
-        Tip — every dimension stays editable after the drop. Resize, recolour, ungroup, mix &amp; match into custom assemblies.
-      </p>
-    </>
   );
 }
 

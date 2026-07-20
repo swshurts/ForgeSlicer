@@ -1,0 +1,67 @@
+{
+  "summary": "Frontend-only E2E of ForgeSlicer iter-149.3 Release C (Menu reorg + Box Designer). 10/10 tests pass after applying a 1-line fix to BoxDesignerDialog.jsx for the ZIP-bundle download (JSZip does not accept DataView — converted to Uint8Array).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "BoxDesignerDialog (ZIP export)",
+        "issue": "handleDownloadZip passed a DataView (return type of geometryToSTLBinary) directly to JSZip.file(). JSZip 3 supports only string/Blob/ArrayBuffer/Uint8Array/base64 — DataView is unsupported and causes generateAsync() to hang forever. Result: 'ZIP BUNDLE' click had no effect, no download, no toast, no console error (silent failure).",
+        "selector": "[data-testid='box-designer-download-zip']",
+        "priority": "HIGH",
+        "fix_applied": "Convert DataView -> new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength) before zip.file(). Individual Box / Lid downloads already used new Blob([dv],...) which supports DataView, so they were not affected."
+      },
+      {
+        "component": "Landing/workspace overlays",
+        "issue": "'What's New' Sonner toast (v1.1 update) covers the bottom-right corner where the Box Designer's ZIP BUNDLE button lives. force=True bypasses hit-testing so functional tests still work, but a real user might miss/misclick the button. Suggest either dismissing the toast on dialog open or shifting the toast when a modal is present.",
+        "selector": "sonner toast overlapping [data-testid='box-designer-download-zip']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/_downloads/Untitled_Project_box.stl",
+    "/app/test_reports/_downloads/Untitled_Project_lid.stl",
+    "/app/test_reports/_downloads/Untitled_Project_bundle.zip",
+    "/app/test_reports/_downloads/Untitled_Project.stl"
+  ],
+  "action_items": [
+    "Fix applied: BoxDesignerDialog.jsx ZIP export DataView → Uint8Array. Please review the 1-line change.",
+    "Optional polish: auto-dismiss the 'What's New' Sonner toast when a modal (e.g. Box Designer) opens, since it can overlap footer action buttons in the 1200×760 dialog."
+  ],
+  "critical_code_review_comments": [
+    "BoxDesignerDialog.jsx: geometryToSTLBinary() returns a DataView; JSZip.file() silently mishandles DataView. Bug fixed.",
+    "boxGenerator.js: unused-var placeholder scoopH is dead code (only side-effect: void scoopH). Consider removing or actually implementing oval scoops for handles.",
+    "BoxDesignerDialog is 450+ lines but focused/self-contained; still within acceptable size. Consider extracting NumField/CheckField into a small shared components module if reused elsewhere.",
+    "The `hinged` and `sliding` lid modes cause 'Lid' bbox to grow (60×43.75×8.3 for hinged, 60×40×3.35 for sliding). This is correct behaviour (tabs/rails extend past base lid slab) but the review_request expected sliding lid == 'gets rails' without specifying bbox growth — behaviour matches spec.",
+    "Test-request Test 5 line 'friction' expected z ≈ 5mm — actual z is exactly 5.0mm. Verified."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/params/BoxDesignerDialog.jsx (DataView → Uint8Array in handleDownloadZip)"
+  ],
+  "success_rate": {"backend": "N/A (frontend-only per request)", "frontend": "100% (10/10 after fix)"},
+  "test_credentials": "session_token=st_admin_health_1784561381387 (cookie on preview host) — worked for /workspace access.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Release C features (menu reorg + Box Designer) are fully functional after the ZIP DataView fix. Verified: tabs [3D,2D,COMBO,PARAM,AI] in order with no LIB tab; COMBO holds Composites + Component Library grid with all filter chips; PARAM shows Box Designer + Drawer Chest 'soon' placeholder; Box Designer opens, live preview builds a 60×40×28 body + 2mm drop lid; all 5 lid modes (none/drop/sliding/hinged/friction) build without error; friction lid grows to 5mm (skirt) as expected; compartments 3×2 rebuilds cleanly; stackable/side-handles/label-recess toggles all rebuild; label-recess reveals depth field; Box.stl / Lid.stl / ZIP downloads all succeed (ZIP contains 2 STLs + README.txt with parameter dump); Add-to-workspace closes the dialog and adds 2 imported meshes named 'Box body' and 'Lid'; regression on 3D/2D/AI tabs + STL export via toolbar still works.",
+  "test_results_matrix": {
+    "test1_tab_order": "PASS (exact order [3d,2d,composites,params,ai]; no lib tab)",
+    "test2_combo_merged": "PASS (structural — all required data-testids present: library-cat-filter, library-grid, add-slot-negative-btn, add-slot-positive-btn, add-fastener-pair-btn, open-hardware-library-btn, open-texture-library-btn, add-hole-dialog-btn, add-countersink-btn, add-hex-pocket-btn, add-gusset-btn)",
+    "test3_param_tab": "PASS (param-open-box-designer-btn + param-drawer-chest-soon visible)",
+    "test4_designer_opens": "PASS (bbox: Box 60×40×28 mm, Lid 60×40×2 mm; showlid toggle works)",
+    "test5_lid_modes": "PASS (none→no lid; drop→z=2; sliding→z=3.35; hinged→z=8.3 (extended by knuckle+tabs, y grows to 43.75); friction→z=5)",
+    "test6_compartments": "PASS (3×2 rebuilds, bbox stays 60×40×28, no errors)",
+    "test7_extras": "PASS (all three toggles rebuild without error; label-depth field appears when label recess is on)",
+    "test8_downloads": "PASS after fix (Box: Untitled_Project_box.stl 18884B, Lid: 7084B, ZIP: 22113B with 2×STL + README.txt)",
+    "test9_add_workspace": "PASS (dialog closes, scene-count 0→2, outliner shows 'Box body' + 'Lid')",
+    "test10_regression": "PASS (Rect Solid + Sphere + Triangle spawn correctly; export-stl-btn downloads 108284B .stl)"
+  },
+  "rca_of_the_zip_bug": {
+    "root_cause": "geometryToSTLBinary (exporters.js line 47-50) returns the value from STLExporter.parse(mesh, {binary: true}), which is a DataView. In handleDownloadZip we passed this DataView directly to JSZip.file(name, data). JSZip 3.x's compressed-content pipeline does not include DataView in its dispatch table; the input hits the string-coercion fallback but subsequent CRC32/deflate path stalls because the promised-content resolver hangs on the non-matching type. Result: generateAsync({type:'blob'}) never resolves or rejects — no toast, no download, no console error.",
+    "reproduction": "Open workspace → PARAM tab → Box Designer → click 'ZIP BUNDLE'. Before fix: nothing happens (button stays enabled, no spinner, no toast). Individual Box/Lid downloads work because they use new Blob([dv],{type:'model/stl'}) which does accept DataView.",
+    "mitigation_applied": "1-line change: const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength); zip.file(name, bytes). Uint8Array is JSZip's happy path.",
+    "verification": "Post-fix expect_download() resolves in <2s; ZIP is 22113B; contains Untitled_Project_box.stl, Untitled_Project_lid.stl, README.txt with full parameter dump."
+  }
+}
