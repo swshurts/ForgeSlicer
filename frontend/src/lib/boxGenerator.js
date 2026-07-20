@@ -545,13 +545,18 @@ export async function buildBoxAssembly(p) {
       lidManifold = carved;
     }
 
-    if (stackable) {
+    // iter-150.4 — the stackable foot only makes sense for "drop" and
+    // "friction" lids (which can free-stack). Sliding + hinged lids are
+    // trapped inside the box, so a foot on top would either prevent the
+    // lid from sliding under the overhang (sliding) or break the hinge
+    // clearance (hinged). Skip it for those modes.
+    if (stackable && (lidMode === "drop" || lidMode === "friction")) {
       // Small nested foot on the lid top — 1mm tall, indented by wall.
       const footH = 1.2;
       const footW = W - 2 * wall - 0.4;
       const footD = D - 2 * wall - 0.4;
       const foot = _weld(_roundedSlab(footW, footD, footH, Math.max(0, cornerR - wall)));
-      foot.translate(0, 0, lidThickness + footH / 2);
+      foot.translate(0, 0, effLidThickness + footH / 2);
       const footM = _geomToMesh(wasm, foot);
       const merged = wasm.Manifold.union([lidManifold, footM]);
       lidManifold.delete(); footM.delete();

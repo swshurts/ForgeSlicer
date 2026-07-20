@@ -370,13 +370,20 @@ export default function BoxDesignerDialog({ open, onClose }) {
 
             <section data-testid="box-designer-extras" className="space-y-1.5">
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Extras</div>
-              <CheckField
-                testid="box-stackable"
-                label="Stackable lip"
-                value={params.stackable}
-                onChange={(v) => update("stackable", v)}
-                hint="Nesting foot on lid — boxes stack cleanly"
-              />
+              {(() => {
+                const stackableApplies = params.lid === "drop" || params.lid === "friction";
+                return (
+                  <div className={stackableApplies ? "" : "opacity-50 pointer-events-none"} title={stackableApplies ? "" : "Only applies to drop-on or friction-fit lids"}>
+                    <CheckField
+                      testid="box-stackable"
+                      label={`Stackable lip${stackableApplies ? "" : " (n/a)"}`}
+                      value={params.stackable && stackableApplies}
+                      onChange={(v) => update("stackable", v)}
+                      hint="Nesting foot on lid — boxes stack cleanly"
+                    />
+                  </div>
+                );
+              })()}
               <CheckField
                 testid="box-side-handles"
                 label="Side handles"

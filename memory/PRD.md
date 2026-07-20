@@ -33,6 +33,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-150.4, 2026-07-20) — Sliding-lid stackable-foot bug
+
+User reported the sliding lid built with a raised platform on top ("cyan portion" from the slicer's planar-cut view) that physically prevented the lid from sliding under the box's overhang.
+
+- **Root cause**: the `stackable` extra always union'd a 1.2 mm-tall foot onto the top of the lid regardless of lid mode. For sliding + hinged lids the lid is trapped inside the box, so the foot pokes above the wall top and blocks entry into the slot.
+- **Fix**: the stackable-foot union now only runs when `lidMode` is `"drop"` or `"friction"` (free-stacking modes). Sliding + hinged lids stay a flat slab with rails / knuckles.
+- **UI**: the "Stackable lip" checkbox is now visually greyed and labelled "(n/a)" whenever the current lid mode is sliding or hinged so the toggle isn't silently ignored.
+
 ### Recently completed (iter-150.3, 2026-07-20) — Magnet-mount rewrite (user spec)
 
 Rebuilt drop-on-lid magnet mounts to a proper hardware spec:
