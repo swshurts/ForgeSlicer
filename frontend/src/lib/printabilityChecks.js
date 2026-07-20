@@ -40,6 +40,12 @@ const MAX_HIGHLIGHT_SEGS = 5000;     // cap highlight buffers
 function worldBBox(obj) {
     try {
         const bb = computeRotatedBBox(obj);
+        // Reject degenerate/empty bboxes (0-vertex geoms leave min=+Inf,
+        // max=-Inf, and downstream size math flips to -Infinity — that
+        // leaks into the "too thin to print" message as a nonsense number).
+        if (!bb || !isFinite(bb.min.x) || !isFinite(bb.max.x)
+            || !isFinite(bb.min.y) || !isFinite(bb.max.y)
+            || !isFinite(bb.min.z) || !isFinite(bb.max.z)) return null;
         const px = obj.position?.[0] ?? 0;
         const py = obj.position?.[1] ?? 0;
         const pz = obj.position?.[2] ?? 0;
@@ -344,6 +350,10 @@ export function checkSmallFeatures(obj) {
     if (!bb) return null;
     const s = worldSize(bb);
     const shortest = Math.min(s.x, s.y, s.z);
+    // Guard against non-finite or non-positive shortest dim — usually a
+    // sign the geometry is empty (imported STL with 0 vertices, etc.).
+    // Silently skip rather than reporting a nonsense "-Infinity mm" msg.
+    if (!isFinite(shortest) || shortest <= 0) return null;
     if (shortest >= SMALL_FEATURE_MM) return null;
 
     return {

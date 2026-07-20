@@ -33,6 +33,11 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-150.2, 2026-07-20) — Sliding-lid follow-up
+
+- **Printability false-positive guard** (`lib/printabilityChecks.js`): the "too thin to print reliably" check was surfacing a nonsense `Shortest dimension is -Infinity mm` when the imported mesh's bounding-box computation produced an empty `THREE.Box3` (min=+Inf, max=-Inf). Added `!isFinite(...)` guards in both `worldBBox()` and `checkSmallFeatures()` so degenerate / empty geometries are silently skipped rather than displayed as a scary red banner.
+- **Sliding-lid STL verified clean**: exported STL for a 60×40×30 box + sliding lid parses as 484 well-formed triangles, no degenerate faces, bbox 60×40×28. The previous versions could produce a corrupted export from the CSG chain — with the iter-150.1 groove-cutter rewrite the export path is now clean.
+
 ### Recently completed (iter-150.1, 2026-07-20) — Box Designer 2nd-round bug fixes
 
 Following user's follow-up feedback ("slider missing the overhang to capture the lid; magnet pockets missing"):
