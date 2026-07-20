@@ -137,6 +137,15 @@ export async function buildBoxAssembly(p) {
   const sideHandles = !!p.sideHandles;
   const labelRecess = !!p.labelRecess;
   const labelDepth = Math.max(0.4, Math.min(3, +p.labelDepth || 1.2));
+  // iter-150.1 — drop-on lid magnet pockets (2nd rewrite, user feedback).
+  // Because the wall is usually 2 mm and a disc magnet is 5–10 mm Ø,
+  // the magnet CAN'T fit inside the wall itself. Instead we add a
+  // dedicated column of material ("corner post") at each interior
+  // corner, floor-to-rim, and drill the pocket straight down into
+  // that column. The lid grows matching sunken pockets on its
+  // underside so magnets pole-to-pole hold it shut.
+  const magnetPockets = !!p.magnetPockets;
+  const magnetSize   = [5, 10].includes(+p.magnetSize) ? +p.magnetSize : 5;   // outer Ø mm
 
   // The "box body" is the portion below the lid seam. When there's no
   // lid at all the body IS the whole thing; otherwise we split at
@@ -220,44 +229,142 @@ export async function buildBoxAssembly(p) {
   }
 
   // ---- Lid-specific box-side modifications ----
-  if (lidMode === "sliding") {
-    // Cut two grooves along the +X/-X inner walls at the top so a lid
-    // with matching rails slides in from the +Y side.
-    const grooveH = Math.min(2, wall * 0.8);
-    const grooveDrop = grooveH + 0.4;
-    for (const xSign of [-1, 1]) {
-      const groove = new THREE.BoxGeometry(wall + 1, D + 2, grooveH);
-      groove.translate(xSign * (W / 2 - wall / 2), 0, bodyH - grooveDrop);
-      const m = _geomToMesh(wasm, _weld(groove));
-      const carved = wasm.Manifold.difference([boxManifold, m]);
-      boxManifold.delete(); m.delete();
+  // Shared corner positions for drop-on magnet pockets. Each entry is
+  // the CENTRE of a corner post — placed just inside the wall so the
+  // post welds into two adjacent walls for maximum strength.
+  const magR = magnetSize / 2 + 0.2;                      // slip fit (0.4 mm total clearance)
+  const magDepth = magnetSize === 10 ? 3.0 : 2.5;         // deep enough to hold a 3 mm-thick disc
+  const postR   = magR + 1.2;                             // solid material around the pocket
+  const postInset = wall + postR - 0.4;                   // post overlaps 0.4 mm into wall so it welds
+  const magCorners = (magnetPockets && lidMode === "drop")
+    ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => [
+        sx * (W / 2 - postInset),
+        sy * (D / 2 - postInset),
+      ])
+    : [];
+
+  if (magCorners.length) {
+    // 1) Add a corner post from floor to top rim at each corner.
+    // 2) Drill a magnet pocket straight down into the post from the top.
+    for (const [px, py] of magCorners) {
+      const post = new THREE.CylinderGeometry(postR, postR, bodyH, 24);
+      post.rotateX(Math.PI / 2);   // axis Y→Z (make it vertical)
+      post.translate(px, py, bodyH / 2);
+      const postM = _geomToMesh(wasm, _weld(post));
+      const merged = wasm.Manifold.union([boxManifold, postM]);
+      boxManifold.delete(); postM.delete();
+      boxManifold = merged;
+
+      const pocket = new THREE.CylinderGeometry(magR, magR, magDepth + 1, 32);
+      pocket.rotateX(Math.PI / 2);   // axis Y→Z (vertical pocket)
+      pocket.translate(px, py, bodyH - magDepth / 2 + 0.5);
+      const pM = _geomToMesh(wasm, _weld(pocket));
+      const carved = wasm.Manifold.difference([boxManifold, pM]);
+      boxManifold.delete(); pM.delete();
       boxManifold = carved;
     }
   }
 
-  if (lidMode === "hinged") {
-    // Two hinge tabs on the back wall (+Y): cylinders with an axle hole.
-    const tabH = 4;
-    const tabT = 3;
-    const axleR = 1.5;
+  if (lidMode === "sliding") {
+    // iter-150.1 — Sliding-lid captured groove (user feedback):
+    //   Previous version cut the groove all the way to the top of the
+    //   side walls, so the lid could just lift out. The lid needs to
+    //   be TRAPPED under a strip of wall material (the "overhang").
+    //
+    //   Design: T-slot cut into inner top of each side wall, whose TOP
+    //   sits capH mm BELOW the wall top — that cap is the overhang
+    //   that captures the lid. Front wall notch matches the slot's
+    //   vertical range exactly (also stops below the wall top), so
+    //   the lid slides IN through that opening only. Back wall is
+    //   solid → stops the lid.
+    const grooveDepth = Math.min(1.5, wall * 0.55);       // slot depth INTO wall from inner face
+    const grooveH     = Math.max(lidThickness + 0.4, 2);  // slot height
+    const capH        = Math.max(0.8, Math.min(1.4, lidThickness * 0.5));  // material above groove
+    const grooveTopZ  = bodyH - capH;                     // top of groove (below wall top)
+    const slideStop   = wall + 0.5;                       // stop distance in Y from back wall interior
+    const grooveLenY  = D - slideStop;                    // slot Y-length
+    const grooveCentY = -D / 2 + grooveLenY / 2;          // shifted toward front
+
+    // Slot cutter — over-cut sideways into the cavity, NO over-cut in Z
+    // (else we'd break through the overhang cap).
+    const cutW = grooveDepth + 6;   // 6 mm of over-cut into the cavity (safe empty space)
     for (const xSign of [-1, 1]) {
-      // Solid tab (add on)
-      const tab = new THREE.BoxGeometry(tabT, tabH, tabT * 2.2);
-      const xOff = xSign * (W / 2 - tabT * 1.5);
-      tab.translate(xOff, D / 2 + tabH / 2, bodyH - tabT);
-      const tabM = _geomToMesh(wasm, _weld(tab));
-      const merged = wasm.Manifold.union([boxManifold, tabM]);
-      boxManifold.delete(); tabM.delete();
-      boxManifold = merged;
-      // Axle hole
-      const axle = new THREE.CylinderGeometry(axleR, axleR, tabT + 2, 24);
-      axle.rotateZ(Math.PI / 2);   // axis → +X
-      axle.translate(xOff, D / 2 + tabH / 2, bodyH - tabT);
-      const axleM = _geomToMesh(wasm, _weld(axle));
-      const carved = wasm.Manifold.difference([boxManifold, axleM]);
-      boxManifold.delete(); axleM.delete();
+      const cutter = new THREE.BoxGeometry(cutW, grooveLenY, grooveH);
+      // Cutter's outer edge sits at (W/2 - wall) + grooveDepth. Its
+      // Z spans grooveTopZ - grooveH  →  grooveTopZ (top face flush).
+      cutter.translate(
+        xSign * (W / 2 - wall + grooveDepth - cutW / 2),
+        grooveCentY,
+        grooveTopZ - grooveH / 2,
+      );
+      const m = _geomToMesh(wasm, _weld(cutter));
+      const carved = wasm.Manifold.difference([boxManifold, m]);
+      boxManifold.delete(); m.delete();
       boxManifold = carved;
     }
+    // Front-wall notch: only opens the Z range that matches the slot,
+    // preserving the top cap so the overhang is continuous around 3 sides.
+    const notchW = W - 2 * wall + 2 * grooveDepth + 0.5;
+    const notch = new THREE.BoxGeometry(notchW, wall + 2, grooveH);
+    notch.translate(0, -D / 2 + wall / 2, grooveTopZ - grooveH / 2);
+    const nm = _geomToMesh(wasm, _weld(notch));
+    const carved = wasm.Manifold.difference([boxManifold, nm]);
+    boxManifold.delete(); nm.delete();
+    boxManifold = carved;
+  }
+
+  if (lidMode === "hinged") {
+    // iter-149.4 — Piano-hinge rewrite (user feedback):
+    //   - Previous design had 2 side tabs on the box + 1 disconnected
+    //     block on the lid → hinge didn't function, lid knuckle wasn't
+    //     even attached to the lid.
+    //   - New design uses N alternating knuckles (odd on box, even on
+    //     lid) all sharing one axle. Axle hole Ø = 1.85 mm (slip fit
+    //     for a 1.75 mm filament piece — the user's exact suggestion).
+    //   - Each knuckle is connected to its host part via a solid rib
+    //     so the printed part stays a single manifold.
+    const numKnuckles  = 5;                          // total; 3 box + 2 lid
+    const knuckleR     = Math.max(2.5, lidThickness * 0.9);
+    const axleR        = 1.85 / 2;                   // 1.85 mm ⌀ hole → 1.75 mm filament axle
+    const kSegLen      = (W - 2) / numKnuckles;
+    const kGap         = 0.4;                        // clearance between adjacent knuckles
+    const knuckleY     = D / 2 + knuckleR;           // sits proud of back wall
+    const knuckleZ     = bodyH;                      // exactly on the box/lid seam
+
+    // BOX knuckles: indices 0, 2, 4 (evens on 0-based → 3 knuckles).
+    for (let i = 0; i < numKnuckles; i += 2) {
+      const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
+      const kLen = kSegLen - kGap;
+
+      // Cylinder along the X axis.
+      const kn = new THREE.CylinderGeometry(knuckleR, knuckleR, kLen, 24);
+      kn.rotateZ(Math.PI / 2);
+      kn.translate(xCenter, knuckleY, knuckleZ);
+      const knM = _geomToMesh(wasm, _weld(kn));
+      const merged1 = wasm.Manifold.union([boxManifold, knM]);
+      boxManifold.delete(); knM.delete();
+      boxManifold = merged1;
+
+      // Rib: reaches from the box's back wall (Y = D/2) to the knuckle
+      // centre (Y = knuckleY). Sits BELOW the seam so it doesn't lift
+      // the top of the box. Full knuckle diameter tall so it welds
+      // solidly into the wall.
+      const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
+      rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, knuckleZ - knuckleR);
+      const ribM = _geomToMesh(wasm, _weld(rib));
+      const merged2 = wasm.Manifold.union([boxManifold, ribM]);
+      boxManifold.delete(); ribM.delete();
+      boxManifold = merged2;
+    }
+
+    // Single axle-hole cut spanning the whole knuckle row.
+    const axle = new THREE.CylinderGeometry(axleR, axleR, W + 4, 20);
+    axle.rotateZ(Math.PI / 2);
+    axle.translate(0, knuckleY, knuckleZ);
+    const axleM = _geomToMesh(wasm, _weld(axle));
+    const carved = wasm.Manifold.difference([boxManifold, axleM]);
+    boxManifold.delete(); axleM.delete();
+    boxManifold = carved;
   }
 
   const boxGeom = _manifoldToGeom(boxManifold);
@@ -271,10 +378,18 @@ export async function buildBoxAssembly(p) {
     lidGeomOuter.translate(0, 0, lidThickness / 2);
     let lidManifold = _geomToMesh(wasm, lidGeomOuter);
 
-    if (lidMode === "drop") {
-      // Drop-on lid: no additional geometry beyond a shallow flip-rim
-      // that keeps it aligned. If stackable, add a nested lip UNDER
-      // the lid so a second box can sit on top.
+    if (lidMode === "drop" && magCorners.length) {
+      // Matching magnet pockets in the lid's UNDERSIDE (Z=0 face). Cylinder
+      // axis must be Z (default is Y) so it drills straight up into the lid.
+      for (const [cx, cy] of magCorners) {
+        const pocket = new THREE.CylinderGeometry(magR, magR, magDepth + 1, 32);
+        pocket.rotateX(Math.PI / 2);       // axis Y→Z
+        pocket.translate(cx, cy, magDepth / 2 - 0.5);
+        const m = _geomToMesh(wasm, _weld(pocket));
+        const carved = wasm.Manifold.difference([lidManifold, m]);
+        lidManifold.delete(); m.delete();
+        lidManifold = carved;
+      }
     }
 
     if (lidMode === "friction") {
@@ -305,35 +420,85 @@ export async function buildBoxAssembly(p) {
     }
 
     if (lidMode === "sliding") {
-      // Rails along X-edges that ride in the grooves cut into the box.
-      const railH = Math.min(2, wall * 0.8) - clearance;
-      const railW = wall - clearance;
-      for (const xSign of [-1, 1]) {
-        const rail = new THREE.BoxGeometry(railW, D - clearance * 2, railH);
-        rail.translate(xSign * (W / 2 - railW / 2 - clearance), 0, -railH / 2);
-        const railM = _geomToMesh(wasm, _weld(rail));
-        const merged = wasm.Manifold.union([lidManifold, railM]);
-        lidManifold.delete(); railM.delete();
-        lidManifold = merged;
-      }
+      // iter-149.4 — new sliding-lid: the lid ITSELF is smaller than
+      // the box outer, sized to fit exactly into the T-slot pocket on
+      // both sides. Rails are integral with the lid slab (no
+      // free-hanging tabs). The prior version has been replaced —
+      // hollow lid was completely wrong.
+      const grooveDepth = Math.min(1.5, wall * 0.55);
+      const grooveH     = Math.max(lidThickness + 0.4, 2);
+      const slideStop   = wall + 0.5;
+      const grooveLenY  = D - slideStop;
+
+      // New lid dimensions — width extends into the wall grooves by
+      // (grooveDepth - clearance), depth stops at the slot's back end.
+      const lidActualW  = W - 2 * wall + 2 * (grooveDepth - clearance);
+      const lidActualD  = grooveLenY - clearance;
+
+      // Discard the earlier (full-size) lidManifold and rebuild.
+      lidManifold.delete();
+      const newLid = new THREE.BoxGeometry(lidActualW, lidActualD, lidThickness);
+      // Shift front-flush with the box front (matches slot front-open).
+      const lidYCentre = -D / 2 + wall + lidActualD / 2 + clearance / 2;
+      newLid.translate(0, lidYCentre, lidThickness / 2);
+      lidManifold = _geomToMesh(wasm, _weld(newLid));
+
+      // Small pull-tab on the front edge so a fingernail can slide it
+      // back out. Rectangular fin, 6 mm × 3 mm × lidThickness.
+      const pullW = Math.min(20, lidActualW * 0.25);
+      const pull  = new THREE.BoxGeometry(pullW, 3, lidThickness);
+      pull.translate(0, lidYCentre - lidActualD / 2 - 1.5 + 0.01, lidThickness / 2);
+      const pullM = _geomToMesh(wasm, _weld(pull));
+      const merged = wasm.Manifold.union([lidManifold, pullM]);
+      lidManifold.delete(); pullM.delete();
+      lidManifold = merged;
     }
 
     if (lidMode === "hinged") {
-      // One central knuckle that fits between the two box tabs, with
-      // an axle hole at the same height.
-      const tabH = 4;
-      const tabT = 3;
-      const axleR = 1.5;
-      const knuckle = new THREE.BoxGeometry(tabT * 2, tabH - clearance * 2, tabT * 2.2);
-      knuckle.translate(0, D / 2 + tabH / 2, -tabT);
-      const knuckleM = _geomToMesh(wasm, _weld(knuckle));
-      const merged = wasm.Manifold.union([lidManifold, knuckleM]);
-      lidManifold.delete(); knuckleM.delete();
-      lidManifold = merged;
-      // Axle hole
-      const axle = new THREE.CylinderGeometry(axleR + 0.05, axleR + 0.05, tabT * 4, 24);
+      // iter-149.4 — piano-hinge lid knuckles.
+      // Odd indices (1, 3, ...) belong to the lid — 2 knuckles on a
+      // 5-segment hinge. Same axle centre-line as the box knuckles so
+      // the whole assembly rotates around a single 1.75 mm filament pin.
+      const numKnuckles = 5;
+      const knuckleR    = Math.max(2.5, lidThickness * 0.9);
+      const axleR       = 1.85 / 2;
+      const kSegLen     = (W - 2) / numKnuckles;
+      const kGap        = 0.4;
+      const knuckleY    = D / 2 + knuckleR;
+
+      // Lid coord: bottom face at Z=0. When assembled, the lid sits on
+      // top of the box body — but for the hinge, the knuckles' centre
+      // should be at world-Z=bodyH which corresponds to Z=0 in the
+      // lid's own frame.
+      const knuckleZ = 0;
+
+      for (let i = 1; i < numKnuckles; i += 2) {
+        const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
+        const kLen    = kSegLen - kGap;
+
+        // Lid knuckle cylinder
+        const kn = new THREE.CylinderGeometry(knuckleR, knuckleR, kLen, 24);
+        kn.rotateZ(Math.PI / 2);
+        kn.translate(xCenter, knuckleY, knuckleZ);
+        const knM = _geomToMesh(wasm, _weld(kn));
+        const merged1 = wasm.Manifold.union([lidManifold, knM]);
+        lidManifold.delete(); knM.delete();
+        lidManifold = merged1;
+
+        // Rib attaching this knuckle to the lid's back edge (Y = D/2).
+        // Sits ABOVE the seam so it welds into the lid's bottom face.
+        const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
+        rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, knuckleZ + knuckleR);
+        const ribM = _geomToMesh(wasm, _weld(rib));
+        const merged2 = wasm.Manifold.union([lidManifold, ribM]);
+        lidManifold.delete(); ribM.delete();
+        lidManifold = merged2;
+      }
+
+      // Axle hole runs the full W so it aligns perfectly with the box knuckles.
+      const axle = new THREE.CylinderGeometry(axleR, axleR, W + 4, 20);
       axle.rotateZ(Math.PI / 2);
-      axle.translate(0, D / 2 + tabH / 2, -tabT);
+      axle.translate(0, knuckleY, knuckleZ);
       const axleM = _geomToMesh(wasm, _weld(axle));
       const carved = wasm.Manifold.difference([lidManifold, axleM]);
       lidManifold.delete(); axleM.delete();

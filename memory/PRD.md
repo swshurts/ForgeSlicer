@@ -33,6 +33,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-20)
 
+### Recently completed (iter-150.1, 2026-07-20) — Box Designer 2nd-round bug fixes
+
+Following user's follow-up feedback ("slider missing the overhang to capture the lid; magnet pockets missing"):
+- **Sliding lid overhang** (`lib/boxGenerator.js`): T-slot no longer breaks through the top of the side walls. Groove Z-range now stops `capH = 0.8–1.4 mm` below the wall top, leaving a continuous cap of material above the groove on the two side walls + back wall. The front-wall notch height matches the groove exactly (no longer cuts to the top of the wall), so the lid can only enter through the front and cannot lift out — it's captured by the overhang.
+- **Magnet pockets** (drop-on lid): two independent bugs squashed. (1) Cylinder axis defaulted to Y (horizontal) — added `pocket.rotateX(π/2)` so pockets drill straight down in Z. (2) Pockets were being centred inside the empty cavity so nothing got subtracted; added internal corner posts (radius = magR + 1.2 mm, floor to top) that weld into two adjacent walls at each interior corner. Pockets are now drilled into those solid posts + matching pockets on the lid underside, giving a printable magnet seat regardless of wall thickness.
+
 ### Recently completed (iter-149, 2026-07-20) — Enhancements PDF Release A + B + C + STL Preview / Pyramid fixes
 
 **Release C (§4a + §4b — Menu reorg + Box Designer)**

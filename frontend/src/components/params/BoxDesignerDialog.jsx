@@ -34,6 +34,9 @@ const DEFAULTS = {
   clearance: 0.25,
   stackable: false, sideHandles: false, labelRecess: false,
   labelDepth: 1.2,
+  // Drop-on-lid magnet pockets (iter-149.4).
+  magnetPockets: false,
+  magnetSize: 5,
 };
 
 const LID_MODES = [
@@ -297,6 +300,49 @@ export default function BoxDesignerDialog({ open, onClose }) {
                   <NumField testid="box-lid-thick" label="Lid thickness" value={params.lidThickness} onChange={(v) => update("lidThickness", v)} step={0.2} min={1} />
                   <NumField testid="box-clearance" label="Clearance" value={params.clearance} onChange={(v) => update("clearance", v)} step={0.05} min={0.1} max={0.6} suffix="mm" hint="Slip fit gap between parts" />
                 </div>
+              )}
+              {/* Drop-on lid magnet pockets — user feedback iter-149.4 */}
+              {params.lid === "drop" && (
+                <div className="mt-2 space-y-1.5" data-testid="box-magnets-group">
+                  <CheckField
+                    testid="box-magnet-pockets"
+                    label="Magnet pockets (corners)"
+                    value={params.magnetPockets}
+                    onChange={(v) => update("magnetPockets", v)}
+                    hint="Cut matching cylindrical pockets in the box + lid corners for disc magnets"
+                  />
+                  {params.magnetPockets && (
+                    <div className="flex items-center gap-2 pl-6" data-testid="box-magnet-size">
+                      <span className="text-[10px] text-slate-400">Magnet Ø</span>
+                      {[5, 10].map((sz) => (
+                        <button
+                          key={sz}
+                          data-testid={`box-magnet-size-${sz}`}
+                          onClick={() => update("magnetSize", sz)}
+                          className={`px-2 h-6 rounded text-[10px] font-mono border ${
+                            params.magnetSize === sz
+                              ? "border-sky-500 text-sky-300 bg-sky-500/10"
+                              : "border-slate-700 text-slate-400 hover:border-sky-500/70 hover:text-sky-300"
+                          }`}
+                        >
+                          {sz} mm
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Hinged lid — inform the user about the axle pin. */}
+              {params.lid === "hinged" && (
+                <p className="mt-2 text-[10px] text-sky-300/80 leading-snug bg-sky-500/5 border border-sky-500/30 rounded p-1.5" data-testid="box-hinge-hint">
+                  Piano-style hinge — 5 knuckles (3 on box, 2 on lid) with a 1.85&nbsp;mm axle hole. Slip a length of <span className="font-mono">1.75&nbsp;mm</span> filament through as the pin after printing.
+                </p>
+              )}
+              {/* Sliding lid — inform the user how to install. */}
+              {params.lid === "sliding" && (
+                <p className="mt-2 text-[10px] text-sky-300/80 leading-snug bg-sky-500/5 border border-sky-500/30 rounded p-1.5" data-testid="box-sliding-hint">
+                  Front-loading slide — the lid slides in through the notched front, rides the T-slots along both side walls, and stops against the back wall.
+                </p>
               )}
             </section>
 
