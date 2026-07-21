@@ -27,7 +27,7 @@ const DEFAULTS = {
   rows: 3,
   drawerWall: 2,
   clearance: 0.4,
-  handleStyle: "recess",
+  handleStyle: "square-knob",
   handleSize: 15,
   feet: true,
   footHeight: 8,
@@ -45,9 +45,10 @@ const DEFAULTS = {
 };
 
 const HANDLE_STYLES = [
-  { id: "recess", label: "Finger recess" },
-  { id: "knob",   label: "Knob"   },
-  { id: "none",   label: "None"   },
+  { id: "square-knob",  label: "Square knob"  },
+  { id: "arched-pull",  label: "Arched pull"  },
+  { id: "square-pull",  label: "Square pull"  },
+  { id: "none",         label: "None"         },
 ];
 
 function NumField({ label, value, onChange, step = 1, min, max, suffix = "mm", testid, hint }) {
@@ -326,7 +327,7 @@ export default function DrawerChestDialog({ open, onClose }) {
             <section data-testid="chest-drawers">
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Drawers</div>
               <div className="grid grid-cols-3 gap-2">
-                <NumField testid="chest-rows"        label="Rows"       value={params.rows}       onChange={(v) => update("rows", Math.max(1, Math.min(8, Math.round(v))))} step={1} min={1} max={8} suffix="" />
+                <NumField testid="chest-rows"        label="Rows"       value={params.rows}       onChange={(v) => update("rows", Math.max(1, Math.min(10, Math.round(v))))} step={1} min={1} max={10} suffix="" />
                 <NumField testid="chest-drawerwall" label="Drawer wall" value={params.drawerWall} onChange={(v) => update("drawerWall", v)} step={0.2} min={1.2} max={5} />
                 <NumField testid="chest-clearance"  label="Clearance"  value={params.clearance}  onChange={(v) => update("clearance", v)}  step={0.05} min={0.2} max={1.2} />
               </div>
@@ -435,7 +436,7 @@ export default function DrawerChestDialog({ open, onClose }) {
               />
               {params.feet && (
                 <div className="pl-6 grid grid-cols-2 gap-2 mt-1.5">
-                  <NumField testid="chest-footh" label="Feet height" value={params.footHeight} onChange={(v) => update("footHeight", v)} step={1} min={2} max={30} />
+                  <NumField testid="chest-footh" label="Feet height" value={params.footHeight} onChange={(v) => update("footHeight", v)} step={1} min={0} max={30} hint="Set to 0 to disable feet (flat bottom)" />
                   <NumField testid="chest-footinset" label="Foot inset" value={params.footInset} onChange={(v) => update("footInset", v)} step={0.5} min={0} max={12} />
                 </div>
               )}

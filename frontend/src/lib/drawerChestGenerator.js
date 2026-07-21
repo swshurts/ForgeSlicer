@@ -38,7 +38,7 @@ import { _bbox, _weld, _geomToMesh, _manifoldToGeom, _roundedSlab } from "./boxG
  *                                    ignored (the lid IS the top).
  * @param {number} params.drawerWall  Drawer wall thickness, mm
  * @param {number} params.clearance   Per-side slide clearance, mm
- * @param {string} params.handleStyle "recess" | "knob" | "none"
+ * @param {string} params.handleStyle "square-knob" | "arched-pull" | "square-pull" | "none"
  * @param {number} params.handleSize  Handle width (mm)
  * @param {boolean} params.feet       Add integral feet at the four corners
  * @param {number} params.footHeight  Feet height, mm
@@ -63,9 +63,9 @@ export async function generateDrawerChest(params) {
   const rows      = Math.max(1, Math.min(8, +params.rows || 3));
   const drawerWall= Math.max(1.2, +params.drawerWall || 2);
   const clearance = Math.max(0.2, +params.clearance  || 0.4);
-  const handleStyle = ["recess", "knob", "none"].includes(params.handleStyle) ? params.handleStyle : "recess";
+  const handleStyle = ["square-knob", "arched-pull", "square-pull", "none"].includes(params.handleStyle) ? params.handleStyle : "square-knob";
   const handleSize= Math.max(6, +params.handleSize   || 15);
-  const feet      = !!params.feet;
+  const feet      = !!params.feet && (+params.footHeight >= 1);   // treat "0 height feet" as "no feet"
   const footHeight= Math.max(0, +params.footHeight   || 8);
   const footInset = Math.max(0, +params.footInset    || 4);
   const topHingedBox = !!params.topHingedBox;
@@ -316,26 +316,86 @@ export async function generateDrawerChest(params) {
           drawerM = carved;
         }
 
-        if (handleStyle === "recess") {
-          const rH = Math.min(handleSize * 0.6, drawerH * 0.5);
-          const rW = Math.min(handleSize, drawerW * 0.5);
-          const rD = drawerFaceThickness * 0.8;
-          const recess = new THREE.BoxGeometry(rW, rD * 2, rH);
-          recess.translate(0, drawerTotalD / 2 - rD + 0.1, drawerH / 2);
-          const m = _geomToMesh(wasm, _weld(recess));
-          const carved = wasm.Manifold.difference([drawerM, m]);
-          drawerM.delete(); m.delete();
-          drawerM = carved;
-        } else if (handleStyle === "knob") {
-          const kR = Math.min(handleSize / 2, drawerH * 0.25);
-          const knob = new THREE.CylinderGeometry(kR, kR, drawerFaceThickness * 1.5, 24);
-          // default cylinder axis = Y = forward, no rotation needed
-          knob.translate(0, drawerTotalD / 2 + drawerFaceThickness * 0.35, drawerH / 2);
-          const m = _geomToMesh(wasm, _weld(knob));
+        // ── Handle (attached to drawer front face) ─────────────────
+        // All handles are UNIONED onto the drawer face (no through-holes).
+        // Each style is one to three welded THREE primitives translated
+        // into place at Y = +drawerTotalD/2 (drawer front) so the
+        // handle protrudes forward.
+        //
+        // The `_addToDrawer` helper welds a THREE.Geometry into the
+        // drawer manifold via a union step.
+        const _addToDrawer = (geom) => {
+          const m = _geomToMesh(wasm, _weld(geom));
           const merged = wasm.Manifold.union([drawerM, m]);
           drawerM.delete(); m.delete();
           drawerM = merged;
+        };
+        const faceY = drawerTotalD / 2;              // world-Y of drawer's front outer face (local drawer frame)
+        const handleCentreZ = drawerH / 2;
+        if (handleStyle === "square-knob") {
+          // Reference: "Square knob" (see attached hardware image, left panel)
+          // Squared knob composed of: base plate → narrow neck → wider cap.
+          const size = Math.max(6, Math.min(handleSize, drawerW * 0.35, drawerH * 0.7));
+          const basePlate = new THREE.BoxGeometry(size, 2, size);
+          basePlate.translate(0, faceY + 1, handleCentreZ);
+          _addToDrawer(basePlate);
+          const neckSize = size * 0.55;
+          const neck = new THREE.BoxGeometry(neckSize, 3, neckSize);
+          neck.translate(0, faceY + 2 + 1.5, handleCentreZ);
+          _addToDrawer(neck);
+          const capSize = size * 0.85;
+          const cap = new THREE.BoxGeometry(capSize, 5, capSize);
+          cap.translate(0, faceY + 5 + 2.5, handleCentreZ);
+          _addToDrawer(cap);
+        } else if (handleStyle === "arched-pull") {
+          // Reference: "Arched pull" (attached hardware image, centre panel)
+          // Two flared footplates on the face + two tapered posts + a
+          // horizontal cross-bar spanning between them.
+          const span = Math.max(20, Math.min(handleSize * 2.2, drawerW - 12));
+          const footW = Math.max(6, Math.min(12, span * 0.22));
+          const footH = 2;
+          const postW = footW * 0.55;
+          const postH = 5;
+          const barX = span;
+          const barZ = 3.5;
+          const barY = 3.5;
+          for (const sx of [-1, 1]) {
+            const foot = new THREE.BoxGeometry(footW, footH, footW);
+            foot.translate(sx * span / 2, faceY + footH / 2, handleCentreZ);
+            _addToDrawer(foot);
+            const post = new THREE.BoxGeometry(postW, postH, postW);
+            post.translate(sx * span / 2, faceY + footH + postH / 2, handleCentreZ);
+            _addToDrawer(post);
+          }
+          // Cross-bar bridging the two posts (top of handle).
+          const bar = new THREE.BoxGeometry(barX + postW, barY, barZ);
+          bar.translate(0, faceY + footH + postH + barY / 2 - 0.3, handleCentreZ);
+          _addToDrawer(bar);
+        } else if (handleStyle === "square-pull") {
+          // Reference: "Square U-pull" (attached hardware image, right panel)
+          // Chunkier squared version — two square posts joined by a
+          // square-section cross-bar with sharp corners.
+          const span = Math.max(20, Math.min(handleSize * 2.2, drawerW - 12));
+          const postXY = Math.max(5, Math.min(8, span * 0.14));      // post cross-section (square)
+          const footXY = postXY + 2;                                 // footplate slightly wider
+          const footH = 1.6;
+          const postH = 6;
+          const barY = postXY;
+          const barZ = postXY;
+          for (const sx of [-1, 1]) {
+            const foot = new THREE.BoxGeometry(footXY, footH, footXY);
+            foot.translate(sx * span / 2, faceY + footH / 2, handleCentreZ);
+            _addToDrawer(foot);
+            const post = new THREE.BoxGeometry(postXY, postH, postXY);
+            post.translate(sx * span / 2, faceY + footH + postH / 2, handleCentreZ);
+            _addToDrawer(post);
+          }
+          // Straight square cross-bar
+          const bar = new THREE.BoxGeometry(span + postXY, barY, barZ);
+          bar.translate(0, faceY + footH + postH - barY / 2 + barY / 2, handleCentreZ);
+          _addToDrawer(bar);
         }
+        // handleStyle === "none" → no handle added.
 
         if (glideNubs) {
           const nubR = Math.min(0.5, clearance * 0.9);
