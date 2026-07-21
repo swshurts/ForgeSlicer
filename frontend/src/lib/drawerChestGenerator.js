@@ -105,6 +105,13 @@ export async function generateDrawerChest(params) {
   const glideNubs = !!params.glideNubs;
   const biscuitJoints = !!params.biscuitJoints;
   const gridfinityLocators = !!params.gridfinityLocators;
+  // Full Gridfinity baseplate profile carved into each drawer floor.
+  // Mutually exclusive with gridfinityLocators — if both are set, the
+  // full baseplate wins (it's the strict superset visually).
+  const gridfinityBaseplate = !!params.gridfinityBaseplate;
+  // Sub-divider grid inside each drawer. Format: "NxM" e.g. "2x2", "3x3",
+  // "1x2", "2x3". "none" disables.
+  const subdivider = typeof params.subdivider === "string" ? params.subdivider : "none";
   const cornerR   = Math.max(0, +params.cornerR      || 0);
 
   // ─── FRAME dimensions ──────────────────────────────────────────────
@@ -326,6 +333,12 @@ export async function generateDrawerChest(params) {
       const sH = slotHeights[i];
       const drawerW = slotInnerW - 2 * clearance;
       const drawerH = sH - 2 * clearance;
+      // Effective drawer FLOOR thickness. Normally the same as
+      // `drawerWall`, but the full Gridfinity baseplate pocket is
+      // 3.75 mm deep, so we auto-bump the floor to 5 mm when the
+      // baseplate is enabled — otherwise the cavity would punch
+      // through the drawer's underside.
+      const floorTh = gridfinityBaseplate ? Math.max(drawerWall, 5) : drawerWall;
       let drawerM;
       {
         const outer = _weld(_roundedSlab(drawerW, drawerTotalD, drawerH, Math.max(0, cornerR - wall)));
@@ -333,12 +346,12 @@ export async function generateDrawerChest(params) {
         drawerM = _geomToMesh(wasm, outer);
 
         const cavW = drawerW - 2 * drawerWall;
-        const cavH = drawerH - drawerWall;
+        const cavH = drawerH - floorTh;
         const cavD = drawerBodyD - drawerWall;
         if (cavW > 2 && cavH > 2 && cavD > 2) {
           const cav = new THREE.BoxGeometry(cavW, cavD, cavH);
           const cavYCentre = drawerTotalD / 2 - drawerFaceThickness - cavD / 2;
-          cav.translate(0, cavYCentre, drawerWall + cavH / 2);
+          cav.translate(0, cavYCentre, floorTh + cavH / 2);
           const m = _geomToMesh(wasm, _weld(cav));
           const carved = wasm.Manifold.difference([drawerM, m]);
           drawerM.delete(); m.delete();
@@ -442,42 +455,68 @@ export async function generateDrawerChest(params) {
           }
         }
 
-        // ── Gridfinity locators ────────────────────────────────────
-        // Place small "+" crosses inside the drawer at each 42 mm grid
-        // intersection so Gridfinity bins (Zack Freedman's CC-BY-SA
-        // 42 mm system) settle into place. Layout is CENTRED on X and
-        // aligned to the FRONT edge on Y (user spec). Cells that
-        // don't fully fit in the drawer are dropped.
-        if (gridfinityLocators) {
-          const GF_CELL = 42;              // Gridfinity grid pitch (mm)
-          const armLen = 10;               // cross arm length across (user-requested)
-          const armThk = 2.5;              // cross arm thickness
-          const armH   = 2;                // cross height above floor
-          // Interior floor top (drawer local Z).
-          const floorTopZ = drawerWall;
-          // Cavity extents in the drawer's local frame.
-          const cavXHalf = (drawerW - 2 * drawerWall) / 2;
-          const cavD     = drawerBodyD - drawerWall;
-          const cavYCentre = drawerTotalD / 2 - drawerFaceThickness - cavD / 2;
-          const cavYFront  = cavYCentre + cavD / 2;         // interior front (near face)
-          const cavYBack   = cavYCentre - cavD / 2;         // interior back wall face
-          // Count how many full 42 mm cells fit along each axis.
+        // ── Gridfinity locators / baseplate / sub-divider ──────────
+        // Cavity extents (used by all three interior features).
+        const cavXHalf = (drawerW - 2 * drawerWall) / 2;
+        const cavDInterior = drawerBodyD - drawerWall;
+        const cavInteriorYCentre = drawerTotalD / 2 - drawerFaceThickness - cavDInterior / 2;
+        const cavYFront  = cavInteriorYCentre + cavDInterior / 2;
+        const cavYBack   = cavInteriorYCentre - cavDInterior / 2;
+        const floorTopZ = floorTh;
+
+        // Gridfinity FULL BASEPLATE — the exact bin-cavity profile
+        // (approximated as 3 stacked rounded-square slabs matching
+        // the canonical Zack Freedman spec):
+        //    z = [-0.8, 0]      41.5 × 41.5 mm  r = 4.0  (straight top)
+        //    z = [-2.95, -0.8]  39.0 × 39.0 mm  r = 3.0  (chamfer step)
+        //    z = [-3.75, -2.95] 35.6 × 35.6 mm  r = 1.85 (straight bottom)
+        // Pocket depth = 3.75 mm. Requires drawer floor ≥ 5 mm (auto).
+        // Overrides the "locators (crosses)" option when both are on.
+        if (gridfinityBaseplate) {
+          const GF = 42;
+          const nx = Math.floor((cavXHalf * 2) / GF);
+          const ny = Math.floor((cavYFront - cavYBack) / GF);
+          if (nx >= 1 && ny >= 1) {
+            const xStart = -nx * GF / 2;
+            // Baseplate PROFILE (top-of-floor is z=floorTopZ; carve DOWN).
+            const layers = [
+              { size: 41.5, r: 4.0,  h: 0.8,  centre: floorTopZ - 0.4                  },
+              { size: 39.0, r: 3.0,  h: 2.15, centre: floorTopZ - 0.8 - 1.075          },
+              { size: 35.6, r: 1.85, h: 0.8,  centre: floorTopZ - 2.95 - 0.4           },
+            ];
+            for (let ix = 0; ix < nx; ix++) {
+              for (let iy = 0; iy < ny; iy++) {
+                const cx = xStart + ix * GF + GF / 2;
+                const cy = cavYFront - iy * GF - GF / 2;
+                for (const L of layers) {
+                  const slab = _weld(_roundedSlab(L.size, L.size, L.h, L.r));
+                  slab.translate(cx, cy, L.centre);
+                  const m = _geomToMesh(wasm, slab);
+                  const carved = wasm.Manifold.difference([drawerM, m]);
+                  drawerM.delete(); m.delete();
+                  drawerM = carved;
+                }
+              }
+            }
+          }
+        } else if (gridfinityLocators) {
+          // Small "+" crosses at 42 mm grid intersections. Centred on X,
+          // front-aligned on Y (user spec). Cells that don't fully fit
+          // are dropped and crosses too close to a wall are skipped.
+          const GF_CELL = 42;
+          const armLen = 10;
+          const armThk = 2.5;
+          const armH   = 2;
           const nx = Math.floor((cavXHalf * 2) / GF_CELL);
           const ny = Math.floor((cavYFront - cavYBack) / GF_CELL);
           if (nx >= 1 && ny >= 1) {
-            // X: centred grid. Intersection lines at X = -nx*GF/2 + k*GF, k = 0..nx.
             const xStart = -nx * GF_CELL / 2;
-            // Y: aligned to the FRONT. Intersection lines at
-            //    Y = cavYFront - k*GF, k = 0..ny.
             for (let ix = 0; ix <= nx; ix++) {
               for (let iy = 0; iy <= ny; iy++) {
                 const x = xStart + ix * GF_CELL;
                 const y = cavYFront - iy * GF_CELL;
-                // Skip crosses too close to a cavity wall (< 2 mm) —
-                // they wouldn't fit and could clash with the wall.
                 if (Math.abs(x) > cavXHalf - 2) continue;
                 if (y > cavYFront - 0.5 || y < cavYBack + 0.5) continue;
-                // Horizontal + vertical arms unioned.
                 const hArm = new THREE.BoxGeometry(armLen, armThk, armH);
                 hArm.translate(x, y, floorTopZ + armH / 2);
                 _addToDrawer(hArm);
@@ -485,6 +524,34 @@ export async function generateDrawerChest(params) {
                 vArm.translate(x, y, floorTopZ + armH / 2);
                 _addToDrawer(vArm);
               }
+            }
+          }
+        }
+
+        // Sub-divider — N×M grid of interior walls that split the
+        // drawer cavity into cubbies. Independent of Gridfinity —
+        // both can be combined if the user wants Gridfinity locators
+        // inside individual cubbies.
+        if (subdivider !== "none" && /^\d+x\d+$/.test(subdivider)) {
+          const [subX, subY] = subdivider.split("x").map(Number);
+          const wallTh = drawerWall;
+          const wallTop = drawerH - 1;                 // leave 1 mm below drawer rim
+          const wallH  = wallTop - floorTopZ;
+          if (wallH > 3) {
+            const cavW = 2 * cavXHalf;
+            // Y-parallel walls (along Y axis) divide X into `subX` columns.
+            for (let i = 1; i < subX; i++) {
+              const x = -cavXHalf + (i * cavW / subX);
+              const wall = new THREE.BoxGeometry(wallTh, cavDInterior, wallH);
+              wall.translate(x, cavInteriorYCentre, floorTopZ + wallH / 2);
+              _addToDrawer(wall);
+            }
+            // X-parallel walls divide Y into `subY` rows.
+            for (let j = 1; j < subY; j++) {
+              const y = cavYBack + (j * cavDInterior / subY);
+              const wall = new THREE.BoxGeometry(cavW, wallTh, wallH);
+              wall.translate(0, y, floorTopZ + wallH / 2);
+              _addToDrawer(wall);
             }
           }
         }

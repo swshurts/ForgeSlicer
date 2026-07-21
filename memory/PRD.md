@@ -33,6 +33,18 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-21)
 
+### Recently completed (iter-151.5, 2026-07-21) — Gridfinity FULL baseplate + drawer sub-divider
+
+**Two more drawer-interior features shipped in the same dialog:**
+- **Gridfinity FULL baseplate profile**: New "Gridfinity FULL baseplate profile" checkbox carves the exact Gridfinity pocket profile into each drawer floor. Uses a 3-slab stacked approximation of Zack Freedman's canonical spec: top rim 41.5 × 41.5 (r=4, 0.8 mm), chamfer step 39 × 39 (r=3, 2.15 mm), bottom pocket 35.6 × 35.6 (r=1.85, 0.8 mm). Total depth 3.75 mm. Drawer floor auto-thickens to 5 mm when enabled so the pocket doesn't punch through. Mutually exclusive with the "locators (crosses)" mode.
+- **Drawer sub-divider grid**: New dropdown with 8 layouts — 1×2, 2×1, 2×2, 1×3, 3×1, 2×3, 3×2, 3×3 — that unions interior walls into each drawer to split it into cubbies. Wall thickness matches the drawer walls; walls stop 1 mm below the drawer rim. Independent of Gridfinity so users can combine (e.g. 2×2 cubbies each with their own Gridfinity pocket).
+
+**Files touched**:
+- `frontend/src/lib/drawerChestGenerator.js` — `floorTh` local override, Gridfinity baseplate 3-slab carving loop, sub-divider wall builder, exclusivity guard vs locators
+- `frontend/src/components/params/DrawerChestDialog.jsx` — two new form fields (checkbox + select), mutex logic
+
+**Testing**: Screenshot + volume-delta verified. 3×3 subdivider produces 9 clean cubbies (visible in the workspace preview). Full baseplate + 3×3 subdivider combined on the Gridfinity preset produces 372.4 cm³ / 129 g at 15 % infill. Add-to-Workspace lays parts side-by-side with no Manifold union failures.
+
 ### Recently completed (iter-151.4, 2026-07-21) — Preset chests + filament estimate + Gridfinity locators
 
 **New features (all working together in the Drawer Chest dialog):**

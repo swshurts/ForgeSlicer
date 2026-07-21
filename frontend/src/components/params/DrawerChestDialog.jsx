@@ -43,6 +43,8 @@ const DEFAULTS = {
   drawerHeights: [],           // mm, length ≤ rows; LAST slot auto-fills leftover
   topHingedBox: false,         // top row is chest-style hinged-lid box
   gridfinityLocators: false,   // + crosses on each drawer floor at 42 mm grid (Gridfinity-compatible)
+  gridfinityBaseplate: false,  // full Gridfinity pocket profile carved into each drawer floor
+  subdivider: "none",          // "none" | "1x2" | "2x1" | "2x2" | "1x3" | "3x1" | "2x3" | "3x2" | "3x3"
 };
 
 // Preset chests — starter configs the user can pick + then tweak.
@@ -451,10 +453,49 @@ export default function DrawerChestDialog({ open, onClose }) {
                 <CheckField
                   testid="chest-gridfinity"
                   label="Gridfinity locators (42 mm)"
-                  value={params.gridfinityLocators}
-                  onChange={(v) => update("gridfinityLocators", v)}
+                  value={params.gridfinityLocators && !params.gridfinityBaseplate}
+                  onChange={(v) => {
+                    update("gridfinityLocators", v);
+                    if (v) update("gridfinityBaseplate", false);
+                  }}
                   hint={<>Adds small + crosses on each drawer floor at the standard 42 mm intersections so Gridfinity bins snap into place. Grid is centred on X and aligned to the drawer front on Y. <a href="https://gridfinity.xyz" target="_blank" rel="noreferrer" className="text-sky-400 underline">Gridfinity by Zack Freedman</a> is CC-BY-SA 4.0.</>}
                 />
+              </div>
+              <div className="mt-2">
+                <CheckField
+                  testid="chest-gridfinity-baseplate"
+                  label="Gridfinity FULL baseplate profile"
+                  value={params.gridfinityBaseplate}
+                  onChange={(v) => {
+                    update("gridfinityBaseplate", v);
+                    if (v) update("gridfinityLocators", false);
+                  }}
+                  hint="Carves the exact Gridfinity pocket profile (top-rim, chamfer, bottom pocket, 3.75 mm deep) into each drawer floor for a snug bin fit. Drawer floor auto-thickens to 5 mm when enabled."
+                />
+              </div>
+              <div className="mt-2">
+                <label className="block" data-testid="chest-subdivider">
+                  <span className="text-[11px] text-slate-200 block">Drawer sub-divider</span>
+                  <select
+                    data-testid="chest-subdivider-select"
+                    value={params.subdivider}
+                    onChange={(e) => update("subdivider", e.target.value)}
+                    className="mt-1 w-full h-7 px-2 bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="none">None</option>
+                    <option value="1x2">1 × 2 (front-to-back split)</option>
+                    <option value="2x1">2 × 1 (side-to-side split)</option>
+                    <option value="2x2">2 × 2 cubbies</option>
+                    <option value="1x3">1 × 3 rows</option>
+                    <option value="3x1">3 × 1 columns</option>
+                    <option value="2x3">2 × 3 cubbies</option>
+                    <option value="3x2">3 × 2 cubbies</option>
+                    <option value="3x3">3 × 3 cubbies</option>
+                  </select>
+                  <span className="text-[9.5px] text-slate-500 leading-tight block mt-1">
+                    Adds interior walls to split each drawer into a grid of smaller cubbies. Combines with Gridfinity.
+                  </span>
+                </label>
               </div>
               <div className="mt-2">
                 <CheckField
