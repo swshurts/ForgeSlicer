@@ -285,6 +285,220 @@ async function packageModifierZip(modelXml, configXml) {
   return new Uint8Array(ab);
 }
 
+// Iter-151.18 — Proper Bambu / OrcaSlicer multi-plate 3MF.
+//
+// Produces a single 3MF that OrcaSlicer imports as N separate plates,
+// so a Drawer Chest split into "Frame / Drawer 1..5 / Lid" opens
+// natively with each part on its own build plate — no manual arrange
+// step required by the user.
+//
+// Structure (matches BambuStudio's saved project format):
+//
+//   [Content_Types].xml           declares .rels / .model / .config
+//   _rels/.rels                   points at 3D/3dmodel.model
+//   3D/3dmodel.model              one <object> per plate + build items
+//   3D/_rels/3dmodel.model.rels   empty stub (validator quirk)
+//   Metadata/model_settings.config
+//                                 per-object metadata + <plate> blocks
+//                                 mapping objects to plater_id
+//   Metadata/slice_info.config    plate index + object identify_ids
+//
+// The transform on each build item is the identity — every plate's
+// geometry has already been centred at plate origin by the caller
+// (`multiPlateExport`). OrcaSlicer will visually place each object on
+// its own plate based on the metadata mapping.
+export async function build3MFBytesBambuMultiPlate(plateGroups) {
+  if (!plateGroups || plateGroups.length === 0) {
+    throw new Error("build3MFBytesBambuMultiPlate: at least one plate required");
+  }
+
+  // One object per plate. IDs start at 1; identify_ids at 100 so they
+  // read cleanly and don't collide with the object id numbering.
+  const objectXmlBlocks = [];
+  const buildItems = [];
+  const modelSettingObjects = [];
+  const modelSettingPlates = [];
+  const sliceInfoPlates = [];
+
+  plateGroups.forEach((plate, idx) => {
+    const objectId = idx + 1;
+    const platerId = idx + 1;
+    const identifyId = 100 + idx;
+    const plateName = plate.plateName || `Plate ${platerId}`;
+
+    // Mesh object.
+    objectXmlBlocks.push(
+      _buildBambuObjectXml(objectId, plate.geometry),
+    );
+
+    // Build item — identity transform because the geometry is already
+    // pre-centred on the plate origin.
+    buildItems.push({ objectId });
+
+    // model_settings.config <object> block.
+    modelSettingObjects.push({
+      id: objectId,
+      name: plateName,
+    });
+
+    // model_settings.config <plate> block linking the object to a
+    // plater slot.
+    modelSettingPlates.push({
+      platerId,
+      plateName,
+      modelInstances: [{ objectId, identifyId }],
+    });
+
+    // slice_info.config <plate> entry.
+    sliceInfoPlates.push({
+      index: platerId,
+      objects: [{ identifyId, name: plateName }],
+    });
+  });
+
+  // 3dmodel.model
+  const buildLines = buildItems.map(
+    (b) => `    <item objectid="${b.objectId}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>`,
+  ).join("\n");
+  const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+  <metadata name="Application">ForgeSlicer</metadata>
+  <metadata name="BambuStudio:3mfVersion">1</metadata>
+  <resources>
+${objectXmlBlocks.join("\n")}
+  </resources>
+  <build>
+${buildLines}
+  </build>
+</model>`;
+
+  // model_settings.config
+  const objectConfigBlocks = modelSettingObjects.map(
+    (o) => `  <object id="${o.id}">
+    <metadata key="name" value="${escapeXml(o.name)}"/>
+    <metadata key="extruder" value="1"/>
+    <part id="${o.id}" subtype="normal_part">
+      <metadata key="name" value="${escapeXml(o.name)}"/>
+      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
+      <metadata key="source_file" value=""/>
+      <metadata key="source_object_id" value="0"/>
+      <metadata key="source_volume_id" value="0"/>
+      <metadata key="source_offset_x" value="0"/>
+      <metadata key="source_offset_y" value="0"/>
+      <metadata key="source_offset_z" value="0"/>
+    </part>
+  </object>`,
+  );
+  const plateConfigBlocks = modelSettingPlates.map((p) => {
+    const inst = p.modelInstances.map(
+      (m) => `    <model_instance>
+      <metadata key="object_id" value="${m.objectId}"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="${m.identifyId}"/>
+    </model_instance>`,
+    ).join("\n");
+    return `  <plate>
+    <metadata key="plater_id" value="${p.platerId}"/>
+    <metadata key="plater_name" value="${escapeXml(p.plateName)}"/>
+    <metadata key="locked" value="false"/>
+    <metadata key="thumbnail_file" value=""/>
+    <metadata key="top_file" value=""/>
+    <metadata key="pick_file" value=""/>
+${inst}
+  </plate>`;
+  });
+  const modelSettingsXml = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+${objectConfigBlocks.join("\n")}
+${plateConfigBlocks.join("\n")}
+</config>`;
+
+  // slice_info.config
+  const sliceInfoPlateBlocks = sliceInfoPlates.map((p) => {
+    const objs = p.objects.map(
+      (o) => `    <object identify_id="${o.identifyId}" name="${escapeXml(o.name)}" skipped="false"/>`,
+    ).join("\n");
+    return `  <plate>
+    <metadata key="index" value="${p.index}"/>
+${objs}
+  </plate>`;
+  });
+  const sliceInfoXml = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <header>
+    <header_item key="X-BBL-Client-Type" value="slicer"/>
+    <header_item key="X-BBL-Client-Version" value="01.09.00.00"/>
+  </header>
+${sliceInfoPlateBlocks.join("\n")}
+</config>`;
+
+  const ct = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+  <Default Extension="config" ContentType="application/vnd.bambulab-3dmanufacturing-config+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`;
+  const modelRels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`;
+
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", ct);
+  zip.folder("_rels").file(".rels", rels);
+  const folder3d = zip.folder("3D");
+  folder3d.file("3dmodel.model", modelXml);
+  folder3d.folder("_rels").file("3dmodel.model.rels", modelRels);
+  const meta = zip.folder("Metadata");
+  meta.file("model_settings.config", modelSettingsXml);
+  meta.file("slice_info.config", sliceInfoXml);
+
+  const ab = await zip.generateAsync({ type: "arraybuffer" });
+  return new Uint8Array(ab);
+}
+
+// Per-plate mesh block for the multi-plate 3MF. Same structure as
+// `_buildVolumeObjectXml` but doesn't emit a `p:UUID` (the base 3MF
+// spec doesn't require it, and OrcaSlicer parses fine without one for
+// multi-plate imports).
+function _buildBambuObjectXml(objectId, geometry) {
+  const pos = geometry.attributes.position.array;
+  const vertCount = pos.length / 3;
+  const vertLines = new Array(vertCount);
+  for (let i = 0; i < vertCount; i++) {
+    vertLines[i] = `        <vertex x="${pos[i * 3].toFixed(4)}" y="${pos[i * 3 + 1].toFixed(4)}" z="${pos[i * 3 + 2].toFixed(4)}"/>`;
+  }
+  let triLines;
+  if (geometry.index) {
+    const idx = geometry.index.array;
+    const triCount = idx.length / 3;
+    triLines = new Array(triCount);
+    for (let i = 0; i < triCount; i++) {
+      triLines[i] = `        <triangle v1="${idx[i * 3]}" v2="${idx[i * 3 + 1]}" v3="${idx[i * 3 + 2]}"/>`;
+    }
+  } else {
+    const triCount = vertCount / 3;
+    triLines = new Array(triCount);
+    for (let i = 0; i < triCount; i++) {
+      triLines[i] = `        <triangle v1="${i * 3}" v2="${i * 3 + 1}" v3="${i * 3 + 2}"/>`;
+    }
+  }
+  return `    <object id="${objectId}" type="model">
+      <mesh>
+        <vertices>
+${vertLines.join("\n")}
+        </vertices>
+        <triangles>
+${triLines.join("\n")}
+        </triangles>
+      </mesh>
+    </object>`;
+}
+
+
+
 // ---------- internal helpers ----------
 function buildObjectXml(geometry, objectId, opts = {}) {
   const pos = geometry.attributes.position.array;

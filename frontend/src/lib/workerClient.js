@@ -202,6 +202,28 @@ export async function export3MFBytesAsync(objects) {
   return { bytes: await build3MFBytes(r.geometry), parts: 1, multicolor: false };
 }
 
+// Iter-151.18 — Proper Bambu/OrcaSlicer multi-plate 3MF export.
+// Called from `multiPlateExport.js` when a project spans >1 plate.
+// Each plate becomes one merged CSG geometry; all plates are packed
+// into a single 3MF with plate-assignment metadata.
+export async function export3MFMultiPlateBytesAsync(plateGroups) {
+  // plateGroups: [{ plateId, plateName, objects: [ThreeObject] }]
+  const p = runOnWorker("threemf-multiplate-bytes", { plateGroups });
+  if (p) return p;
+  // Main-thread fallback for workerless environments.
+  const { build3MFBytesBambuMultiPlate } = await import("./threemf");
+  const { evaluateScene } = await import("./csg");
+  const evaluated = [];
+  for (const g of plateGroups || []) {
+    if (!g.objects || g.objects.length === 0) continue;
+    const r = evaluateScene(g.objects);
+    if (r.empty) continue;
+    evaluated.push({ plateId: g.plateId, plateName: g.plateName || g.plateId, geometry: r.geometry });
+  }
+  if (evaluated.length === 0) throw new Error("No non-empty plates to export.");
+  return { bytes: await build3MFBytesBambuMultiPlate(evaluated), plates: evaluated.length };
+}
+
 // Modifier-mesh 3MF export — bypasses CSG entirely; emits host +
 // negatives as separate volumes inside a Slic3r-style 3MF so the
 // slicer does the carve at slice time. Runs synchronously on the main

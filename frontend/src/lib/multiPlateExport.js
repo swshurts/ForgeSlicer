@@ -15,7 +15,7 @@
  */
 import JSZip from "jszip";
 import { downloadBlob } from "./exporters";
-import { exportSTLBytesAsync, export3MFBytesAsync } from "./workerClient";
+import { exportSTLBytesAsync, export3MFMultiPlateBytesAsync } from "./workerClient";
 
 /** Group by plateId, defaulting to "plate-1" for legacy / untagged objs. */
 function groupByPlate(objects, plates) {
@@ -115,6 +115,27 @@ export async function exportMultiPlateBundle({
     return { multi: false };
   }
 
+  // Iter-151.18 — 3MF gets a single proper Bambu multi-plate file so
+  // OrcaSlicer natively imports N plates. STL has no plate concept in
+  // the format, so it stays a ZIP of per-plate STL files.
+  if (format === "3mf") {
+    onProgress?.(0, buckets.length);
+    const plateGroups = buckets.map((b) => ({
+      plateId: b.plate.id,
+      plateName: b.plate.name || b.plate.id,
+      objects: recentrePlateObjects(b),
+    }));
+    const { bytes } = await export3MFMultiPlateBytesAsync(plateGroups);
+    onProgress?.(buckets.length, buckets.length);
+    const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
+    downloadBlob(
+      new Blob([bytes], { type: "model/3mf" }),
+      `${safe}-multiplate.3mf`,
+    );
+    return { multi: true, plateCount: buckets.length, singleFile: true };
+  }
+
+  // STL path — ZIP of per-plate STLs (unchanged from iter-151.16).
   const zip = new JSZip();
   const total = buckets.length;
   for (let i = 0; i < buckets.length; i++) {
@@ -122,24 +143,17 @@ export async function exportMultiPlateBundle({
     onProgress?.(i, total);
     const recentred = recentrePlateObjects(b);
     const num = String(i + 1).padStart(2, "0");
-    const filename = `plate-${num}-${slug(b.plate.name)}.${format}`;
-    let bytes;
-    if (format === "stl") {
-      const r = await exportSTLBytesAsync(recentred);
-      bytes = r.bytes;
-    } else {
-      const r = await export3MFBytesAsync(recentred);
-      bytes = r.bytes;
-    }
-    zip.file(filename, bytes);
+    const filename = `plate-${num}-${slug(b.plate.name)}.stl`;
+    const r = await exportSTLBytesAsync(recentred);
+    zip.file(filename, r.bytes);
   }
-  zip.file("README.txt", buildReadme(projectName, buckets, format));
+  zip.file("README.txt", buildReadme(projectName, buckets, "stl"));
   onProgress?.(total, total);
   const ab = await zip.generateAsync({ type: "arraybuffer" });
   const safe = (projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
   downloadBlob(
     new Blob([ab], { type: "application/zip" }),
-    `${safe}-plates.${format}.zip`,
+    `${safe}-plates.stl.zip`,
   );
   return { multi: true, plateCount: buckets.length };
 }

@@ -25,7 +25,7 @@ import {
   cutObjectByPlaneAsync,
 } from "../manifoldEngine";
 import { sliceToGCODE } from "../slicer";
-import { build3MFBytes, build3MFBytesMulti } from "../threemf";
+import { build3MFBytes, build3MFBytesMulti, build3MFBytesBambuMultiPlate } from "../threemf";
 
 function geometryToSTLBytes(geometry) {
   if (!geometry || !geometry.attributes || !geometry.attributes.position) {
@@ -207,6 +207,33 @@ self.addEventListener("message", async (e) => {
           result = { bytes, parts: 1, multicolor: false, droppedNegatives: r.droppedNegatives || [] };
           transfers.push(bytes.buffer);
         }
+        break;
+      }
+      // Iter-151.18 — Proper Bambu/OrcaSlicer multi-plate 3MF: evaluate
+      // one merged geometry per plate group and pack them all into a
+      // single 3MF that carries `Metadata/model_settings.config` +
+      // `Metadata/slice_info.config` describing which object lives on
+      // which plate. Import into OrcaSlicer natively splits into the
+      // right number of plates, no manual arrange required.
+      case "threemf-multiplate-bytes": {
+        const groups = payload.plateGroups || [];
+        const evaluated = [];
+        for (const g of groups) {
+          if (!g.objects || g.objects.length === 0) continue;
+          const r = await evaluateSmart(g.objects);
+          if (r.empty) continue;
+          evaluated.push({
+            plateId: g.plateId,
+            plateName: g.plateName || g.plateId,
+            geometry: r.geometry,
+          });
+        }
+        if (evaluated.length === 0) {
+          throw new Error("No non-empty plates to export.");
+        }
+        const bytes = await build3MFBytesBambuMultiPlate(evaluated);
+        result = { bytes, plates: evaluated.length };
+        transfers.push(bytes.buffer);
         break;
       }
       default:

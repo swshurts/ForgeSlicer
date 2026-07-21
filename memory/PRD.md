@@ -36,6 +36,21 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
+### Recently completed (iter-151.18, 2026-07-21) — Proper Bambu multi-plate 3MF
+
+The iter-151.16 ZIP-of-per-plate-3MFs export unpacked into 6 individual files that OrcaSlicer imported all onto the same build plate — not what the user wanted. Fixed by emitting a single, proper Bambu/OrcaSlicer multi-plate 3MF (one file with all plates baked in).
+
+**New builder**: `build3MFBytesBambuMultiPlate(plateGroups)` in `frontend/src/lib/threemf.js` generates:
+- `3D/3dmodel.model` with one `<object>` per plate (each is the CSG-merged geometry of that plate's parts, pre-centred at plate origin) + one `<item>` per object in `<build>`.
+- `Metadata/model_settings.config` — one `<object>` metadata block per plate PLUS a `<plate>` block per plater slot with a `<model_instance>` mapping the object to a `plater_id` + `identify_id`.
+- `Metadata/slice_info.config` — the `<header>` + `<plate index="N">` list linking identify_ids to plate slots (this is the file OrcaSlicer's importer keys off).
+
+**Worker plumbing**: new `threemf-multiplate-bytes` job in `csg.worker.js` evaluates one merged geometry per plate group (using the existing `evaluateSmart` per group), then delegates to the builder. `export3MFMultiPlateBytesAsync(plateGroups)` in `workerClient.js` is the public API.
+
+**Consumer**: `multiPlateExport.js` now emits a single `.3mf` file for 3MF (via the new builder). STL stays a ZIP-of-per-plate-STLs since STL has no plate concept in its format. Toast wording updated to reflect the single-file case.
+
+Verified end-to-end: exported a 2-plate scene, unzipped the resulting `.3mf`, confirmed all six expected files exist including well-formed `slice_info.config` (2 `<plate>` blocks, identify_ids 100 & 101) and `model_settings.config` (2 `<object>` + 2 `<plate>` blocks with matching identify_ids).
+
 ### Recently completed (iter-151.16 – 151.17, 2026-07-21) — Multi-plate export fix + Preset ratings
 
 **iter-151.16 — Multi-plate STL / 3MF export**

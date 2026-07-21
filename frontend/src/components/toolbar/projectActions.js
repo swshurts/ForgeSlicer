@@ -294,7 +294,11 @@ export function makeProjectActions({ store, setBusyMsg }) {
           onProgress: (done, total) => setBusyMsg(`Exporting 3MF (${done}/${total} plates)...`),
         });
         if (multi.multi) {
-          toast.success(`Exported ${multi.plateCount}-plate ZIP · one 3MF per plate`);
+          if (multi.singleFile) {
+            toast.success(`Exported ${multi.plateCount}-plate 3MF · opens with all plates in OrcaSlicer`);
+          } else {
+            toast.success(`Exported ${multi.plateCount}-plate ZIP · one 3MF per plate`);
+          }
           setBusyMsg("");
           return;
         }
