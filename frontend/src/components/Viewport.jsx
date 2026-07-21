@@ -1414,7 +1414,15 @@ function ThreeDevHook() {
 }
 
 export default function Viewport() {
-  const objects = useScene((s) => s.objects);
+  const objectsAll = useScene((s) => s.objects);
+  const activePlateId = useScene((s) => s.activePlateId);
+  // iter-151.6 — filter to only the objects on the ACTIVE plate. An
+  // object with no `plateId` counts as living on "plate-1" (the
+  // default plate) so legacy scenes and imports keep working.
+  const objects = React.useMemo(
+    () => (objectsAll || []).filter((o) => (o.plateId || "plate-1") === activePlateId),
+    [objectsAll, activePlateId]
+  );
   const selectedId = useScene((s) => s.selectedId);
   const selectedIds = useScene((s) => s.selectedIds);
   const selectObject = useScene((s) => s.selectObject);

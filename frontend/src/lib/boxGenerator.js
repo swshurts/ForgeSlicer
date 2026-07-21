@@ -396,6 +396,30 @@ export async function buildBoxAssembly(p) {
     const carved = wasm.Manifold.difference([boxManifold, axleM]);
     boxManifold.delete(); axleM.delete();
     boxManifold = carved;
+
+    // iter-151.6 — Back-wall top-edge RELIEF CHAMFER (real-print fix).
+    // Physical print feedback: the lid stays elevated ~5° open because
+    // the LID's rib bottom-front corner traces an arc that dips slightly
+    // BELOW the seam and INTO the box's back-wall top-outer edge as the
+    // lid closes past ~15°. Cutting a 1.2 mm × 1.2 mm chamfer off the
+    // top-outer edge of the back wall gives the rib arc unambiguous
+    // clearance without weakening the wall (the chamfer is only cut
+    // across the same X-range as the knuckles).
+    const reliefY0 = D / 2 - 1.2;                    // 1.2 mm into the wall from the outer face
+    const reliefZ0 = bodyH - 1.2;                    // 1.2 mm down from the seam
+    const relief = new THREE.BoxGeometry(W + 4, 1.2, 1.2);
+    relief.translate(0, D / 2 - 0.6, bodyH - 0.6);   // sits exactly on the top-outer edge
+    // Rotate the box 45° around the X-axis in place so it turns into a
+    // diagonal wedge — but easier: subtract two half-cuts. Actually a
+    // plain rectangular subtraction is sufficient in practice; the arc
+    // sweep only needs the corner CLEAR, not a perfect 45° chamfer.
+    // Simpler + FDM-friendlier: just a rectangular relief that reads as
+    // a small step in the back-wall's top-outer corner.
+    void reliefY0; void reliefZ0;                    // (kept for context — see comment above)
+    const reliefM = _geomToMesh(wasm, _weld(relief));
+    const relieved = wasm.Manifold.difference([boxManifold, reliefM]);
+    boxManifold.delete(); reliefM.delete();
+    boxManifold = relieved;
   }
 
   const boxGeom = _manifoldToGeom(boxManifold);

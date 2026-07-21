@@ -7,6 +7,7 @@ import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
 import StatusBar from "./StatusBar";
 import Viewport from "./Viewport";
+import PlateTabsBar from "./PlateTabsBar";
 import SketchOverlay from "./SketchOverlay";
 import CopyDimensionsButton from "./viewport/CopyDimensionsButton";
 import { ShareDialog, OrcaDialog, SavePrinterDialog, SaveComponentDialog } from "./Dialogs";
@@ -984,6 +985,7 @@ export default function Workspace() {
       <div className="flex-1 flex overflow-hidden">
         <LeftPanel />
         <main className="flex-1 relative overflow-hidden bg-slate-800" data-testid="viewport-main">
+          <PlateTabsBar />
           <Viewport />
           <CutHUD />
           <SketchOverlay />

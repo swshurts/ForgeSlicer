@@ -17,7 +17,7 @@ import AutoSaveSection from "./inspector/AutoSaveSection";
 import MeshImportTools from "./inspector/MeshImportTools";
 import { Shape2DControls } from "./inspector/Shape2DControls";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Loader2, Eye } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Loader2, Eye, Send } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
@@ -716,6 +716,54 @@ function estimateHalfExtents(o) {
   return [10, 10, 10];
 }
 
+// Iter-151.6 — Move to Plate control (Multi-Plate MVP).
+// Dispatches the current selection (or just the primary selected object
+// if nothing else is highlighted) to another plate. Renders a compact
+// dropdown so users can quickly move multiple parts of a large
+// parametric assembly across plates without leaving the Inspector.
+function MoveToPlateControl({ obj, selectedIds, plates, activePlateId, moveObjectsToPlate }) {
+  const [open, setOpen] = useState(false);
+  // If nothing is multi-selected, act on the primary selected object.
+  const targetIds = selectedIds.length > 0 ? selectedIds : [obj.id];
+  const others = plates.filter((p) => p.id !== activePlateId);
+  if (others.length === 0) return null;
+  return (
+    <div className="relative">
+      <button
+        data-testid="inspector-move-to-plate-btn"
+        onClick={() => setOpen((v) => !v)}
+        className="h-8 w-full bg-amber-600/90 hover:bg-amber-500 text-white text-xs font-semibold rounded flex items-center justify-center gap-1.5 border border-amber-400/40"
+        title={`Move ${targetIds.length} selected part(s) to another plate`}
+      >
+        <Send size={13} /> Move to Plate ({targetIds.length})
+        <ChevronDown size={11} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded shadow-xl overflow-hidden z-30"
+          data-testid="inspector-move-to-plate-menu"
+        >
+          {others.map((p) => (
+            <button
+              key={p.id}
+              data-testid={`inspector-move-to-plate-${p.id}`}
+              onClick={() => {
+                moveObjectsToPlate(targetIds, p.id);
+                setOpen(false);
+              }}
+              className="block w-full text-left px-2.5 py-1.5 text-xs text-slate-200 hover:bg-amber-600 hover:text-white"
+            >
+              → {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
 function Inspector() {
   const objects = useScene((s) => s.objects);
   const selectedId = useScene((s) => s.selectedId);
@@ -728,6 +776,10 @@ function Inspector() {
   // iter-112 — used in dimension section headers ("Dimensions (mm/in)").
   const unitSystem = useScene((s) => s.unitSystem);
   const removeObject = useScene((s) => s.removeObject);
+  const selectedIds = useScene((s) => s.selectedIds || []);
+  const plates = useScene((s) => s.plates || []);
+  const activePlateId = useScene((s) => s.activePlateId);
+  const moveObjectsToPlate = useScene((s) => s.moveObjectsToPlate);
 
   // Reverse-Engineer was removed in iter-111.4 — the RANSAC output
   // wasn't actionable enough to justify the UI. See CHANGELOG iter-111.4.
@@ -812,6 +864,20 @@ function Inspector() {
           <Trash2 size={13} /> Delete
         </button>
       </div>
+
+      {/* iter-151.6 — Move to Plate. Multi-Plate MVP: dispatch the
+          current selection (or just this object if nothing else is
+          selected) to another plate. Only rendered when the user has
+          more than one plate — otherwise it's noise. */}
+      {plates.length > 1 && (
+        <MoveToPlateControl
+          obj={obj}
+          selectedIds={selectedIds}
+          plates={plates}
+          activePlateId={activePlateId}
+          moveObjectsToPlate={moveObjectsToPlate}
+        />
+      )}
 
       {/* iter-111.2 — Restore-from-ghost. Surfaces when the object is
           flagged as ghosted (by RANSAC Phase 4's overlay flow) so the

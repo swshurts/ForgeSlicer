@@ -113,6 +113,26 @@ const HANDLE_STYLES = [
   { id: "none",         label: "None"         },
 ];
 
+// ────── Save My Chest — localStorage-backed personal presets ──────
+const SAVED_CHESTS_KEY = "forgeslicer.savedChests.v1";
+function loadSavedChests() {
+  try {
+    const raw = window.localStorage.getItem(SAVED_CHESTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+function saveSavedChests(list) {
+  try {
+    window.localStorage.setItem(SAVED_CHESTS_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn("[DrawerChest] localStorage full or blocked:", e);
+  }
+}
+
 function NumField({ label, value, onChange, step = 1, min, max, suffix = "mm", testid, hint }) {
   return (
     <label className="flex flex-col gap-0.5" data-testid={testid}>
@@ -152,7 +172,13 @@ function CheckField({ label, value, onChange, testid, hint }) {
 }
 
 // ---- Assembled preview ----
-function PreviewMesh({ parts, showDrawers, drawerOpen, chestDepth }) {
+function PreviewMesh({ parts, showDrawers, drawerOpen, chestDepth, showPreviewBin, gridfinityBaseplate }) {
+  // The topmost drawer becomes the preview host if a bin is requested.
+  const topDrawer = React.useMemo(() => {
+    const drawers = (parts || []).filter((p) => p.id.startsWith("drawer-"));
+    if (!drawers.length) return null;
+    return drawers.reduce((a, b) => (a.assembledPos[2] > b.assembledPos[2] ? a : b));
+  }, [parts]);
   return (
     <>
       {parts.map((p) => {
@@ -189,17 +215,105 @@ function PreviewMesh({ parts, showDrawers, drawerOpen, chestDepth }) {
           </mesh>
         );
       })}
+      {showPreviewBin && topDrawer && (
+        <PreviewGridfinityBin
+          drawer={topDrawer}
+          drawerOpen={drawerOpen}
+          chestDepth={chestDepth}
+          sinksIntoPocket={gridfinityBaseplate}
+        />
+      )}
     </>
+  );
+}
+
+// ─── Semi-transparent Gridfinity 1U bin preview ──────────────────
+// Used purely to visualise the pocket fit — never exported. Rendered
+// as a stack of rounded-square meshes matching the canonical
+// Gridfinity profile:
+//   Base    (top)     41.5 × 41.5, r=4.0,  0.8 mm
+//   Base    (chamfer) 39.0 × 39.0, r=3.0,  2.15 mm
+//   Base    (bottom)  35.6 × 35.6, r=1.85, 0.8 mm
+//   Body              41.5 × 41.5, r=4.0,  ~20 mm (single 1U bin)
+// When `sinksIntoPocket` is true (baseplate mode) the base sits 3.75 mm
+// BELOW the drawer floor. Otherwise (locators mode) it sits ON the floor.
+function PreviewGridfinityBin({ drawer, drawerOpen, chestDepth, sinksIntoPocket }) {
+  const [ax, ay, az] = drawer.assembledPos || [0, 0, 0];
+  const yOffset = drawerOpen ? 8 : 0;
+  // Position the bin at the drawer's FRONT-CENTRE cell (matches the
+  // generator layout — X-centred, Y aligned to the drawer front).
+  // The drawer's local origin is at its floor centre, so the drawer's
+  // front interior wall is at local Y ≈ +chestDepth/2 - drawerFaceThickness.
+  // We approximate the cell centre at (0, cellHalf - 3, floorTop).
+  const cellCentreY = chestDepth != null ? (chestDepth / 2 - 22) : 0;
+  const floorTop = 5;   // matches gridfinity-baseplate autofloor
+  const baseBottomZ = sinksIntoPocket ? floorTop - 3.75 : floorTop;
+  const slabs = React.useMemo(() => [
+    // (size, r, h, zOffsetFromBaseBottom)
+    { size: 35.6, r: 1.85, h: 0.8,  z: 0.4 },
+    { size: 39.0, r: 3.0,  h: 2.15, z: 0.8 + 1.075 },
+    { size: 41.5, r: 4.0,  h: 0.8,  z: 2.95 + 0.4 },
+    { size: 41.5, r: 4.0,  h: 20,   z: 3.75 + 10 },     // 1U body
+  ], []);
+  return (
+    <group position={[ax, ay + yOffset + cellCentreY, az + baseBottomZ]}>
+      {slabs.map((s, i) => (
+        <mesh key={i} position={[0, 0, s.z]}>
+          <boxGeometry args={[s.size, s.size, s.h]} />
+          <meshStandardMaterial
+            color="#F59E0B"
+            roughness={0.3}
+            metalness={0}
+            transparent
+            opacity={0.55}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
 export default function DrawerChestDialog({ open, onClose }) {
   const [params, setParams] = useState(DEFAULTS);
   const [preset, setPreset] = useState("default");
+  const [savedChests, setSavedChests] = useState(() => loadSavedChests());
   const applyPreset = (id) => {
     setPreset(id);
-    const p = PRESETS.find((x) => x.id === id);
-    if (p) setParams({ ...DEFAULTS, ...p.params });
+    const built = PRESETS.find((x) => x.id === id);
+    if (built) { setParams({ ...DEFAULTS, ...built.params }); return; }
+    // Otherwise it's a "saved:<id>" from My Saved Chests.
+    if (id.startsWith("saved:")) {
+      const savedId = id.slice(6);
+      const s = savedChests.find((x) => x.id === savedId);
+      if (s) setParams({ ...DEFAULTS, ...s.params });
+    }
+  };
+  const handleSaveChest = () => {
+    const defaultName = `Chest ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const name = window.prompt("Save this chest as… (name)", defaultName);
+    if (!name) return;
+    const record = {
+      id: `chest-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: name.trim(),
+      savedAt: new Date().toISOString(),
+      params: { ...params },
+    };
+    const next = [record, ...savedChests].slice(0, 30);   // hard cap 30 saves
+    setSavedChests(next);
+    saveSavedChests(next);
+    setPreset(`saved:${record.id}`);
+  };
+  const handleDeleteSavedChest = () => {
+    if (!preset.startsWith("saved:")) return;
+    const savedId = preset.slice(6);
+    const s = savedChests.find((x) => x.id === savedId);
+    if (!s) return;
+    if (!window.confirm(`Delete saved chest "${s.name}"?`)) return;
+    const next = savedChests.filter((x) => x.id !== savedId);
+    setSavedChests(next);
+    saveSavedChests(next);
+    setPreset("default");
   };
   const [parts, setParts] = useState([]);
   const [buildInfo, setBuildInfo] = useState(null);
@@ -207,6 +321,7 @@ export default function DrawerChestDialog({ open, onClose }) {
   const [buildError, setBuildError] = useState("");
   const [showDrawers, setShowDrawers] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(true);
+  const [showPreviewBin, setShowPreviewBin] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const debounceRef = useRef(null);
   const buildTokenRef = useRef(0);
@@ -386,9 +501,37 @@ export default function DrawerChestDialog({ open, onClose }) {
                 {PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
+                {savedChests.length > 0 && (
+                  <optgroup label="── My saved chests ──">
+                    {savedChests.map((s) => (
+                      <option key={s.id} value={`saved:${s.id}`}>{s.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <button
+                  data-testid="chest-save-btn"
+                  onClick={handleSaveChest}
+                  disabled={building}
+                  className="flex-1 h-7 px-2 text-[10px] uppercase tracking-wider font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40"
+                  title="Save the current chest settings as a personal preset (stored in this browser)"
+                >
+                  Save my chest
+                </button>
+                {preset.startsWith("saved:") && (
+                  <button
+                    data-testid="chest-delete-saved"
+                    onClick={handleDeleteSavedChest}
+                    className="h-7 px-2 text-[10px] uppercase tracking-wider font-semibold rounded bg-slate-800 hover:bg-rose-500/40 text-slate-300 border border-slate-700"
+                    title="Delete this saved chest"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
               <div className="text-[9.5px] text-slate-500 leading-tight mt-1">
-                Load a starter and tweak from there — every setting stays editable.
+                Load a starter and tweak from there — every setting stays editable. Saved chests live in this browser.
               </div>
             </section>
 
@@ -626,6 +769,12 @@ export default function DrawerChestDialog({ open, onClose }) {
                   <input type="checkbox" checked={drawerOpen} onChange={(e) => setDrawerOpen(e.target.checked)} className="w-3 h-3 accent-cyan-500" />
                   Explode drawers 8 mm
                 </label>
+                {(params.gridfinityLocators || params.gridfinityBaseplate) && (
+                  <label className="flex items-center gap-1.5 text-[10px] text-amber-300 cursor-pointer" data-testid="chest-previewbin" title="Drop a semi-transparent Gridfinity 1U bin into the top drawer to visualise the pocket fit">
+                    <input type="checkbox" checked={showPreviewBin} onChange={(e) => setShowPreviewBin(e.target.checked)} className="w-3 h-3 accent-amber-500" />
+                    Preview Gridfinity bin
+                  </label>
+                )}
               </div>
             )}
             <Canvas
@@ -654,7 +803,7 @@ export default function DrawerChestDialog({ open, onClose }) {
                 fadeDistance={520}
                 infiniteGrid
               />
-              {parts.length > 0 && <PreviewMesh parts={parts} showDrawers={showDrawers} drawerOpen={drawerOpen} chestDepth={params.depth} />}
+              {parts.length > 0 && <PreviewMesh parts={parts} showDrawers={showDrawers} drawerOpen={drawerOpen} chestDepth={params.depth} showPreviewBin={showPreviewBin} gridfinityBaseplate={params.gridfinityBaseplate} />}
               <OrbitControls makeDefault enablePan enableZoom enableRotate target={[0, 0, params.height / 2]} />
               <GizmoHelper alignment="bottom-right" margin={[68, 68]}>
                 <GizmoViewport axisColors={["#F97316", "#10B981", "#06B6D4"]} labelColor="white" />

@@ -374,7 +374,13 @@ function SceneTreeItem({ obj }) {
 }
 
 export default function LeftPanel() {
-  const objects = useScene((s) => s.objects);
+  const objectsAll = useScene((s) => s.objects);
+  const activePlateId = useScene((s) => s.activePlateId);
+  // iter-151.6 — Only show objects on the ACTIVE plate in the outliner.
+  const objects = React.useMemo(
+    () => (objectsAll || []).filter((o) => (o.plateId || "plate-1") === activePlateId),
+    [objectsAll, activePlateId]
+  );
   const [outlinerCtx, setOutlinerCtx] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [photoPlaneOpen, setPhotoPlaneOpen] = useState(false);

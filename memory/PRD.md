@@ -31,6 +31,20 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
+
+### Recently completed (iter-151.6, 2026-07-21) — Multi-Plate MVP complete (Move-to-Plate)
+
+**Two Move-to-Plate entry points shipped:**
+- **Top plate-tab bar**: When any parts are selected AND there is more than one plate, an amber `Move (N)` button appears next to the plate tabs with a dropdown of destination plates. One click dispatches the whole selection.
+- **Inspector "Move to Plate"**: Full-width amber button under Drop/LayFlat/Delete in the RightPanel. Shows a dropdown of destination plates. Uses `selectedIds` when there is a multi-select, otherwise falls back to the primary selection so single-object moves work too. Undoable — `moveObjectsToPlate` now pushes a history snapshot.
+
+**Files touched**:
+- `frontend/src/components/RightPanel.jsx` — `<MoveToPlateControl>` component + Inspector wiring
+- `frontend/src/lib/store.js` — `moveObjectsToPlate` now guards empty args and calls `pushHistory()` for undo
+
+**Testing (frontend screenshot flow)**: Added a cube on Plate 1 → opened Inspector → clicked "Move to Plate (1)" → chose "→ Plate 2" → cube disappears from Plate 1 outliner and appears on Plate 2. Verified plate-tab-bar variant renders identically.
+
+
 ## Current Open Items (as of 2026-07-21)
 
 ### Recently completed (iter-151.5, 2026-07-21) — Gridfinity FULL baseplate + drawer sub-divider

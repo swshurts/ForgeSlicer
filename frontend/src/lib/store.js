@@ -158,6 +158,54 @@ export const useScene = create((set, get) => ({
   }),
   clearPristineImport: () => set({ pristine3MFBytes: null, pristine3MFFilename: null }),
 
+  // iter-151.6 — Multi-Plate MVP.
+  // Objects can be tagged with a `plateId`; anything without a
+  // `plateId` is treated as living on the DEFAULT plate ("plate-1").
+  // Only objects on the ACTIVE plate render in the main viewport and
+  // appear in the outliner. All existing tools (selection, transform,
+  // popovers, slicing) still see the full `objects` array — they just
+  // operate on whatever is selected, which is naturally scoped to the
+  // active plate because the user can only click things they can see.
+  plates: [
+    { id: "plate-1", name: "Plate 1" },
+  ],
+  activePlateId: "plate-1",
+  addPlate: () => set((s) => {
+    // Generate a stable id and a sensible default name.
+    const nextIdx = (s.plates?.length || 0) + 1;
+    const id = `plate-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = `Plate ${nextIdx}`;
+    return { plates: [...(s.plates || []), { id, name }], activePlateId: id };
+  }),
+  removePlate: (plateId) => set((s) => {
+    const plates = (s.plates || []).filter((p) => p.id !== plateId);
+    if (plates.length === 0) plates.push({ id: "plate-1", name: "Plate 1" });
+    // Any object on the removed plate is moved to the FIRST remaining plate
+    // (so nothing is silently orphaned / lost).
+    const fallbackId = plates[0].id;
+    const objects = (s.objects || []).map((o) =>
+      (o.plateId || "plate-1") === plateId ? { ...o, plateId: fallbackId } : o
+    );
+    const activePlateId = s.activePlateId === plateId ? fallbackId : s.activePlateId;
+    return { plates, activePlateId, objects };
+  }),
+  renamePlate: (plateId, name) => set((s) => ({
+    plates: (s.plates || []).map((p) => (p.id === plateId ? { ...p, name: (name || "").trim() || p.name } : p)),
+  })),
+  setActivePlate: (plateId) => set({ activePlateId: plateId }),
+  moveObjectsToPlate: (ids, plateId) => {
+    if (!Array.isArray(ids) || ids.length === 0 || !plateId) return;
+    get().pushHistory();
+    set((s) => {
+      const idSet = new Set(ids);
+      return {
+        objects: (s.objects || []).map((o) =>
+          idSet.has(o.id) ? { ...o, plateId } : o
+        ),
+      };
+    });
+  },
+
   // ---- profiles ----
   printerId: defaultPrinterId,
   filamentId: defaultFilamentId,
@@ -546,7 +594,7 @@ export const useScene = create((set, get) => ({
         console.warn("addPrimitive auto-drop bbox failed for", obj.type, err);
       }
     }
-    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id, selectedIds: [obj.id] }));
+    set((s) => ({ objects: [...s.objects, { ...obj, plateId: obj.plateId || s.activePlateId }], selectedId: obj.id, selectedIds: [obj.id] }));
     return obj.id;
   },
 
