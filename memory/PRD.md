@@ -33,6 +33,25 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 ## Current Open Items (as of 2026-07-21)
 
+### Recently completed (iter-151.4, 2026-07-21) — Preset chests + filament estimate + Gridfinity locators
+
+**New features (all working together in the Drawer Chest dialog):**
+- **Preset chests dropdown**: 7 starter configs at the top of the dialog — Default, Small tool tray, Desk organizer, Jewelry chest (hinged top), Gridfinity 3×2, Workshop chest (5 rows), Bookcase insert (flat bottom). Selecting a preset loads params; the user can tweak from there without restrictions.
+- **Filament + print-time estimate**: Live footer strip shows total grams (at 15 % infill, PLA) + solid-fill grams + print time in hours/days + total solid volume in cm³. Computed by summing the signed-tetrahedron volume of every part in the bundle. Small-tray preset ~40 g / 2 h; workshop preset ~789 g / 1.6 d.
+- **Gridfinity locators (42 mm)**: New checkbox in the Drawers section unions small `+`-shaped locator crosses onto each drawer's interior floor at every Gridfinity 42 mm grid intersection. Layout centred on X, aligned to the drawer FRONT on Y (per user spec). Cells that don't fully fit are dropped, and crosses too close to a wall are skipped. Compatible with Zack Freedman's CC-BY-SA 4.0 Gridfinity spec.
+
+**Round-2 polish + round-1 hardware fixes (same session):**
+- Removed the buggy through-hole "Finger recess" handle.
+- New handle styles based on user hardware references: **Square knob**, **Arched pull**, **Square pull**, **None**. All union onto the drawer face as protrusions — printable in-place or as separate hardware.
+- **Feet-when-zero fix**: Setting Feet height to 0 (with checkbox still checked) now produces a perfectly flat bottom. Lifted `min` from 2 → 0.
+- **Rows** cap raised 8 → 10.
+
+**Files touched**:
+- `frontend/src/lib/drawerChestGenerator.js` — Gridfinity crosses, volume calculation helper, three new handle styles, feet-height=0 skip
+- `frontend/src/components/params/DrawerChestDialog.jsx` — PRESETS array + dropdown, Gridfinity checkbox, filament estimate footer
+
+**Testing**: Screenshot + volume-delta verified. Gridfinity adds ~10 cm³ / 150 crosses on a 5-drawer workshop preset — matches expected math. All 7 presets load and build cleanly. Add-to-Workspace with the workshop preset produces 7 non-overlapping parts (Frame + 5 Drawers + Cap).
+
 ### Recently completed (iter-151.2, 2026-07-21) — Drawer Chest per-drawer heights + hinged-lid top compartment
 
 **Feature additions (user spec):**

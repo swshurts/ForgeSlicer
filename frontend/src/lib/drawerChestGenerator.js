@@ -17,6 +17,34 @@ import { getManifold } from "./manifoldEngine";
 import { _bbox, _weld, _geomToMesh, _manifoldToGeom, _roundedSlab } from "./boxGenerator";
 
 /**
+ * Compute mesh volume in mm³ from a THREE.BufferGeometry using the
+ * signed-tetrahedron sum. Assumes the geometry is a closed manifold
+ * (which every generator output is, since it came from Manifold).
+ */
+function _volumeMm3(geometry) {
+  const pos = geometry.attributes.position;
+  const idx = geometry.index;
+  let vol = 0;
+  if (idx) {
+    for (let i = 0; i < idx.count; i += 3) {
+      const a = idx.getX(i), b = idx.getX(i + 1), c = idx.getX(i + 2);
+      const ax = pos.getX(a), ay = pos.getY(a), az = pos.getZ(a);
+      const bx = pos.getX(b), by = pos.getY(b), bz = pos.getZ(b);
+      const cx = pos.getX(c), cy = pos.getY(c), cz = pos.getZ(c);
+      vol += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    }
+  } else {
+    for (let i = 0; i < pos.count; i += 3) {
+      const ax = pos.getX(i),     ay = pos.getY(i),     az = pos.getZ(i);
+      const bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
+      const cx = pos.getX(i + 2), cy = pos.getY(i + 2), cz = pos.getZ(i + 2);
+      vol += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    }
+  }
+  return Math.abs(vol);
+}
+
+/**
  * Build a full drawer-chest parts bundle.
  *
  * @param {object} params
@@ -76,6 +104,7 @@ export async function generateDrawerChest(params) {
   const capOverhang  = Math.max(0, +params.capOverhang    || 3);
   const glideNubs = !!params.glideNubs;
   const biscuitJoints = !!params.biscuitJoints;
+  const gridfinityLocators = !!params.gridfinityLocators;
   const cornerR   = Math.max(0, +params.cornerR      || 0);
 
   // ─── FRAME dimensions ──────────────────────────────────────────────
@@ -412,6 +441,53 @@ export async function generateDrawerChest(params) {
             }
           }
         }
+
+        // ── Gridfinity locators ────────────────────────────────────
+        // Place small "+" crosses inside the drawer at each 42 mm grid
+        // intersection so Gridfinity bins (Zack Freedman's CC-BY-SA
+        // 42 mm system) settle into place. Layout is CENTRED on X and
+        // aligned to the FRONT edge on Y (user spec). Cells that
+        // don't fully fit in the drawer are dropped.
+        if (gridfinityLocators) {
+          const GF_CELL = 42;              // Gridfinity grid pitch (mm)
+          const armLen = 10;               // cross arm length across (user-requested)
+          const armThk = 2.5;              // cross arm thickness
+          const armH   = 2;                // cross height above floor
+          // Interior floor top (drawer local Z).
+          const floorTopZ = drawerWall;
+          // Cavity extents in the drawer's local frame.
+          const cavXHalf = (drawerW - 2 * drawerWall) / 2;
+          const cavD     = drawerBodyD - drawerWall;
+          const cavYCentre = drawerTotalD / 2 - drawerFaceThickness - cavD / 2;
+          const cavYFront  = cavYCentre + cavD / 2;         // interior front (near face)
+          const cavYBack   = cavYCentre - cavD / 2;         // interior back wall face
+          // Count how many full 42 mm cells fit along each axis.
+          const nx = Math.floor((cavXHalf * 2) / GF_CELL);
+          const ny = Math.floor((cavYFront - cavYBack) / GF_CELL);
+          if (nx >= 1 && ny >= 1) {
+            // X: centred grid. Intersection lines at X = -nx*GF/2 + k*GF, k = 0..nx.
+            const xStart = -nx * GF_CELL / 2;
+            // Y: aligned to the FRONT. Intersection lines at
+            //    Y = cavYFront - k*GF, k = 0..ny.
+            for (let ix = 0; ix <= nx; ix++) {
+              for (let iy = 0; iy <= ny; iy++) {
+                const x = xStart + ix * GF_CELL;
+                const y = cavYFront - iy * GF_CELL;
+                // Skip crosses too close to a cavity wall (< 2 mm) —
+                // they wouldn't fit and could clash with the wall.
+                if (Math.abs(x) > cavXHalf - 2) continue;
+                if (y > cavYFront - 0.5 || y < cavYBack + 0.5) continue;
+                // Horizontal + vertical arms unioned.
+                const hArm = new THREE.BoxGeometry(armLen, armThk, armH);
+                hArm.translate(x, y, floorTopZ + armH / 2);
+                _addToDrawer(hArm);
+                const vArm = new THREE.BoxGeometry(armThk, armLen, armH);
+                vArm.translate(x, y, floorTopZ + armH / 2);
+                _addToDrawer(vArm);
+              }
+            }
+          }
+        }
       }
 
       const drawerGeom = _manifoldToGeom(drawerM);
@@ -522,12 +598,22 @@ export async function generateDrawerChest(params) {
   if (hingedLidPart) parts.push(hingedLidPart);
   if (capPart) parts.push(capPart);
 
+  // Compute volume for each part + total. Volume is the SOLID mesh
+  // volume in mm³ (i.e. "100 % infill" material). The caller can
+  // apply an infill factor to convert to real filament grams.
+  let totalVolMm3 = 0;
+  for (const p of parts) {
+    p.volumeMm3 = _volumeMm3(p.geometry);
+    totalVolMm3 += p.volumeMm3;
+  }
+
   return {
     parts,
     info: {
       slotHeights: slotHeights.map((v) => +v.toFixed(2)),
       frameH: +frameH.toFixed(2),
       effectiveHeight: +(feetH + frameH + capH + lidH).toFixed(2),
+      totalVolumeMm3: +totalVolMm3.toFixed(0),
     },
   };
 }

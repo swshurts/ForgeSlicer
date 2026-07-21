@@ -42,7 +42,67 @@ const DEFAULTS = {
   customHeights: false,        // toggle: use per-slot heights vs equal split
   drawerHeights: [],           // mm, length ≤ rows; LAST slot auto-fills leftover
   topHingedBox: false,         // top row is chest-style hinged-lid box
+  gridfinityLocators: false,   // + crosses on each drawer floor at 42 mm grid (Gridfinity-compatible)
 };
+
+// Preset chests — starter configs the user can pick + then tweak.
+// The first entry is the "no preset / defaults" sentinel.
+const PRESETS = [
+  { id: "default", label: "Default (start here)", params: DEFAULTS },
+  {
+    id: "small-tray",
+    label: "Small tool tray (2 shallow drawers)",
+    params: {
+      ...DEFAULTS, width: 120, depth: 80, height: 60, rows: 2,
+      handleStyle: "square-knob", handleSize: 12, feet: false, topCap: false,
+    },
+  },
+  {
+    id: "desk-organizer",
+    label: "Desk organizer (3 rows, arched pulls)",
+    params: {
+      ...DEFAULTS, width: 180, depth: 120, height: 120, rows: 3,
+      handleStyle: "arched-pull", handleSize: 18, biscuitJoints: true,
+    },
+  },
+  {
+    id: "jewelry-chest",
+    label: "Jewelry chest (hinged top + 3 shallow drawers)",
+    params: {
+      ...DEFAULTS, width: 200, depth: 140, height: 160, rows: 4,
+      handleStyle: "square-knob", handleSize: 12,
+      topHingedBox: true, topCap: false,
+      customHeights: true, drawerHeights: [0, 22, 22, 30],   // bottom auto, then 22, 22, top hinged 30
+    },
+  },
+  {
+    id: "gridfinity-6u",
+    label: "Gridfinity 3×2 (2 drawers, locators on)",
+    params: {
+      ...DEFAULTS, width: 140, depth: 100, height: 80, rows: 2,
+      handleStyle: "arched-pull", handleSize: 16,
+      gridfinityLocators: true, feet: false, topCap: false,
+    },
+  },
+  {
+    id: "workshop",
+    label: "Workshop chest (5 rows, biscuit joints)",
+    params: {
+      ...DEFAULTS, width: 260, depth: 180, height: 240, rows: 5,
+      handleStyle: "square-pull", handleSize: 20,
+      biscuitJoints: true, footHeight: 12, capOverhang: 5,
+    },
+  },
+  {
+    id: "bookcase-insert",
+    label: "Bookcase insert (flat bottom, 4 rows)",
+    params: {
+      ...DEFAULTS, width: 300, depth: 200, height: 200, rows: 4,
+      handleStyle: "square-pull", handleSize: 20,
+      feet: false, footHeight: 0, topCap: false, biscuitJoints: true,
+    },
+  },
+];
 
 const HANDLE_STYLES = [
   { id: "square-knob",  label: "Square knob"  },
@@ -133,6 +193,12 @@ function PreviewMesh({ parts, showDrawers, drawerOpen, chestDepth }) {
 
 export default function DrawerChestDialog({ open, onClose }) {
   const [params, setParams] = useState(DEFAULTS);
+  const [preset, setPreset] = useState("default");
+  const applyPreset = (id) => {
+    setPreset(id);
+    const p = PRESETS.find((x) => x.id === id);
+    if (p) setParams({ ...DEFAULTS, ...p.params });
+  };
   const [parts, setParts] = useState([]);
   const [buildInfo, setBuildInfo] = useState(null);
   const [building, setBuilding] = useState(false);
@@ -307,6 +373,23 @@ export default function DrawerChestDialog({ open, onClose }) {
         <div className="flex-1 flex overflow-hidden">
           {/* LEFT — form */}
           <div className="w-80 flex-shrink-0 border-r border-slate-800 bg-slate-900/40 overflow-y-auto p-3 space-y-4">
+            <section data-testid="chest-preset">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Preset</div>
+              <select
+                data-testid="chest-preset-select"
+                value={preset}
+                onChange={(e) => applyPreset(e.target.value)}
+                className="w-full h-8 px-2 bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 focus:outline-none focus:border-sky-500"
+              >
+                {PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+              <div className="text-[9.5px] text-slate-500 leading-tight mt-1">
+                Load a starter and tweak from there — every setting stays editable.
+              </div>
+            </section>
+
             <section data-testid="chest-dims">
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Outside dimensions</div>
               <div className="grid grid-cols-3 gap-2">
@@ -362,6 +445,15 @@ export default function DrawerChestDialog({ open, onClose }) {
                   value={params.glideNubs}
                   onChange={(v) => update("glideNubs", v)}
                   hint="Four low-profile hemispheres on the drawer's underside so it slides on 4 points instead of a full face"
+                />
+              </div>
+              <div className="mt-2">
+                <CheckField
+                  testid="chest-gridfinity"
+                  label="Gridfinity locators (42 mm)"
+                  value={params.gridfinityLocators}
+                  onChange={(v) => update("gridfinityLocators", v)}
+                  hint={<>Adds small + crosses on each drawer floor at the standard 42 mm intersections so Gridfinity bins snap into place. Grid is centred on X and aligned to the drawer front on Y. <a href="https://gridfinity.xyz" target="_blank" rel="noreferrer" className="text-sky-400 underline">Gridfinity by Zack Freedman</a> is CC-BY-SA 4.0.</>}
                 />
               </div>
               <div className="mt-2">
@@ -530,16 +622,44 @@ export default function DrawerChestDialog({ open, onClose }) {
           </div>
         </div>
 
-        <div className="h-16 border-t border-slate-800 bg-slate-900/60 px-4 flex items-center justify-between gap-4 flex-shrink-0">
-          <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400 flex-wrap" data-testid="chest-bboxes">
-            {parts.map((p) => (
-              <span key={p.id} className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
-                <span className="text-slate-300 font-semibold">{p.label}</span>
-                <span>{p.bbox.x}×{p.bbox.y}×{p.bbox.z} mm</span>
-              </span>
-            ))}
-            {parts.length === 0 && !building && <span className="italic">No parts yet.</span>}
+        <div className="min-h-16 py-2 border-t border-slate-800 bg-slate-900/60 px-4 flex items-center justify-between gap-4 flex-shrink-0">
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400 flex-wrap" data-testid="chest-bboxes">
+              {parts.map((p) => (
+                <span key={p.id} className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
+                  <span className="text-slate-300 font-semibold">{p.label}</span>
+                  <span>{p.bbox.x}×{p.bbox.y}×{p.bbox.z} mm</span>
+                </span>
+              ))}
+              {parts.length === 0 && !building && <span className="italic">No parts yet.</span>}
+            </div>
+            {buildInfo && buildInfo.totalVolumeMm3 > 0 && (
+              <div className="flex items-center gap-3 text-[10px] text-slate-400" data-testid="chest-estimate">
+                {(() => {
+                  // PLA density = 1.24 g/cm³ = 0.00124 g/mm³. Assume 15 % infill + shells → ~28 % effective material.
+                  const solidCm3 = buildInfo.totalVolumeMm3 / 1000;
+                  const gramsAt15 = (buildInfo.totalVolumeMm3 * 0.28 * 0.00124);
+                  const gramsSolid = (buildInfo.totalVolumeMm3 * 0.00124);
+                  // Print time: ~4.5 mm³/s effective throughput (moderate quality).
+                  const materialMm3At15 = buildInfo.totalVolumeMm3 * 0.28;
+                  const hoursAt15 = materialMm3At15 / 4.5 / 3600;
+                  return (
+                    <>
+                      <span className="text-slate-500">Filament est.</span>
+                      <span className="text-emerald-300 font-mono font-semibold">{gramsAt15.toFixed(0)} g</span>
+                      <span className="text-slate-500 text-[9.5px]">/ {gramsSolid.toFixed(0)} g at 100 %</span>
+                      <span className="text-slate-600">·</span>
+                      <span className="text-slate-500">Print time est.</span>
+                      <span className="text-emerald-300 font-mono font-semibold">{hoursAt15 >= 24 ? `${(hoursAt15/24).toFixed(1)} d` : `${hoursAt15.toFixed(1)} h`}</span>
+                      <span className="text-slate-500 text-[9.5px]">at 15 % infill / 0.2 mm / PLA</span>
+                      <span className="text-slate-600">·</span>
+                      <span className="text-slate-500">Solid vol. {solidCm3.toFixed(1)} cm³</span>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
