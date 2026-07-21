@@ -32,6 +32,33 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.7 – 151.10, 2026-07-21) — Phase 1-3 shipped
+
+Four sizeable features landed in the same session, each verified end-to-end:
+
+**iter-151.7 — Plate Thumbnails**
+- New `PlateThumbnail.jsx` renders each plate's top-down XY footprint into a small 44×32 canvas embedded inside the plate tab (build-plate outline + filled rectangles per object). Fast, no WebGL cost. Redraws whenever the scoped object list changes.
+
+**iter-151.7 — Printer-Aware Clearance Auto-Tune**
+- New `printerProfile` store field: `{ nozzleDiameter, xyShrink }` persisted to localStorage.
+- `clearanceProfile.js` helper: suggested = `nozzle*0.5 + shrink`, clamped to [0.10, 0.90] and snapped to 0.05 mm.
+- `PrinterClearanceProfile` panel added to the RightPanel Print tab (nozzle Ø + XY shrink inputs + live-computed "Suggested clearance" readout).
+- `BoxDesignerDialog` and `DrawerChestDialog` now derive their initial `clearance` default from the profile. Drawer bumps +0.05 mm (deeper mating surface accumulates shrink).
+
+**iter-151.9 — Print-Shop Presets** (new backend collection + share links)
+- Backend: `routes/print_presets.py` with POST/GET-mine/GET-public/GET-slug/apply/DELETE endpoints. `MongoDB.print_presets` collection with `slug` (8-char base32), `slice_settings` blob (8 KB cap), `uses` counter. Apply requires auth per product decision — public preview does not.
+- Frontend: `inspector/PrintPresetsPanel.jsx` (save current slicer + material + printer as a named preset, list mine, apply/delete/copy-share-URL) + `pages/PresetImportPage.jsx` at route `/presets/:slug` (public preview + sign-in-gated Apply).
+- API client: `printPresetsApi` in `lib/api.js`.
+
+**iter-151.10 — Cooperative Projects (approval-based)**
+- Backend: `routes/coop_projects.py` — Project + Proposal collections, all endpoints under `/api/coop-projects`. Private projects gain members via owner's `invite {email}`. Public projects have a `pending_requests` queue the owner approves/denies. Members submit change proposals (scene snapshot); owner accepts (proposal scene becomes committed, `scene_version` bumps) or rejects (with note).
+- Frontend: `pages/CoopProjectsPage.jsx` at route `/coop` — list of mine + discover-public, then detail view with three tabs (Overview / Members / Proposals). Members can `Load into workspace` + `Submit for review`; owners see the full proposal queue with Accept & Reject buttons + owner-note textarea.
+- Landing-page header link added ("Co-op") for discoverability.
+
+**Testing**: All four verified via curl (create/apply/invite/proposal-accept flows) and frontend screenshot flows (list → detail → tab navigation → per-tab actions).
+
+
+
 ### Recently completed (iter-151.6, 2026-07-21) — Multi-Plate MVP complete (Move-to-Plate)
 
 **Two Move-to-Plate entry points shipped:**

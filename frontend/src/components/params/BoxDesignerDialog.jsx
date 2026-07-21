@@ -23,6 +23,7 @@ import { X, Download, Loader2, Package, Plus, Archive } from "lucide-react";
 import { buildBoxAssembly } from "../../lib/boxGenerator";
 import { geometryToSTLBinary } from "../../lib/exporters";
 import { useScene } from "../../lib/store";
+import { getSuggestedClearance } from "../../lib/clearanceProfile";
 import { downloadBlob } from "../../lib/exporters";
 
 const DEFAULTS = {
@@ -117,7 +118,14 @@ function PreviewMesh({ parts, showLid }) {
 }
 
 export default function BoxDesignerDialog({ open, onClose }) {
-  const [params, setParams] = useState(DEFAULTS);
+  const printerProfile = useScene((s) => s.printerProfile);
+  // Auto-tune the initial clearance from the user's nozzle + shrink
+  // profile (iter-151.7). Only used for FIRST-OPEN — once the user
+  // adjusts anything the local state governs.
+  const [params, setParams] = useState(() => ({
+    ...DEFAULTS,
+    clearance: getSuggestedClearance(printerProfile),
+  }));
   const [parts, setParts] = useState([]);
   const [building, setBuilding] = useState(false);
   const [buildError, setBuildError] = useState("");

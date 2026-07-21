@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock, Image as ImageIcon, Palette, ShoppingBag, ShieldCheck, Tag, Package, Cog, Baby } from "lucide-react";
+import { Box, ChevronRight, ChevronDown, Globe, Printer, Combine, Layers, Move3D, Upload, AlertCircle, Sparkles, Mic, Wand2, MessageSquare, Wrench, GraduationCap, Store, Rocket, Cpu, HardDrive, Download, Pencil, Ruler, Slice, BookOpen, Shield, LayoutGrid, Lock, Image as ImageIcon, Palette, ShoppingBag, ShieldCheck, Tag, Package, Cog, Baby, Users } from "lucide-react";
 import { setPendingImport } from "../lib/pendingImport";
 import { ITER_LABEL, RECENT_ITERATIONS } from "../lib/iterLabel";
 import { useAuth } from "../contexts/AuthContext";
@@ -335,6 +335,9 @@ export default function Landing() {
         </Link>
         <Link to="/learn" data-testid="landing-learn-link" className="h-8 px-3 text-xs text-slate-300 hover:text-white flex items-center gap-1.5">
           <GraduationCap size={14} /> Learn
+        </Link>
+        <Link to="/coop" data-testid="landing-coop-link" className="h-8 px-3 text-xs text-slate-300 hover:text-white flex items-center gap-1.5">
+          <Users size={14} /> Co-op
         </Link>
         <Link to="/workspace" data-testid="landing-launch-btn" className="h-8 px-4 ml-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded flex items-center gap-1.5">
           Launch Workspace <ChevronRight size={14} />

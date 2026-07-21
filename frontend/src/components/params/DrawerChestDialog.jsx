@@ -20,6 +20,7 @@ import { X, Download, Loader2, Layers, Plus, Archive } from "lucide-react";
 import { generateDrawerChest } from "../../lib/drawerChestGenerator";
 import { geometryToSTLBinary, downloadBlob } from "../../lib/exporters";
 import { useScene } from "../../lib/store";
+import { getSuggestedClearance } from "../../lib/clearanceProfile";
 
 const DEFAULTS = {
   width: 80, depth: 60, height: 100,
@@ -275,7 +276,15 @@ function PreviewGridfinityBin({ drawer, drawerOpen, chestDepth, sinksIntoPocket 
 }
 
 export default function DrawerChestDialog({ open, onClose }) {
-  const [params, setParams] = useState(DEFAULTS);
+  const printerProfile = useScene((s) => s.printerProfile);
+  // Auto-tune the initial clearance from the printer profile. Drawer
+  // slides are less forgiving than box lids (deeper mating surface, so
+  // shrink accumulates) — bump the suggested value by 0.05 mm to give
+  // reliable slide fit on the first print.
+  const [params, setParams] = useState(() => ({
+    ...DEFAULTS,
+    clearance: Math.max(0.2, getSuggestedClearance(printerProfile) + 0.05),
+  }));
   const [preset, setPreset] = useState("default");
   const [savedChests, setSavedChests] = useState(() => loadSavedChests());
   const applyPreset = (id) => {

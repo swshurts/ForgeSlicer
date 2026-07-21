@@ -137,6 +137,102 @@ export const printersApi = {
   },
 };
 
+// Print-Shop Presets (iter-151.9). All calls tolerate 401 gracefully —
+// the caller decides whether to prompt sign-in.
+export const printPresetsApi = {
+  create: async (payload) => {
+    const { data } = await axios.post(`${API}/print-presets`, payload, { withCredentials: true });
+    return data;
+  },
+  listMine: async () => {
+    const { data } = await axios.get(`${API}/print-presets/mine`, { withCredentials: true });
+    return data;
+  },
+  listPublic: async (limit = 50) => {
+    const { data } = await axios.get(`${API}/print-presets/public`, { params: { limit } });
+    return data;
+  },
+  get: async (slug) => {
+    const { data } = await axios.get(`${API}/print-presets/${slug}`);
+    return data;
+  },
+  apply: async (slug) => {
+    // Sign-in REQUIRED (product decision iter-151.9). 401 propagates
+    // to the caller so it can trigger the sign-in flow.
+    const { data } = await axios.post(`${API}/print-presets/${slug}/apply`, {}, { withCredentials: true });
+    return data;
+  },
+  delete: async (slug) => {
+    const { data } = await axios.delete(`${API}/print-presets/${slug}`, { withCredentials: true });
+    return data;
+  },
+};
+
+// Cooperative Projects (iter-151.10).
+export const coopProjectsApi = {
+  create: async (payload) => {
+    const { data } = await axios.post(`${API}/coop-projects`, payload, { withCredentials: true });
+    return data;
+  },
+  listMine: async () => {
+    const { data } = await axios.get(`${API}/coop-projects/mine`, { withCredentials: true });
+    return data;
+  },
+  listPublic: async (limit = 30) => {
+    const { data } = await axios.get(`${API}/coop-projects/public`, { params: { limit } });
+    return data;
+  },
+  get: async (slug) => {
+    const { data } = await axios.get(`${API}/coop-projects/${slug}`, { withCredentials: true });
+    return data;
+  },
+  update: async (slug, patch) => {
+    const { data } = await axios.put(`${API}/coop-projects/${slug}`, patch, { withCredentials: true });
+    return data;
+  },
+  delete: async (slug) => {
+    const { data } = await axios.delete(`${API}/coop-projects/${slug}`, { withCredentials: true });
+    return data;
+  },
+  invite: async (slug, email) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/invite`, { email }, { withCredentials: true });
+    return data;
+  },
+  removeMember: async (slug, user_id) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/remove-member`, { user_id }, { withCredentials: true });
+    return data;
+  },
+  requestJoin: async (slug) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/request-join`, {}, { withCredentials: true });
+    return data;
+  },
+  approveRequest: async (slug, user_id) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/approve-request`, { user_id }, { withCredentials: true });
+    return data;
+  },
+  denyRequest: async (slug, user_id) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/deny-request`, { user_id }, { withCredentials: true });
+    return data;
+  },
+  listProposals: async (slug) => {
+    const { data } = await axios.get(`${API}/coop-projects/${slug}/proposals`, { withCredentials: true });
+    return data;
+  },
+  createProposal: async (slug, payload) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/proposals`, payload, { withCredentials: true });
+    return data;
+  },
+  acceptProposal: async (slug, proposal_id, owner_note = "") => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/proposals/${proposal_id}/accept`, { owner_note }, { withCredentials: true });
+    return data;
+  },
+  rejectProposal: async (slug, proposal_id, owner_note = "") => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/proposals/${proposal_id}/reject`, { owner_note }, { withCredentials: true });
+    return data;
+  },
+};
+
+
 export const componentsApi = {
   list: async ({ modifier, category, q, mine } = {}) => {
     const params = {};

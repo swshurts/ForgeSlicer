@@ -32,6 +32,8 @@ import orca_upstream
 import gallery_taxonomy
 from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
+from routes.print_presets import build_print_presets_router
+from routes.coop_projects import build_coop_projects_router
 from routes.meshy_key import build_meshy_key_router, resolve_user_meshy_key
 from routes.printability import build_printability_router
 from routes.custom_textures import build_custom_textures_router
@@ -583,6 +585,8 @@ api_router.include_router(build_release_router())
 # upstream Orca preset shipment hasn't caught up to). The slice endpoint
 # accepts a `user_printer_id` and resolves through these records.
 api_router.include_router(build_user_printers_router(db, get_current_user))
+api_router.include_router(build_print_presets_router(db, get_current_user))
+api_router.include_router(build_coop_projects_router(db, get_current_user))
 # Iter-83: Shared Profile Library — community-published printer profiles.
 api_router.include_router(build_shared_printers_router(db, get_current_user, get_optional_user))
 api_router.include_router(build_publish_router(db, get_current_user))

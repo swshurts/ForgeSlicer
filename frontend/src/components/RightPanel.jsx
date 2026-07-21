@@ -15,6 +15,7 @@ import TextInspectorBlock from "./inspector/TextInspectorBlock";
 // per-edge geometry in the modifier-mesh carve.
 import AutoSaveSection from "./inspector/AutoSaveSection";
 import MeshImportTools from "./inspector/MeshImportTools";
+import PrintPresetsPanel from "./inspector/PrintPresetsPanel";
 import { Shape2DControls } from "./inspector/Shape2DControls";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
 import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Loader2, Eye, Send } from "lucide-react";
@@ -295,6 +296,69 @@ function findPrinterAny(id, community) {
   );
 }
 
+
+// Iter-151.7 — Printer-Aware Clearance Auto-Tune.
+// Compact editor for the nozzle Ø + XY shrink profile. The two
+// parametric generators (Box Designer, Drawer Chest) read this the
+// moment the user opens their dialog and derive the initial clearance
+// value from it — so a user with a 0.6 mm nozzle no longer has to
+// manually widen every mating gap for every design.
+function PrinterClearanceProfile() {
+  const profile = useScene((s) => s.printerProfile);
+  const setPrinterProfile = useScene((s) => s.setPrinterProfile);
+  const suggested = React.useMemo(() => {
+    const raw = (profile?.nozzleDiameter || 0.4) * 0.5 + (profile?.xyShrink || 0);
+    return Math.round(Math.max(0.1, Math.min(0.9, raw)) * 20) / 20;
+  }, [profile?.nozzleDiameter, profile?.xyShrink]);
+  return (
+    <div
+      data-testid="printer-clearance-profile"
+      className="bg-slate-950/60 border border-slate-800 rounded p-2 flex flex-col gap-2"
+    >
+      <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1">
+        Printer Clearance Profile
+        <span className="text-slate-500 normal-case text-[9px]">(auto-tunes parametric designers)</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-wider text-slate-500">Nozzle Ø (mm)</span>
+          <input
+            data-testid="printer-profile-nozzle"
+            type="number"
+            step={0.05}
+            min={0.1}
+            max={1.2}
+            value={profile.nozzleDiameter}
+            onChange={(e) => setPrinterProfile({ nozzleDiameter: parseFloat(e.target.value) || 0.4 })}
+            className="h-7 px-1.5 bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 focus:border-orange-500 outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase tracking-wider text-slate-500">XY Shrink (mm)</span>
+          <input
+            data-testid="printer-profile-shrink"
+            type="number"
+            step={0.05}
+            min={0}
+            max={0.6}
+            value={profile.xyShrink}
+            onChange={(e) => setPrinterProfile({ xyShrink: parseFloat(e.target.value) || 0 })}
+            className="h-7 px-1.5 bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 focus:border-orange-500 outline-none"
+          />
+        </label>
+      </div>
+      <div className="text-[10px] text-slate-400 leading-snug">
+        Suggested clearance:{" "}
+        <span className="text-orange-400 font-mono font-semibold" data-testid="printer-profile-suggested">
+          {suggested.toFixed(2)} mm
+        </span>
+        <span className="text-slate-500"> · applied on next open of Box / Chest designers</span>
+      </div>
+    </div>
+  );
+}
+
+
 function ProfileSection({ onSavePrinter }) {
   const printerId = useScene((s) => s.printerId);
   const filamentId = useScene((s) => s.filamentId);
@@ -526,6 +590,10 @@ function ProfileSection({ onSavePrinter }) {
         />
         Auto-drop to bed on rotate
       </label>
+
+      <PrinterClearanceProfile />
+
+      <PrintPresetsPanel />
 
       <AutoSaveSection />
     </Section>

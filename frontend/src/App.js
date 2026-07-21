@@ -36,6 +36,8 @@ import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import SVGImportDialog from "@/components/SVGImportDialog";
 import ZipImportDialog from "@/components/dialogs/ZipImportDialog";
 import SuggestProfileDialog from "@/components/dialogs/SuggestProfileDialog";
+import PresetImportPage from "@/pages/PresetImportPage";
+import CoopProjectsPage from "@/pages/CoopProjectsPage";
 
 // Detect the OAuth fragment SYNCHRONOUSLY during render so AuthCallback runs
 // before any /api/auth/me race from a global provider would 401. We read
@@ -88,6 +90,11 @@ function AppRouter() {
       <Route path="/admin/health" element={<AdminHealth />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/billing/success" element={<BillingSuccessPage />} />
+      {/* Iter-151.9 — Print-Shop Preset share URL landing page. Public
+          preview, import requires sign-in. */}
+      <Route path="/presets/:slug" element={<PresetImportPage />} />
+      {/* Iter-151.10 — Cooperative Projects with approval-based edit flow. */}
+      <Route path="/coop" element={<CoopProjectsPage />} />
       <Route
         path="/workspace"
         element={

@@ -11,6 +11,7 @@
 import React from "react";
 import { Plus, X, Send } from "lucide-react";
 import { useScene } from "../lib/store";
+import PlateThumbnail from "./PlateThumbnail";
 
 export default function PlateTabsBar() {
   const plates = useScene((s) => s.plates || []);
@@ -52,20 +53,21 @@ export default function PlateTabsBar() {
               data-testid={`plate-tab-${p.id}`}
               onClick={() => setActivePlate(p.id)}
               onDoubleClick={() => handleRename(p)}
-              className={`h-6 px-2 text-[10px] uppercase tracking-wider font-semibold rounded border ${
+              className={`flex items-center gap-1.5 h-10 pl-1 pr-2 rounded border ${
                 active
                   ? "bg-sky-600 border-sky-500 text-white"
                   : "bg-slate-800 border-slate-700 text-slate-300 hover:border-sky-500/70 hover:text-sky-300"
               }`}
               title="Click to activate, double-click to rename"
             >
-              {p.name}
+              <PlateThumbnail plateId={p.id} active={active} />
+              <span className="text-[10px] uppercase tracking-wider font-semibold">{p.name}</span>
             </button>
             {plates.length > 1 && (
               <button
                 data-testid={`plate-remove-${p.id}`}
                 onClick={() => handleRemove(p)}
-                className="w-4 h-6 text-slate-500 hover:text-rose-400 text-[10px] flex items-center justify-center"
+                className="w-4 h-10 text-slate-500 hover:text-rose-400 text-[10px] flex items-center justify-center"
                 title={`Delete ${p.name}`}
               >
                 <X size={10} />
@@ -77,7 +79,7 @@ export default function PlateTabsBar() {
       <button
         data-testid="plate-add"
         onClick={addPlate}
-        className="ml-1 w-6 h-6 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:border-sky-500 hover:text-sky-300 flex items-center justify-center"
+        className="ml-1 w-8 h-10 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:border-sky-500 hover:text-sky-300 flex items-center justify-center"
         title="Add a new plate"
       >
         <Plus size={12} />
@@ -87,7 +89,7 @@ export default function PlateTabsBar() {
           <button
             data-testid="plate-move-selected"
             onClick={() => setShowMoveMenu((v) => !v)}
-            className="h-6 px-2 text-[10px] uppercase tracking-wider font-semibold rounded bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-1"
+            className="h-10 px-2 text-[10px] uppercase tracking-wider font-semibold rounded bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-1"
             title={`Move ${selectedIds.length} selected part(s) to another plate`}
           >
             <Send size={10} /> Move ({selectedIds.length})

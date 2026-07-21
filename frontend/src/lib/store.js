@@ -217,6 +217,43 @@ export const useScene = create((set, get) => ({
   myPrinterId: typeof window !== "undefined" && window.localStorage
     ? (window.localStorage.getItem("forge.printer.mine") || null)
     : null,
+  // iter-151.7 — Printer-Aware Clearance Profile.
+  // Stores the user's nozzle diameter (mm) and XY horizontal shrink (mm).
+  // Read by the parametric generators (Box Designer, Drawer Chest) so
+  // rail / pin / slot clearances default to a printable value FOR THAT
+  // PRINTER instead of a one-size-fits-all guess.
+  //
+  // Heuristic: suggested single-side clearance = nozzle * 0.5 + shrink.
+  // 0.4 mm nozzle + 0.15 mm shrink → 0.35 mm — matches empirical FDM
+  // clearances for slip-fit lids and drawer rails.
+  //
+  // Persisted to localStorage so the preference survives reloads.
+  // `null` fields fall back to the code-level defaults (nozzle 0.4,
+  // shrink 0.15) in `getSuggestedClearance()`.
+  printerProfile: (() => {
+    try {
+      const raw = typeof localStorage !== "undefined"
+        ? localStorage.getItem("forge.printerProfile")
+        : null;
+      if (raw) {
+        const p = JSON.parse(raw);
+        return {
+          nozzleDiameter: Number.isFinite(p.nozzleDiameter) ? p.nozzleDiameter : 0.4,
+          xyShrink: Number.isFinite(p.xyShrink) ? p.xyShrink : 0.15,
+        };
+      }
+    } catch { /* noop */ }
+    return { nozzleDiameter: 0.4, xyShrink: 0.15 };
+  })(),
+  setPrinterProfile: (patch) => set((s) => {
+    const next = { ...s.printerProfile, ...patch };
+    // Sanity-clamp: nozzle in [0.1, 1.2], shrink in [0, 0.6].
+    next.nozzleDiameter = Math.max(0.1, Math.min(1.2, +next.nozzleDiameter || 0.4));
+    next.xyShrink = Math.max(0, Math.min(0.6, +next.xyShrink || 0));
+    try { localStorage.setItem("forge.printerProfile", JSON.stringify(next)); } catch { /* noop */ }
+    return { printerProfile: next };
+  }),
+
   communityPrinters: [],         // [{ id, brand, name, build_x/y/z, max_*, default_*, submitter, uses }]
   autoDropOnRotate: typeof window !== "undefined" && window.localStorage
     ? window.localStorage.getItem("forge.autoDropOnRotate") === "true"
