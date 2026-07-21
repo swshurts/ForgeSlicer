@@ -37,6 +37,8 @@ import SVGImportDialog from "@/components/SVGImportDialog";
 import ZipImportDialog from "@/components/dialogs/ZipImportDialog";
 import SuggestProfileDialog from "@/components/dialogs/SuggestProfileDialog";
 import PresetImportPage from "@/pages/PresetImportPage";
+import PresetsFeedPage from "@/pages/PresetsFeedPage";
+import UnsubscribePage from "@/pages/UnsubscribePage";
 import CoopProjectsPage from "@/pages/CoopProjectsPage";
 
 // Detect the OAuth fragment SYNCHRONOUSLY during render so AuthCallback runs
@@ -93,6 +95,10 @@ function AppRouter() {
       {/* Iter-151.9 — Print-Shop Preset share URL landing page. Public
           preview, import requires sign-in. */}
       <Route path="/presets/:slug" element={<PresetImportPage />} />
+      {/* Iter-151.13 — Public feed of community-shared print-shop presets. */}
+      <Route path="/presets" element={<PresetsFeedPage />} />
+      {/* Iter-151.15 — public unsubscribe landing (token-authenticated). */}
+      <Route path="/unsubscribe/:token" element={<UnsubscribePage />} />
       {/* Iter-151.10 — Cooperative Projects with approval-based edit flow. */}
       <Route path="/coop" element={<CoopProjectsPage />} />
       <Route

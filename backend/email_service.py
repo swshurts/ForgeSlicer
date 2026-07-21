@@ -418,3 +418,154 @@ async def send_upstream_digest(
     if msg_id:
         logger.info("Upstream digest — %d new, %d changed", len(new_deltas), len(changed_deltas))
     return msg_id
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Iter-151.15 — Coop-projects + admin-broadcast email helpers.
+#
+# These reuse the low-level `_send`, `_sender`, `_app_url`, `_configured`
+# helpers above — the goal is to keep the transactional-email footprint
+# consolidated in one module.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _unsubscribe_link(unsubscribe_token: Optional[str], kind: str) -> str:
+    if not unsubscribe_token:
+        return ""
+    base = _app_url() or "https://forgeslicer.app"
+    return f"{base}/unsubscribe/{unsubscribe_token}?kind={kind}"
+
+
+def _footer_with_unsubscribe(unsubscribe_token: Optional[str], kind: str) -> str:
+    """Build the small opt-out footer for coop / broadcast emails.
+    We ALWAYS point at the Account page too — that link works even
+    when the token-based one doesn't (legacy accounts without a token
+    row). Compliance uses the token URL; the Account link is the
+    always-safe fallback."""
+    base = _app_url() or "https://forgeslicer.app"
+    token_link = _unsubscribe_link(unsubscribe_token, kind)
+    if token_link:
+        return (
+            '<p style="color:#94a3b8;font-size:11px;margin-top:24px;line-height:1.5;">'
+            f'You received this because your ForgeSlicer email preferences allow it. '
+            f'<a href="{token_link}" style="color:#a78bfa;">Unsubscribe from these emails</a>'
+            f' or manage all preferences in <a href="{base}/profile" style="color:#a78bfa;">your account</a>.'
+            '</p>'
+        )
+    return (
+        '<p style="color:#94a3b8;font-size:11px;margin-top:24px;">'
+        f'Manage email preferences in <a href="{base}/profile" style="color:#a78bfa;">your account</a>.'
+        '</p>'
+    )
+
+
+def _coop_email_html(*, title: str, body_html: str, cta_url: Optional[str], cta_text: Optional[str], unsubscribe_token: Optional[str]) -> str:
+    cta = ""
+    if cta_url and cta_text:
+        cta = (
+            f'<p style="margin-top:20px;">'
+            f'<a href="{cta_url}" style="display:inline-block;padding:10px 18px;'
+            f'background:#8b5cf6;color:#fff;border-radius:6px;'
+            f'text-decoration:none;font-weight:600;">{cta_text}</a>'
+            '</p>'
+        )
+    footer = _footer_with_unsubscribe(unsubscribe_token, "coop")
+    return f"""\
+<!doctype html>
+<html>
+<body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:0;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f172a;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="background:#1e293b;border-radius:10px;padding:28px;">
+        <tr><td>
+          <h1 style="color:#f8fafc;margin:0 0 12px;font-size:22px;">{title}</h1>
+          <div style="color:#cbd5e1;font-size:14px;line-height:1.5;">{body_html}</div>
+          {cta}
+          {footer}
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+
+
+async def send_coop_notification_email(
+    *,
+    to_email: str,
+    to_name: str,
+    title: str,
+    body_html: str,
+    cta_url: Optional[str] = None,
+    cta_text: Optional[str] = None,
+    unsubscribe_token: Optional[str] = None,
+) -> Optional[str]:
+    """Send a single cooperative-projects notification email. Best-
+    effort (returns None on failure)."""
+    if not _configured():
+        logger.debug("email off; skip coop email to %s", to_email)
+        return None
+    html = _coop_email_html(
+        title=title, body_html=body_html,
+        cta_url=cta_url, cta_text=cta_text,
+        unsubscribe_token=unsubscribe_token,
+    )
+    resend.api_key = os.environ["RESEND_API_KEY"]
+    params = {
+        "from": _sender(),
+        "to": [to_email],
+        "subject": title,
+        "html": html,
+    }
+    return await _send(
+        params,
+        ok_log="Coop email sent to %s (id=%s)",
+        fail_log="Coop email FAILED for %s: %s",
+    )
+
+
+async def send_broadcast_email(
+    *,
+    to_email: str,
+    subject: str,
+    body_html: str,
+    unsubscribe_token: Optional[str] = None,
+) -> Optional[str]:
+    """Send one message of a bulk admin broadcast. Recipients are
+    per-user so we can personalise the unsubscribe token in the
+    footer. Called in a loop from the admin broadcasts endpoint —
+    each send is sequential to stay within Resend's rate limits."""
+    if not _configured():
+        return None
+    footer = _footer_with_unsubscribe(unsubscribe_token, "broadcast")
+    html = f"""\
+<!doctype html>
+<html>
+<body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:0;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f172a;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="background:#1e293b;border-radius:10px;padding:28px;">
+        <tr><td>
+          <div style="color:#e2e8f0;font-size:14px;line-height:1.55;">{body_html}</div>
+          {footer}
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+"""
+    resend.api_key = os.environ["RESEND_API_KEY"]
+    params = {
+        "from": _sender(),
+        "to": [to_email],
+        "subject": subject,
+        "html": html,
+    }
+    return await _send(
+        params,
+        ok_log="Broadcast sent to %s (id=%s)",
+        fail_log="Broadcast FAILED for %s: %s",
+    )
+

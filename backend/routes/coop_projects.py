@@ -50,6 +50,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
+from email_service import send_coop_notification_email
+from routes.notifications import ensure_email_prefs, push_notification
+
 
 _SLUG_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
 MAX_SCENE_BYTES = 512 * 1024  # 512 KB per scene payload — enough for
@@ -116,6 +119,35 @@ def _proposal_to_out(doc: dict) -> Dict[str, Any]:
 
 def build_coop_projects_router(db, get_current_user) -> APIRouter:
     router = APIRouter(prefix="/coop-projects", tags=["coop-projects"])
+
+    async def _notify(user_id: str, email: Optional[str], name: Optional[str], *,
+                      type: str, title: str, body: str, link: str, cta_text: str) -> None:
+        """In-app + (opt-in) email notification. Best-effort; never
+        raises so a delivery failure doesn't roll back the caller's
+        primary mutation."""
+        try:
+            await push_notification(db, user_id=user_id, type=type, title=title, body=body, link=link)
+        except Exception:  # noqa: BLE001
+            pass
+        if not email:
+            return
+        try:
+            prefs = await ensure_email_prefs(db, user_id)
+            if not prefs.get("coop_opt_in", True):
+                return
+            import os
+            origin = (os.environ.get("APP_ORIGIN") or "").rstrip("/") or "https://forgeslicer.app"
+            await send_coop_notification_email(
+                to_email=email,
+                to_name=name or "",
+                title=title,
+                body_html=body,
+                cta_url=f"{origin}{link}" if link.startswith("/") else link,
+                cta_text=cta_text,
+                unsubscribe_token=prefs.get("unsubscribe_token"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _load_project(slug: str) -> Dict[str, Any]:
         doc = await db.coop_projects.find_one({"slug": slug}, {"_id": 0})
@@ -271,6 +303,17 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
             {"slug": slug},
             {"$addToSet": {"members": uid}, "$pull": {"pending_requests": uid}, "$set": {"updated_at": _now_iso()}},
         )
+        # Iter-151.15 — notify the invitee.
+        await _notify(
+            user_id=uid,
+            email=invitee.get("email"),
+            name=invitee.get("name"),
+            type="coop_invited",
+            title=f'You\'ve been added to "{doc["name"]}"',
+            body=f'{doc["owner_name"]} invited you to collaborate on their project.',
+            link=f"/coop?slug={slug}",
+            cta_text="Open project",
+        )
         return {"added": True, "user_id": uid, "name": invitee.get("name"), "email": invitee.get("email")}
 
     @router.post("/{slug}/remove-member")
@@ -308,6 +351,19 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
             {"slug": slug},
             {"$pull": {"pending_requests": op.user_id}, "$addToSet": {"members": op.user_id}, "$set": {"updated_at": _now_iso()}},
         )
+        # Iter-151.15 — notify the newly-approved member.
+        approved = await db.users.find_one({"user_id": op.user_id}, {"_id": 0, "email": 1, "name": 1})
+        if approved:
+            await _notify(
+                user_id=op.user_id,
+                email=approved.get("email"),
+                name=approved.get("name"),
+                type="join_approved",
+                title=f'You\'re in — welcome to "{doc["name"]}"',
+                body=f'{doc["owner_name"]} approved your request to join this project.',
+                link=f"/coop?slug={slug}",
+                cta_text="Open project",
+            )
         return {"approved": True, "user_id": op.user_id}
 
     @router.post("/{slug}/deny-request")
@@ -342,6 +398,21 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
             "decided_by": None,
         }
         await db.coop_proposals.insert_one(dict(proposal))
+
+        # Iter-151.15 — notify the owner that a new proposal landed.
+        owner = await db.users.find_one({"user_id": doc["owner_id"]}, {"_id": 0, "email": 1, "name": 1})
+        if owner:
+            await _notify(
+                user_id=doc["owner_id"],
+                email=owner.get("email"),
+                name=owner.get("name"),
+                type="proposal_submitted",
+                title=f'New proposal on "{doc["name"]}"',
+                body=f'{proposal["proposer_name"]} submitted: "{proposal["title"]}"',
+                link=f"/coop?slug={slug}",
+                cta_text="Review proposal",
+            )
+
         return _proposal_to_out(proposal)
 
     @router.get("/{slug}/proposals")
@@ -391,6 +462,20 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
                 "decided_by": user["user_id"],
             }},
         )
+        # Iter-151.15 — notify the proposer their change was accepted.
+        proposer = await db.users.find_one({"user_id": prop["proposer_id"]}, {"_id": 0, "email": 1, "name": 1})
+        if proposer:
+            await _notify(
+                user_id=prop["proposer_id"],
+                email=proposer.get("email"),
+                name=proposer.get("name"),
+                type="proposal_accepted",
+                title=f'"{prop["title"]}" was accepted',
+                body=(f'Your proposal on "{doc["name"]}" was accepted by {doc["owner_name"]}. '
+                      + (f'Note: {item.owner_note.strip()}' if item.owner_note.strip() else '')),
+                link=f"/coop?slug={slug}",
+                cta_text="Open project",
+            )
         return {"accepted": True, "proposal_id": proposal_id, "scene_version": int(doc.get("scene_version", 1)) + 1}
 
     @router.post("/{slug}/proposals/{proposal_id}/reject")
@@ -412,6 +497,22 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
                 "decided_by": user["user_id"],
             }},
         )
+        # Iter-151.15 — notify the proposer their change was rejected.
+        # (Includes the owner's note so the proposer knows WHY.)
+        prop_doc = await db.coop_projects.find_one({"slug": slug}, {"_id": 0, "name": 1, "owner_name": 1})
+        proposer = await db.users.find_one({"user_id": prop["proposer_id"]}, {"_id": 0, "email": 1, "name": 1})
+        if prop_doc and proposer:
+            await _notify(
+                user_id=prop["proposer_id"],
+                email=proposer.get("email"),
+                name=proposer.get("name"),
+                type="proposal_rejected",
+                title=f'"{prop["title"]}" was declined',
+                body=(f'Your proposal on "{prop_doc["name"]}" was declined by {prop_doc["owner_name"]}. '
+                      + (f'Note: {item.owner_note.strip()}' if item.owner_note.strip() else '')),
+                link=f"/coop?slug={slug}",
+                cta_text="Open project",
+            )
         return {"rejected": True, "proposal_id": proposal_id}
 
     return router

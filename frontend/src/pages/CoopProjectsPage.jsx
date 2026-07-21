@@ -24,6 +24,7 @@ import { coopProjectsApi } from "../lib/api";
 import { useScene } from "../lib/store";
 import { useAuth } from "../contexts/AuthContext";
 import { serializeProject, loadProjectState } from "../lib/projectIO";
+import { sceneDiff } from "../lib/sceneDiff";
 
 export default function CoopProjectsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -564,42 +565,16 @@ function ProposalsTab({ project, isOwner, isMember, me, onChange }) {
           <div className="text-sm text-slate-500 italic">No pending proposals.</div>
         )}
         {pending.map((p) => (
-          <div key={p.proposal_id} className="bg-slate-900 border border-amber-800 rounded-lg p-3 mb-3" data-testid={`coop-proposal-${p.proposal_id}`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold text-slate-100">{p.title}</span>
-              <span className="text-[10px] text-slate-500 font-mono">{new Date(p.created_at).toLocaleString()}</span>
-            </div>
-            <div className="text-xs text-slate-400 mb-2">by {p.proposer_name} · {(p.scene?.objects || []).length} objects</div>
-            {p.description && <div className="text-sm text-slate-300 leading-snug mb-2">{p.description}</div>}
-            {isOwner && (
-              <>
-                <input
-                  data-testid={`coop-owner-note-${p.proposal_id}`}
-                  type="text"
-                  placeholder="Note back to proposer (optional)"
-                  value={note[p.proposal_id] || ""}
-                  onChange={(e) => setNote((n) => ({ ...n, [p.proposal_id]: e.target.value }))}
-                  className="w-full h-8 px-2 bg-slate-950 border border-slate-700 rounded text-xs focus:border-purple-500 outline-none mb-2"
-                />
-                <div className="flex gap-2">
-                  <button
-                    data-testid={`coop-accept-${p.proposal_id}`}
-                    onClick={() => decide(p.proposal_id, "accept")}
-                    className="h-8 px-3 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1"
-                  >
-                    <Check size={12} /> Accept & commit
-                  </button>
-                  <button
-                    data-testid={`coop-reject-${p.proposal_id}`}
-                    onClick={() => decide(p.proposal_id, "reject")}
-                    className="h-8 px-3 rounded bg-slate-700 hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1"
-                  >
-                    <X size={12} /> Reject
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <PendingProposalCard
+            key={p.proposal_id}
+            proposal={p}
+            committedScene={project.scene}
+            isOwner={isOwner}
+            note={note[p.proposal_id] || ""}
+            onNoteChange={(v) => setNote((n) => ({ ...n, [p.proposal_id]: v }))}
+            onAccept={() => decide(p.proposal_id, "accept")}
+            onReject={() => decide(p.proposal_id, "reject")}
+          />
         ))}
       </div>
 
@@ -628,3 +603,104 @@ function ProposalsTab({ project, isOwner, isMember, me, onChange }) {
     </div>
   );
 }
+
+// Iter-151.14 — Pending proposal card with collapsible scene diff.
+// Shows a counts-first summary (Added / Removed / Changed) so the
+// owner can eyeball scope at a glance, then a per-object list on
+// click for a deeper review.
+function PendingProposalCard({ proposal: p, committedScene, isOwner, note, onNoteChange, onAccept, onReject }) {
+  const [showDiff, setShowDiff] = useState(false);
+  const diff = useMemo(
+    () => sceneDiff(committedScene || {}, p.scene || {}),
+    [committedScene, p.scene]
+  );
+  const totalChanges = diff.added.length + diff.removed.length + diff.changed.length;
+
+  return (
+    <div className="bg-slate-900 border border-amber-800 rounded-lg p-3 mb-3" data-testid={`coop-proposal-${p.proposal_id}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold text-slate-100">{p.title}</span>
+        <span className="text-[10px] text-slate-500 font-mono">{new Date(p.created_at).toLocaleString()}</span>
+      </div>
+      <div className="text-xs text-slate-400 mb-2">
+        by {p.proposer_name} · {diff.totals.committed} → {diff.totals.proposed} objects
+      </div>
+      {p.description && <div className="text-sm text-slate-300 leading-snug mb-2">{p.description}</div>}
+
+      {/* Diff summary bar — always visible */}
+      <div className="flex items-center gap-2 mb-2 text-[11px]" data-testid={`coop-diff-summary-${p.proposal_id}`}>
+        <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">
+          +{diff.added.length} added
+        </span>
+        <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/15 text-red-300 font-mono">
+          −{diff.removed.length} removed
+        </span>
+        <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono">
+          ~{diff.changed.length} changed
+        </span>
+        {totalChanges > 0 && (
+          <button
+            data-testid={`coop-diff-toggle-${p.proposal_id}`}
+            onClick={() => setShowDiff((v) => !v)}
+            className="text-[10px] uppercase tracking-wider text-purple-400 hover:text-purple-300 font-semibold ml-1"
+          >
+            {showDiff ? "Hide details" : "See details"}
+          </button>
+        )}
+      </div>
+
+      {showDiff && totalChanges > 0 && (
+        <div className="mb-3 bg-slate-950/60 border border-slate-800 rounded p-2 max-h-60 overflow-y-auto text-[11px] leading-snug" data-testid={`coop-diff-detail-${p.proposal_id}`}>
+          {diff.added.map((o) => (
+            <div key={`a-${o.id}`} className="text-emerald-300 font-mono">
+              + {o.name || o.id} <span className="text-slate-500">({o.type})</span>
+            </div>
+          ))}
+          {diff.removed.map((o) => (
+            <div key={`r-${o.id}`} className="text-red-300 font-mono">
+              − {o.name || o.id} <span className="text-slate-500">({o.type})</span>
+            </div>
+          ))}
+          {diff.changed.map(({ before, after, fields }) => (
+            <div key={`c-${after.id}`} className="text-sky-300 font-mono">
+              ~ {after.name || after.id}{" "}
+              <span className="text-slate-500">
+                (changed: {fields.join(", ")})
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isOwner && (
+        <>
+          <input
+            data-testid={`coop-owner-note-${p.proposal_id}`}
+            type="text"
+            placeholder="Note back to proposer (optional)"
+            value={note}
+            onChange={(e) => onNoteChange(e.target.value)}
+            className="w-full h-8 px-2 bg-slate-950 border border-slate-700 rounded text-xs focus:border-purple-500 outline-none mb-2"
+          />
+          <div className="flex gap-2">
+            <button
+              data-testid={`coop-accept-${p.proposal_id}`}
+              onClick={onAccept}
+              className="h-8 px-3 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1"
+            >
+              <Check size={12} /> Accept & commit
+            </button>
+            <button
+              data-testid={`coop-reject-${p.proposal_id}`}
+              onClick={onReject}
+              className="h-8 px-3 rounded bg-slate-700 hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1"
+            >
+              <X size={12} /> Reject
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { LogIn, LogOut, User as UserIcon, FolderOpen, Library, CreditCard } from "lucide-react";
+import NotificationsBell from "./NotificationsBell";
 
 // Compact auth widget for top-bar use. Anonymous => "Sign in" button;
 // authenticated => avatar that opens a dropdown to Profile / My Designs /
@@ -41,7 +42,9 @@ export default function UserMenu({ returnPath }) {
     .split(/\s+/).slice(0, 2).map((s) => s[0]?.toUpperCase() || "").join("");
 
   return (
-    <div className="relative ml-2" ref={ref}>
+    <div className="flex items-center gap-1 ml-2">
+      <NotificationsBell />
+      <div className="relative" ref={ref}>
       <button
         data-testid="user-menu-trigger"
         onClick={() => setOpen((v) => !v)}
@@ -118,6 +121,7 @@ export default function UserMenu({ returnPath }) {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }

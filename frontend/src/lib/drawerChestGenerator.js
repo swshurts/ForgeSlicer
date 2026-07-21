@@ -97,6 +97,14 @@ export async function generateDrawerChest(params) {
   const footHeight= Math.max(0, +params.footHeight   || 8);
   const footInset = Math.max(0, +params.footInset    || 4);
   const topHingedBox = !!params.topHingedBox;
+  // Iter-151.12 — friction-fit detent on the lid's axle hole. Tightens
+  // the through-hole on the LID knuckles ONLY (not the frame's) so the
+  // hinge pin has a slight interference fit against the lid. Effect:
+  // the lid holds any open angle (including ~110°) instead of falling
+  // shut. 0.10 mm reduction pairs with the standard 2.00 mm pin the
+  // designer recommends inserting into the printed hinge.
+  const lidDetent = !!params.lidDetent;
+  const lidAxleR = lidDetent ? Math.max(0.4, 2.20 / 2 - 0.05) : 2.20 / 2;
   // topHingedBox owns the top of the frame, so the detachable cap is
   // mutually exclusive with it.
   const topCap    = !!params.topCap && !topHingedBox;
@@ -618,7 +626,9 @@ export async function generateDrawerChest(params) {
       lidM = merged2;
     }
     // Axle hole through the lid knuckle row.
-    const axle = new THREE.CylinderGeometry(axleR, axleR, W + 4, 20);
+    // Iter-151.12: uses `lidAxleR` (0.05 mm tighter when lidDetent is on)
+    // so the pin friction-fits into the lid and holds any open angle.
+    const axle = new THREE.CylinderGeometry(lidAxleR, lidAxleR, W + 4, 20);
     axle.rotateZ(Math.PI / 2);
     axle.translate(0, knuckleY, lidKnuckleZ);
     const axleM = _geomToMesh(wasm, _weld(axle));

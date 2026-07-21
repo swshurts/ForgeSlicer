@@ -6,11 +6,12 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Hexagon, Loader2, RefreshCw, Search, Shield, ShieldCheck,
   Sparkles, Award, Ban, KeyRound, Trash2, ListChecks, BarChart3, Users,
-  AlertCircle, CheckCircle2, Clock, Download, GitBranch, Activity,
+  AlertCircle, CheckCircle2, Clock, Download, GitBranch, Activity, Mail, Send,
 } from "lucide-react";
 import OrcaUpstreamTab from "./admin/OrcaUpstreamTab";
 import SharedPrintersModerationTab from "./admin/SharedPrintersModerationTab";
 import PricingTab from "./admin/PricingTab";
+import BroadcastsTab from "./admin/BroadcastsTab";
 
 // Convert a 2D array of strings into a CSV blob and trigger a download.
 // Cells are wrapped in double-quotes when they contain commas/quotes/newlines
@@ -411,6 +412,8 @@ export default function AdminPage() {
     // Pricing edits are super-admin only — hide the tab entirely for
     // regular admins (backend re-checks on every call regardless).
     ...(adminInfo.is_super_admin ? [{ key: "pricing", label: "Pricing", icon: Sparkles }] : []),
+    // Iter-151.15 — Broadcasts is super-admin only (high-impact op).
+    ...(adminInfo.is_super_admin ? [{ key: "broadcasts", label: "Broadcasts", icon: Mail }] : []),
     { key: "audit",     label: "Audit log", icon: ListChecks },
   ];
 
@@ -462,6 +465,7 @@ export default function AdminPage() {
         {tab === "orca-upstream" && <OrcaUpstreamTab />}
         {tab === "shared-moderation" && <SharedPrintersModerationTab />}
         {tab === "pricing" && adminInfo.is_super_admin && <PricingTab />}
+        {tab === "broadcasts" && adminInfo.is_super_admin && <BroadcastsTab />}
         {tab === "audit" && <AuditTab />}
       </main>
     </div>

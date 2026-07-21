@@ -235,6 +235,7 @@ export const coopProjectsApi = {
 
 export const componentsApi = {
   list: async ({ modifier, category, q, mine } = {}) => {
+
     const params = {};
     if (modifier) params.modifier = modifier;
     if (category) params.category = category;
@@ -533,3 +534,58 @@ export const apiErrorMessage = (err) => {
   }
   return err.message || "Request failed.";
 };
+
+// Notifications + email preferences + unsubscribe (iter-151.15).
+export const notificationsApi = {
+  listMine: async (limit = 50) => {
+    const { data } = await axios.get(`${API}/notifications/me`, { params: { limit }, withCredentials: true });
+    return data;
+  },
+  unreadCount: async () => {
+    const { data } = await axios.get(`${API}/notifications/me/unread-count`, { withCredentials: true });
+    return data;
+  },
+  markRead: async (ids) => {
+    const { data } = await axios.post(`${API}/notifications/mark-read`, ids, { withCredentials: true });
+    return data;
+  },
+  markAllRead: async () => {
+    const { data } = await axios.post(`${API}/notifications/mark-all-read`, {}, { withCredentials: true });
+    return data;
+  },
+  getPrefs: async () => {
+    const { data } = await axios.get(`${API}/notifications/prefs`, { withCredentials: true });
+    return data;
+  },
+  setPrefs: async (patch) => {
+    const { data } = await axios.put(`${API}/notifications/prefs`, patch, { withCredentials: true });
+    return data;
+  },
+};
+
+export const unsubscribeApi = {
+  status: async (token) => {
+    const { data } = await axios.get(`${API}/unsubscribe/${token}`);
+    return data;
+  },
+  optOut: async (token, kind = "broadcast") => {
+    const { data } = await axios.post(`${API}/unsubscribe/${token}?kind=${kind}`);
+    return data;
+  },
+};
+
+export const adminBroadcastsApi = {
+  previewCount: async () => {
+    const { data } = await axios.get(`${API}/admin/broadcasts/preview-count`, { withCredentials: true });
+    return data;
+  },
+  send: async (payload) => {
+    const { data } = await axios.post(`${API}/admin/broadcasts`, payload, { withCredentials: true });
+    return data;
+  },
+  list: async () => {
+    const { data } = await axios.get(`${API}/admin/broadcasts`, { withCredentials: true });
+    return data;
+  },
+};
+

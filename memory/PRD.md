@@ -36,6 +36,22 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
+### Recently completed (iter-151.11 – 151.15, 2026-07-21) — Batch 2
+
+**iter-151.11 (fix)**: Hinged-lid preview animation opened from the front instead of the back. Root cause: after moving hinges to `-D/2` (back), `DrawerChestDialog` preview still pivoted at `+D/2` with negative rotation. Swapped pivot to `ay - chestDepth/2`, mesh offset to `+chestDepth/2`, rotation to `+0.9` rad — front now lifts up correctly.
+
+**iter-151.12 (Lid Detent)**: New `lidDetent` toggle (default on) in DrawerChestDialog. When enabled, the LID's axle hole is tightened by 0.10 mm on the radius, creating a friction fit with the standard 2 mm pin. Effect: lid holds any open angle (including ~110°) instead of falling shut. Sub-toggle only appears when the hinged-lid option is enabled.
+
+**iter-151.13 (Public Preset Feed)**: New `/presets` page — browseable gallery of community-shared print-shop presets with search (name / author / printer / filament) and sort (newest / most applied). Backend already had `GET /api/print-presets/public` from iter-151.9; this is the missing consumer.
+
+**iter-151.14 (Proposal Diff View)**: `lib/sceneDiff.js` — object-level diff between committed scene and each pending proposal (added / removed / changed with a per-object field list, e.g. `changed: position, rotation`). Coop review UI shows a counts-first summary bar always visible, then a collapsible detail list on click.
+
+**iter-151.15 (In-App Bell + Emails + Broadcasts + Opt-out)**:
+- **Backend**: `routes/notifications.py` (in-app CRUD + email prefs + token-based public unsubscribe) + `routes/admin_broadcasts.py` (super-admin only send + history, background worker iterates non-opted-out users) + `email_service.py` gained `send_coop_notification_email` + `send_broadcast_email` reusing the existing Resend key. Coop routes now push notifications on `proposal_submitted` (owner), `proposal_accepted` / `proposal_rejected` (proposer), `coop_invited` (invitee), `join_approved` (approved requester) — each is best-effort so a delivery hiccup can't roll back the primary mutation.
+- **Frontend**: `<NotificationsBell>` embedded in `UserMenu` (unread badge, 60 s polling, dropdown with mark-as-read + navigate). `<EmailPreferencesCard>` in Account page with per-category toggles. `<UnsubscribePage>` at public `/unsubscribe/:token` route. Admin `<BroadcastsTab>` (superadmin only) with subject / HTML body / live preview / recipient count / two-step confirm + history log. Every outbound email carries a personalised unsubscribe URL + a link back to Account.
+
+All verified end-to-end (backend curl: preferences round-trip, proposal → notification insert, broadcast preview count; frontend screenshots: bell badge shows "3", coop diff renders, lid preview opens from front).
+
 ### Recently completed (iter-151.7 – 151.10, 2026-07-21) — Phase 1-3 shipped
 
 Four sizeable features landed in the same session, each verified end-to-end:

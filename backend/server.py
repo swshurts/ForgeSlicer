@@ -34,6 +34,8 @@ from routes.projects import build_projects_router
 from routes.user_printers import build_user_printers_router
 from routes.print_presets import build_print_presets_router
 from routes.coop_projects import build_coop_projects_router
+from routes.notifications import build_notifications_router, build_unsubscribe_router
+from routes.admin_broadcasts import build_admin_broadcasts_router
 from routes.meshy_key import build_meshy_key_router, resolve_user_meshy_key
 from routes.printability import build_printability_router
 from routes.custom_textures import build_custom_textures_router
@@ -587,6 +589,22 @@ api_router.include_router(build_release_router())
 api_router.include_router(build_user_printers_router(db, get_current_user))
 api_router.include_router(build_print_presets_router(db, get_current_user))
 api_router.include_router(build_coop_projects_router(db, get_current_user))
+api_router.include_router(build_notifications_router(db, get_current_user))
+api_router.include_router(build_unsubscribe_router(db))
+
+
+async def _require_super_admin(request):
+    """Stricter than _require_admin_for_upstream — broadcasts are a
+    high-impact operation and must be gated on the super_admin flag."""
+    user = await get_current_user(request)
+    if not user.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="Superadmin access required.")
+    if user.get("banned"):
+        raise HTTPException(status_code=403, detail="Account suspended.")
+    return user
+
+
+api_router.include_router(build_admin_broadcasts_router(db, _require_super_admin))
 # Iter-83: Shared Profile Library — community-published printer profiles.
 api_router.include_router(build_shared_printers_router(db, get_current_user, get_optional_user))
 api_router.include_router(build_publish_router(db, get_current_user))

@@ -6,6 +6,7 @@ import { galleryApi, componentsApi } from "../lib/api";
 import { toast } from "sonner";
 import ThemeSwitcher from "./toolbar/ThemeSwitcher";
 import MeshyKeyCard from "./profile/MeshyKeyCard";
+import EmailPreferencesCard from "./profile/EmailPreferencesCard";
 import {
   ArrowLeft, Hexagon, GitFork, Download, Trash2, RefreshCw,
   PlusSquare, MinusSquare, Lock, Plus, Star, Award,
@@ -515,6 +516,8 @@ export default function Profile() {
         <MeshyKeyCard />
 
         <ProfileEditor user={user} onSaved={(u) => setUser(u)} />
+
+        <EmailPreferencesCard />
 
         <div className="flex items-center gap-1 mb-6 border-b border-slate-800">
           {[

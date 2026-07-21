@@ -43,6 +43,7 @@ const DEFAULTS = {
   customHeights: false,        // toggle: use per-slot heights vs equal split
   drawerHeights: [],           // mm, length ≤ rows; LAST slot auto-fills leftover
   topHingedBox: false,         // top row is chest-style hinged-lid box
+  lidDetent: true,             // tighten axle hole on the LID knuckles by 0.1 mm so the lid holds any open angle by friction fit (works with the standard 2.0 mm pin)
   gridfinityLocators: false,   // + crosses on each drawer floor at 42 mm grid (Gridfinity-compatible)
   gridfinityBaseplate: false,  // full Gridfinity pocket profile carved into each drawer floor
   subdivider: "none",          // "none" | "1x2" | "2x1" | "2x2" | "1x3" | "3x1" | "2x3" | "3x2" | "3x3"
@@ -189,13 +190,17 @@ function PreviewMesh({ parts, showDrawers, drawerOpen, chestDepth, showPreviewBi
         // Drawers: pull out by 8 mm when "open" toggled.
         const yOffset = p.id.startsWith("drawer-") && drawerOpen ? 8 : 0;
         // Hinged lid: rotate around back-edge pivot for the "open" view.
+        // Iter-151.11 follow-up: hinges live at -D/2 (back edge), so the
+        // pivot is at ay - chestDepth/2, the mesh sits at +chestDepth/2
+        // from the pivot, and the rotation is +0.9 rad so the FRONT of
+        // the lid lifts UP (matching how a hinged chest actually opens).
         if (isLid && drawerOpen && chestDepth != null) {
-          const hingeY = ay + chestDepth / 2;
+          const hingeY = ay - chestDepth / 2;
           return (
-            <group key={p.id} position={[ax, hingeY, az]} rotation={[-0.9, 0, 0]}>
+            <group key={p.id} position={[ax, hingeY, az]} rotation={[0.9, 0, 0]}>
               <mesh
                 geometry={p.geometry}
-                position={[0, -chestDepth / 2, 0]}
+                position={[0, chestDepth / 2, 0]}
                 castShadow
                 receiveShadow
               >
@@ -658,6 +663,17 @@ export default function DrawerChestDialog({ open, onClose }) {
                   hint="Topmost row becomes a chest-style top-opening compartment with a hinged lid (replaces the detachable cap)"
                 />
               </div>
+              {params.topHingedBox && (
+                <div className="pl-6 mt-2">
+                  <CheckField
+                    testid="chest-liddetent"
+                    label="Lid detent (soft stop)"
+                    value={params.lidDetent}
+                    onChange={(v) => update("lidDetent", v)}
+                    hint="Tightens the lid's pin hole by 0.10 mm so the lid holds any open angle (~110°) instead of falling shut. Pair with a 2 mm axle rod."
+                  />
+                </div>
+              )}
               <div className="mt-2">
                 <CheckField
                   testid="chest-customheights"
