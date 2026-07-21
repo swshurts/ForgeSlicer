@@ -25,8 +25,9 @@ import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { getManifold } from "./manifoldEngine";
 
 // ---- Small helpers ----
+// Exported for reuse by other parametric generators (e.g. drawerChestGenerator).
 
-function _bbox(g) {
+export function _bbox(g) {
   g.computeBoundingBox();
   const bb = g.boundingBox;
   return {
@@ -36,14 +37,14 @@ function _bbox(g) {
   };
 }
 
-function _weld(g) {
+export function _weld(g) {
   try { return mergeVertices(g, 1e-4); } catch (_) { return g; }
 }
 
 // Convert a THREE.BufferGeometry into the (vertProperties, triVerts)
 // pair Manifold's Mesh constructor expects. Assumes the geometry has
 // been welded (`mergeVertices`) so vertex indices are dense.
-function _geomToMesh(wasm, geom) {
+export function _geomToMesh(wasm, geom) {
   const pos = geom.attributes.position.array;
   const idx = geom.index ? geom.index.array : null;
   const vertProperties = pos instanceof Float32Array ? pos : new Float32Array(pos);
@@ -62,7 +63,7 @@ function _geomToMesh(wasm, geom) {
 }
 
 // Reverse: pull a THREE.BufferGeometry out of a Manifold instance.
-function _manifoldToGeom(m) {
+export function _manifoldToGeom(m) {
   const mesh = m.getMesh();
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(mesh.vertProperties), 3));
@@ -75,7 +76,7 @@ function _manifoldToGeom(m) {
 // Rounded rectangular slab centred at the origin. Falls back to a
 // plain box when the corner radius is ~0 so we keep triangle counts
 // down for the "sharp" default.
-function _roundedSlab(w, d, h, r) {
+export function _roundedSlab(w, d, h, r) {
   if (r <= 0.05) return new THREE.BoxGeometry(w, d, h);
   const rClamped = Math.min(r, w / 2 - 0.01, d / 2 - 0.01);
   const shape = new THREE.Shape();

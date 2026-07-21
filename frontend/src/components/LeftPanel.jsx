@@ -16,6 +16,7 @@ import TextureLibraryDialog from "./dialogs/TextureLibraryDialog";
 import DesignChatDialog from "./dialogs/DesignChatDialog";
 import HoleDialog from "./dialogs/HoleDialog";
 import BoxDesignerDialog from "./params/BoxDesignerDialog";
+import DrawerChestDialog from "./params/DrawerChestDialog";
 import { MessageCircle } from "lucide-react";
 import { COMPONENTS, COMPONENT_CATEGORIES } from "../lib/componentLibrary";
 
@@ -385,6 +386,7 @@ export default function LeftPanel() {
   // trigger is the Hardware button on the Composites tab.
   const [hardwareLibOpen, setHardwareLibOpen] = useState(false);
   const [boxDesignerOpen, setBoxDesignerOpen] = useState(false);
+  const [drawerChestOpen, setDrawerChestOpen] = useState(false);
   // Texture Library dialog state lives on the global store so the
   // right-click "Apply texture to face..." menu item can request it
   // to open even though the context menu unmounts on click. Local
@@ -455,7 +457,7 @@ export default function LeftPanel() {
         {tab === "3d" && <Tab3D />}
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} onOpenHoleDialog={() => setHoleDialogOpen(true)} />}
-        {tab === "params" && <TabParam onOpenBoxDesigner={() => setBoxDesignerOpen(true)} />}
+        {tab === "params" && <TabParam onOpenBoxDesigner={() => setBoxDesignerOpen(true)} onOpenDrawerChest={() => setDrawerChestOpen(true)} />}
         {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} />}
       </div>
 
@@ -484,6 +486,7 @@ export default function LeftPanel() {
       <DesignChatDialog open={designChatOpen} onClose={() => setDesignChatOpen(false)} />
       <HoleDialog open={holeDialogOpen} onClose={() => setHoleDialogOpen(false)} />
       <BoxDesignerDialog open={boxDesignerOpen} onClose={() => setBoxDesignerOpen(false)} />
+      <DrawerChestDialog open={drawerChestOpen} onClose={() => setDrawerChestOpen(false)} />
       <TextureLibraryDialog
         open={textureLibraryOpen}
         targetObjectId={textureLibraryTargetId}
@@ -627,7 +630,7 @@ function TabComposites({ onOpenHardwareLib, onOpenTextureLib, onOpenHoleDialog }
 // dialog that produces a printable multi-part assembly (host mesh +
 // optional lid / drawer / feet / label — user picks which parts to
 // download and in what mode).
-function TabParam({ onOpenBoxDesigner }) {
+function TabParam({ onOpenBoxDesigner, onOpenDrawerChest }) {
   return (
     <>
       <SectionHeader
@@ -654,21 +657,22 @@ function TabParam({ onOpenBoxDesigner }) {
           </div>
         </button>
 
-        <div
-          data-testid="param-drawer-chest-soon"
-          className="flex items-start gap-2.5 p-3 rounded-md border border-slate-800 bg-slate-900/40 opacity-70 cursor-not-allowed"
-          title="Ships next release (§4c). Multi-drawer chest with biscuit joints and glide nubs."
+        <button
+          data-testid="param-open-drawer-chest-btn"
+          onClick={onOpenDrawerChest}
+          className="group flex items-start gap-2.5 p-3 rounded-md border border-slate-700 hover:border-sky-400 hover:bg-sky-500/5 text-left transition-colors"
+          title="Multi-drawer chest with biscuit joints, glide nubs, integral feet, detachable cap. Multi-part ZIP export."
         >
-          <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-slate-800/60 text-slate-500">
+          <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-slate-800 group-hover:bg-sky-500/15 text-sky-300">
             <Boxes size={19} strokeWidth={1.6} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[12px] font-semibold text-slate-400">Drawer Chest <span className="ml-1 text-[9px] font-mono uppercase tracking-wider bg-slate-800 text-slate-500 px-1 rounded">soon</span></div>
-            <div className="text-[10px] text-slate-500 leading-snug">
-              Multi-drawer chest with biscuit joints, glide nubs, detachable caps. Ships next release.
+            <div className="text-[12px] font-semibold text-slate-100">Drawer Chest</div>
+            <div className="text-[10px] text-slate-400 leading-snug">
+              Frame + N drawers + integral feet + detachable cap, with optional biscuit-joint pockets and glide nubs. Export frame, each drawer, cap, or the whole ZIP.
             </div>
           </div>
-        </div>
+        </button>
       </div>
       <p className="px-3 pb-3 text-[10px] text-slate-500 leading-snug">
         Tip — every generator produces a ready-to-print STL. Preview live before downloading; drop into the workspace for further edits.
