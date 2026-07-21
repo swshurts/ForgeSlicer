@@ -36,6 +36,14 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
+### Recently completed (iter-151.19, 2026-07-21) — Multi-plate 3MF polish
+
+Follow-ups from user testing of iter-151.18 in Elegoo Slicer (screenshot showed the multi-plate 3MF importing correctly, but plate names read as raw auto-generated ids like `plate-1784664183584-qrsw` and every plate tile was empty).
+
+- **`friendlyPlateName(plate, index)` in `multiPlateExport.js`**: strips missing / auto-id-shaped names, falls back to `Plate N`. Used by both the 3MF and STL paths + the README.
+- **Per-plate PNG thumbnails in the multi-plate 3MF**: new `_renderPlateThumbnailPng(geometry, w, h)` in `threemf.js` projects each triangle's XY footprint onto a 512×512 canvas — OffscreenCanvas in the worker, DOM canvas on the main thread. Bytes land at `Metadata/plate_N.png`. The `<plate>` metadata blocks now reference `thumbnail_file` + `top_file` so OrcaSlicer / Bambu Studio / Elegoo Slicer's plate switcher renders each tile.
+- Verified end-to-end: 2-plate export produced a 3MF containing `Metadata/plate_1.png` (11 KB) + `Metadata/plate_2.png` (127 KB), with `Plate 1` / `Plate 2` labels in both config files (no more raw ids).
+
 ### Recently completed (iter-151.18, 2026-07-21) — Proper Bambu multi-plate 3MF
 
 The iter-151.16 ZIP-of-per-plate-3MFs export unpacked into 6 individual files that OrcaSlicer imported all onto the same build plate — not what the user wanted. Fixed by emitting a single, proper Bambu/OrcaSlicer multi-plate 3MF (one file with all plates baked in).

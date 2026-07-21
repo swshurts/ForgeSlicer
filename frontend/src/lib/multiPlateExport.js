@@ -17,6 +17,19 @@ import JSZip from "jszip";
 import { downloadBlob } from "./exporters";
 import { exportSTLBytesAsync, export3MFMultiPlateBytesAsync } from "./workerClient";
 
+/** Return a friendly plate name. If the stored name is missing OR
+ *  looks like a raw auto-generated id (e.g. "plate-1784664183584-qrsw"),
+ *  fall back to "Plate N" based on the bucket's final position — that
+ *  is what the downstream slicer displays to the user. */
+function friendlyPlateName(plate, indexOneBased) {
+  const raw = (plate?.name || "").trim();
+  const looksLikeAutoId = /^plate-\d+/.test(raw);
+  if (!raw || looksLikeAutoId || raw === plate?.id) {
+    return `Plate ${indexOneBased}`;
+  }
+  return raw;
+}
+
 /** Group by plateId, defaulting to "plate-1" for legacy / untagged objs. */
 function groupByPlate(objects, plates) {
   const buckets = new Map();
@@ -24,9 +37,10 @@ function groupByPlate(objects, plates) {
   for (const o of objects) {
     const pid = o.plateId || "plate-1";
     if (!buckets.has(pid)) {
-      // Orphaned plate reference — surface as its own bucket rather
-      // than silently dropping.
-      buckets.set(pid, { plate: { id: pid, name: pid }, objects: [] });
+      // Orphaned plate reference (e.g. plate was deleted after the
+      // object was tagged) — surface as its own bucket so nothing is
+      // silently dropped. Naming happens below via friendlyPlateName.
+      buckets.set(pid, { plate: { id: pid, name: "" }, objects: [] });
     }
     buckets.get(pid).objects.push(o);
   }
@@ -83,10 +97,11 @@ function buildReadme(projectName, plateBuckets, format) {
     "",
     ...plateBuckets.map((b, i) => {
       const num = String(i + 1).padStart(2, "0");
+      const displayName = friendlyPlateName(b.plate, i + 1);
       const names = b.objects
         .map((o) => o.name || o.id)
         .join(", ");
-      return `  ${num}. ${b.plate.name} — ${b.objects.length} part(s): ${names}`;
+      return `  ${num}. ${displayName} — ${b.objects.length} part(s): ${names}`;
     }),
     "",
     "Each file was centred on its own plate origin so it lands neatly on the slicer bed.",
@@ -115,14 +130,15 @@ export async function exportMultiPlateBundle({
     return { multi: false };
   }
 
-  // Iter-151.18 — 3MF gets a single proper Bambu multi-plate file so
-  // OrcaSlicer natively imports N plates. STL has no plate concept in
-  // the format, so it stays a ZIP of per-plate STL files.
+  // Iter-151.18/151.19 — 3MF gets a single proper Bambu multi-plate
+  // file so OrcaSlicer / Bambu Studio / Elegoo Slicer natively import
+  // N plates. STL has no plate concept in the format, so it stays a
+  // ZIP of per-plate STL files.
   if (format === "3mf") {
     onProgress?.(0, buckets.length);
-    const plateGroups = buckets.map((b) => ({
+    const plateGroups = buckets.map((b, i) => ({
       plateId: b.plate.id,
-      plateName: b.plate.name || b.plate.id,
+      plateName: friendlyPlateName(b.plate, i + 1),
       objects: recentrePlateObjects(b),
     }));
     const { bytes } = await export3MFMultiPlateBytesAsync(plateGroups);
@@ -143,7 +159,7 @@ export async function exportMultiPlateBundle({
     onProgress?.(i, total);
     const recentred = recentrePlateObjects(b);
     const num = String(i + 1).padStart(2, "0");
-    const filename = `plate-${num}-${slug(b.plate.name)}.stl`;
+    const filename = `plate-${num}-${slug(friendlyPlateName(b.plate, i + 1))}.stl`;
     const r = await exportSTLBytesAsync(recentred);
     zip.file(filename, r.bytes);
   }

@@ -319,42 +319,42 @@ export async function build3MFBytesBambuMultiPlate(plateGroups) {
   const modelSettingObjects = [];
   const modelSettingPlates = [];
   const sliceInfoPlates = [];
+  // Iter-151.19 — collect PNG thumbnails to inject into the ZIP.
+  const platePngs = [];
 
-  plateGroups.forEach((plate, idx) => {
+  // Iter-151.19 — first pass builds the XML + collects thumbnail
+  // rendering promises (OffscreenCanvas is async). We resolve them
+  // BEFORE zipping so the packaging phase stays synchronous-looking.
+  for (let idx = 0; idx < plateGroups.length; idx++) {
+    const plate = plateGroups[idx];
     const objectId = idx + 1;
     const platerId = idx + 1;
     const identifyId = 100 + idx;
     const plateName = plate.plateName || `Plate ${platerId}`;
-
-    // Mesh object.
-    objectXmlBlocks.push(
-      _buildBambuObjectXml(objectId, plate.geometry),
-    );
-
-    // Build item — identity transform because the geometry is already
-    // pre-centred on the plate origin.
+    let thumbFile = "";
+    if (plate.geometry) {
+      try {
+        const result = _renderPlateThumbnailPng(plate.geometry, 512, 512);
+        const bytes = result && typeof result.then === "function" ? await result : result;
+        if (bytes) {
+          thumbFile = `Metadata/plate_${platerId}.png`;
+          platePngs.push({ path: thumbFile, bytes });
+        }
+      } catch { /* silent — thumbnail is a nice-to-have */ }
+    }
+    objectXmlBlocks.push(_buildBambuObjectXml(objectId, plate.geometry));
     buildItems.push({ objectId });
-
-    // model_settings.config <object> block.
-    modelSettingObjects.push({
-      id: objectId,
-      name: plateName,
-    });
-
-    // model_settings.config <plate> block linking the object to a
-    // plater slot.
+    modelSettingObjects.push({ id: objectId, name: plateName });
     modelSettingPlates.push({
-      platerId,
-      plateName,
+      platerId, plateName,
       modelInstances: [{ objectId, identifyId }],
+      thumbnailFile: thumbFile,
     });
-
-    // slice_info.config <plate> entry.
     sliceInfoPlates.push({
       index: platerId,
       objects: [{ identifyId, name: plateName }],
     });
-  });
+  }
 
   // 3dmodel.model
   const buildLines = buildItems.map(
@@ -401,8 +401,8 @@ ${buildLines}
     <metadata key="plater_id" value="${p.platerId}"/>
     <metadata key="plater_name" value="${escapeXml(p.plateName)}"/>
     <metadata key="locked" value="false"/>
-    <metadata key="thumbnail_file" value=""/>
-    <metadata key="top_file" value=""/>
+    <metadata key="thumbnail_file" value="${escapeXml(p.thumbnailFile || "")}"/>
+    <metadata key="top_file" value="${escapeXml(p.thumbnailFile || "")}"/>
     <metadata key="pick_file" value=""/>
 ${inst}
   </plate>`;
@@ -454,9 +454,90 @@ ${sliceInfoPlateBlocks.join("\n")}
   const meta = zip.folder("Metadata");
   meta.file("model_settings.config", modelSettingsXml);
   meta.file("slice_info.config", sliceInfoXml);
+  // Iter-151.19 — per-plate PNGs into Metadata/.
+  for (const p of platePngs) {
+    zip.file(p.path, p.bytes);
+  }
 
   const ab = await zip.generateAsync({ type: "arraybuffer" });
   return new Uint8Array(ab);
+}
+
+// Iter-151.19 — Top-down 2D thumbnail of a plate's merged geometry.
+// Runs in both main-thread and worker contexts — falls back to
+// OffscreenCanvas in the worker where `document` doesn't exist.
+function _renderPlateThumbnailPng(geometry, w = 512, h = 512) {
+  let canvas;
+  if (typeof OffscreenCanvas !== "undefined") {
+    canvas = new OffscreenCanvas(w, h);
+  } else if (typeof document !== "undefined") {
+    canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+  } else {
+    return null;
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(0, 0, w, h);
+
+  const pos = geometry.attributes.position.array;
+  const idx = geometry.index ? geometry.index.array : null;
+  const triCount = idx ? idx.length / 3 : pos.length / 9;
+  if (triCount === 0) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i], y = pos[i + 1];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const margin = 20;
+  const scale = Math.min((w - margin * 2) / spanX, (h - margin * 2) / spanY);
+  const offX = (w - spanX * scale) / 2 - minX * scale;
+  const offY = (h - spanY * scale) / 2 + maxY * scale;
+
+  ctx.fillStyle = "#f97316";
+  for (let t = 0; t < triCount; t++) {
+    let i0, i1, i2;
+    if (idx) { i0 = idx[t * 3]; i1 = idx[t * 3 + 1]; i2 = idx[t * 3 + 2]; }
+    else { i0 = t * 3; i1 = t * 3 + 1; i2 = t * 3 + 2; }
+    const x0 = offX + pos[i0 * 3] * scale;
+    const y0 = offY - pos[i0 * 3 + 1] * scale;
+    const x1 = offX + pos[i1 * 3] * scale;
+    const y1 = offY - pos[i1 * 3 + 1] * scale;
+    const x2 = offX + pos[i2 * 3] * scale;
+    const y2 = offY - pos[i2 * 3 + 1] * scale;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // toDataURL is the sync export; DOM canvases and OffscreenCanvas
+  // both support it (OffscreenCanvas via `convertToBlob` async or a
+  // synchronous transferToImageBitmap → still async). Since
+  // `toDataURL` is not on OffscreenCanvas, we use `convertToBlob` —
+  // but that's async. So we return a Promise-like handler instead.
+  //
+  // Simplification: on OffscreenCanvas, use convertToBlob → arrayBuffer;
+  // otherwise use toDataURL. Callers `await` the return.
+  if (typeof canvas.toDataURL === "function") {
+    const dataUrl = canvas.toDataURL("image/png");
+    const b64 = dataUrl.split(",", 2)[1];
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  // OffscreenCanvas path — return a Promise<Uint8Array>.
+  return canvas.convertToBlob({ type: "image/png" }).then(async (blob) => {
+    const ab = await blob.arrayBuffer();
+    return new Uint8Array(ab);
+  });
 }
 
 // Per-plate mesh block for the multi-plate 3MF. Same structure as
