@@ -180,11 +180,20 @@ export async function generateDrawerChest(params) {
 
   // Hinge geometry constants (shared between the frame carving and the
   // hinged-lid part builder below).
+  //
+  // Iter-151.11 bug fix: The drawer FRONTS in this generator live at
+  // world +Y (drawers are shifted forward by `D/2 - drawerTotalD/2` so
+  // their local +Y face lands at +D/2). The hinged lid must therefore
+  // pivot from the OPPOSITE side (-D/2 = back of the chest) so the lid
+  // opens away from the user, not into the drawer stack. Prior to this
+  // fix the hinges landed at +D/2 (same side as the drawer handles),
+  // giving the lid a front-of-chest pivot — visually and physically
+  // wrong. See user report 2026-07-21.
   const knuckleR    = Math.max(2.6, hingeLidThickness * 0.9);
   const axleR       = 2.20 / 2;
   const numKnuckles = 5;
   const knuckleGap  = 0.4;
-  const knuckleY    = D / 2 + knuckleR;
+  const knuckleY    = -D / 2 - knuckleR;                   // back of chest (opposite drawer faces)
   const knuckleZ    = frameTopZ + hingeLidThickness / 2;   // lid sits on top of frame; hinge axis at lid's mid-height
 
   // ─── Build the FRAME (cabinet) ─────────────────────────────────────
@@ -298,8 +307,9 @@ export async function generateDrawerChest(params) {
         frameM.delete(); knM.delete();
         frameM = merged;
         // Rib welding the knuckle back into the frame's rear wall.
+        // Iter-151.11: back wall is at -D/2 (hinges live at -D/2).
         const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
-        rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, knuckleZ - knuckleR);
+        rib.translate(xCenter, -D / 2 - (knuckleR + 0.5) / 2 + 0.2, knuckleZ - knuckleR);
         const ribM = _geomToMesh(wasm, _weld(rib));
         const merged2 = wasm.Manifold.union([frameM, ribM]);
         frameM.delete(); ribM.delete();
@@ -599,9 +609,9 @@ export async function generateDrawerChest(params) {
       const merged = wasm.Manifold.union([lidM, knM]);
       lidM.delete(); knM.delete();
       lidM = merged;
-      // Rib welding knuckle to the lid's back edge.
+      // Rib welding knuckle to the lid's back edge (iter-151.11: back = -D/2).
       const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
-      rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, lidKnuckleZ + knuckleR);
+      rib.translate(xCenter, -D / 2 - (knuckleR + 0.5) / 2 + 0.2, lidKnuckleZ + knuckleR);
       const ribM = _geomToMesh(wasm, _weld(rib));
       const merged2 = wasm.Manifold.union([lidM, ribM]);
       lidM.delete(); ribM.delete();
@@ -617,9 +627,10 @@ export async function generateDrawerChest(params) {
     lidM = carved;
 
     // Small finger pull on the FRONT edge of the lid.
+    // Iter-151.11: front = +D/2 (same side as drawer handles).
     const pullW = Math.min(24, W * 0.3);
     const pull = new THREE.BoxGeometry(pullW, 4, hingeLidThickness);
-    pull.translate(0, -D / 2 - 2 + 0.1, hingeLidThickness / 2);
+    pull.translate(0, D / 2 + 2 - 0.1, hingeLidThickness / 2);
     const pullM = _geomToMesh(wasm, _weld(pull));
     const merged = wasm.Manifold.union([lidM, pullM]);
     lidM.delete(); pullM.delete();
