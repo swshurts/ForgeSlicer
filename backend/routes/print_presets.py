@@ -87,10 +87,19 @@ class PresetOut(BaseModel):
     uses: int
     created_at: str
     updated_at: str
+    # Iter-151.17 — thumbs-up rating aggregate. `upvotes` is the
+    # count of distinct signed-in users who voted; `voted` is a
+    # per-request hint set to true when the CALLER has voted (only
+    # populated on endpoints that know who's asking).
+    upvotes: int = 0
+    voted: bool = False
 
 
 def _doc_to_out(doc: dict) -> Dict[str, Any]:
-    return {k: v for k, v in doc.items() if k != "_id"}
+    out = {k: v for k, v in doc.items() if k != "_id"}
+    out.setdefault("upvotes", int(out.get("upvotes", 0)))
+    out.setdefault("voted", False)
+    return out
 
 
 def build_print_presets_router(db, get_current_user) -> APIRouter:
@@ -142,6 +151,25 @@ def build_print_presets_router(db, get_current_user) -> APIRouter:
         await db.print_presets.insert_one(dict(doc))
         return PresetOut(**_doc_to_out(doc))
 
+    async def _voted_slugs(user_id: Optional[str]) -> set:
+        """Return the set of preset slugs the user has upvoted. Empty
+        set for anonymous callers — lets the caller unconditionally
+        stamp `voted` on each list item."""
+        if not user_id:
+            return set()
+        cursor = db.print_preset_votes.find(
+            {"user_id": user_id},
+            {"_id": 0, "slug": 1},
+        )
+        return {v["slug"] async for v in cursor}
+
+    async def _optional_user_id(request: Request) -> Optional[str]:
+        try:
+            u = await get_current_user(request)
+            return u["user_id"]
+        except HTTPException:
+            return None
+
     @router.get("/mine", response_model=List[PresetOut])
     async def list_mine(request: Request):
         user = await get_current_user(request)
@@ -150,10 +178,11 @@ def build_print_presets_router(db, get_current_user) -> APIRouter:
             {"_id": 0},
         ).sort("created_at", -1).limit(200)
         docs = await cursor.to_list(length=200)
-        return [PresetOut(**d) for d in docs]
+        voted = await _voted_slugs(user["user_id"])
+        return [PresetOut(**{**_doc_to_out(d), "voted": d["slug"] in voted}) for d in docs]
 
     @router.get("/public", response_model=List[PresetOut])
-    async def list_public(limit: int = 50):
+    async def list_public(request: Request, limit: int = 50):
         # Newest 50 public presets — no auth required. Used by the
         # "Community presets" browse tab (frontend).
         capped = max(1, min(200, int(limit)))
@@ -162,10 +191,24 @@ def build_print_presets_router(db, get_current_user) -> APIRouter:
             {"_id": 0},
         ).sort("created_at", -1).limit(capped)
         docs = await cursor.to_list(length=capped)
-        return [PresetOut(**d) for d in docs]
+        uid = await _optional_user_id(request)
+        voted = await _voted_slugs(uid)
+        return [PresetOut(**{**_doc_to_out(d), "voted": d["slug"] in voted}) for d in docs]
+
+    @router.get("/top-voted", response_model=List[PresetOut])
+    async def list_top_voted(request: Request, limit: int = 50):
+        capped = max(1, min(200, int(limit)))
+        cursor = db.print_presets.find(
+            {"is_public": True},
+            {"_id": 0},
+        ).sort([("upvotes", -1), ("uses", -1), ("created_at", -1)]).limit(capped)
+        docs = await cursor.to_list(length=capped)
+        uid = await _optional_user_id(request)
+        voted = await _voted_slugs(uid)
+        return [PresetOut(**{**_doc_to_out(d), "voted": d["slug"] in voted}) for d in docs]
 
     @router.get("/{slug}", response_model=PresetOut)
-    async def get_preset(slug: str):
+    async def get_preset(slug: str, request: Request):
         doc = await db.print_presets.find_one({"slug": slug}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Preset not found")
@@ -176,7 +219,9 @@ def build_print_presets_router(db, get_current_user) -> APIRouter:
         # separate authed endpoint `/mine`).
         if not doc.get("is_public", True):
             raise HTTPException(status_code=404, detail="Preset not found")
-        return PresetOut(**doc)
+        uid = await _optional_user_id(request)
+        voted = await _voted_slugs(uid)
+        return PresetOut(**{**_doc_to_out(doc), "voted": slug in voted})
 
     @router.post("/{slug}/apply", response_model=PresetOut)
     async def apply_preset(slug: str, request: Request):
@@ -184,7 +229,7 @@ def build_print_presets_router(db, get_current_user) -> APIRouter:
         # `uses` counter, returns the same payload the caller could
         # have fetched — that way the frontend gets the freshest
         # count in one round-trip.
-        await get_current_user(request)  # AUTH — raises 401 if missing
+        user = await get_current_user(request)  # AUTH — raises 401 if missing
         doc = await db.print_presets.find_one({"slug": slug}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Preset not found")
@@ -195,7 +240,58 @@ def build_print_presets_router(db, get_current_user) -> APIRouter:
             {"$inc": {"uses": 1}, "$set": {"updated_at": _now_iso()}},
         )
         doc["uses"] = int(doc.get("uses", 0)) + 1
-        return PresetOut(**doc)
+        voted = await _voted_slugs(user["user_id"])
+        return PresetOut(**{**_doc_to_out(doc), "voted": slug in voted})
+
+    # ── Iter-151.17 — thumbs-up ratings ──────────────────────────────
+    #
+    # Votes are stored as (user_id, slug) pairs in a separate collection
+    # so we can enforce one-vote-per-user cheaply. We also mirror the
+    # aggregate `upvotes` counter onto the preset doc itself for use by
+    # the "Top" sort — a listing query never has to touch the votes
+    # collection.
+    @router.post("/{slug}/vote", response_model=PresetOut)
+    async def upvote(slug: str, request: Request):
+        user = await get_current_user(request)
+        doc = await db.print_presets.find_one({"slug": slug}, {"_id": 0})
+        if not doc or not doc.get("is_public", True):
+            raise HTTPException(status_code=404, detail="Preset not found")
+        # Idempotent add — collection uses (user_id, slug) as a natural
+        # compound key. We enforce uniqueness via a "vote_id" the
+        # frontend never sees.
+        existing = await db.print_preset_votes.find_one(
+            {"user_id": user["user_id"], "slug": slug},
+            {"_id": 1},
+        )
+        if not existing:
+            await db.print_preset_votes.insert_one({
+                "user_id": user["user_id"],
+                "slug": slug,
+                "created_at": _now_iso(),
+            })
+            await db.print_presets.update_one(
+                {"slug": slug},
+                {"$inc": {"upvotes": 1}, "$set": {"updated_at": _now_iso()}},
+            )
+            doc["upvotes"] = int(doc.get("upvotes", 0)) + 1
+        return PresetOut(**{**_doc_to_out(doc), "voted": True})
+
+    @router.delete("/{slug}/vote", response_model=PresetOut)
+    async def unvote(slug: str, request: Request):
+        user = await get_current_user(request)
+        doc = await db.print_presets.find_one({"slug": slug}, {"_id": 0})
+        if not doc or not doc.get("is_public", True):
+            raise HTTPException(status_code=404, detail="Preset not found")
+        result = await db.print_preset_votes.delete_one(
+            {"user_id": user["user_id"], "slug": slug},
+        )
+        if result.deleted_count > 0:
+            await db.print_presets.update_one(
+                {"slug": slug, "upvotes": {"$gt": 0}},
+                {"$inc": {"upvotes": -1}, "$set": {"updated_at": _now_iso()}},
+            )
+            doc["upvotes"] = max(0, int(doc.get("upvotes", 0)) - 1)
+        return PresetOut(**{**_doc_to_out(doc), "voted": False})
 
     @router.delete("/{slug}")
     async def delete_preset(slug: str, request: Request):

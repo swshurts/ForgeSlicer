@@ -36,6 +36,19 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
+### Recently completed (iter-151.16 – 151.17, 2026-07-21) — Multi-plate export fix + Preset ratings
+
+**iter-151.16 — Multi-plate STL / 3MF export**
+- New `lib/multiPlateExport.js`: when a project spans >1 plate, `handleExportSTL` / `handleExport3MF` now build a **ZIP bundle** — one `.stl` / `.3mf` per plate + a `README.txt` listing which parts live on which plate. Each per-plate file is re-centred so its object group sits at plate-origin (fixes the OrcaSlicer pile-up bug where all seven parts of a Drawer Chest landed on Bambu plate 1).
+- `moveObjectsToPlate` now snaps the moved object(s) to `(0, 0, halfZ)` on the new plate instead of preserving world coordinates, so newly-created empty plates receive their object at the bed centre (as expected by the user).
+
+**iter-151.17 — Preset Ratings**
+- New MongoDB collection `print_preset_votes` (user_id + slug natural key). `upvotes` aggregate mirrored on the preset doc for fast "Top voted" sorting.
+- New endpoints: `POST /api/print-presets/{slug}/vote`, `DELETE /api/print-presets/{slug}/vote`, `GET /api/print-presets/top-voted`. Public list + get + apply now populate a `voted: bool` per-request hint so the UI can render an "already voted" state.
+- Public feed (`/presets`) shows a thumbs-up counter on each card + a "Voted / Upvote" toggle on the detail page. Sort dropdown gained a **Top voted** option that hits the new endpoint. Anonymous callers see counts but voting is sign-in gated (toast prompt).
+
+Verified end-to-end via curl (vote → +1 → mirror on public list; unvote → -1; top-voted ordering) and frontend screenshot (thumb toggles filled purple, counter updates live).
+
 ### Recently completed (iter-151.11 – 151.15, 2026-07-21) — Batch 2
 
 **iter-151.11 (fix)**: Hinged-lid preview animation opened from the front instead of the back. Root cause: after moving hinges to `-D/2` (back), `DrawerChestDialog` preview still pivoted at `+D/2` with negative rotation. Swapped pivot to `ay - chestDepth/2`, mesh offset to `+chestDepth/2`, rotation to `+0.9` rad — front now lifts up correctly.

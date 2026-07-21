@@ -8,46 +8,66 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Package, Loader2, Search, TrendingUp } from "lucide-react";
+import { Package, Loader2, Search, TrendingUp, ThumbsUp } from "lucide-react";
+import { toast } from "sonner";
 import { printPresetsApi } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function PresetsFeedPage() {
+  const { user } = useAuth();
   const [presets, setPresets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("newest");
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await printPresetsApi.listPublic(120);
-        if (!cancelled) setPresets(list || []);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("public presets failed:", err);
-      } finally { if (!cancelled) setLoading(false); }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const reload = async (nextSort = sort) => {
+    setLoading(true);
+    try {
+      const list = nextSort === "voted"
+        ? await printPresetsApi.listTopVoted(120)
+        : await printPresetsApi.listPublic(120);
+      setPresets(list || []);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("public presets failed:", err);
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { reload("newest"); }, []);
+
+  const changeSort = (next) => {
+    setSort(next);
+    reload(next);
+  };
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    let out = presets;
-    if (term) {
-      out = out.filter((p) =>
-        (p.name || "").toLowerCase().includes(term)
-        || (p.description || "").toLowerCase().includes(term)
-        || (p.author_name || "").toLowerCase().includes(term)
-        || (p.printer_id || "").toLowerCase().includes(term)
-        || (p.filament_id || "").toLowerCase().includes(term)
-      );
+    if (!term) return presets;
+    return presets.filter((p) =>
+      (p.name || "").toLowerCase().includes(term)
+      || (p.description || "").toLowerCase().includes(term)
+      || (p.author_name || "").toLowerCase().includes(term)
+      || (p.printer_id || "").toLowerCase().includes(term)
+      || (p.filament_id || "").toLowerCase().includes(term)
+    );
+  }, [presets, q]);
+
+  // Iter-151.17 — toggle a thumbs-up on a preset. Anonymous users are
+  // routed to sign-in with a return path back here.
+  const toggleVote = async (p) => {
+    if (!user) {
+      toast.error("Sign in to vote on presets");
+      return;
     }
-    if (sort === "top") {
-      out = [...out].sort((a, b) => (b.uses || 0) - (a.uses || 0));
-    } // newest is already the default order from the API
-    return out;
-  }, [presets, q, sort]);
+    try {
+      const updated = p.voted
+        ? await printPresetsApi.unvote(p.slug)
+        : await printPresetsApi.vote(p.slug);
+      setPresets((prev) => prev.map((x) => x.slug === updated.slug ? updated : x));
+    } catch (err) {
+      toast.error(`${err?.response?.data?.detail || err.message}`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 py-10 px-4">
@@ -75,11 +95,11 @@ export default function PresetsFeedPage() {
           <select
             data-testid="presets-sort"
             value={sort}
-            onChange={(e) => setSort(e.target.value)}
+            onChange={(e) => changeSort(e.target.value)}
             className="h-9 px-2 bg-slate-900 border border-slate-800 rounded text-sm focus:border-purple-500 outline-none"
           >
             <option value="newest">Newest</option>
-            <option value="top">Most applied</option>
+            <option value="voted">Top voted</option>
           </select>
         </div>
 
@@ -92,31 +112,54 @@ export default function PresetsFeedPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="presets-feed-grid">
           {filtered.map((p) => (
-            <Link
+            <div
               key={p.slug}
-              to={`/presets/${p.slug}`}
               data-testid={`presets-feed-card-${p.slug}`}
-              className="block bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 rounded-lg p-3 transition-colors"
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 rounded-lg transition-colors flex flex-col"
             >
-              <div className="flex items-start justify-between gap-1 mb-1">
-                <span className="text-sm font-semibold text-slate-100 truncate">{p.name}</span>
-                {(p.uses || 0) > 0 && (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-300 font-mono flex-shrink-0" title="Times applied">
-                    <TrendingUp size={10} /> {p.uses}
-                  </span>
-                )}
+              <Link to={`/presets/${p.slug}`} className="p-3 flex-1">
+                <div className="flex items-start justify-between gap-1 mb-1">
+                  <span className="text-sm font-semibold text-slate-100 truncate">{p.name}</span>
+                  {(p.uses || 0) > 0 && (
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-300 font-mono flex-shrink-0" title="Times applied">
+                      <TrendingUp size={10} /> {p.uses}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-400 mb-2 line-clamp-2 leading-snug min-h-[2rem]">
+                  {p.description || <span className="italic text-slate-500">No description</span>}
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between">
+                  <span className="truncate">{p.author_name}</span>
+                  <span className="text-purple-400">{p.printer_id}</span>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">
+                  {p.filament_id} · L={p.slice_settings?.layerHeight ?? "?"}mm · {p.slice_settings?.infillPercent ?? "?"}% infill
+                </div>
+              </Link>
+              <div className="border-t border-slate-800 px-2 py-1.5 flex items-center justify-between">
+                <button
+                  type="button"
+                  data-testid={`preset-vote-${p.slug}`}
+                  onClick={(e) => { e.preventDefault(); toggleVote(p); }}
+                  className={`flex items-center gap-1.5 text-xs font-semibold rounded px-2 py-1 transition-colors ${
+                    p.voted
+                      ? "bg-purple-500/20 text-purple-300"
+                      : "text-slate-400 hover:text-purple-300 hover:bg-slate-800"
+                  }`}
+                  title={p.voted ? "Remove your upvote" : (user ? "Upvote this preset" : "Sign in to vote")}
+                >
+                  <ThumbsUp size={12} className={p.voted ? "fill-purple-300" : ""} />
+                  <span className="font-mono" data-testid={`preset-upvotes-${p.slug}`}>{p.upvotes || 0}</span>
+                </button>
+                <Link
+                  to={`/presets/${p.slug}`}
+                  className="text-[10px] text-slate-500 hover:text-purple-300 uppercase tracking-wider font-semibold"
+                >
+                  Open →
+                </Link>
               </div>
-              <div className="text-xs text-slate-400 mb-2 line-clamp-2 leading-snug min-h-[2rem]">
-                {p.description || <span className="italic text-slate-500">No description</span>}
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between">
-                <span className="truncate">{p.author_name}</span>
-                <span className="text-purple-400">{p.printer_id}</span>
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono">
-                {p.filament_id} · L={p.slice_settings?.layerHeight ?? "?"}mm · {p.slice_settings?.infillPercent ?? "?"}% infill
-              </div>
-            </Link>
+            </div>
           ))}
         </div>
       </div>

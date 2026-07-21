@@ -149,7 +149,19 @@ export const printPresetsApi = {
     return data;
   },
   listPublic: async (limit = 50) => {
-    const { data } = await axios.get(`${API}/print-presets/public`, { params: { limit } });
+    const { data } = await axios.get(`${API}/print-presets/public`, { params: { limit }, withCredentials: true });
+    return data;
+  },
+  listTopVoted: async (limit = 50) => {
+    const { data } = await axios.get(`${API}/print-presets/top-voted`, { params: { limit }, withCredentials: true });
+    return data;
+  },
+  vote: async (slug) => {
+    const { data } = await axios.post(`${API}/print-presets/${slug}/vote`, {}, { withCredentials: true });
+    return data;
+  },
+  unvote: async (slug) => {
+    const { data } = await axios.delete(`${API}/print-presets/${slug}/vote`, { withCredentials: true });
     return data;
   },
   get: async (slug) => {

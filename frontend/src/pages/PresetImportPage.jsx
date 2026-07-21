@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Package, LogIn, Loader2, ArrowRight } from "lucide-react";
+import { Package, LogIn, Loader2, ArrowRight, ThumbsUp } from "lucide-react";
 import { printPresetsApi } from "../lib/api";
 import { useScene, useSliceSettings } from "../lib/store";
 import { useAuth } from "../contexts/AuthContext";
@@ -62,6 +62,21 @@ export default function PresetImportPage() {
     }
   };
 
+  const toggleVote = async () => {
+    if (!user) {
+      toast.error("Sign in to vote on presets");
+      return;
+    }
+    try {
+      const updated = preset.voted
+        ? await printPresetsApi.unvote(slug)
+        : await printPresetsApi.vote(slug);
+      setPreset(updated);
+    } catch (err) {
+      toast.error(`${err?.response?.data?.detail || err.message}`);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">
@@ -98,9 +113,31 @@ export default function PresetImportPage() {
           <Package size={16} /> <span className="uppercase tracking-widest text-xs">Print-Shop Preset</span>
         </div>
         <h1 className="text-4xl font-bold text-white mb-2" data-testid="preset-name">{preset.name}</h1>
-        <div className="text-sm text-slate-400 mb-6">
-          by <span className="text-slate-200 font-semibold">{preset.author_name}</span>
-          {" · "}<span className="font-mono">{preset.uses}</span> apply{preset.uses === 1 ? "" : "s"}
+        <div className="text-sm text-slate-400 mb-6 flex items-center gap-3 flex-wrap">
+          <span>by <span className="text-slate-200 font-semibold">{preset.author_name}</span></span>
+          <span>·</span>
+          <span><span className="font-mono">{preset.uses}</span> apply{preset.uses === 1 ? "" : "s"}</span>
+          {(preset.upvotes || 0) > 0 && (
+            <>
+              <span>·</span>
+              <span className="text-purple-300 font-mono" data-testid="preset-detail-upvotes"><ThumbsUp size={11} className="inline mr-1" />{preset.upvotes}</span>
+            </>
+          )}
+          <button
+            type="button"
+            data-testid="preset-detail-vote-btn"
+            onClick={toggleVote}
+            disabled={!user}
+            className={`ml-auto flex items-center gap-1.5 text-xs font-semibold rounded px-2.5 py-1 transition-colors ${
+              preset.voted
+                ? "bg-purple-500/20 text-purple-300"
+                : "bg-slate-800 text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            }`}
+            title={!user ? "Sign in to vote" : preset.voted ? "Remove your upvote" : "Upvote this preset"}
+          >
+            <ThumbsUp size={12} className={preset.voted ? "fill-purple-300" : ""} />
+            {preset.voted ? "Voted" : "Upvote"}
+          </button>
         </div>
         {preset.description && (
           <p className="text-slate-300 mb-6 leading-relaxed" data-testid="preset-description">{preset.description}</p>

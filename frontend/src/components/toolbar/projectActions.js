@@ -19,6 +19,7 @@ import {
 } from "../../lib/exporters";
 import { toast } from "sonner";
 import { combineTwoAsync, exportSTLBytesAsync, export3MFBytesAsync } from "../../lib/workerClient";
+import { exportMultiPlateBundle } from "../../lib/multiPlateExport";
 
 export function makeProjectActions({ store, setBusyMsg }) {
   // `store` is the zustand HOOK (`useScene`). We want a non-hook
@@ -255,8 +256,21 @@ export function makeProjectActions({ store, setBusyMsg }) {
       try {
         const s = get();
         const safe = (s.projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
-        const { bytes } = await exportSTLBytesAsync(s.objects);
-        downloadBlob(new Blob([bytes], { type: "model/stl" }), `${safe}.stl`);
+        // Iter-151.16 — multi-plate projects export as a ZIP of
+        // per-plate STLs so OrcaSlicer doesn't pile them at the origin.
+        const multi = await exportMultiPlateBundle({
+          projectName: s.projectName,
+          objects: s.objects,
+          plates: s.plates || [],
+          format: "stl",
+          onProgress: (done, total) => setBusyMsg(`Exporting STL (${done}/${total} plates)...`),
+        });
+        if (multi.multi) {
+          toast.success(`Exported ${multi.plateCount}-plate ZIP · one STL per plate`);
+        } else {
+          const { bytes } = await exportSTLBytesAsync(s.objects);
+          downloadBlob(new Blob([bytes], { type: "model/stl" }), `${safe}.stl`);
+        }
       } catch (e) {
         // Log the full stack so a future failure isn't just an opaque
         // alert message — saved us hours on the React #321 bug.
@@ -271,6 +285,19 @@ export function makeProjectActions({ store, setBusyMsg }) {
       try {
         const s = get();
         const safe = (s.projectName || "model").replace(/[^a-z0-9-_]/gi, "_");
+        // Iter-151.16 — multi-plate ZIP bundle.
+        const multi = await exportMultiPlateBundle({
+          projectName: s.projectName,
+          objects: s.objects,
+          plates: s.plates || [],
+          format: "3mf",
+          onProgress: (done, total) => setBusyMsg(`Exporting 3MF (${done}/${total} plates)...`),
+        });
+        if (multi.multi) {
+          toast.success(`Exported ${multi.plateCount}-plate ZIP · one 3MF per plate`);
+          setBusyMsg("");
+          return;
+        }
         const { bytes, multicolor, parts } = await export3MFBytesAsync(s.objects);
         downloadBlob(new Blob([bytes], { type: "model/3mf" }), `${safe}.3mf`);
         if (multicolor && parts > 1) {

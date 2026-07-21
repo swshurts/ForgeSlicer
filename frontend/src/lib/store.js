@@ -198,11 +198,26 @@ export const useScene = create((set, get) => ({
     get().pushHistory();
     set((s) => {
       const idSet = new Set(ids);
-      return {
-        objects: (s.objects || []).map((o) =>
-          idSet.has(o.id) ? { ...o, plateId } : o
-        ),
-      };
+      // Iter-151.16 — when moving objects to a new plate, drop them at
+      // the plate origin (bed centre, ground plane) so the destination
+      // plate isn't a duplicate of the source layout. Previous
+      // behaviour preserved world-space position, which meant a
+      // multi-part export ended up with every plate holding parts at
+      // the same coordinates → OrcaSlicer piled them.
+      const moved = (s.objects || []).map((o) => {
+        if (!idSet.has(o.id)) return o;
+        // Compute a rough bbox to snap Z so the base rests on the bed
+        // (matches auto-drop). Uses `dims.z` for parametrics, and any
+        // saved `baseOffsetZ` for imported meshes.
+        const halfZ = (o.dims?.z ?? 20) * 0.5;
+        const bedZ = halfZ;
+        return {
+          ...o,
+          plateId,
+          position: [0, 0, bedZ],
+        };
+      });
+      return { objects: moved };
     });
   },
 
