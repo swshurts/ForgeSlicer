@@ -218,6 +218,25 @@ export async function export3MFMultiPlateBytesAsync(plateGroups) {
     if (!g.objects || g.objects.length === 0) continue;
     const r = evaluateScene(g.objects);
     if (r.empty) continue;
+    // Iter-151.20 — snap to bed & centre XY (matches worker path).
+    const pos = r.geometry.attributes.position.array;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      if (pos[i] < minX) minX = pos[i];
+      if (pos[i] > maxX) maxX = pos[i];
+      if (pos[i + 1] < minY) minY = pos[i + 1];
+      if (pos[i + 1] > maxY) maxY = pos[i + 1];
+      if (pos[i + 2] < minZ) minZ = pos[i + 2];
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    for (let i = 0; i < pos.length; i += 3) {
+      pos[i]     -= cx;
+      pos[i + 1] -= cy;
+      pos[i + 2] -= minZ;
+    }
+    r.geometry.attributes.position.needsUpdate = true;
     evaluated.push({ plateId: g.plateId, plateName: g.plateName || g.plateId, geometry: r.geometry });
   }
   if (evaluated.length === 0) throw new Error("No non-empty plates to export.");

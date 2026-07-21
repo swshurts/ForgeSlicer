@@ -222,6 +222,33 @@ self.addEventListener("message", async (e) => {
           if (!g.objects || g.objects.length === 0) continue;
           const r = await evaluateSmart(g.objects);
           if (r.empty) continue;
+          // Iter-151.20 — snap each plate's merged geometry to
+          // (0, 0, 0) at the min-Z corner so ElegooSlicer / OrcaSlicer
+          // don't fire the "Multi-part object detected: parts at
+          // multiple heights" dialog. The old flow preserved the
+          // world-Z of each object (drawer 1 at Z=60, drawer 2 at
+          // Z=80, etc.) so the slicer saw 5 objects floating at 5
+          // different heights and offered to fuse them. Post-fix,
+          // each plate's geometry sits flat on the bed with its
+          // XY centred on the plate origin.
+          const pos = r.geometry.attributes.position.array;
+          let minX = Infinity, minY = Infinity, minZ = Infinity;
+          let maxX = -Infinity, maxY = -Infinity;
+          for (let i = 0; i < pos.length; i += 3) {
+            if (pos[i] < minX) minX = pos[i];
+            if (pos[i] > maxX) maxX = pos[i];
+            if (pos[i + 1] < minY) minY = pos[i + 1];
+            if (pos[i + 1] > maxY) maxY = pos[i + 1];
+            if (pos[i + 2] < minZ) minZ = pos[i + 2];
+          }
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          for (let i = 0; i < pos.length; i += 3) {
+            pos[i]     -= cx;
+            pos[i + 1] -= cy;
+            pos[i + 2] -= minZ;
+          }
+          r.geometry.attributes.position.needsUpdate = true;
           evaluated.push({
             plateId: g.plateId,
             plateName: g.plateName || g.plateId,

@@ -36,6 +36,12 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
+### Recently completed (iter-151.20, 2026-07-21) — Bed-snap per plate
+
+Elegoo Slicer / OrcaSlicer were firing the "Multi-part object detected: parts at multiple heights" dialog on the multi-plate 3MF because each per-plate merged geometry still carried its ORIGINAL world-Z (drawers preserved their assembled-position height — drawer 1 at Z=60 mm, drawer 2 at Z=80 mm, etc.). The slicer saw N objects floating at N different heights and asked to fuse them; users who tapped "Yes" then hit Arrange got everything collapsed onto a single plate.
+
+**Fix** (`csg.worker.js` + `workerClient.js` fallback path): after `evaluateSmart` produces the per-plate merged geometry, translate every vertex so `bboxMin.z = 0` and `(bboxCenter.x, bboxCenter.y) = (0, 0)`. Each plate's geometry now sits flat on the bed at plate origin. Verified in the resulting 3MF: `object 1` Z-range `0.00 → 20.00`, `object 2` Z-range `0.00 → 24.00` — no more mid-air parts.
+
 ### Recently completed (iter-151.19, 2026-07-21) — Multi-plate 3MF polish
 
 Follow-ups from user testing of iter-151.18 in Elegoo Slicer (screenshot showed the multi-plate 3MF importing correctly, but plate names read as raw auto-generated ids like `plate-1784664183584-qrsw` and every plate tile was empty).
