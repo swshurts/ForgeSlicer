@@ -31,7 +31,28 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **ROADMAP.md** — prioritised P0/P1/P2 backlog and pending issues.
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
-## Current Open Items (as of 2026-07-20)
+## Current Open Items (as of 2026-07-21)
+
+### Recently completed (iter-151.2, 2026-07-21) — Drawer Chest per-drawer heights + hinged-lid top compartment
+
+**Feature additions (user spec):**
+- **Per-drawer heights** (`DrawerChestDialog.jsx`, `drawerChestGenerator.js`): New "Custom drawer heights" toggle exposes a list of per-slot height inputs (top→bottom). The BOTTOM row is always the auto-fill (shows the leftover height as a placeholder). This lets users pack a shallow tool drawer above a deep sock drawer, for example.
+- **Hinged-lid top compartment**: New "Top compartment is a hinged-lid box" toggle turns the top row into a chest-style top-opening compartment. Front face for that row stays closed; the topmost divider drops; a matching hinged lid with piano-hinge knuckles (Ø 2.20 mm axle hole, 1.75 mm filament pin fit) generates as a separate part. Detachable-cap is auto-disabled in this mode.
+- **Master-view improvements**: The "Explode drawers 8 mm" toggle now ALSO rotates the hinged lid open (~52°) around its back-edge pivot so users can see the top compartment interior. Toggle it off to preview the closed shape.
+- **Lid download button**: `chest-download-hinged-lid` appears in the footer when the hinged mode is active.
+
+**Bug fixes (during scaffolding):**
+- **Drawer sizing**: Previous code set `drawerTotalD = drawerBodyD + drawerFaceThickness - clearance` which pushed the drawer's back face 2.4 mm behind the frame's back interior wall. Rewrote as `drawerTotalD = D - wall - drawerBackClearance` so the drawer face is exactly flush with the frame front and the back has a proper `clearance` mm gap.
+- **Glide nubs**: Previously placed 0.6 mm hemispheres on the drawer's ±X SIDES, making the drawer's bbox 1.2 mm wider than the slot interior (drawer wouldn't slide in). Nubs moved to the drawer's underside (Z=0) at ±35 % X, ±25 % Y, radius auto-capped to `min(0.5, clearance * 0.9)` so they never exceed clearance.
+- **Frame back wall**: Cavity Y-cut was over-cutting into the back wall by 1 mm (turning a 3 mm nominal back into a 2 mm back). All the over-cut now sits at the +Y (front) side.
+- **Feet inset**: `footInset` param had no effect (corner posts always reached the outer edge). Rewrote as "clear the entire feet Z-band, then union in 4 posts inset by `footInset` mm" so the parameter now controls the visible inset properly.
+- **Effective height**: Hinged-lid mode subtracts `hingeLidThickness` from `frameH` so the total assembled height (feet + cabinet + lid) matches the user's requested `H`.
+
+**Files touched**:
+- `frontend/src/lib/drawerChestGenerator.js` — major rewrite (~470 lines)
+- `frontend/src/components/params/DrawerChestDialog.jsx` — added heights section, hinged toggle, mutex with topCap, lid download button, hinged-lid preview rotation
+
+**Testing**: Screenshot-verified default, hinged-only, hinged + custom heights, closed vs open preview. Add-to-workspace lays 5 parts side-by-side without Manifold union failures. ZIP bundle (104 KB) + individual Frame STL (12 KB) download cleanly.
 
 ### Recently completed (iter-150.6, 2026-07-20) — Add-to-Workspace overlap bug (user reported: hinged export produced tiny fragment)
 

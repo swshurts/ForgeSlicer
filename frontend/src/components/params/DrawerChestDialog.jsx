@@ -38,6 +38,10 @@ const DEFAULTS = {
   glideNubs: true,
   biscuitJoints: false,
   cornerR: 1.5,
+  // iter-151.2 — per-drawer heights + hinged-lid top compartment.
+  customHeights: false,        // toggle: use per-slot heights vs equal split
+  drawerHeights: [],           // mm, length ≤ rows; LAST slot auto-fills leftover
+  topHingedBox: false,         // top row is chest-style hinged-lid box
 };
 
 const HANDLE_STYLES = [
@@ -85,15 +89,31 @@ function CheckField({ label, value, onChange, testid, hint }) {
 }
 
 // ---- Assembled preview ----
-function PreviewMesh({ parts, showDrawers, drawerOpen }) {
+function PreviewMesh({ parts, showDrawers, drawerOpen, chestDepth }) {
   return (
     <>
       {parts.map((p) => {
         if (!showDrawers && p.id.startsWith("drawer-")) return null;
-        // For a "slightly open" assembled view, pull drawers forward by
-        // 8 mm so the user can see them sitting inside the frame.
         const [ax, ay, az] = p.assembledPos || [0, 0, 0];
+        const isLid = p.id === "hinged-lid";
+        // Drawers: pull out by 8 mm when "open" toggled.
         const yOffset = p.id.startsWith("drawer-") && drawerOpen ? 8 : 0;
+        // Hinged lid: rotate around back-edge pivot for the "open" view.
+        if (isLid && drawerOpen && chestDepth != null) {
+          const hingeY = ay + chestDepth / 2;
+          return (
+            <group key={p.id} position={[ax, hingeY, az]} rotation={[-0.9, 0, 0]}>
+              <mesh
+                geometry={p.geometry}
+                position={[0, -chestDepth / 2, 0]}
+                castShadow
+                receiveShadow
+              >
+                <meshStandardMaterial color={p.color} roughness={0.55} metalness={0.08} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
+          );
+        }
         return (
           <mesh
             key={p.id}
@@ -102,12 +122,7 @@ function PreviewMesh({ parts, showDrawers, drawerOpen }) {
             castShadow
             receiveShadow
           >
-            <meshStandardMaterial
-              color={p.color}
-              roughness={0.55}
-              metalness={0.08}
-              side={THREE.DoubleSide}
-            />
+            <meshStandardMaterial color={p.color} roughness={0.55} metalness={0.08} side={THREE.DoubleSide} />
           </mesh>
         );
       })}
@@ -118,6 +133,7 @@ function PreviewMesh({ parts, showDrawers, drawerOpen }) {
 export default function DrawerChestDialog({ open, onClose }) {
   const [params, setParams] = useState(DEFAULTS);
   const [parts, setParts] = useState([]);
+  const [buildInfo, setBuildInfo] = useState(null);
   const [building, setBuilding] = useState(false);
   const [buildError, setBuildError] = useState("");
   const [showDrawers, setShowDrawers] = useState(true);
@@ -137,13 +153,18 @@ export default function DrawerChestDialog({ open, onClose }) {
       setBuilding(true);
       setBuildError("");
       try {
-        const { parts: builtParts } = await generateDrawerChest(params);
+        const { parts: builtParts, info } = await generateDrawerChest({
+          ...params,
+          // Only pass drawerHeights when customHeights is on; otherwise
+          // send undefined so the generator falls back to equal split.
+          drawerHeights: params.customHeights ? params.drawerHeights : undefined,
+        });
         if (token !== buildTokenRef.current) return;
         setParts(builtParts);
+        setBuildInfo(info);
       } catch (e) {
         if (token !== buildTokenRef.current) return;
         setBuildError(e.message || String(e));
-        // eslint-disable-next-line no-console
         console.warn("[DrawerChest] build failed:", e);
       } finally {
         if (token === buildTokenRef.current) setBuilding(false);
@@ -261,6 +282,7 @@ export default function DrawerChestDialog({ open, onClose }) {
   if (!open) return null;
 
   const hasCap = !!parts.find((p) => p.id === "cap");
+  const hasHingedLid = !!parts.find((p) => p.id === "hinged-lid");
   const drawerCount = parts.filter((p) => p.id.startsWith("drawer-")).length;
 
   return (
@@ -338,9 +360,68 @@ export default function DrawerChestDialog({ open, onClose }) {
                   label="Glide nubs on drawer bottom"
                   value={params.glideNubs}
                   onChange={(v) => update("glideNubs", v)}
-                  hint="Four 0.6 mm hemispheres on the drawer's underside so it slides on 4 points instead of a full face"
+                  hint="Four low-profile hemispheres on the drawer's underside so it slides on 4 points instead of a full face"
                 />
               </div>
+              <div className="mt-2">
+                <CheckField
+                  testid="chest-hingedtop"
+                  label="Top compartment is a hinged-lid box"
+                  value={params.topHingedBox}
+                  onChange={(v) => update("topHingedBox", v)}
+                  hint="Topmost row becomes a chest-style top-opening compartment with a hinged lid (replaces the detachable cap)"
+                />
+              </div>
+              <div className="mt-2">
+                <CheckField
+                  testid="chest-customheights"
+                  label="Custom drawer heights"
+                  value={params.customHeights}
+                  onChange={(v) => update("customHeights", v)}
+                  hint="Set each row's height individually — the bottom row auto-fills any leftover space"
+                />
+              </div>
+              {params.customHeights && (
+                <div className="pl-6 mt-2 space-y-1.5" data-testid="chest-heights-list">
+                  <div className="text-[9.5px] text-slate-500 leading-tight">
+                    Heights top → bottom. The <span className="text-sky-300 font-semibold">bottom row</span> auto-fills whatever&apos;s left.
+                  </div>
+                  {Array.from({ length: params.rows }).map((_, i) => {
+                    const isLast = i === params.rows - 1;
+                    const isHingedTop = params.topHingedBox && i === 0;
+                    // UI order: top drawer first (idx 0 → topmost slot); generator uses bottom-first, so we index in reverse.
+                    const generatorIndex = params.rows - 1 - i;
+                    const val = params.drawerHeights[generatorIndex] ?? "";
+                    const label = isHingedTop
+                      ? `Top (hinged box)`
+                      : isLast
+                        ? `Bottom (auto)`
+                        : `Row ${i + 1}`;
+                    return (
+                      <div key={i} className="flex items-center gap-2" data-testid={`chest-height-row-${i}`}>
+                        <span className="text-[10px] text-slate-400 w-24 flex-shrink-0">{label}</span>
+                        <input
+                          type="number"
+                          value={isLast ? "" : val}
+                          disabled={isLast}
+                          step={0.5}
+                          min={10}
+                          placeholder={isLast ? (buildInfo ? String((+buildInfo.slotHeights[0]).toFixed(1)) : "auto") : ""}
+                          onChange={(e) => {
+                            const heights = [...(params.drawerHeights || [])];
+                            const parsed = parseFloat(e.target.value);
+                            heights[generatorIndex] = Number.isFinite(parsed) ? parsed : 0;
+                            update("drawerHeights", heights);
+                          }}
+                          className="h-7 w-20 px-1.5 bg-slate-900 border border-slate-700 rounded text-[11px] text-slate-200 focus:outline-none focus:border-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          data-testid={`chest-height-input-${i}`}
+                        />
+                        <span className="text-[10px] text-slate-500">mm</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section data-testid="chest-extras">
@@ -362,12 +443,14 @@ export default function DrawerChestDialog({ open, onClose }) {
                 <CheckField
                   testid="chest-topcap"
                   label="Detachable top cap"
-                  value={params.topCap}
+                  value={params.topCap && !params.topHingedBox}
                   onChange={(v) => update("topCap", v)}
-                  hint="Overhanging slab that sits on top of the frame — print it in a contrasting colour"
+                  hint={params.topHingedBox
+                    ? "Disabled — the hinged lid replaces the cap on top compartment mode."
+                    : "Overhanging slab that sits on top of the frame — print it in a contrasting colour"}
                 />
               </div>
-              {params.topCap && (
+              {params.topCap && !params.topHingedBox && (
                 <div className="pl-6 grid grid-cols-2 gap-2 mt-1.5">
                   <NumField testid="chest-capth" label="Cap thickness" value={params.capThickness} onChange={(v) => update("capThickness", v)} step={0.5} min={1.5} max={12} />
                   <NumField testid="chest-capover" label="Overhang" value={params.capOverhang} onChange={(v) => update("capOverhang", v)} step={0.5} min={0} max={15} />
@@ -437,7 +520,7 @@ export default function DrawerChestDialog({ open, onClose }) {
                 fadeDistance={520}
                 infiniteGrid
               />
-              {parts.length > 0 && <PreviewMesh parts={parts} showDrawers={showDrawers} drawerOpen={drawerOpen} />}
+              {parts.length > 0 && <PreviewMesh parts={parts} showDrawers={showDrawers} drawerOpen={drawerOpen} chestDepth={params.depth} />}
               <OrbitControls makeDefault enablePan enableZoom enableRotate target={[0, 0, params.height / 2]} />
               <GizmoHelper alignment="bottom-right" margin={[68, 68]}>
                 <GizmoViewport axisColors={["#F97316", "#10B981", "#06B6D4"]} labelColor="white" />
@@ -483,6 +566,16 @@ export default function DrawerChestDialog({ open, onClose }) {
                 className="h-9 px-3 text-[11px] uppercase tracking-wider font-semibold rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 flex items-center gap-1.5"
               >
                 {downloading === "cap" ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Cap
+              </button>
+            )}
+            {hasHingedLid && (
+              <button
+                data-testid="chest-download-hinged-lid"
+                onClick={() => handleDownloadPart("hinged-lid")}
+                disabled={building || downloading === "hinged-lid"}
+                className="h-9 px-3 text-[11px] uppercase tracking-wider font-semibold rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {downloading === "hinged-lid" ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Lid
               </button>
             )}
             <button

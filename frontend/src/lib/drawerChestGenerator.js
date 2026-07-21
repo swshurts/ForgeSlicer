@@ -3,16 +3,14 @@
  * multi-drawer chest / chest-of-drawers assembly.
  *
  * Produces separate manifolds for:
- *   - Frame (main cabinet, feet integral, drawer cavities cut out)
+ *   - Frame (main cabinet, feet integral, drawer/hinged-box cavities cut out)
  *   - N drawers (each an open-top box with a front face + optional
  *     recessed handle + optional glide nubs)
- *   - Detachable top cap (optional)
+ *   - Optional hinged lid for a top compartment (top-opening chest style)
+ *   - Optional detachable top cap
  *
  * Coordinate frame: Z-up. Origin at floor-centre of the frame footprint.
  * All dimensions in millimetres.
- *
- * Mirrors the boxGenerator.js pattern — helpers are reused via named
- * exports so we stay DRY across the two parametric generators.
  */
 import * as THREE from "three";
 import { getManifold } from "./manifoldEngine";
@@ -26,7 +24,18 @@ import { _bbox, _weld, _geomToMesh, _manifoldToGeom, _roundedSlab } from "./boxG
  * @param {number} params.depth       Outer depth (Y), mm
  * @param {number} params.height      Outer height (Z), mm (feet + cap included)
  * @param {number} params.wall        Frame wall thickness, mm
- * @param {number} params.rows        Number of drawers (stacked)
+ * @param {number} params.rows        Number of drawer slots (1..8)
+ * @param {number[]} [params.drawerHeights]  Per-slot heights (mm). Length ≤ rows.
+ *                                    If undefined/empty, all rows split equally.
+ *                                    The LAST slot always auto-fills the leftover
+ *                                    (whether user-set or computed) so the frame
+ *                                    exactly matches `height`. If the user's
+ *                                    provided heights can't fit, we throw.
+ * @param {boolean} [params.topHingedBox]  If true, the topmost slot becomes a
+ *                                    top-opening (chest-style) compartment
+ *                                    with a hinged lid instead of a sliding
+ *                                    drawer. When enabled, `topCap` is
+ *                                    ignored (the lid IS the top).
  * @param {number} params.drawerWall  Drawer wall thickness, mm
  * @param {number} params.clearance   Per-side slide clearance, mm
  * @param {string} params.handleStyle "recess" | "knob" | "none"
@@ -34,13 +43,16 @@ import { _bbox, _weld, _geomToMesh, _manifoldToGeom, _roundedSlab } from "./boxG
  * @param {boolean} params.feet       Add integral feet at the four corners
  * @param {number} params.footHeight  Feet height, mm
  * @param {number} params.footInset   Feet inset from outer corner, mm
- * @param {boolean} params.topCap     Add a detachable cap on top
+ * @param {boolean} params.topCap     Add a detachable cap on top (ignored if topHingedBox)
  * @param {number} params.capThickness Cap thickness, mm
  * @param {number} params.capOverhang Cap overhang past the frame, mm
  * @param {boolean} params.glideNubs  Add small nubs on drawer sides for smoother sliding
  * @param {boolean} params.biscuitJoints Add decorative biscuit-joint pockets on the front stiles
  * @param {number} params.cornerR     Outer corner radius for the cap + frame, mm
- * @returns {Promise<{ parts: Array<{ id: string, label: string, geometry: THREE.BufferGeometry, bbox: {x:number,y:number,z:number}, color: string }> }>}
+ * @returns {Promise<{
+ *   parts: Array<{ id: string, label: string, geometry: THREE.BufferGeometry, bbox: {x:number,y:number,z:number}, color: string, assembledPos: [number,number,number] }>,
+ *   info: { slotHeights: number[], frameH: number, effectiveHeight: number }
+ * }>}
  */
 export async function generateDrawerChest(params) {
   const wasm      = await getManifold();
@@ -56,7 +68,10 @@ export async function generateDrawerChest(params) {
   const feet      = !!params.feet;
   const footHeight= Math.max(0, +params.footHeight   || 8);
   const footInset = Math.max(0, +params.footInset    || 4);
-  const topCap    = !!params.topCap;
+  const topHingedBox = !!params.topHingedBox;
+  // topHingedBox owns the top of the frame, so the detachable cap is
+  // mutually exclusive with it.
+  const topCap    = !!params.topCap && !topHingedBox;
   const capThickness = Math.max(1.5, +params.capThickness || 4);
   const capOverhang  = Math.max(0, +params.capOverhang    || 3);
   const glideNubs = !!params.glideNubs;
@@ -65,102 +80,163 @@ export async function generateDrawerChest(params) {
 
   // ─── FRAME dimensions ──────────────────────────────────────────────
   // The frame occupies the region between the feet and the (optional)
-  // top cap. Feet are BUILT INTO the frame (subtract material between
-  // them) so we still export a single frame part. The cap ships
-  // separately so the user can print it in a different colour.
+  // top cap or hinged lid. `H` is the user's requested TOTAL height
+  // (feet floor → topmost feature), so we subtract feet + whatever's
+  // on top so the frame section fits exactly.
   const feetH   = feet ? footHeight : 0;
   const capH    = topCap ? capThickness : 0;
-  const frameH  = H - feetH - capH;                        // vertical extent of the "cabinet" section
+  // Hinge lid thickness (kept in sync with the lid geometry below).
+  const hingeLidThickness = Math.max(3, wall);
+  const lidH    = topHingedBox ? hingeLidThickness : 0;
+  const frameH  = H - feetH - capH - lidH;                 // vertical extent of the cabinet section
   if (frameH < 30) {
-    throw new Error("Drawer chest height too small — need at least 30 mm of cabinet section above the feet + cap.");
+    throw new Error("Chest too short — need at least 30 mm of cabinet section above the feet + cap.");
   }
-  // Frame body has its bottom at Z = 0 (feet start below at Z<0 if enabled).
-  // Actually to keep everything on the print bed, we shift so
-  // Z = 0 is the very bottom of the feet, then frameBottomZ = feetH,
-  // frameTopZ = feetH + frameH.
   const frameBottomZ = feetH;
   const frameTopZ    = frameBottomZ + frameH;
+
+  // ─── Slot heights per row ─────────────────────────────────────────
+  // The cabinet section holds `rows` slots separated by (rows+1) or
+  // (rows) full-width horizontal dividers of thickness `wall`. If the
+  // top slot is a hinged-lid compartment, we DROP the top divider
+  // (since the lid closes it off from above), so there are only
+  // `rows` dividers total (1 bottom + (rows-1) between + 0 top).
+  const numDividers = topHingedBox ? rows : rows + 1;
+  const totalDivider = wall * numDividers;
+  const availableSlots = frameH - totalDivider;
+  if (availableSlots < 10 * rows) {
+    throw new Error(`Only ${availableSlots.toFixed(1)} mm available for ${rows} drawer slots — reduce rows, lower the wall thickness, or increase the outer height.`);
+  }
+  // Build per-slot height array from user input; the BOTTOM slot
+  // (index 0) always auto-fills whatever's left. This means the top
+  // slot — including a hinged-lid compartment — always honors the
+  // user's exact number.
+  const userHeights = Array.isArray(params.drawerHeights) ? params.drawerHeights : [];
+  const slotHeights = new Array(rows).fill(0);
+  let consumedAbove = 0;
+  for (let i = rows - 1; i >= 1; i--) {                 // fill top→down, leaving slot 0 for auto
+    const h = +userHeights[i];
+    const eff = (Number.isFinite(h) && h > 0) ? h : (availableSlots / rows);
+    slotHeights[i] = eff;
+    consumedAbove += eff;
+  }
+  slotHeights[0] = availableSlots - consumedAbove;
+  if (slotHeights[0] < 10) {
+    throw new Error(`Only ${slotHeights[0].toFixed(1)} mm left for the bottom slot after allocating the drawer heights above. Reduce upper drawer heights or increase overall height.`);
+  }
+  for (let i = 0; i < rows; i++) {
+    if (slotHeights[i] < 10) {
+      throw new Error(`Drawer ${i + 1} is only ${slotHeights[i].toFixed(1)} mm tall — minimum is 10 mm.`);
+    }
+  }
+  // Precompute slot-start Z (the Z of each slot's floor, above its divider).
+  // Layout bottom-to-top:  [wall divider] [slot 0] [wall divider] [slot 1] ... [slot rows-1] [optional top wall]
+  const slotStartZ = new Array(rows);
+  {
+    let z = frameBottomZ + wall;                          // top of bottom divider
+    for (let i = 0; i < rows; i++) {
+      slotStartZ[i] = z;
+      z += slotHeights[i];
+      if (i < rows - 1) z += wall;                        // internal dividers between slots
+    }
+  }
+  const slotInnerW = W - 2 * wall;
+
+  // Hinge geometry constants (shared between the frame carving and the
+  // hinged-lid part builder below).
+  const knuckleR    = Math.max(2.6, hingeLidThickness * 0.9);
+  const axleR       = 2.20 / 2;
+  const numKnuckles = 5;
+  const knuckleGap  = 0.4;
+  const knuckleY    = D / 2 + knuckleR;
+  const knuckleZ    = frameTopZ + hingeLidThickness / 2;   // lid sits on top of frame; hinge axis at lid's mid-height
 
   // ─── Build the FRAME (cabinet) ─────────────────────────────────────
   let frameM;
   {
-    // Start with a solid outer block spanning the full height (feet + cabinet).
-    // Feet are just legs at the four corners — everything BETWEEN the
-    // corners in the feet-Z band gets cut away. If feet are disabled
-    // the frame simply starts at Z=0.
+    // Outer block spans feet + cabinet.
     const outer = _weld(_roundedSlab(W, D, feetH + frameH, cornerR));
     outer.translate(0, 0, (feetH + frameH) / 2);
     frameM = _geomToMesh(wasm, outer);
 
     if (feet) {
-      // Carve away the material between the four foot columns in the
-      // 0..feetH Z-band. What's left is 4 corner posts.
-      const footSize = Math.max(6, Math.min(W / 3, D / 3, 12));   // corner post edge length
-      // Cutter for the -X strip between the two -X-face feet
-      // Actually simplest: one big cutter covering the middle region
-      // between the four corner squares. That's the "inner" X-Y area
-      // extended past the ± footprint corners by (footInset + footSize).
-      const feetInset = footInset;
-      const cutW = W - 2 * (feetInset + footSize);
-      const cutD = D - 2 * (feetInset + footSize);
-      // Cross-shape cutter: two rectangles unioned
-      if (cutW > 0.5) {
-        const cutter1 = new THREE.BoxGeometry(cutW, D + 2, feetH + 0.5);
-        cutter1.translate(0, 0, feetH / 2);
-        const m = _geomToMesh(wasm, _weld(cutter1));
-        const carved = wasm.Manifold.difference([frameM, m]);
-        frameM.delete(); m.delete();
-        frameM = carved;
-      }
-      if (cutD > 0.5) {
-        const cutter2 = new THREE.BoxGeometry(W + 2, cutD, feetH + 0.5);
-        cutter2.translate(0, 0, feetH / 2);
-        const m = _geomToMesh(wasm, _weld(cutter2));
-        const carved = wasm.Manifold.difference([frameM, m]);
-        frameM.delete(); m.delete();
-        frameM = carved;
+      // Clear the entire feet Z-band, then union in four inset corner posts.
+      const footSize = Math.max(6, Math.min(W / 3, D / 3, 14));
+      const cutter = new THREE.BoxGeometry(W + 2, D + 2, feetH + 0.5);
+      cutter.translate(0, 0, feetH / 2 - 0.1);
+      const cm = _geomToMesh(wasm, _weld(cutter));
+      const cleared = wasm.Manifold.difference([frameM, cm]);
+      frameM.delete(); cm.delete();
+      frameM = cleared;
+      const postCX = W / 2 - footInset - footSize / 2;
+      const postCY = D / 2 - footInset - footSize / 2;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const post = new THREE.BoxGeometry(footSize, footSize, feetH + 0.4);
+        post.translate(sx * postCX, sy * postCY, feetH / 2 + 0.2);
+        const pm = _geomToMesh(wasm, _weld(post));
+        const merged = wasm.Manifold.union([frameM, pm]);
+        frameM.delete(); pm.delete();
+        frameM = merged;
       }
     }
 
-    // ── Drawer cavities ─────────────────────────────────────────────
-    // The cabinet interior has (rows) equally-sized drawer slots. Each
-    // slot is separated from the next by a horizontal divider of
-    // thickness (wall). The slot's outer envelope in Y-Z is
-    //   Y: -D/2 + wall  →  D/2   (open to the front, wall on back only)
-    //   Z: startZ       →  startZ + slotH
-    // where slotH = (frameH - wall * (rows + 1)) / rows (rows+1 dividers
-    // including top+bottom of the cabinet).
-    const totalDivider = wall * (rows + 1);
-    const slotH = (frameH - totalDivider) / rows;
-    if (slotH < 10) {
-      throw new Error(`Slot height only ${slotH.toFixed(1)} mm — reduce rows, lower the wall thickness, or increase the outer height.`);
-    }
-    const slotInnerW = W - 2 * wall;
-    // Cavity Y range: from -D/2 + wall (back wall) to D/2 + 1 (open past front)
-    const cavityY = D - wall + 2;   // over-cut past the front by 2 mm
-    const cavityYCentre = -D / 2 + wall + cavityY / 2 - 1;
+    // ── Drawer / hinged-box slot cavities ──────────────────────────
+    // For a drawer slot: carve a Y-through cavity so the front is open.
+    // For the hinged-box slot (top row when enabled): carve a Z-through
+    // cavity so the TOP is open; front is CLOSED (leave the front wall).
+    const cavityFrontOver = 1;
+    const drawerCavityY = D - wall + cavityFrontOver;
+    const drawerCavityYCentre = -D / 2 + wall + drawerCavityY / 2;
+    const boxInteriorD = D - 2 * wall;                    // hinged-box front + back walls
+    const boxCavityYCentre = 0;
 
     for (let i = 0; i < rows; i++) {
-      const slotStartZ = frameBottomZ + wall + i * (slotH + wall);
-      const slotCentreZ = slotStartZ + slotH / 2;
-      const cavity = new THREE.BoxGeometry(slotInnerW, cavityY, slotH);
-      cavity.translate(0, cavityYCentre, slotCentreZ);
-      const m = _geomToMesh(wasm, _weld(cavity));
-      const carved = wasm.Manifold.difference([frameM, m]);
-      frameM.delete(); m.delete();
-      frameM = carved;
+      const startZ = slotStartZ[i];
+      const sH = slotHeights[i];
+      const isHingedBoxSlot = topHingedBox && i === rows - 1;
+      if (isHingedBoxSlot) {
+        // Z-through cavity: from slot floor up through the frame top.
+        const cavZ = sH + 1;                              // over-cut 1 mm past top
+        const cav = new THREE.BoxGeometry(slotInnerW, boxInteriorD, cavZ);
+        cav.translate(0, boxCavityYCentre, startZ + sH / 2 + 0.5);
+        const m = _geomToMesh(wasm, _weld(cav));
+        const carved = wasm.Manifold.difference([frameM, m]);
+        frameM.delete(); m.delete();
+        frameM = carved;
+      } else {
+        const cav = new THREE.BoxGeometry(slotInnerW, drawerCavityY, sH);
+        cav.translate(0, drawerCavityYCentre, startZ + sH / 2);
+        const m = _geomToMesh(wasm, _weld(cav));
+        const carved = wasm.Manifold.difference([frameM, m]);
+        frameM.delete(); m.delete();
+        frameM = carved;
+      }
     }
 
-    // ── Optional biscuit-joint pockets on the front stiles ─────────
-    // Decorative half-elliptical pockets on the two front stiles that
-    // suggest a mortise-and-tenon / biscuit-joint aesthetic. Cut about
-    // 1 mm deep; positioned centered on each horizontal divider.
+    // ── Biscuit-joint pockets on the front stiles ──────────────────
+    // Only cut biscuits on dividers that HAVE a front face (i.e. not
+    // above/below hinged-box slots where the front is a wall, not a
+    // divider stile). We put one biscuit per DRAWER slot boundary.
     if (biscuitJoints) {
       const biscuitLen = Math.min(wall * 1.5, 8);
       const biscuitH   = Math.max(1.5, wall * 0.6);
       const biscuitDepth = 1.0;
-      for (let i = 0; i <= rows; i++) {
-        const dividerZ = frameBottomZ + wall / 2 + i * (slotH + wall);
+      // Divider Z positions: below-of-slot-0 (bottom of cabinet) through
+      // above-of-slot-(rows-1) (top of cabinet). Skip the top divider
+      // for hinged-box mode since there's no divider there.
+      const numDividerLines = topHingedBox ? rows : rows + 1;
+      let zCursor = frameBottomZ + wall / 2;
+      const dividerZs = [zCursor];
+      for (let i = 0; i < rows - 1; i++) {
+        zCursor += wall / 2 + slotHeights[i] + wall / 2;
+        dividerZs.push(zCursor);
+      }
+      if (!topHingedBox) {
+        zCursor += wall / 2 + slotHeights[rows - 1] + wall / 2;
+        dividerZs.push(zCursor);
+      }
+      for (let idx = 0; idx < Math.min(numDividerLines, dividerZs.length); idx++) {
+        const dividerZ = dividerZs[idx];
         for (const sx of [-1, 1]) {
           const b = new THREE.BoxGeometry(biscuitLen, biscuitDepth * 2, biscuitH);
           b.translate(sx * (W / 2 - wall / 2), -D / 2 + biscuitDepth, dividerZ);
@@ -171,9 +247,39 @@ export async function generateDrawerChest(params) {
         }
       }
     }
+
+    // ── Frame-side hinge knuckles (only when top compartment is hinged) ─
+    if (topHingedBox) {
+      const kSegLen = (W - 2) / numKnuckles;
+      for (let i = 0; i < numKnuckles; i += 2) {           // frame owns evens: 0, 2, 4
+        const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
+        const kLen = kSegLen - knuckleGap;
+        const kn = new THREE.CylinderGeometry(knuckleR, knuckleR, kLen, 24);
+        kn.rotateZ(Math.PI / 2);
+        kn.translate(xCenter, knuckleY, knuckleZ);
+        const knM = _geomToMesh(wasm, _weld(kn));
+        const merged = wasm.Manifold.union([frameM, knM]);
+        frameM.delete(); knM.delete();
+        frameM = merged;
+        // Rib welding the knuckle back into the frame's rear wall.
+        const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
+        rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, knuckleZ - knuckleR);
+        const ribM = _geomToMesh(wasm, _weld(rib));
+        const merged2 = wasm.Manifold.union([frameM, ribM]);
+        frameM.delete(); ribM.delete();
+        frameM = merged2;
+      }
+      // Single axle hole through the whole knuckle row.
+      const axle = new THREE.CylinderGeometry(axleR, axleR, W + 4, 20);
+      axle.rotateZ(Math.PI / 2);
+      axle.translate(0, knuckleY, knuckleZ);
+      const axleM = _geomToMesh(wasm, _weld(axle));
+      const carved = wasm.Manifold.difference([frameM, axleM]);
+      frameM.delete(); axleM.delete();
+      frameM = carved;
+    }
   }
 
-  // ─── Extract frame geometry ────────────────────────────────────────
   const frameGeom = _manifoldToGeom(frameM);
   const frameBbox = _bbox(frameGeom);
   frameM.delete();
@@ -181,43 +287,27 @@ export async function generateDrawerChest(params) {
   // ─── DRAWERS ───────────────────────────────────────────────────────
   const drawerParts = [];
   {
-    const totalDivider = wall * (rows + 1);
-    const slotH = (frameH - totalDivider) / rows;
-    const slotInnerW = W - 2 * wall;
-    const slotInnerD = D - wall;
-
-    // Drawer outer envelope: shrink from the slot by `clearance` on all
-    // free faces (top, bottom, left, right, back). Front is FLUSH with
-    // the frame's front (drawer face sits proud of the cavity mouth).
-    const drawerW = slotInnerW - 2 * clearance;
-    const drawerH = slotH - 2 * clearance;
     const drawerBackClearance = clearance;
-    const drawerFaceThickness = Math.max(2.5, drawerWall * 1.6);    // thicker front face
-    // Drawer overall depth = slot depth + face thickness (face sits proud past front by drawerFaceThickness - clearance)
-    const drawerBodyD = slotInnerD - drawerBackClearance;           // depth of the drawer's cavity + walls
-    const drawerTotalD = drawerBodyD + drawerFaceThickness - clearance;
+    const drawerFaceThickness = Math.max(2.5, drawerWall * 1.6);
+    const drawerTotalD = D - wall - drawerBackClearance;
+    const drawerBodyD = drawerTotalD - drawerFaceThickness;
 
     for (let i = 0; i < rows; i++) {
-      // Build drawer geometry with its origin at drawer's front-bottom-left corner.
-      // We'll express it in a local frame first, then translate to fit inside the slot.
+      if (topHingedBox && i === rows - 1) continue;       // top slot has NO drawer
+      const sH = slotHeights[i];
+      const drawerW = slotInnerW - 2 * clearance;
+      const drawerH = sH - 2 * clearance;
       let drawerM;
       {
-        // Outer shell — a rounded slab, hollowed.
         const outer = _weld(_roundedSlab(drawerW, drawerTotalD, drawerH, Math.max(0, cornerR - wall)));
         outer.translate(0, 0, drawerH / 2);
         drawerM = _geomToMesh(wasm, outer);
 
-        // Hollow: cut an interior box. Interior width & height are
-        // (outer - 2 * drawerWall), interior depth ends
-        // (drawerFaceThickness) short of the front face.
         const cavW = drawerW - 2 * drawerWall;
-        const cavH = drawerH - drawerWall;                          // keep a floor
-        const cavD = drawerBodyD - drawerWall;                      // keep a back
+        const cavH = drawerH - drawerWall;
+        const cavD = drawerBodyD - drawerWall;
         if (cavW > 2 && cavH > 2 && cavD > 2) {
           const cav = new THREE.BoxGeometry(cavW, cavD, cavH);
-          // Position: cavity front stops (drawerFaceThickness) mm short of the drawer's front face.
-          // In local frame, drawer runs Y: -drawerTotalD/2 (back) .. +drawerTotalD/2 (front).
-          // Cavity centred at Y = drawerTotalD/2 - drawerFaceThickness - cavD/2
           const cavYCentre = drawerTotalD / 2 - drawerFaceThickness - cavD / 2;
           cav.translate(0, cavYCentre, drawerWall + cavH / 2);
           const m = _geomToMesh(wasm, _weld(cav));
@@ -226,17 +316,12 @@ export async function generateDrawerChest(params) {
           drawerM = carved;
         }
 
-        // Handle — recess (finger pull) or protruding knob.
         if (handleStyle === "recess") {
           const rH = Math.min(handleSize * 0.6, drawerH * 0.5);
           const rW = Math.min(handleSize, drawerW * 0.5);
           const rD = drawerFaceThickness * 0.8;
           const recess = new THREE.BoxGeometry(rW, rD * 2, rH);
-          recess.translate(
-            0,
-            drawerTotalD / 2 - rD + 0.1,     // sits in the front face
-            drawerH / 2,                     // vertically centred
-          );
+          recess.translate(0, drawerTotalD / 2 - rD + 0.1, drawerH / 2);
           const m = _geomToMesh(wasm, _weld(recess));
           const carved = wasm.Manifold.difference([drawerM, m]);
           drawerM.delete(); m.delete();
@@ -244,10 +329,7 @@ export async function generateDrawerChest(params) {
         } else if (handleStyle === "knob") {
           const kR = Math.min(handleSize / 2, drawerH * 0.25);
           const knob = new THREE.CylinderGeometry(kR, kR, drawerFaceThickness * 1.5, 24);
-          knob.rotateX(Math.PI / 2);   // Y→Z would be wrong here; we want cylinder axis along Y.
-          // Actually cylinder default is Y-axis. We want it protruding forward (+Y).
-          // So NO rotation needed — Y-axis IS forward.
-          knob.rotateX(0);
+          // default cylinder axis = Y = forward, no rotation needed
           knob.translate(0, drawerTotalD / 2 + drawerFaceThickness * 0.35, drawerH / 2);
           const m = _geomToMesh(wasm, _weld(knob));
           const merged = wasm.Manifold.union([drawerM, m]);
@@ -255,17 +337,14 @@ export async function generateDrawerChest(params) {
           drawerM = merged;
         }
 
-        // Glide nubs — 4 small hemispheres (or cylinders) on each side
-        // of the drawer at bottom-mid, so the drawer rides on 4 small
-        // points against the divider instead of a full face. Only if
-        // enabled and only along the side walls' outer faces.
         if (glideNubs) {
-          const nubR = 0.6;
-          const nubY = [drawerTotalD * 0.25, -drawerTotalD * 0.25];  // ±25 % of length
-          for (const sx of [-1, 1]) {
-            for (const y of nubY) {
+          const nubR = Math.min(0.5, clearance * 0.9);
+          const nubXs = [drawerW * 0.35, -drawerW * 0.35];
+          const nubYs = [drawerTotalD * 0.25, -drawerTotalD * 0.25];
+          for (const x of nubXs) {
+            for (const y of nubYs) {
               const nub = new THREE.SphereGeometry(nubR, 12, 8);
-              nub.translate(sx * drawerW / 2, y, nubR);              // sit on the drawer's Z=0 (bottom)
+              nub.translate(x, y, 0);
               const m = _geomToMesh(wasm, _weld(nub));
               const merged = wasm.Manifold.union([drawerM, m]);
               drawerM.delete(); m.delete();
@@ -275,21 +354,10 @@ export async function generateDrawerChest(params) {
         }
       }
 
-      // Translate drawer to world position for the assembled preview.
-      // In the assembled view the drawer sits inside the slot, with its
-      // front face flush with the frame front.
       const drawerGeom = _manifoldToGeom(drawerM);
       drawerM.delete();
-
-      const slotStartZ = frameBottomZ + wall + i * (slotH + wall);
-      // Position the drawer in the assembled scene: X=0 (centred), Y so
-      // front face is flush with frame front (drawer's local Y=+drawerTotalD/2
-      // maps to frame's Y=+D/2), Z so drawer's local Z=0 is at slot start + clearance.
       const drawerAssembledY = D / 2 - drawerTotalD / 2;
-      const drawerAssembledZ = slotStartZ + clearance;
-      // For the individual-part export we DON'T want the assembled offset —
-      // each drawer part exports at its own origin.
-      // Store the assembled offset as `assembledPos` for the preview.
+      const drawerAssembledZ = slotStartZ[i] + clearance;
       drawerGeom.userData = { assembledPos: [0, drawerAssembledY, drawerAssembledZ] };
       const drawerBbox = _bbox(drawerGeom);
       drawerParts.push({
@@ -303,6 +371,71 @@ export async function generateDrawerChest(params) {
     }
   }
 
+  // ─── HINGED LID (top compartment) ─────────────────────────────────
+  let hingedLidPart = null;
+  if (topHingedBox) {
+    let lidM;
+    // Lid outer slab — same footprint as the frame's top face.
+    const lidSlab = _weld(_roundedSlab(W, D, hingeLidThickness, cornerR));
+    lidSlab.translate(0, 0, hingeLidThickness / 2);
+    lidM = _geomToMesh(wasm, lidSlab);
+
+    // Lid-side knuckles: indices 1, 3 (odds) interlock with the frame's evens.
+    const kSegLen = (W - 2) / numKnuckles;
+    // In lid-local frame, the lid's bottom face is at Z=0 and the hinge
+    // axle centre matches the frame's world Z at (frameTopZ +
+    // hingeLidThickness / 2). Locally that maps to Z = hingeLidThickness / 2.
+    const lidKnuckleZ = hingeLidThickness / 2;
+    for (let i = 1; i < numKnuckles; i += 2) {
+      const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
+      const kLen = kSegLen - knuckleGap;
+      const kn = new THREE.CylinderGeometry(knuckleR, knuckleR, kLen, 24);
+      kn.rotateZ(Math.PI / 2);
+      kn.translate(xCenter, knuckleY, lidKnuckleZ);
+      const knM = _geomToMesh(wasm, _weld(kn));
+      const merged = wasm.Manifold.union([lidM, knM]);
+      lidM.delete(); knM.delete();
+      lidM = merged;
+      // Rib welding knuckle to the lid's back edge.
+      const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
+      rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, lidKnuckleZ + knuckleR);
+      const ribM = _geomToMesh(wasm, _weld(rib));
+      const merged2 = wasm.Manifold.union([lidM, ribM]);
+      lidM.delete(); ribM.delete();
+      lidM = merged2;
+    }
+    // Axle hole through the lid knuckle row.
+    const axle = new THREE.CylinderGeometry(axleR, axleR, W + 4, 20);
+    axle.rotateZ(Math.PI / 2);
+    axle.translate(0, knuckleY, lidKnuckleZ);
+    const axleM = _geomToMesh(wasm, _weld(axle));
+    const carved = wasm.Manifold.difference([lidM, axleM]);
+    lidM.delete(); axleM.delete();
+    lidM = carved;
+
+    // Small finger pull on the FRONT edge of the lid.
+    const pullW = Math.min(24, W * 0.3);
+    const pull = new THREE.BoxGeometry(pullW, 4, hingeLidThickness);
+    pull.translate(0, -D / 2 - 2 + 0.1, hingeLidThickness / 2);
+    const pullM = _geomToMesh(wasm, _weld(pull));
+    const merged = wasm.Manifold.union([lidM, pullM]);
+    lidM.delete(); pullM.delete();
+    lidM = merged;
+
+    const lidGeom = _manifoldToGeom(lidM);
+    lidM.delete();
+    const lidBbox = _bbox(lidGeom);
+    lidGeom.userData = { assembledPos: [0, 0, frameTopZ] };
+    hingedLidPart = {
+      id: "hinged-lid",
+      label: "Hinged lid",
+      geometry: lidGeom,
+      bbox: lidBbox,
+      color: "#06B6D4",
+      assembledPos: [0, 0, frameTopZ],
+    };
+  }
+
   // ─── DETACHABLE TOP CAP ────────────────────────────────────────────
   let capPart = null;
   if (topCap) {
@@ -310,8 +443,6 @@ export async function generateDrawerChest(params) {
     const capD = D + 2 * capOverhang;
     const capGeom = _weld(_roundedSlab(capW, capD, capThickness, Math.max(cornerR, capOverhang * 0.5)));
     capGeom.translate(0, 0, capThickness / 2);
-    // NOTE: cap part exports at its own origin (Z=0..capThickness). The
-    // assembled preview sits it on top of the frame.
     capGeom.userData = { assembledPos: [0, 0, frameTopZ] };
     const capBbox = _bbox(capGeom);
     capPart = {
@@ -324,18 +455,19 @@ export async function generateDrawerChest(params) {
     };
   }
 
-  // ─── Return parts bundle ──────────────────────────────────────────
   const parts = [
-    {
-      id: "frame",
-      label: "Frame",
-      geometry: frameGeom,
-      bbox: frameBbox,
-      color: "#94A3B8",
-      assembledPos: [0, 0, 0],
-    },
+    { id: "frame", label: "Frame", geometry: frameGeom, bbox: frameBbox, color: "#94A3B8", assembledPos: [0, 0, 0] },
     ...drawerParts,
   ];
+  if (hingedLidPart) parts.push(hingedLidPart);
   if (capPart) parts.push(capPart);
-  return { parts };
+
+  return {
+    parts,
+    info: {
+      slotHeights: slotHeights.map((v) => +v.toFixed(2)),
+      frameH: +frameH.toFixed(2),
+      effectiveHeight: +(feetH + frameH + capH + lidH).toFixed(2),
+    },
+  };
 }
