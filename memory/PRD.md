@@ -32,22 +32,33 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.22, 2026-07-22) — Hinge-Integrated Lid Kickstand (redesign)
+
+Per user feedback: replaced the previous rigid stop-rib on the lid's underside with a **hinge-integrated hard stop**. New geometry:
+- **Frame side**: a rigid bar spanning the full hinge row (W-2 mm), welded to the frame knuckles, protruding radially at β=110° from the +Y axis (i.e. nearly straight up, leaning ~20° back). Behind the lid when closed — visible from the rear but no interference with lid, interior, or drawers.
+- **Lid side**: matching radial tabs on each LID knuckle (odd indices) at α=0° — tucked inside the lid slab when closed (invisible).
+- **Action**: When the lid rotates open, each lid tab sweeps around the hinge axis and impacts the frame stop bar at ~100° open, delivering a positive mechanical hard stop (no friction reliance, no separate print-in-place assembly).
+- **Toggle**: still `params.lidKickstand` in the DrawerChestDialog, with copy updated to "matching stop tabs on the hinge knuckles". Angle fixed at 100° for now (per user).
+
+Verified via `testing_agent_v3_fork` (iteration_151_22.json) — 5/5 checks pass:
+- Frame bbox grows by +2.998 mm in Z (bar sticking up) and +0.189 mm in Y (backward lean) with kickstand ON.
+- Lid bbox unchanged (tabs live inside the slab).
+- Toggle OFF exactly restores prior bboxes.
+- topHingedBox OFF regression clean.
+
 ### Recently completed (iter-151.11, 2026-07-21) — Hinged-lid orientation bug fix
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
-### Recently completed (iter-151.21, 2026-07-21) — Coop Version History + Lid Kickstand
+### Recently completed (iter-151.21, 2026-07-21) — Coop Version History + Lid Kickstand (v1)
 
 **Coop Version History**
 - New endpoints in `routes/coop_projects.py`: `GET /api/coop-projects/{slug}/versions` returns the full commit list oldest→newest (synthetic v1 = genesis scene + one entry per accepted proposal, each carrying its stored scene snapshot); `POST /api/coop-projects/{slug}/rollback/{proposal_id|"genesis"}` (owner-only) restores an older scene by INSERTING a fresh synthetic "accepted" proposal — history stays linear + auditable.
 - Genesis scene now persisted at `create_project` so "roll back to initial" is always possible.
 - Frontend: new `HistoryTab` in `CoopProjectsPage.jsx` — versions rendered newest-first with a Current pill on the live commit, +/−/~ diff badges between adjacent versions (reusing `sceneDiff`), and an amber "Roll back to vN" button on every non-current row (owner-only).
 
-**Lid Kickstand (hard stop @ ~100°)**
-- New `lidKickstand` param on `DrawerChestDialog` (default off, nested under the Top-Hinged sub-toggles).
-- Generator adds a small stop-rib welded to the lid's underside near the FRONT edge, hanging DOWN into the frame's interior cavity when the lid is closed. When the lid rotates open past ~90°, this rib swings around the hinge axis and its tip contacts the frame's front-inside wall, locking the lid at approximately 100°. Invisible when closed (tucked inside the cavity). Complements the friction-fit lid detent from iter-151.12 — friction holds any angle, kickstand locks a specific angle.
-
-Verified via UI screenshot: History tab renders v1 + v2 with diff badges and rollback button; Drawer Chest dialog shows the new Kickstand sub-toggle checked and the lid preview renders with the rib on the underside.
+**Lid Kickstand (v1 — superseded by iter-151.22)**
+- Original implementation was a rigid stop-rib on the lid's underside near the front edge. Worked, but user preferred a hinge-integrated mechanism instead. See iter-151.22 above for the replacement.
 
 ### Recently completed (iter-151.20, 2026-07-21) — Bed-snap per plate
 
