@@ -1,0 +1,53 @@
+{
+  "summary": "ForgeSlicer iter-151.23 — frontend E2E PASS across all three tasks: (1) History Diff Details (per-object add/remove/change lists), (2) Print-Ready Instruction Card (HTML + MD in ZIP + standalone HTML button), (3) Adjustable Stop Angle (85-140° user input). All required testids reachable; all previous iter-151.22 testids intact. One observed sub-issue: the Frame bbox at kickstand ON + default angle=100° differs slightly from the iter-151.22 spec (measured 80×66.914×103.664 vs expected 80×65.589×104.198 — Y +1.3 mm, Z −0.5 mm). This appears intentional because iter-151.23 replaces the fixed β=110° stop bar with `kickStopAngleDeg = stopAngleDeg + 2*halfAngDeg`, so 100° + some halfAngDeg no longer equals the old fixed 110°. Flagging for confirmation, not blocking.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "DrawerChestDialog footer",
+        "issues": [
+          "'What's New' popup (bottom-right) still overlaps the 'ZIP bundle' + 'Instructions' buttons (same overlay flagged in iter-150/151.22). Force-clicks work but a real user might misclick. MEDIUM priority. Consider gating the changelog popup so it doesn't appear over the drawer-chest footer."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iter151_23_history.png",
+    "/app/test_reports/iter151_23_drawer.png"
+  ],
+  "action_items": [
+    "OPTIONAL: verify whether the ~1.3 mm Y-growth of the frame bbox at kickstand ON + angle=100° matches the intended geometry after switching from fixed β=110° to `stopAngle + 2*halfAngDeg`. The measured deltas at other angles (90° → Frame 80×66.161×104.039; 130° → 80×68.333×101.666) look physically correct (bar leans backward at low angles growing Z, forward at high angles growing Y). If the previous iter-151.22 reference frame is still the intended default, adjust the constant.",
+    "OPTIONAL: The very-first-time toggle of kickstand ON (right after topHingedBox ON, without touching the angle input) once produced a bbox identical to the kickstand-OFF frame — subsequent angle edits then produced the expected growth. Could be a debounce/race in the initial rebuild after two rapid state changes. Not reproducible in a second run and not blocking — worth a light look at scheduleBuild coalescence in DrawerChestDialog."
+  ],
+  "critical_code_review_comments": [
+    "chestInstructions.js: `buildChestAssemblyGuide` builds MD + HTML atomically from a shared params/parts snapshot — clean and DRY. HTML properly escapes with template literals but does NOT html-escape user-controlled `name` — for the test session `name = 'Untitled_Project'` (post-safeName sanitisation) so safe, but if projectName ever contains `<script>`, escape defensively. LOW priority.",
+    "DrawerChestDialog.jsx line 703: `Math.max(85, Math.min(140, Math.round(v)))` inside onChange fires on every keystroke of a controlled numeric input. This causes `.type('130')` to intermediate-clamp to 85 (on '1') and 140 (on '85→853→1400'), so keystroke-based testing of numeric inputs must use `.fill()` atomically instead of `.type()`. Not a user-facing bug because users edit directly or use up/down; documented here for future tests.",
+    "VersionCard: totalChanges gate correctly hides the toggle button when diff has 0 changes (verified on v1 genesis). Emerald/red/sky-blue styling matches PendingProposalCard perfectly.",
+    "Instructions HTML: date is embedded as ISO slice (`.slice(0,10)`), safe. Regenerate section dumps ALL params as JSON — user privacy is fine here since these are geometry knobs, but note that if any future params carry personal data (they don't today), they'd leak into the exported HTML. LOW priority."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% (all 3 features + regression testids verified)"},
+  "test_credentials": "Reused iter-151.10 session `st_multiplate_1784607090288` (owner MP Tester) + `st_member_1784641405379` (Member User). Created 1 new proposal (a7b081db-0292-4c27-b2e4-253e86d94647) on project cey9x7jf that adds a sphere and modifies the cube — accepted by the owner, giving the project 3 versions (v1 genesis, v2 'Add a cube', v3 'iter151.23 diff test'). No new sessions seeded.",
+  "seed_data_creation": "Submitted + accepted 1 proposal on cey9x7jf via REST so that the History tab actually has a non-genesis version with real per-object changes to diff against. No user/session records created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "For the drawer-chest angle field, USE `page.locator(...).fill('130')` not `.type('130')` — the onChange clamps 85..140 on every keystroke so `.type()` produces wrong intermediate params (85 → 140 → 140). All testids exist per spec: chest-lidkickstand-angle (label wrapper) with an `input` inside; chest-download-instructions button between Lid and ZIP; coop-version-diff-toggle-{v} + coop-version-diff-detail-{v} on each non-genesis VersionCard. To confirm ZIP contents, use `page.expect_download()` + `zipfile.ZipFile(...)` — INSTRUCTIONS.md and INSTRUCTIONS.html should both be present; README.txt is gone. The coop project cey9x7jf now has 3 versions and can be reused for further diff-detail testing. bbox format from chest-bboxes uses inner_text() and returns lines like 'Frame\\n80×65.4×101.2 mm' — parse with `Frame\\s*([\\d.]+)×([\\d.]+)×([\\d.]+)`.",
+  "detailed_results": {
+    "T1_history_diff_v3": "PASS — v3 card shows +1/−0/~1 badges + 'See details' toggle → expands to `+ s1 (sphere)` (emerald) + `~ c1 (changed: position, rotation, scale, dims)` (sky). Toggle re-click hides detail.",
+    "T2_history_diff_v2": "PASS — v2 card shows +0/−1/~1 badges + toggle → `− s1 (sphere)` (red) + `~ c1 (changed: ...)`. Collapse works.",
+    "T3_history_diff_v1_genesis": "PASS — v1 (genesis) shows NO diff badges, NO toggle button (correctly gated because there's no prior version).",
+    "T4_instructions_html_download": "PASS — 'Instructions' button downloads `Untitled_Project_instructions.html` (5784 bytes). Contains DOCTYPE, 'Drawer Chest Assembly Guide' header, Parts table (File/Part/Dimensions/Volume/orientation cols), Hardware section (axle pin 'Ø2 mm', stop-angle note '~130°'), Assembly steps `<ol>`, Recommended print settings, Regenerate params JSON.",
+    "T5_zip_contents": "PASS — `Untitled_Project_chest_bundle.zip` (136958 B) contains: INSTRUCTIONS.html + INSTRUCTIONS.md + 4 STLs (frame + 2 drawers + hinged-lid). README.txt is ABSENT (correctly replaced). Note: with topHingedBox ON, the default 3-row chest becomes 2 drawers + hinged lid + frame = 4 parts (not 5 — the topmost row becomes the hinged lid, not a drawer). Matches expected geometry.",
+    "T6_zip_md_content": "PASS — INSTRUCTIONS.md (3400 B) starts with '# ForgeSlicer' header, includes 'Hinge axle pin' hardware row and the '~100°' stop-bar note when built with default 100°.",
+    "T7_angle_field_gated_by_kickstand": "PASS — `chest-lidkickstand-angle` renders ONLY when `params.lidKickstand === true`. Toggling kickstand OFF removes the testid from the DOM; toggling back ON restores it. Default value = 100.",
+    "T8_angle_field_attrs": "PASS — step=5, min=85, max=140, suffix='°', label='Stop angle'.",
+    "T9_label_dynamic_update": "PASS — kickstand checkbox label updates live: 'Lid kickstand (hard stop @ 100°)' → '@ 130°' → '@ 90°' → '@ 100°' as angle changes.",
+    "T10_angle_130_geometry": "PASS — angle=130 → Frame 80×68.333×101.666 (Y +2.93 vs kickstand-OFF baseline 80×65.4×101.2 — stop bar tilts forward/backward-lean of lid).",
+    "T11_angle_90_geometry": "PASS — angle=90 → Frame 80×66.161×104.039 (Z +2.84 — stop bar tilts up).",
+    "T12_angle_100_geometry_delta_vs_iter151_22": "SOFT-FAIL / NEEDS CONFIRMATION — angle=100 → Frame 80×66.914×103.664. Iter-151.22 recorded 80×65.589×104.198 at the (then-fixed) β=110°. Delta ΔY=+1.325 mm, ΔZ=−0.534 mm. Since iter-151.23 now solves kickStopAngleDeg from lidKickstandAngle + 2*halfAngDeg (not a hard-coded 110°), 100° may naturally produce a different bar tilt than the old 110°. If the main agent intended '100° to equal old default', the halfAngDeg contribution needs to be re-tuned.",
+    "T13_kickstand_off_regression": "PASS — toggling kickstand OFF restores exactly Frame 80×65.4×101.2 (matches hingedtop-only baseline). No residual stop-bar geometry.",
+    "T14_old_testids_reachable": "PASS — chest-hingedtop, chest-liddetent, chest-lidkickstand, chest-add-workspace, chest-download-frame, chest-download-zip all present and clickable."
+  }
+}

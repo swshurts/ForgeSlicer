@@ -16,9 +16,10 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from "@react-three/dr
 import * as THREE from "three";
 import JSZip from "jszip";
 import { toast } from "sonner";
-import { X, Download, Loader2, Layers, Plus, Archive } from "lucide-react";
+import { X, Download, Loader2, Layers, Plus, Archive, FileText } from "lucide-react";
 import { generateDrawerChest } from "../../lib/drawerChestGenerator";
 import { geometryToSTLBinary, downloadBlob } from "../../lib/exporters";
+import { buildChestAssemblyGuide } from "../../lib/chestInstructions";
 import { useScene } from "../../lib/store";
 import { getSuggestedClearance } from "../../lib/clearanceProfile";
 
@@ -44,7 +45,8 @@ const DEFAULTS = {
   drawerHeights: [],           // mm, length ≤ rows; LAST slot auto-fills leftover
   topHingedBox: false,         // top row is chest-style hinged-lid box
   lidDetent: true,             // tighten axle hole on the LID knuckles by 0.1 mm so the lid holds any open angle by friction fit (works with the standard 2.0 mm pin)
-  lidKickstand: false,         // hinge-integrated hard stop: bar on frame knuckles + tabs on lid knuckles collide at ~100° open
+  lidKickstand: false,         // hinge-integrated hard stop: bar on frame knuckles + tabs on lid knuckles collide at the chosen angle
+  lidKickstandAngle: 100,      // stop angle in degrees (85-140); ignored when lidKickstand is off
   gridfinityLocators: false,   // + crosses on each drawer floor at 42 mm grid (Gridfinity-compatible)
   gridfinityBaseplate: false,  // full Gridfinity pocket profile carved into each drawer floor
   subdivider: "none",          // "none" | "1x2" | "2x1" | "2x2" | "1x3" | "3x1" | "2x3" | "3x2" | "3x3"
@@ -412,22 +414,34 @@ export default function DrawerChestDialog({ open, onClose }) {
         const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
         zip.file(`${safeName}_${part.id}.stl`, bytes);
       }
-      const paramLines = Object.entries(params).map(([k, v]) => `${k}: ${v}`).join("\n");
-      zip.file("README.txt",
-        `ForgeSlicer — Drawer Chest bundle\n` +
-        `Generated: ${new Date().toISOString()}\n\n` +
-        `Parameters:\n${paramLines}\n\n` +
-        `Parts:\n${parts.map((p) => `  - ${p.id}.stl — ${p.label} (${p.bbox.x}×${p.bbox.y}×${p.bbox.z} mm)`).join("\n")}\n\n` +
-        `Assembly tips:\n` +
-        `  1. Print the frame with the open front facing UP for best bridging.\n` +
-        `  2. Each drawer prints flat with the front face DOWN — no supports needed.\n` +
-        `  3. If drawers bind, sand the sides lightly or bump 'Clearance' 0.1 mm in the designer and reprint.\n` +
-        `  4. The cap slots on top of the frame — no glue needed.\n`);
+      // Iter-151.23 — Rich, printable one-page assembly guide (Markdown
+      // for the ZIP + HTML for direct-browser viewing / Ctrl+P print).
+      const guide = buildChestAssemblyGuide(params, parts, safeName);
+      zip.file("INSTRUCTIONS.md", guide.markdown);
+      zip.file("INSTRUCTIONS.html", guide.html);
       const blob = await zip.generateAsync({ type: "blob" });
       downloadBlob(blob, `${safeName}_chest_bundle.zip`);
-      toast.success(`Downloaded ${parts.length}-part chest bundle`);
+      toast.success(`Downloaded ${parts.length}-part chest bundle + assembly guide`);
     } catch (e) {
       toast.error(`ZIP export failed: ${e.message || e}`);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Iter-151.23 — Standalone one-page instructions download (HTML).
+  // Users can open it directly in the browser and hit Ctrl/Cmd+P for
+  // a shop-ready printed sheet without unpacking the ZIP.
+  const handleDownloadInstructions = () => {
+    if (!parts.length) return;
+    setDownloading("instructions");
+    try {
+      const guide = buildChestAssemblyGuide(params, parts, safeName);
+      const blob = new Blob([guide.html], { type: "text/html;charset=utf-8" });
+      downloadBlob(blob, `${safeName}_instructions.html`);
+      toast.success("Downloaded assembly guide — open in browser, then Ctrl/Cmd+P to print");
+    } catch (e) {
+      toast.error(`Instructions export failed: ${e.message || e}`);
     } finally {
       setDownloading(null);
     }
@@ -675,11 +689,26 @@ export default function DrawerChestDialog({ open, onClose }) {
                   />
                   <CheckField
                     testid="chest-lidkickstand"
-                    label="Lid kickstand (hard stop @ ~100°)"
+                    label={`Lid kickstand (hard stop @ ${params.lidKickstandAngle || 100}°)`}
                     value={params.lidKickstand}
                     onChange={(v) => update("lidKickstand", v)}
-                    hint="Adds matching stop tabs on the hinge knuckles (a bar on the frame side + tabs on the lid side) that collide at ~100° open, giving a positive mechanical hard stop. Fully integrated into the hinge — no separate assembly."
+                    hint="Adds matching stop tabs on the hinge knuckles (a bar on the frame side + tabs on the lid side) that collide at the chosen angle, giving a positive mechanical hard stop. Fully integrated into the hinge — no separate assembly."
                   />
+                  {params.lidKickstand && (
+                    <div className="pl-6 mt-1" data-testid="chest-lidkickstand-angle-wrap">
+                      <NumField
+                        testid="chest-lidkickstand-angle"
+                        label="Stop angle"
+                        value={params.lidKickstandAngle}
+                        onChange={(v) => update("lidKickstandAngle", Math.max(85, Math.min(140, Math.round(v))))}
+                        step={5}
+                        min={85}
+                        max={140}
+                        suffix="°"
+                        hint="Pick the resting angle where the lid stops when opened. 90° is straight-up; 100-110° is a comfortable open-and-hold; up to 140° for full lay-back. Solved from the hinge tab geometry."
+                      />
+                    </div>
+                  )}
                 </div>
               )}
               <div className="mt-2">
@@ -922,6 +951,15 @@ export default function DrawerChestDialog({ open, onClose }) {
                 {downloading === "hinged-lid" ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Lid
               </button>
             )}
+            <button
+              data-testid="chest-download-instructions"
+              onClick={handleDownloadInstructions}
+              disabled={parts.length === 0 || building || downloading === "instructions"}
+              className="h-9 px-3 text-[11px] uppercase tracking-wider font-semibold rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 flex items-center gap-1.5"
+              title="Download a one-page printable assembly guide (HTML — Ctrl/Cmd+P prints)"
+            >
+              {downloading === "instructions" ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Instructions
+            </button>
             <button
               data-testid="chest-download-zip"
               onClick={handleDownloadZip}

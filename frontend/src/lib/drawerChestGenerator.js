@@ -338,16 +338,26 @@ export async function generateDrawerChest(params) {
       // (measured CCW from +Y in the YZ plane, viewed from +X). The
       // LID-side stop tabs (added on each lid knuckle below) rotate
       // with the lid; when the lid swings open they sweep upward and
-      // impact this bar, forming a positive hard stop at ~100° open
-      // that doesn't depend on friction. Bar sits BEHIND-and-ABOVE
-      // the hinge in the closed position, so it doesn't interfere
-      // with the lid or the interior of the chest.
+      // impact this bar, forming a positive hard stop at the user-
+      // chosen `lidKickstandAngle` (default 100°) that doesn't depend
+      // on friction. Bar sits BEHIND-and-ABOVE the hinge in the
+      // closed position, so it doesn't interfere with the lid or the
+      // interior of the chest.
+      //
+      // Iter-151.23 — angle is now user-adjustable. β_frame is
+      // solved from θ_stop so the two rectangular tabs collide at
+      // exactly the requested angle:
+      //   β_frame = θ_stop + 2·halfAng
+      // where halfAng ≈ atan((kickTabTan/2) / rCentre) is the angular
+      // half-width of one tab at its centre radius.
       if (params.lidKickstand) {
         const kickTabExt = 3.0;                          // radial protrusion (mm)
         const kickTabTan = 2.0;                          // tangential thickness (mm)
         const kickBarLen = W - 2;                        // span across the full hinge row
-        const kickStopAngleDeg = 110;                    // frame bar centred at 110°
         const rCentre = knuckleR + kickTabExt / 2;
+        const halfAngDeg = (Math.atan((kickTabTan / 2) / rCentre) * 180) / Math.PI;
+        const stopAngleDeg = Math.min(140, Math.max(85, +params.lidKickstandAngle || 100));
+        const kickStopAngleDeg = stopAngleDeg + 2 * halfAngDeg;
         const bar = new THREE.BoxGeometry(kickBarLen, kickTabTan, kickTabExt);
         bar.translate(0, 0, rCentre);
         bar.rotateX(((kickStopAngleDeg - 90) * Math.PI) / 180);
