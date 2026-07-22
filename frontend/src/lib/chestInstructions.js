@@ -18,10 +18,27 @@ function fmtMm(v) {
 
 function orientationFor(partId) {
   // Recommended slicer bed orientation, per generator geometry.
-  if (partId === "frame") return "Feet down / open front facing up (best bridging, no supports).";
+  //
+  // Frame: prints as-designed (feet flat on the bed). The drawer
+  // cavities open forward (toward the operator), so their INTERIOR
+  // roof spans the full slot width — this is bridged in-place by
+  // most slicers with 3+ perimeters and 20 %+ infill, no supports
+  // needed. If bridging looks rough on your printer, enable a very
+  // light support-blocker under just the cavity roofs (not the whole
+  // frame). Do NOT tip the frame onto its back — the feet will over-
+  // hang and the drawer faces will need heavy supports.
+  if (partId === "frame") return "Feet flat on the bed (as designed). Drawer-cavity roofs are short bridges — 3+ perimeters + 20% infill handle them without supports on most printers.";
   if (partId === "cap") return "Any face down — flat top / bottom recommended.";
-  if (partId === "hinged-lid") return "Lid slab face DOWN on the bed, knuckles hanging over the front (supports OFF).";
-  if (partId?.startsWith?.("drawer")) return "Front face DOWN, walls up (no supports; handle detail prints clean).";
+  // Hinged lid: knuckles overhang the back edge but the axle bore is
+  // horizontal, so the lid slab prints flat with its underside down.
+  // Supports are only needed under the knuckle overhangs.
+  if (partId === "hinged-lid") return "Underside DOWN on the bed. Enable supports under the hinge knuckles only (the axle bore stays clean; slab prints solidly on its wide face).";
+  // Drawers: FLOOR down (bottom face on the bed) — walls upright,
+  // front face pointing horizontally with the handle overhanging.
+  // The handle is a small overhang (arched pull / square knob) that
+  // needs light supports; a support-blocker inside the drawer keeps
+  // the interior clean.
+  if (partId?.startsWith?.("drawer")) return "Bottom (floor) DOWN on the bed, walls upright. Enable supports on the FRONT FACE ONLY to catch the handle overhang — block supports inside the drawer volume so the interior stays clean.";
   return "Any orientation — pick the flattest face for best adhesion.";
 }
 
@@ -57,7 +74,7 @@ function buildAssemblySteps(params, parts) {
   const steps = [];
   const drawerCount = parts.filter((p) => p.id?.startsWith?.("drawer")).length;
 
-  steps.push("Print every part in the recommended orientation (see the Parts table). Use PLA or PETG at 0.2 mm layers, 3+ walls, 15-25% infill. No supports needed if you follow the orientations.");
+  steps.push("Print every part in the recommended orientation (see the Parts table). Use PLA or PETG at 0.2 mm layers, 3+ walls, 15-25% infill. Supports needed only on the drawer front (handle overhang) and the hinge knuckles on the lid; frame and cap print unsupported.");
 
   if (params.biscuitJoints) {
     steps.push("Optional: glue thin plywood biscuits into the pocket slots on the front stiles for a decorative wood-joinery accent (purely aesthetic — the frame is already fully solid).");
@@ -142,7 +159,7 @@ export function buildChestAssemblyGuide(params, parts, name) {
     `- Layer height: 0.2 mm`,
     `- Walls / perimeters: 3+`,
     `- Infill: 15-25% gyroid or grid`,
-    `- Supports: **off** for every part when using the recommended orientations`,
+    `- Supports: **off** for the frame and cap; **on** for drawers (front face only, to catch the handle overhang) and the hinge knuckles on the lid`,
     `- Bed adhesion: skirt or brim; brim on the frame if you have first-layer trouble`,
     ``,
     `## Regenerate`,
@@ -228,7 +245,7 @@ export function buildChestAssemblyGuide(params, parts, name) {
     <li>Layer height: 0.2 mm</li>
     <li>Walls / perimeters: 3+</li>
     <li>Infill: 15-25% gyroid or grid</li>
-    <li>Supports: <b>off</b> for every part when using the recommended orientations</li>
+    <li>Supports: <b>off</b> for the frame and cap; <b>on</b> for drawers (front face only, to catch the handle overhang) and for the hinge knuckles on the lid</li>
     <li>Bed adhesion: skirt or brim</li>
   </ul>
 
