@@ -1,0 +1,51 @@
+{
+  "summary": "ForgeSlicer iter-151.24 — frontend E2E PASS. The new inline Instructions Preview modal for the Drawer Chest designer is fully functional. Verified: (1) 'Instructions' button (testid=chest-preview-instructions) opens a modal instead of downloading, (2) modal shows header 'Assembly guide preview' + filename 'Untitled_Project_instructions.html', (3) iframe (chest-instructions-preview-frame) renders the same HTML — h1='Untitled_Project — Drawer Chest Assembly Guide', Parts table, Assembly steps, Recommended print settings all present, (4) 'Download HTML' (chest-instructions-preview-download) fires a download with the correct filename+content and leaves the modal open, (5) both X close (chest-instructions-preview-close) AND backdrop click dismiss the modal (testid removed from DOM), (6) old testid chest-download-instructions is GONE (count=0), (7) regression testids chest-download-zip / chest-add-workspace / chest-download-frame / chest-lidkickstand / chest-lidkickstand-angle all still reachable, (8) ZIP bundle contents = [frame + drawers + hinged-lid STLs] + INSTRUCTIONS.md + INSTRUCTIONS.html with NO README.txt.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "DrawerChestDialog footer / Preview modal",
+        "issues": [
+          "Pre-existing (flagged in iter-151.22/23): 'What's New' popup at bottom-right still overlaps the ZIP bundle/Instructions area of the drawer chest footer. Force-clicks bypass it but a real user could misclick. Not blocking iter-151.24.",
+          "Backdrop click-to-dismiss uses `e.target === e.currentTarget`. This works when the user clicks the outer wrapper, but the wrapper has `p-6` padding (24 px). Inside the modal card is a flex column — a click anywhere on the card body itself does not close the modal, which is correct behaviour. Verified working. No change needed."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iter151_24_open.jpg",
+    "/app/test_reports/iter151_24_modal.jpg"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DrawerChestDialog.jsx:1030 uses `sandbox=\"\"` on the preview iframe — this is the MOST-restrictive sandbox (blocks scripts, popups, forms, same-origin). Correct for a static assembly guide with no JS. If any future guide embeds `<script>` (e.g. a print-optimising helper), it will silently no-op. Documented, not blocking.",
+    "DrawerChestDialog.jsx:994 backdrop-close uses `if (e.target === e.currentTarget) setPreviewGuide(null)`. Reliable because iframes and inner card have their own event handling; verified working. No focus-trap or Escape-to-close on this modal — consider adding `onKeyDown` for Escape and an initial focus target for a11y in a follow-up (LOW).",
+    "handleDownloadInstructions guards on `if (!previewGuide) return` — good. Uses previewGuide.filename (built once at open time), so if the user edits parameters WHILE the modal is open, the download filename will still match what the modal header shows. The HTML contents ALSO come from previewGuide (the snapshot captured at open time), so post-open param edits are correctly NOT reflected in the downloaded HTML. Consistent — no drift.",
+    "handlePreviewInstructions calls buildChestAssemblyGuide synchronously; on very large chests this could momentarily block the main thread. Present-day payload is ~5 KB HTML built from a params snapshot — fine. Not a bottleneck.",
+    "The old handler `handleDownloadInstructions` was refactored to consume `previewGuide.html` rather than rebuilding — good DRY. However the function name is now slightly misleading (it's really `saveOpenedPreview`). Cosmetic.",
+    "chest-preview-instructions button uses `disabled={parts.length === 0 || building}` — correctly gated. No downloading spinner needed on the trigger since it's now a modal-open action, not a network/file op."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% (all 4 spec tasks + regression)"},
+  "test_credentials": "Used the guest-handoff bypass — `/workspace?from=test` — no session needed. No user or session records created for this iteration (ProtectedRoute short-circuits when the `?from=` query param is present).",
+  "seed_data_creation": "None. The default chest name (`Untitled_Project`) came from `useScene.projectName` on the fresh workspace and matched the spec exactly.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "For guest access to the workspace without a session, navigate to `/workspace?from=test` (ProtectedRoute's `allowGuestFromHandoff` returns children when `?from=` is present). The Drawer Chest dialog is opened via LeftPanel → Param tab (data-testid=`left-tab-params` or button text 'Param') → `param-open-drawer-chest-btn`. Default chest name post-sanitisation is `Untitled_Project` so the preview filename is always `Untitled_Project_instructions.html`. Modal testids in this feature: `chest-instructions-preview` (root, listens on click for backdrop close), `chest-instructions-preview-frame` (iframe with srcDoc HTML + sandbox=''), `chest-instructions-preview-download` (Download HTML action), `chest-instructions-preview-close` (X button). Iframe access pattern: `page.frame_locator('[data-testid=chest-instructions-preview-frame]').locator('h1').first.text_content()` — worked. To close via backdrop, do `page.mouse.click(bbox.x + 10, bbox.y + 10)` inside the root's bounding box (i.e. hit the padded outer wrapper, not the inner card).",
+  "detailed_results": {
+    "T1_modal_opens_on_instructions_click": "PASS — chest-preview-instructions exists (count=1); clicking it opens chest-instructions-preview within ~500 ms. No direct download fires (verified — no `expect_download` needed on this click).",
+    "T2_modal_header_and_filename": "PASS — modal header text contains both 'Assembly guide preview' AND 'Untitled_Project_instructions.html' (extracted via inner_text on the modal root).",
+    "T3_iframe_renders_guide_html": "PASS — frame_locator('[data-testid=chest-instructions-preview-frame]').locator('h1').first.text_content() returns 'Untitled_Project — Drawer Chest Assembly Guide'. Body contains 'Parts', 'Assembly', and 'Recommended print settings' substrings. Same HTML content as the ZIP's INSTRUCTIONS.html (~5 KB).",
+    "T4_download_html_button": "PASS — clicking chest-instructions-preview-download fires a download; suggested filename = 'Untitled_Project_instructions.html' (4988 bytes). Content contains 'Drawer Chest Assembly Guide' header.",
+    "T5_modal_stays_open_after_download": "PASS — after download completes, chest-instructions-preview is still count=1 in DOM.",
+    "T6_close_via_x_button": "PASS — clicking chest-instructions-preview-close removes the modal (count=0 immediately after 500 ms wait).",
+    "T7_close_via_backdrop": "PASS — after reopening, clicking the outer wrapper (padding area, at x+10,y+10 of the modal bounding box) dismisses the modal (count=0). Backdrop-close uses `e.target === e.currentTarget` and works reliably.",
+    "T8_old_direct_download_testid_gone": "PASS — chest-download-instructions count=0 (correctly removed / replaced by chest-preview-instructions).",
+    "T9_regression_other_testids": "PASS — chest-download-zip=1, chest-add-workspace=1, chest-download-frame=1 all reachable and enabled once parts are built.",
+    "T10_regression_kickstand_wiring": "PASS — toggling chest-hingedtop reveals chest-lidkickstand (count=1); toggling chest-lidkickstand reveals chest-lidkickstand-angle (count=1). Iter-151.22/23 wiring intact.",
+    "T11_regression_zip_contents": "PASS — Untitled_Project_chest_bundle.zip (built with topHingedBox+kickstand ON) contains: [frame, drawer-1, drawer-2, hinged-lid].stl + INSTRUCTIONS.md + INSTRUCTIONS.html. README.txt is ABSENT. Matches iter-151.23 spec exactly."
+  },
+  "rca_of_the_issue": "N/A — no bugs. Iter-151.24 (Instructions Preview modal) implemented cleanly. The refactor split `handleDownloadInstructions` into a synchronous `handlePreviewInstructions` (builds guide + sets state to open modal) and a modal-consuming `handleDownloadInstructions` (reads the already-built guide from state, blobs+downloads). Both handlers guard on their inputs (`parts.length` / `previewGuide`) so mis-orderings can't crash. Modal state is a single `previewGuide` object (null when closed) — both close paths (X + backdrop) call `setPreviewGuide(null)` and the modal unmounts."
+}

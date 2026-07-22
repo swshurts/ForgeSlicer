@@ -340,6 +340,7 @@ export default function DrawerChestDialog({ open, onClose }) {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [showPreviewBin, setShowPreviewBin] = useState(false);
   const [downloading, setDownloading] = useState(null);
+  const [previewGuide, setPreviewGuide] = useState(null);   // iter-151.24 — instructions preview modal payload
   const debounceRef = useRef(null);
   const buildTokenRef = useRef(0);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
@@ -429,16 +430,26 @@ export default function DrawerChestDialog({ open, onClose }) {
     }
   };
 
-  // Iter-151.23 — Standalone one-page instructions download (HTML).
-  // Users can open it directly in the browser and hit Ctrl/Cmd+P for
-  // a shop-ready printed sheet without unpacking the ZIP.
-  const handleDownloadInstructions = () => {
+  // Iter-151.23/24 — Instructions button now OPENS an inline preview
+  // modal so users can eyeball the assembly guide without unpacking
+  // any file. The modal itself has a "Download HTML" action that
+  // saves the same guide to disk.
+  const handlePreviewInstructions = () => {
     if (!parts.length) return;
-    setDownloading("instructions");
     try {
       const guide = buildChestAssemblyGuide(params, parts, safeName);
-      const blob = new Blob([guide.html], { type: "text/html;charset=utf-8" });
-      downloadBlob(blob, `${safeName}_instructions.html`);
+      setPreviewGuide({ ...guide, filename: `${safeName}_instructions.html` });
+    } catch (e) {
+      toast.error(`Instructions preview failed: ${e.message || e}`);
+    }
+  };
+
+  const handleDownloadInstructions = () => {
+    if (!previewGuide) return;
+    setDownloading("instructions");
+    try {
+      const blob = new Blob([previewGuide.html], { type: "text/html;charset=utf-8" });
+      downloadBlob(blob, previewGuide.filename);
       toast.success("Downloaded assembly guide — open in browser, then Ctrl/Cmd+P to print");
     } catch (e) {
       toast.error(`Instructions export failed: ${e.message || e}`);
@@ -952,13 +963,13 @@ export default function DrawerChestDialog({ open, onClose }) {
               </button>
             )}
             <button
-              data-testid="chest-download-instructions"
-              onClick={handleDownloadInstructions}
-              disabled={parts.length === 0 || building || downloading === "instructions"}
+              data-testid="chest-preview-instructions"
+              onClick={handlePreviewInstructions}
+              disabled={parts.length === 0 || building}
               className="h-9 px-3 text-[11px] uppercase tracking-wider font-semibold rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 disabled:opacity-40 flex items-center gap-1.5"
-              title="Download a one-page printable assembly guide (HTML — Ctrl/Cmd+P prints)"
+              title="Preview the printable assembly guide inline"
             >
-              {downloading === "instructions" ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Instructions
+              <FileText size={12} /> Instructions
             </button>
             <button
               data-testid="chest-download-zip"
@@ -971,6 +982,56 @@ export default function DrawerChestDialog({ open, onClose }) {
           </div>
         </div>
       </div>
+
+      {/* Iter-151.24 — Inline instructions preview modal. Renders the
+          same HTML we'd otherwise put in the ZIP so the user can eyeball
+          it before saving. Uses an iframe (srcDoc) to fully isolate the
+          guide's own <style> from the app's Tailwind styles. */}
+      {previewGuide && (
+        <div
+          data-testid="chest-instructions-preview"
+          className="fixed inset-0 z-[80] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6"
+          onClick={(e) => { if (e.target === e.currentTarget) setPreviewGuide(null); }}
+        >
+          <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText size={16} className="text-orange-400 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-100 truncate">Assembly guide preview</div>
+                  <div className="text-[10px] text-slate-500 font-mono truncate">{previewGuide.filename}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  data-testid="chest-instructions-preview-download"
+                  onClick={handleDownloadInstructions}
+                  disabled={downloading === "instructions"}
+                  className="h-8 px-3 text-[11px] uppercase tracking-wider font-semibold rounded bg-orange-500 hover:bg-orange-400 text-slate-950 disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  {downloading === "instructions" ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Download HTML
+                </button>
+                <button
+                  data-testid="chest-instructions-preview-close"
+                  onClick={() => setPreviewGuide(null)}
+                  className="h-8 w-8 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"
+                  title="Close preview"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            <iframe
+              data-testid="chest-instructions-preview-frame"
+              title="Assembly guide preview"
+              srcDoc={previewGuide.html}
+              className="flex-1 w-full bg-white rounded-b-lg"
+              style={{ minHeight: "60vh" }}
+              sandbox=""
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
