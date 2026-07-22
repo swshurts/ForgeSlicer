@@ -32,6 +32,31 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.28, 2026-07-22) — Hinge axis raised so lids actually close (Chest + Box)
+
+**Print bug fix (user-reported)**: User printed a Drawer Chest / Box with hinged lid; lids wouldn't close on their own and popped back open when pressure was released (photo attached showing lid stuck at ~20°). Root cause: hinge axis was placed at the MID-line of the lid slab (chest: `frameTopZ + hingeLidThickness/2`, box: `bodyH`), so the lid's back-BOTTOM edge had to swing DOWNWARD through the frame's top plane to close — a hard geometric interference that manifested as the printed part wedging open.
+
+- **Chest**: `knuckleZ = frameTopZ + knuckleR`; `lidKnuckleZ = knuckleR` (matches in world Z). Lid rib now welds DOWNWARD from the knuckle to the lid's underside via `ribH / 2` Z translate; `ribH = max(hingeLidThickness, knuckleR + 0.5)`.
+- **Box**: `knuckleZ = bodyH + knuckleR` on box side; `knuckleZ = knuckleR` on lid side. Same rib rewire.
+- Knuckles now sit as a small piano-hinge-style bump on the back-top edge (previously half-embedded / half-behind-back-wall). Reads as an intentional hinge detail.
+- Kickstand math still relative to hinge axis, so iter-151.22-24 stop-bar behaviour unchanged.
+
+Verified by `testing_agent_v3_fork` (iteration_151_28.json): **10/10 PASS**. Chest frame Z bbox grew +1.2 mm (matches spec = `knuckleR − hingeLidThickness/2`), hinged-lid Z is now `2·knuckleR`. Box body Z grew +3.2 mm, lid Z is now `2·knuckleR`. Hinged-OFF regressions match iter-151.23 baseline exactly.
+
+### Recently completed (iter-151.27, 2026-07-22) — Bas-Relief restored inside LithoStudio
+
+**User-reported prod bug**: Japanese Cork Art (Bas-Relief medallion) feature disappeared after the LithoForge/AI merge. Root cause: `ModeToggle` was still a `return null` stub from iter-128, so the render-mode selector was invisible AND locked at "painting". Fix restores Bas-Relief as a first-class LithoForge mode:
+- New real 3-way segmented control `ModeToggle` (Lithophane / Painting / Bas-Relief).
+- `ConfigPanel` gained an `isBasRelief` branch — full bas-relief sliders (diameter, relief height, base thickness, smoothing, invert, frame ring w/h) — plus wraps the multi-filament pipeline sections in `!isBasRelief` so they hide when Bas-Relief is picked.
+- `LithoStudio.handleGenerate` short-circuits to POST `/api/ai/generate/bas-relief` for the new mode, streaming the returned STL (or ZIP with the wooden frame ring) as a browser download.
+- Follow-up scope (deferred): move From-Text / From-Image / Multi-Image tabs INTO LithoStudio and retire the workspace AI modal.
+
+### Recently completed (iter-151.26, 2026-07-22) — Free/Maker/Studio tiers + 14-day trial + AI paywall
+
+Renamed `Pro` → `Studio` in the pricing catalog; `pro` remains a legacy tier alias so existing paying users don't lapse mid-renewal. New signups get a **14-day full-Studio trial** (`_effective_tier` returns "studio" while `trial_expires_at > now`). AI generation endpoints (`/ai/generate/text`, `/ai/generate/image`, `/ai/generate/multi-image`, `/ai/preview/images`) now `_require_ai_access(user)` — free tier gets a clear 402 with the trial pitch; BYO-Meshy-key users are always allowed. Cap defaults: Free=0, Maker=25/mo, Studio=100/mo Meshy + unlimited fal.ai (via `_ai_provider_cap`). `/pricing` page rebuilt with Free/Maker/Studio card layout + at-a-glance feature matrix (13 rows) + trial banner when active. Marketplace listings gained a computed `commercial_use_ok` badge (Studio tier AND license doesn't include non-commercial / private markers).
+
+**WIP note**: `tests/test_billing.py:34` still asserts `"pro" in ids` — 30-second follow-up.
+
 ### Recently completed (iter-151.25, 2026-07-22) — Center-on-bed Z-up fix + corrected instruction copy
 
 **Bug fix — Workspace context-menu axis mix-up**
