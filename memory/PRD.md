@@ -32,6 +32,17 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.24, 2026-07-22) — Instructions Preview modal (Drawer Chest)
+
+The Drawer Chest "Instructions" button in the dialog footer no longer downloads directly — it now opens an inline preview modal:
+- `handlePreviewInstructions` builds the same `{ markdown, html }` payload from `buildChestAssemblyGuide` and stores it in a new `previewGuide` state.
+- The modal renders the guide inside an isolated `<iframe srcDoc={html} sandbox="">` so the guide's own `<style>` doesn't leak into the app's Tailwind and vice-versa.
+- Header shows the filename; footer has a "Download HTML" button that saves the exact same payload the user is looking at (snapshot semantics — post-open param edits don't drift the download).
+- Two close paths: the X button and clicking the backdrop (`e.target === e.currentTarget`). Both call `setPreviewGuide(null)` and unmount cleanly.
+- New testids: `chest-preview-instructions` (button, replaces the old `chest-download-instructions`), `chest-instructions-preview` (modal root), `chest-instructions-preview-frame` (iframe), `chest-instructions-preview-download`, `chest-instructions-preview-close`.
+
+Verified by `testing_agent_v3_fork` (iteration_151_24.json): 11/11 checks PASS, ZIP contents regression confirmed intact, old direct-download testid correctly removed.
+
 ### Recently completed (iter-151.23, 2026-07-22) — History diff details + Print-ready instructions + Adjustable kickstand angle
 
 **History Diff Details (Coop)**
