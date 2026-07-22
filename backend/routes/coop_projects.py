@@ -204,6 +204,9 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
             "members": [],
             "pending_requests": [],
             "scene": item.scene,
+            # Iter-151.21 — preserve the genesis scene forever so
+            # "roll back to initial" is always available.
+            "genesis_scene": item.scene,
             "scene_version": 1,
             "created_at": now,
             "updated_at": now,
@@ -278,6 +281,115 @@ def build_coop_projects_router(db, get_current_user) -> APIRouter:
                 patch["pending_requests"] = []
         await db.coop_projects.update_one({"slug": slug}, {"$set": patch})
         return _project_to_out({**doc, **patch})
+
+    @router.get("/{slug}/versions")
+    async def list_versions(slug: str, request: Request):
+        """Accepted-proposal history for a project, oldest → newest.
+        Each accepted proposal is a committed version — its `scene`
+        payload is what the project looked like right after that
+        commit landed. We prepend a synthetic "v1" from the project's
+        genesis scene so the list starts at creation."""
+        user = await get_current_user(request)
+        doc = await _require_member(slug, user["user_id"])
+        cursor = db.coop_proposals.find(
+            {"project_id_slug": slug, "status": "accepted"},
+            {"_id": 0},
+        ).sort("decided_at", 1).limit(500)
+        accepted = await cursor.to_list(length=500)
+        # Genesis version — the scene the owner started with.
+        versions = [{
+            "version": 1,
+            "kind": "genesis",
+            "title": "Initial scene",
+            "proposer_name": doc["owner_name"],
+            "created_at": doc["created_at"],
+            "scene": doc.get("scene", {}),
+            "proposal_id": None,
+        }]
+        for i, p in enumerate(accepted, start=2):
+            versions.append({
+                "version": i,
+                "kind": "accepted",
+                "title": p["title"],
+                "description": p.get("description", ""),
+                "proposer_name": p["proposer_name"],
+                "owner_note": p.get("owner_note", ""),
+                "decided_at": p.get("decided_at"),
+                "created_at": p.get("created_at"),
+                "scene": p.get("scene", {}),
+                "proposal_id": p["proposal_id"],
+            })
+        return {"current_version": doc.get("scene_version", 1), "versions": versions}
+
+    @router.post("/{slug}/rollback/{proposal_id}")
+    async def rollback_to_version(slug: str, proposal_id: str, request: Request):
+        """Restore the project's committed scene to an older version.
+        Owner-only. Records the rollback as a fresh 'accepted'
+        proposal so the linear history is preserved and everyone can
+        see who reverted what and when."""
+        user = await get_current_user(request)
+        doc = await _require_owner(slug, user["user_id"])
+        # Special-case: proposal_id == "genesis" rolls back to the
+        # project's original scene.
+        if proposal_id == "genesis":
+            target_scene = doc.get("scene", {})   # already the source
+            # We can't roll back TO the same as-is scene meaningfully,
+            # but if a rollback ever happened, the current scene is
+            # the LATEST accepted — so bring the genesis back.
+            genesis = doc  # placeholder; we need the ORIGINAL scene
+            # For MVP, rejecting a rollback-to-genesis is fine unless
+            # the caller supplies the original. Simpler: pull the
+            # scene from the very first accepted proposal's PRE-image
+            # if one exists — else disallow.
+            first = await db.coop_proposals.find_one(
+                {"project_id_slug": slug, "status": "accepted"},
+                {"_id": 0}, sort=[("decided_at", 1)],
+            )
+            if not first:
+                raise HTTPException(status_code=400, detail="No committed history to roll back through")
+            # The current committed scene IS the latest accepted; we
+            # can't recover the genesis without persisting it. As of
+            # iter-151.21, projects persist their genesis scene when
+            # created (see `create_project`). Fetch it fresh:
+            saved = await db.coop_projects.find_one({"slug": slug}, {"_id": 0, "genesis_scene": 1})
+            genesis_scene = (saved or {}).get("genesis_scene")
+            if not genesis_scene:
+                raise HTTPException(status_code=400, detail="Genesis scene not preserved for this project")
+            target_scene = genesis_scene
+        else:
+            target = await db.coop_proposals.find_one(
+                {"proposal_id": proposal_id, "project_id_slug": slug, "status": "accepted"},
+                {"_id": 0},
+            )
+            if not target:
+                raise HTTPException(status_code=404, detail="Version not found")
+            target_scene = target.get("scene", {})
+
+        now = _now_iso()
+        new_version = int(doc.get("scene_version", 1)) + 1
+        # Insert a synthetic accepted proposal for the rollback so
+        # history stays linear + auditable.
+        rollback_proposal = {
+            "proposal_id": str(uuid.uuid4()),
+            "project_id_slug": slug,
+            "project_id": doc["project_id"],
+            "proposer_id": user["user_id"],
+            "proposer_name": user.get("name") or user.get("email") or "Owner",
+            "title": f"Roll back to version" + (f" of \"{target.get('title', '')}\"" if proposal_id != "genesis" else " to initial scene"),
+            "description": f"Owner rolled back the project scene.",
+            "scene": target_scene,
+            "status": "accepted",
+            "owner_note": "",
+            "created_at": now,
+            "decided_at": now,
+            "decided_by": user["user_id"],
+        }
+        await db.coop_proposals.insert_one(dict(rollback_proposal))
+        await db.coop_projects.update_one(
+            {"slug": slug},
+            {"$set": {"scene": target_scene, "scene_version": new_version, "updated_at": now}},
+        )
+        return {"rolled_back": True, "new_version": new_version, "proposal_id": rollback_proposal["proposal_id"]}
 
     @router.delete("/{slug}")
     async def delete_project(slug: str, request: Request):

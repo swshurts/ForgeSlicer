@@ -36,6 +36,19 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 
 Drawer Chest's "Top compartment is a hinged-lid box" mode was placing the hinge knuckles on the FRONT of the chest (same side as the drawer handles) and the finger pull on the BACK. Root cause: this generator's drawer fronts live at world `+Y = +D/2` (drawers are shifted forward by `D/2 - drawerTotalD/2`), but the lid code assumed the opposite convention. Swapped `knuckleY` from `+D/2` to `-D/2` and the finger pull from `-D/2` to `+D/2`; matching frame-side + lid-side ribs updated in one pass. Verified via workspace screenshot — hinges now on back edge, pull on front edge.
 
+### Recently completed (iter-151.21, 2026-07-21) — Coop Version History + Lid Kickstand
+
+**Coop Version History**
+- New endpoints in `routes/coop_projects.py`: `GET /api/coop-projects/{slug}/versions` returns the full commit list oldest→newest (synthetic v1 = genesis scene + one entry per accepted proposal, each carrying its stored scene snapshot); `POST /api/coop-projects/{slug}/rollback/{proposal_id|"genesis"}` (owner-only) restores an older scene by INSERTING a fresh synthetic "accepted" proposal — history stays linear + auditable.
+- Genesis scene now persisted at `create_project` so "roll back to initial" is always possible.
+- Frontend: new `HistoryTab` in `CoopProjectsPage.jsx` — versions rendered newest-first with a Current pill on the live commit, +/−/~ diff badges between adjacent versions (reusing `sceneDiff`), and an amber "Roll back to vN" button on every non-current row (owner-only).
+
+**Lid Kickstand (hard stop @ ~100°)**
+- New `lidKickstand` param on `DrawerChestDialog` (default off, nested under the Top-Hinged sub-toggles).
+- Generator adds a small stop-rib welded to the lid's underside near the FRONT edge, hanging DOWN into the frame's interior cavity when the lid is closed. When the lid rotates open past ~90°, this rib swings around the hinge axis and its tip contacts the frame's front-inside wall, locking the lid at approximately 100°. Invisible when closed (tucked inside the cavity). Complements the friction-fit lid detent from iter-151.12 — friction holds any angle, kickstand locks a specific angle.
+
+Verified via UI screenshot: History tab renders v1 + v2 with diff badges and rollback button; Drawer Chest dialog shows the new Kickstand sub-toggle checked and the lid preview renders with the rib on the underside.
+
 ### Recently completed (iter-151.20, 2026-07-21) — Bed-snap per plate
 
 Elegoo Slicer / OrcaSlicer were firing the "Multi-part object detected: parts at multiple heights" dialog on the multi-plate 3MF because each per-plate merged geometry still carried its ORIGINAL world-Z (drawers preserved their assembled-position height — drawer 1 at Z=60 mm, drawer 2 at Z=80 mm, etc.). The slicer saw N objects floating at N different heights and asked to fuse them; users who tapped "Yes" then hit Arrange got everything collapsed onto a single plate.

@@ -242,6 +242,14 @@ export const coopProjectsApi = {
     const { data } = await axios.post(`${API}/coop-projects/${slug}/proposals/${proposal_id}/reject`, { owner_note }, { withCredentials: true });
     return data;
   },
+  listVersions: async (slug) => {
+    const { data } = await axios.get(`${API}/coop-projects/${slug}/versions`, { withCredentials: true });
+    return data;
+  },
+  rollback: async (slug, proposal_id) => {
+    const { data } = await axios.post(`${API}/coop-projects/${slug}/rollback/${proposal_id}`, {}, { withCredentials: true });
+    return data;
+  },
 };
 
 

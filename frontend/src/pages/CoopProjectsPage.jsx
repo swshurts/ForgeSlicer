@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import {
   Users, Plus, Loader2, Trash2, Send, Check, X, UserPlus,
   Globe, Lock, ArrowRight, MessageSquare, Copy, Package,
+  History, RotateCcw,
 } from "lucide-react";
 import { coopProjectsApi } from "../lib/api";
 import { useScene } from "../lib/store";
@@ -282,6 +283,7 @@ function ProjectDetail({ slug, me }) {
             ["overview", "Overview"],
             ["members", `Members (${(project.members || []).length + 1})`],
             ["proposals", "Proposals"],
+            ["history", "History"],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -297,6 +299,7 @@ function ProjectDetail({ slug, me }) {
         {tab === "overview" && <OverviewTab project={project} isOwner={isOwner} isMember={isMember} onChange={reload} />}
         {tab === "members" && <MembersTab project={project} isOwner={isOwner} onChange={reload} />}
         {tab === "proposals" && <ProposalsTab project={project} isOwner={isOwner} isMember={isMember} me={me} onChange={reload} />}
+        {tab === "history" && <HistoryTab project={project} isOwner={isOwner} onChange={reload} />}
       </div>
     </div>
   );
@@ -700,6 +703,115 @@ function PendingProposalCard({ proposal: p, committedScene, isOwner, note, onNot
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+
+// Iter-151.21 — Coop Version History. Lists the project's committed
+// versions oldest → newest. Between adjacent versions we render the
+// same +/-/~ summary the review UI uses (via `sceneDiff`), so the
+// owner can eyeball "what changed from v3 to v4" without opening the
+// proposal. Owner-only Roll Back button re-commits an older snapshot
+// as a fresh accepted proposal (preserves linear history).
+function HistoryTab({ project, isOwner, onChange }) {
+  const [data, setData] = useState({ current_version: 1, versions: [] });
+  const [loading, setLoading] = useState(false);
+  const [rollingBack, setRollingBack] = useState("");
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await coopProjectsApi.listVersions(project.slug);
+      setData(d || { current_version: 1, versions: [] });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("history load failed:", err);
+    } finally { setLoading(false); }
+  }, [project.slug]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const rollback = async (v) => {
+    const label = v.kind === "genesis" ? "the initial scene" : `"${v.title}"`;
+    if (!window.confirm(`Roll back the project to ${label}? A new commit will be added to history.`)) return;
+    setRollingBack(v.proposal_id || "genesis");
+    try {
+      await coopProjectsApi.rollback(project.slug, v.proposal_id || "genesis");
+      toast.success("Project rolled back");
+      reload();
+      onChange();
+    } catch (err) {
+      toast.error(`${err?.response?.data?.detail || err.message}`);
+    } finally { setRollingBack(""); }
+  };
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 className="animate-spin" size={14} /> Loading history…</div>;
+  }
+
+  const versions = data.versions || [];
+  return (
+    <div className="flex flex-col gap-3" data-testid="coop-history-tab">
+      <div className="text-xs text-slate-500 mb-1">
+        <History size={12} className="inline mr-1" /> {versions.length} version{versions.length === 1 ? "" : "s"} · current: v{data.current_version}
+      </div>
+      {versions.length === 0 && (
+        <div className="text-sm text-slate-500 italic">No history yet.</div>
+      )}
+      {[...versions].reverse().map((v, revIdx) => {
+        // Diff against the version immediately BEFORE this one so the
+        // list reads "here's what this commit changed".
+        const prevIdx = versions.length - revIdx - 2;
+        const prev = prevIdx >= 0 ? versions[prevIdx] : null;
+        const diff = prev ? sceneDiff(prev.scene, v.scene) : null;
+        const isCurrent = v.version === data.current_version;
+        return (
+          <div
+            key={v.proposal_id || "genesis"}
+            data-testid={`coop-version-${v.version}`}
+            className={`bg-slate-900 border rounded-lg p-3 ${isCurrent ? "border-purple-500/60" : "border-slate-800"}`}
+          >
+            <div className="flex items-center justify-between mb-1 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded flex-shrink-0 ${isCurrent ? "bg-purple-500/20 text-purple-300" : "bg-slate-700 text-slate-300"}`}>
+                  v{v.version}
+                </span>
+                <span className="text-sm font-semibold text-slate-100 truncate">{v.title}</span>
+                {isCurrent && <span className="text-[9px] uppercase font-bold text-purple-400 flex-shrink-0">current</span>}
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono flex-shrink-0">
+                {new Date(v.decided_at || v.created_at).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="text-xs text-slate-400 mb-2">
+              by {v.proposer_name} · {(v.scene?.objects || []).length} objects
+            </div>
+            {v.description && <div className="text-xs text-slate-300 leading-snug mb-2 italic">{v.description}</div>}
+            {diff && (
+              <div className="flex items-center gap-2 text-[10px] mb-2" data-testid={`coop-version-diff-${v.version}`}>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">+{diff.added.length}</span>
+                <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 font-mono">−{diff.removed.length}</span>
+                <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono">~{diff.changed.length}</span>
+              </div>
+            )}
+            {isOwner && !isCurrent && (
+              <button
+                data-testid={`coop-rollback-${v.version}`}
+                onClick={() => rollback(v)}
+                disabled={rollingBack === (v.proposal_id || "genesis")}
+                className="h-7 px-2 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-[11px] font-semibold flex items-center gap-1"
+                title={`Roll back to v${v.version}`}
+              >
+                {rollingBack === (v.proposal_id || "genesis")
+                  ? <Loader2 size={11} className="animate-spin" />
+                  : <RotateCcw size={11} />}
+                Roll back to v{v.version}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

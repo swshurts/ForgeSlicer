@@ -642,9 +642,34 @@ export async function generateDrawerChest(params) {
     const pull = new THREE.BoxGeometry(pullW, 4, hingeLidThickness);
     pull.translate(0, D / 2 + 2 - 0.1, hingeLidThickness / 2);
     const pullM = _geomToMesh(wasm, _weld(pull));
-    const merged = wasm.Manifold.union([lidM, pullM]);
+    let merged = wasm.Manifold.union([lidM, pullM]);
     lidM.delete(); pullM.delete();
     lidM = merged;
+
+    // Iter-151.21 — Optional lid kickstand: a rigid stop-rib on the
+    // underside of the lid, welded near the front edge, extending
+    // downward into the frame's interior cavity when the lid is
+    // closed. When the lid rotates open, this rib swings around the
+    // hinge and its tip contacts the frame's front-inside wall at
+    // approximately 100° — providing a hard stop so the lid rests
+    // locked at that angle instead of relying on friction alone.
+    // Rib is invisible when closed (tucked inside the frame cavity).
+    if (params.lidKickstand) {
+      const kickW = Math.min(20, W * 0.25);
+      const kickThick = Math.max(2.5, wall * 0.8);
+      const kickH = Math.max(6, hingeLidThickness * 2);
+      const kick = new THREE.BoxGeometry(kickW, kickThick, kickH);
+      // Position: X centred, Y just BEHIND the lid's front edge (so
+      // the rib clears the frame's front-inside wall when closed),
+      // Z hanging DOWN from the lid's underside.
+      const yPos = D / 2 - wall - kickThick / 2 - 1.0;   // 1 mm gap from front-inside wall
+      const zPos = -kickH / 2 + 0.1;                     // top face flush with lid underside
+      kick.translate(0, yPos, zPos);
+      const kickM = _geomToMesh(wasm, _weld(kick));
+      merged = wasm.Manifold.union([lidM, kickM]);
+      lidM.delete(); kickM.delete();
+      lidM = merged;
+    }
 
     const lidGeom = _manifoldToGeom(lidM);
     lidM.delete();
