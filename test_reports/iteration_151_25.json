@@ -1,0 +1,44 @@
+{
+  "summary": "ForgeSlicer iter-151.25 — frontend E2E PASS (5/5). Verified the Z-up fix for ContextMenu.jsx's doCenterOnBed, doDropToBed (multi-branch), and doParkOnBed on a real Drawer Chest workspace scenario. Prior to the fix a Center-on-bed on the frame would have bisected it through the build plate; post-fix the frame stays flush at world-Z=0 while its X/Y centre moves to origin. All three actions now correctly treat X+Y as horizontal and Z as vertical.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iter151_25_final.jpg"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ContextMenu.jsx doCenterOnBed / doDropToBed / doParkOnBed all correctly use bb.min.z / bb.max.z / bb.min.x etc via computeRotatedBBox — matches the Z-up convention used by store.dropToBed / store.centerOnBed / addImportedMesh. Consistent across the codebase.",
+    "doCenterOnBed short-circuits when both |dx|<0.5 AND |dy|<0.5 (no-op case). Good — no wasted undo slot on a chest that's already centred.",
+    "doParkOnBed short-circuits only when ALL THREE deltas are <0.5. Also good.",
+    "doDropToBed multi-branch guards with isFinite(worldMinZ) && Math.abs(worldMinZ) > 1e-3 — the 1mm micro-threshold prevents floating-point-jitter no-ops. Verified in T2 that a real +30mm bump translates all 5 parts uniformly by −30mm.",
+    "Both branches use useScene.setState with a functional updater — safe against stale state.",
+    "The 2026-07-22 comment block above doCenterOnBed clearly documents the Y-up vs Z-up rationale — great for future maintainers.",
+    "Minor: the multi-branch of doCenterOnBed catches an exotic-primitive bbox-fail and falls back to raw position; contract is that BOTH minX and maxX get set to px in that case, so the fallback bbox has zero width in that axis — this makes cx == px (i.e. we treat the primitive as a point). Correct fail-safe.",
+    "Minor: The `restoreSelection` reasserts the pre-menu selection before each mutating action — important because pointerMissed can clear selectedIds between right-click and click. This is the same defensive pattern used elsewhere in ContextMenu and is verified working in T2/T3/T4 (multi-select survives the ctx menu open→click sequence).",
+    "Nice-to-have (non-blocking): computeRotatedBBox is called per selected object per action. For large multi-selects (>50 parts) this could be memoised, but current chest scale (5 objects) is negligible."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% (5/5 spec tasks)"},
+  "test_credentials": "Guest handoff bypass — /workspace?from=test — no auth needed. No sessions created.",
+  "seed_data_creation": "None — the 5-object chest (Frame + 3 Drawers + Top cap) is generated fresh from the Drawer Chest designer with default params. Frame bbox = 80×60×96 mm. Every test scenario mutated positions in-store, then invoked the ctx menu action via UI.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Guest bypass: /workspace?from=test. Drawer Chest → leftpanel-tab-params → param-open-drawer-chest-btn → wait for chest-add-workspace to become enabled (~5–7s) → click Add. Objects spawn at x-cursor positions [40, 126.6, 209.8, 292.9, 382.6] with y=0 and z≈0 (flush on bed). Name for the tall frame is exactly 'Frame'. Outliner rows have data-testid=`scene-tree-item-<obj.id>`; right-click on a row dispatches the outliner-level ctx menu (context-menu testid). ctx menu action testids: ctx-drop-bed-btn, ctx-center-bed-btn, ctx-park-bed-btn. Introspect scene state via window.__forgeStore.getState(). Multi-select all by setState({selectedIds: allIds}). Verified world-Z-min via inline vertex sweep (rotation=0 case is trivial; use computeRotatedBBox for rotated cases).",
+  "rca_of_the_issue": "N/A — no bugs. iter-151.25 (Z-up fix in ContextMenu.jsx) is verified working. Detailed results below.",
+  "detailed_results": {
+    "T1_center_on_bed_frame_preserves_z_flush": "PASS — Moved frame from spawn position [40, 0, ~0] to [140, 60, ~0] (100mm+60mm off-centre, Z untouched so still flush). Right-clicked frame's outliner row, clicked ctx-center-bed-btn. AFTER: position=[0, 0, ~0]; world bbox = X[-40,40] Y[-30,30] Z[0,96]; wx_c=0, wy_c=0, wz_min=0. Frame is STILL flush on the bed (would have been bisected pre-fix).",
+    "T2_drop_to_bed_multi_as_unit": "PASS — Selected all 5 parts. Bumped Z of every part by +30mm globally. Right-clicked, clicked ctx-drop-bed-btn. AFTER: every part translated by exactly dz=-30.0mm (single value in delta set — rigid-body invariant holds). XY unchanged. Group's lowest world-Z-min landed on 0 exactly.",
+    "T3_park_on_bed_single": "PASS — Moved Drawer 1 to [+80, -40, +50] offset. Right-clicked, clicked ctx-park-bed-btn. AFTER: wx_c=0.000, wy_c=0.000, wz_min=0.000. Centred on X+Y (horizontal) AND flush on Z (vertical).",
+    "T4a_drop_to_bed_single": "PASS — Moved Drawer 1 by +40mm in Z. Right-clicked, clicked ctx-drop-bed-btn. AFTER: wz_min=0.000. Single-branch calls through to store.dropToBed which was already Z-up correct.",
+    "T4b_center_on_bed_single": "PASS — Moved Drawer 1 by +70mm X and -20mm Y. Right-clicked, clicked ctx-center-bed-btn. AFTER: wx_c=0.000, wy_c=0.000, wz_min=0.000. XY centred, Z-flush preserved.",
+    "regression_checks": {
+      "outliner_context_menu": "Right-click on any scene-tree-item-<id> row → dispatches forgeslicer:outliner-ctx event → LeftPanel opens ContextMenu at that XY. Menu appears with testid=context-menu. All 3 target buttons (ctx-drop-bed-btn, ctx-center-bed-btn, ctx-park-bed-btn) present and clickable.",
+      "whats_new_popup": "Present at bottom-right on first workspace load. Dismissed once via 'Got it' click; did not reappear during testing. Did NOT interfere with ctx menu actions (they open at cursor coordinates well above the popup).",
+      "no_bbox_regression": "No object was observed floating unexpectedly or bisected in a new way. Every ctx-menu action left objects with world-Z-min >= 0 (flush or above the bed)."
+    }
+  }
+}

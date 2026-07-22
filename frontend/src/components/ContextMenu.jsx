@@ -32,27 +32,30 @@ export default function ContextMenu({ position, onClose }) {
       onClose();
       return;
     }
-    // Multi-part: compute world-min-Y across all selected and translate
-    // every member down by that amount.
+    // Multi-part: compute world-min-Z across all selected and translate
+    // every member down by that amount. World UP axis in this app is +Z
+    // (see `addImportedMesh` and `dropToBed` in store.js) — earlier
+    // iterations used +Y here by mistake, which quietly moved the
+    // horizontal-depth axis instead of the vertical one.
     try {
       const st = useScene.getState();
-      let worldMinY = Infinity;
+      let worldMinZ = Infinity;
       for (const id of ids) {
         const o = st.objects.find((x) => x.id === id);
         if (!o) continue;
         try {
           const bb = computeRotatedBBox(o);
-          const wy = (o.position?.[1] ?? 0) + bb.min.y;
-          if (wy < worldMinY) worldMinY = wy;
+          const wz = (o.position?.[2] ?? 0) + bb.min.z;
+          if (wz < worldMinZ) worldMinZ = wz;
         } catch (_) { /* skip non-bbox-able parts */ }
       }
-      if (isFinite(worldMinY) && Math.abs(worldMinY) > 1e-3) {
+      if (isFinite(worldMinZ) && Math.abs(worldMinZ) > 1e-3) {
         st.pushHistory();
-        const dy = -worldMinY;
+        const dz = -worldMinZ;
         useScene.setState((s) => ({
           objects: s.objects.map((o) =>
             ids.includes(o.id)
-              ? { ...o, position: [o.position[0], o.position[1] + dy, o.position[2]] }
+              ? { ...o, position: [o.position[0], o.position[1], o.position[2] + dz] }
               : o
           ),
         }));
@@ -61,19 +64,20 @@ export default function ContextMenu({ position, onClose }) {
     onClose();
   };
 
-  // Center the selection on the build plate's origin (X=0, Z=0). Y is
+  // Center the selection on the build plate's origin (X=0, Y=0). Z is
   // preserved — users have a dedicated Drop-to-bed action for the
-  // vertical case, and conflating them would make "Center" land an
-  // assembly inside the build plate. Multi-part selections center as a
-  // RIGID UNIT: we compute the combined world-AABB on the XZ plane,
-  // then translate every selected member by the same dx/dz so internal
+  // vertical case, and conflating them would push half of a tall
+  // assembly BELOW the build plate. Multi-part selections center as a
+  // RIGID UNIT: we compute the combined world-AABB on the XY plane,
+  // then translate every selected member by the same dx/dy so internal
   // relationships are preserved (a grouped Pitman Arm stays together).
   //
-  // Why combined-bbox center and not centroid-of-positions? Because
-  // when one part is much larger than the others, the visual centre
-  // of the assembly sits closer to the big part — using the bbox
-  // center matches the eye's expectation. Using mean-of-positions
-  // would skew the assembly toward whichever side has more parts.
+  // World UP in this app is +Z (see `addImportedMesh` and store's
+  // `dropToBed`/`centerOnBed`). Earlier iterations of this function
+  // used X and Z (Y-up thinking), which centred the VERTICAL axis and
+  // bisected tall parts through the build plate — reported by user
+  // 2026-07-22 on a Drawer-Chest frame after Move-to-plate. Now
+  // strictly centres the two HORIZONTAL axes (X + Y).
   const doCenterOnBed = () => {
     restoreSelection();
     const ids = snapshot.ids;
@@ -81,7 +85,7 @@ export default function ContextMenu({ position, onClose }) {
     try {
       const st = useScene.getState();
       let minX = Infinity, maxX = -Infinity;
-      let minZ = Infinity, maxZ = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
       for (const id of ids) {
         const o = st.objects.find((x) => x.id === id);
         if (!o) continue;
@@ -89,35 +93,35 @@ export default function ContextMenu({ position, onClose }) {
           const bb = computeRotatedBBox(o);
           const wx0 = (o.position?.[0] ?? 0) + bb.min.x;
           const wx1 = (o.position?.[0] ?? 0) + bb.max.x;
-          const wz0 = (o.position?.[2] ?? 0) + bb.min.z;
-          const wz1 = (o.position?.[2] ?? 0) + bb.max.z;
+          const wy0 = (o.position?.[1] ?? 0) + bb.min.y;
+          const wy1 = (o.position?.[1] ?? 0) + bb.max.y;
           if (wx0 < minX) minX = wx0;
           if (wx1 > maxX) maxX = wx1;
-          if (wz0 < minZ) minZ = wz0;
-          if (wz1 > maxZ) maxZ = wz1;
+          if (wy0 < minY) minY = wy0;
+          if (wy1 > maxY) maxY = wy1;
         } catch (_) {
           // Defensive: an exotic primitive without a computable bbox
           // falls back to its raw position so we still center
           // *something* rather than crash.
           const px = o.position?.[0] ?? 0;
-          const pz = o.position?.[2] ?? 0;
+          const py = o.position?.[1] ?? 0;
           if (px < minX) minX = px;
           if (px > maxX) maxX = px;
-          if (pz < minZ) minZ = pz;
-          if (pz > maxZ) maxZ = pz;
+          if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
         }
       }
-      if (!isFinite(minX) || !isFinite(minZ)) { onClose(); return; }
+      if (!isFinite(minX) || !isFinite(minY)) { onClose(); return; }
       const cx = (minX + maxX) / 2;
-      const cz = (minZ + maxZ) / 2;
+      const cy = (minY + maxY) / 2;
       // Short-circuit if already centered within 0.5mm — no point
       // pushing a no-op history entry that wastes an undo slot.
-      if (Math.abs(cx) < 0.5 && Math.abs(cz) < 0.5) { onClose(); return; }
+      if (Math.abs(cx) < 0.5 && Math.abs(cy) < 0.5) { onClose(); return; }
       st.pushHistory();
       useScene.setState((s) => ({
         objects: s.objects.map((o) =>
           ids.includes(o.id)
-            ? { ...o, position: [o.position[0] - cx, o.position[1], o.position[2] - cz] }
+            ? { ...o, position: [o.position[0] - cx, o.position[1] - cy, o.position[2]] }
             : o
         ),
       }));
@@ -126,13 +130,13 @@ export default function ContextMenu({ position, onClose }) {
   };
 
   // "Park on bed" — combines Center-on-bed + Drop-to-bed in a single
-  // history-pushable action. The most common pre-print operation:
-  // land the assembly flat on the plate AND center it. Without this
-  // the user has to invoke two menu items separately (and burn two
-  // undo slots). Math is identical to the individual actions; we
-  // just compute both translations from the same world-AABB pass so
-  // we only iterate the scene once. Rigid-body invariant preserved
-  // because every selected member translates by the same (dx, dy, dz).
+  // history-pushable action. Centres the footprint on X + Y (both
+  // horizontal in this Z-up world) and drops Z (vertical) so the
+  // bottom of the assembly sits flush on the build plate. Rigid-body
+  // invariant preserved because every selected member translates by
+  // the same (dx, dy, dz). Fixed 2026-07-22: prior version used Y for
+  // vertical (Y-up thinking), which centred the wrong axis and
+  // dropped the horizontal-depth axis to 0.
   const doParkOnBed = () => {
     restoreSelection();
     const ids = snapshot.ids;
@@ -140,8 +144,8 @@ export default function ContextMenu({ position, onClose }) {
     try {
       const st = useScene.getState();
       let minX = Infinity, maxX = -Infinity;
-      let minY = Infinity;
-      let minZ = Infinity, maxZ = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      let minZ = Infinity;
       for (const id of ids) {
         const o = st.objects.find((x) => x.id === id);
         if (!o) continue;
@@ -153,13 +157,13 @@ export default function ContextMenu({ position, onClose }) {
           const wx0 = px + bb.min.x;
           const wx1 = px + bb.max.x;
           const wy0 = py + bb.min.y;
+          const wy1 = py + bb.max.y;
           const wz0 = pz + bb.min.z;
-          const wz1 = pz + bb.max.z;
           if (wx0 < minX) minX = wx0;
           if (wx1 > maxX) maxX = wx1;
           if (wy0 < minY) minY = wy0;
+          if (wy1 > maxY) maxY = wy1;
           if (wz0 < minZ) minZ = wz0;
-          if (wz1 > maxZ) maxZ = wz1;
         } catch (_) {
           const px = o.position?.[0] ?? 0;
           const py = o.position?.[1] ?? 0;
@@ -167,14 +171,14 @@ export default function ContextMenu({ position, onClose }) {
           if (px < minX) minX = px;
           if (px > maxX) maxX = px;
           if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
           if (pz < minZ) minZ = pz;
-          if (pz > maxZ) maxZ = pz;
         }
       }
-      if (!isFinite(minX) || !isFinite(minZ) || !isFinite(minY)) { onClose(); return; }
+      if (!isFinite(minX) || !isFinite(minY) || !isFinite(minZ)) { onClose(); return; }
       const dx = -(minX + maxX) / 2;
-      const dy = -minY;
-      const dz = -(minZ + maxZ) / 2;
+      const dy = -(minY + maxY) / 2;
+      const dz = -minZ;
       // Short-circuit if already parked within 0.5mm on every axis —
       // don't burn an undo slot on a no-op.
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(dz) < 0.5) {
