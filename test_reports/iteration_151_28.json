@@ -1,0 +1,53 @@
+{
+  "summary": "Frontend-only verification of iter-151.28 hinge-axis-raised fix (drawer chest + parametric box). ALL FIVE review-request items pass. Chest: hinged lid Z bbox is now 5.4 mm (= 2·knuckleR, previously 3 mm = hingeLidThickness only) — knuckle now clearly protrudes above the lid top. Frame Z bbox is now 102.4 mm at hingedtop-only vs prior iter-151.23 baseline 101.2 mm — a +1.2 mm delta = knuckleR − hingeLidThickness/2 (2.7 − 1.5). Box: hinged lid Z bbox is now 5.2 mm (= 2·knuckleR), box body Z bbox is 33.2 mm = bodyH + 2·knuckleR (28 + 5.2) — matches spec `bodyH + knuckleR` for axis + knuckleR for top of knuckle. Regressions clean: hinged OFF restores exact pre-fix chest baseline (Frame 80×60×96, Top cap 86×66×4); Box lidMode=none restores Box body 60×40×30 (bodyH = H when lidMode='none'). Kickstand still functional (Frame 80×66.914×104.864 at default 100°, delta from hinged-only 80×65.4×102.4 is +Y 1.514 +Z 2.464 — stop bar tilts correctly). Add-to-workspace works for both generators; workspace shows knuckle bumps as intended piano-hinge detail with no black gaps or broken geometry. Both generators produce manifold parts with the axle-hole carve intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "BoxDesignerDialog + DrawerChestDialog footer",
+        "issues": [
+          "'What's New' popup (bottom-right) continues to overlap the footer's Add-to-workspace / ZIP bundle buttons on both dialogs — same overlay flagged in iter-150.6 / 151.22 / 151.23. Force-clicks bypass but a real user might misclick. MEDIUM priority. Consider gating the changelog popup so it doesn't appear over these dialogs (or at least dismissing it automatically once a param dialog opens)."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "drawerChestGenerator.js line ~336: the frame-side rib still uses `knuckleR*2` for the Z-extent (`new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2)`) and translates to `knuckleZ - knuckleR` — that puts the rib centre at `frameTopZ + knuckleR - knuckleR = frameTopZ`, so the rib spans world Z [frameTopZ − knuckleR, frameTopZ + knuckleR]. Half of the rib therefore sits BELOW the frame top plane (i.e. INSIDE the top compartment cavity). That may be fine because the frame top slab is a solid roundedSlab (no hollowed compartment above), but if a future refactor ever hollows the topmost compartment (e.g. the topHingedBox interior) that rib will intrude into it. LOW priority — worth a comment.",
+    "boxGenerator.js line ~393: same pattern on the box side (rib Z = knuckleR*2 centred at knuckleZ − knuckleR = bodyH). Half the rib goes below the seam and will land INSIDE the box cavity. Because bodyH minus wall/floor is the interior, this creates a small bump inside the back-top-inside corner. Not visible externally, but may affect the fit of things placed inside the box. Recommend clamping rib height to Math.max(knuckleR+0.5, wall) and translating so the rib top is at knuckleZ+knuckleR while its bottom sits flush with (bodyH − wall) — same pattern used on the lid side already.",
+    "drawerChestGenerator.js: `knuckleR = Math.max(2.6, hingeLidThickness * 0.9)` (line 200) can therefore be LARGER than hingeLidThickness for thin lids (< 2.9 mm). Now with the raised-axis fix, the lid's Z extent is `max(hingeLidThickness, 2*knuckleR)` = 2*knuckleR whenever knuckleR > hingeLidThickness/2. This is intentional per the fix — but the resulting lid Z (5.4 mm at default hingeLidThickness=3, knuckleR=2.7) is nearly 2× the slab thickness. Users may be surprised that 'lid thickness 3 mm' produces a 5.4 mm-tall part. Consider surfacing an info-hint in the DrawerChestDialog when hinges are ON that reads 'Hinged lid Z = lid + knuckle bump ≈ {2·knuckleR} mm'. NICE-TO-HAVE.",
+    "Both generators do a full manifold rebuild on every param toggle (no incremental caching). On a slower machine each hingedtop toggle takes ~1.5-2 s. Adequate for now, but if further parametric controls are added to the same panel, consider memoising the frame/lid subassemblies separately.",
+    "The knuckle Y placement (`knuckleY = -D/2 - knuckleR` on chest, `+D/2 + knuckleR` on box) means the knuckle sticks fully OUTSIDE the back wall. Combined with the raised knuckleZ, the exposed axle pin now sits at world coords (-D/2 - knuckleR, frameTopZ + knuckleR). The `knuckleR + 0.5` rib gives ~0.5 mm of overlap with the back wall — thin. If someone prints the frame in ABS/PLA at a high infill and someone yanks the lid, the rib could shear at that thin bond. LOW priority; a rib depth of ~2 mm would be more robust. Consider `Math.max(knuckleR + 0.5, 2.0)`."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% (5/5 review-request items PASS)"},
+  "test_credentials": "Not required — used guest bypass via ?from=test URL param. No auth needed for parametric builders.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "For chest hinge testing: bboxes render inside `[data-testid=\"chest-bboxes\"]` as `Name\\n{X}×{Y}×{Z} mm` blocks (parse with regex `([A-Za-z ]+?)\\s*\\n\\s*([\\d.]+)×([\\d.]+)×([\\d.]+)\\s*mm`). The topHingedBox checkbox is at `[data-testid=\"chest-hingedtop\"] input[type=\"checkbox\"]` (needs .check(force=True)). Kickstand at `[data-testid=\"chest-lidkickstand\"] input[type=\"checkbox\"]`. Add-to-workspace at `[data-testid=\"chest-add-workspace\"]`. Default chest at hingedtop-only produces Frame 80×65.4×102.4 mm (vs iter-151.23 baseline 80×65.4×101.2 — the +1.2 mm Z is the iter-151.28 hinge-lift). Hinged-lid part is 80×69.3×5.4 mm. With kickstand at default 100°: 80×66.914×104.864 (matches iter-151.23 kickstand growth pattern). For box hinge testing: dialog testid `[data-testid=\"box-designer-dialog\"]`, lid mode select `[data-testid=\"box-lid-mode\"]` with values `none | drop | friction | sliding | hinged` — use page.select_option('...', value='hinged'). Bboxes at `[data-testid=\"box-designer-bboxes\"]`. Add-to-workspace at `[data-testid=\"box-designer-add-workspace\"]`. Default box (60×40×30, lidThickness=2, wall=2, floor=2) in hinged mode: Box body 60×45.2×33.2 mm, Lid 60×45.2×5.2 mm. There is no 'chest-2 test' compartment testid or explicit hinge-mode radio — the lid mode is a single <select>. Workspace 'What's New' popup will overlap dialog footers; use force=True when clicking add-to-workspace.",
+  "detailed_results": {
+    "T1_chest_hinged_lid_Z_bbox": "PASS — Hinged lid Z = 5.4 mm at default params (hingeLidThickness=3, knuckleR=2.7). Matches spec `= max(hingeLidThickness, 2*knuckleR) = 2*knuckleR`. Previously (before iter-151.28) would have been 3 mm.",
+    "T2_chest_frame_Z_bbox": "PASS — Frame Z = 102.4 mm at hingedtop-only (vs iter-151.23 baseline 101.2). Delta +1.2 mm = knuckleR − hingeLidThickness/2 = 2.7 − 1.5. Confirms knuckle base raised by knuckleR above frame top plane.",
+    "T3_box_hinged_lid_Z_bbox": "PASS — Lid Z = 5.2 mm at default (lidThickness=2, knuckleR=2.6). Matches spec `bodyH + lidThickness + knuckleR` for world-Z max, i.e. local-Z extent of 2*knuckleR = 5.2.",
+    "T4_box_body_Z_bbox": "PASS — Box body Z = 33.2 mm (H=30, bodyH=H−lidThickness=28, knuckle top = bodyH + 2*knuckleR = 28 + 5.2 = 33.2). Matches spec `bodyH + knuckleR` for axis with knuckleR extra for knuckle top.",
+    "T5_chest_hinged_off_regression": "PASS — Toggling topHingedBox OFF restores exactly Frame 80×60×96 and Top cap 86×66×4 (matches pre-fix baseline). Zero delta on X/Y/Z. Only the hinged-box code path was changed.",
+    "T6_box_lidmode_none_regression": "PASS — Setting lidMode='none' restores Box body 60×40×30 (bodyH = H when no lid). Lid part correctly disappears from bboxes.",
+    "T7_kickstand_regression": "PASS — With kickstand ON at default angle=100°, Frame = 80×66.914×104.864 (vs hinged-only 80×65.4×102.4). Growth ΔY +1.514, ΔZ +2.464 consistent with iter-151.23 kickstand stop-bar tilt (β = 100 + 2·halfAngDeg). Stop bar still exists and interferes at ~100°.",
+    "T8_chest_add_to_workspace": "PASS — Adds 4 parts (Frame, Drawer 1, Drawer 2, Hinged lid) to workspace with correct bboxes. Assembled view shows knuckles as small cylindrical bumps on back-top edge — matches the intentional piano-hinge detail described in the fix RCA.",
+    "T9_box_add_to_workspace": "PASS — Adds 2 parts (Box body, Lid) to workspace. Screenshot shows visible knuckles on box back-top edge and matching interlocking knuckles on the lid. No black gaps, no broken geometry, axle-hole carve appears intact.",
+    "T10_visual_no_regressions": "PASS — Both preview panels (dialog live view) and workspace show clean rounded slabs + welded knuckles + rib + drilled axle hole. No manifold failures, no z-fighting artifacts visible."
+  },
+  "measurements_summary": {
+    "chest_baseline_hinged_off": {"Frame": [80.0, 60.0, 96.0], "Top cap": [86.0, 66.0, 4.0]},
+    "chest_hinged_top_on": {"Frame": [80.0, 65.4, 102.4], "Hinged lid": [80.0, 69.3, 5.4]},
+    "chest_hinged_top_off_regression": {"Frame": [80.0, 60.0, 96.0], "Top cap": [86.0, 66.0, 4.0]},
+    "chest_hinged_top_plus_kickstand_at_100deg": {"Frame": [80.0, 66.914, 104.864], "Hinged lid": [80.0, 69.3, 5.4]},
+    "box_default_drop_lid": {"Box body": [60.0, 40.0, 28.0], "Lid": [60.0, 40.0, 2.0]},
+    "box_hinged_lid": {"Box body": [60.0, 45.2, 33.2], "Lid": [60.0, 45.2, 5.2]},
+    "box_lidmode_none_regression": {"Box body": [60.0, 40.0, 30.0]}
+  }
+}

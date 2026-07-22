@@ -202,7 +202,24 @@ export async function generateDrawerChest(params) {
   const numKnuckles = 5;
   const knuckleGap  = 0.4;
   const knuckleY    = -D / 2 - knuckleR;                   // back of chest (opposite drawer faces)
-  const knuckleZ    = frameTopZ + hingeLidThickness / 2;   // lid sits on top of frame; hinge axis at lid's mid-height
+  // Iter-151.28 — Hinge axis raised to sit ABOVE the frame's top plane.
+  // Previously the axis was at `frameTopZ + hingeLidThickness / 2` (the
+  // vertical MID-line of the lid slab), which meant the lid's back-
+  // bottom edge had to swing DOWNWARD through the frame's top surface
+  // to close — a hard geometric interference on the printed part.
+  // User reported the lid springs back open when released (2026-07-22).
+  //
+  // New rule: knuckle centre = frameTopZ + knuckleR, so the knuckle
+  // BOTTOM is flush with the frame top and the axis clears every point
+  // on the lid during a full 0-100° rotation:
+  //   - closed: lid's back-bottom sits exactly at (Y=-D/2, Z=frameTopZ)
+  //     — no drop through the frame top.
+  //   - opening: back-bottom traces an arc whose min Z equals frameTopZ
+  //     (touches but doesn't intersect); everywhere else stays above.
+  //   - fully open (~90-100°): back-bottom clears behind the box.
+  // Trade-off: the knuckle now protrudes ~knuckleR above the lid's top
+  // surface, which reads as an intentional piano-hinge detail.
+  const knuckleZ    = frameTopZ + knuckleR;                // hinge axis level with knuckle centre; knuckle base flush with frame top
 
   // ─── Build the FRAME (cabinet) ─────────────────────────────────────
   let frameM;
@@ -639,10 +656,15 @@ export async function generateDrawerChest(params) {
 
     // Lid-side knuckles: indices 1, 3 (odds) interlock with the frame's evens.
     const kSegLen = (W - 2) / numKnuckles;
-    // In lid-local frame, the lid's bottom face is at Z=0 and the hinge
-    // axle centre matches the frame's world Z at (frameTopZ +
-    // hingeLidThickness / 2). Locally that maps to Z = hingeLidThickness / 2.
-    const lidKnuckleZ = hingeLidThickness / 2;
+    // Iter-151.28 — Axle centre raised to sit just above the frame's
+    // top plane so the lid can close cleanly without swinging its
+    // back-bottom edge THROUGH the frame's top surface. See the
+    // matching frame-side comment where `knuckleZ` is defined.
+    // In lid-local coordinates the lid slab's bottom face is Z=0, and
+    // the world lid is placed at Z=frameTopZ; so lidKnuckleZ = knuckleR
+    // makes the local axis land at world Z = frameTopZ + knuckleR,
+    // matching the frame side exactly.
+    const lidKnuckleZ = knuckleR;
     for (let i = 1; i < numKnuckles; i += 2) {
       const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
       const kLen = kSegLen - knuckleGap;
@@ -654,8 +676,18 @@ export async function generateDrawerChest(params) {
       lidM.delete(); knM.delete();
       lidM = merged;
       // Rib welding knuckle to the lid's back edge (iter-151.11: back = -D/2).
-      const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
-      rib.translate(xCenter, -D / 2 - (knuckleR + 0.5) / 2 + 0.2, lidKnuckleZ + knuckleR);
+      // Iter-151.28 — rib now runs DOWNWARD from the knuckle to the
+      // lid's underside so the raised axle is still solidly bonded to
+      // the lid material.  Rib centre Y sits behind the back wall; rib
+      // Z spans from just above the knuckle base (avoids z-fighting)
+      // down to the lid's underside at Z=0.
+      const ribH = Math.max(hingeLidThickness, knuckleR + 0.5);
+      const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, ribH);
+      rib.translate(
+        xCenter,
+        -D / 2 - (knuckleR + 0.5) / 2 + 0.2,
+        ribH / 2  // rib bottom flush with lid underside (local Z=0)
+      );
       const ribM = _geomToMesh(wasm, _weld(rib));
       const merged2 = wasm.Manifold.union([lidM, ribM]);
       lidM.delete(); ribM.delete();

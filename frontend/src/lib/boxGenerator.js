@@ -360,7 +360,17 @@ export async function buildBoxAssembly(p) {
     const kSegLen      = (W - 2) / numKnuckles;
     const kGap         = 0.4;                        // clearance between adjacent knuckles
     const knuckleY     = D / 2 + knuckleR;           // sits proud of back wall
-    const knuckleZ     = bodyH;                      // exactly on the box/lid seam
+    // Iter-151.28 — Hinge axis raised to `bodyH + knuckleR` (knuckle
+    // BASE flush with box top, axis ~knuckleR above the seam). This
+    // is the same fix applied to the Drawer Chest — the previous
+    // position (knuckleZ = bodyH, axis AT the seam) mostly worked
+    // for THIN lids but on a physical print the tightest layer or a
+    // touch of over-extrusion still caught the lid's back-bottom
+    // edge on the box's rim, so the lid springs back open on release.
+    // Raising the axis by knuckleR keeps every point on the lid at
+    // or above the seam plane throughout a full 0-100° rotation, so
+    // the printed part closes cleanly with zero interference.
+    const knuckleZ     = bodyH + knuckleR;
 
     // BOX knuckles: indices 0, 2, 4 (evens on 0-based → 3 knuckles).
     for (let i = 0; i < numKnuckles; i += 2) {
@@ -532,11 +542,14 @@ export async function buildBoxAssembly(p) {
       const kGap        = 0.4;
       const knuckleY    = D / 2 + knuckleR;
 
-      // Lid coord: bottom face at Z=0. When assembled, the lid sits on
-      // top of the box body — but for the hinge, the knuckles' centre
-      // should be at world-Z=bodyH which corresponds to Z=0 in the
-      // lid's own frame.
-      const knuckleZ = 0;
+      // Iter-151.28 — Lid-local knuckle centre raised to match the
+      // box side's new higher axis (knuckleZ_world = bodyH + knuckleR).
+      // In the lid's own coordinate frame (bottom face at Z=0), the
+      // hinge-line therefore lives at Z = knuckleR. This keeps the lid
+      // rotating around a single shared world-Z axle-line while
+      // clearing the box's top plane during every angle of a full
+      // 0-100° swing (see the matching comment in the box branch).
+      const knuckleZ = knuckleR;
 
       for (let i = 1; i < numKnuckles; i += 2) {
         const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
@@ -551,10 +564,17 @@ export async function buildBoxAssembly(p) {
         lidManifold.delete(); knM.delete();
         lidManifold = merged1;
 
-        // Rib attaching this knuckle to the lid's back edge (Y = D/2).
-        // Sits ABOVE the seam so it welds into the lid's bottom face.
-        const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, knuckleR * 2);
-        rib.translate(xCenter, D / 2 + (knuckleR + 0.5) / 2 - 0.2, knuckleZ + knuckleR);
+        // Iter-151.28 — Rib now extends DOWN from the knuckle to the
+        // lid's underside (Z=0) so the raised knuckle is still solidly
+        // bonded to the lid. Rib height clamps to at least lidThickness
+        // so we always cross the full slab; rib centred at ribH/2.
+        const ribH = Math.max(lidThickness, knuckleR + 0.5);
+        const rib = new THREE.BoxGeometry(kLen, knuckleR + 0.5, ribH);
+        rib.translate(
+          xCenter,
+          D / 2 + (knuckleR + 0.5) / 2 - 0.2,
+          ribH / 2, // bottom flush with lid underside (local Z=0)
+        );
         const ribM = _geomToMesh(wasm, _weld(rib));
         const merged2 = wasm.Manifold.union([lidManifold, ribM]);
         lidManifold.delete(); ribM.delete();
