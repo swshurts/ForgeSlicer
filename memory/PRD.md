@@ -32,6 +32,24 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.25, 2026-07-22) — Center-on-bed Z-up fix + corrected instruction copy
+
+**Bug fix — Workspace context-menu axis mix-up**
+User reported: after adding a Drawer Chest to the workspace, moving parts to other plates, and right-clicking → "Center on bed", the frame ended up BISECTED by the build plate (half above, half below). Root cause: `doCenterOnBed`, `doParkOnBed`, and the multi-select branch of `doDropToBed` in `ContextMenu.jsx` were written with Y-up axis conventions, but this app has always been Z-up (see `addImportedMesh` and store's `dropToBed`/`centerOnBed`). Fix swaps Y↔Z everywhere in those three functions:
+- `doCenterOnBed` now centres X + Y (both horizontal), preserves Z (vertical).
+- `doParkOnBed` centres X + Y and drops Z to bed.
+- `doDropToBed` multi-branch uses `bb.min.z` and translates `position[2]`.
+- Single-item paths were already correct (they call through to store functions).
+
+Verified by `testing_agent_v3_fork` (iteration_151_25.json): 5/5 checks PASS in the exact scenario the user reported. Frame stays flush at world-Z=0 with X/Y centred, no bbox regressions on any of the four ctx-menu actions.
+
+**Copy fix — Instruction card orientations**
+User pointed out the assembly-guide orientations contradicted each other. `orientationFor()` in `chestInstructions.js` now reads correctly:
+- **Frame**: "Feet flat on the bed (as designed). Drawer-cavity roofs are short bridges — 3+ perimeters + 20% infill handle them without supports on most printers." (was "Feet down / open front facing up" — geometrically impossible)
+- **Drawers**: "Bottom (floor) DOWN on the bed, walls upright. Enable supports on the FRONT FACE ONLY to catch the handle overhang…" (was "Front face DOWN" — would balance the drawer on its handle)
+- **Hinged lid**: "Underside DOWN on the bed. Enable supports under the hinge knuckles only…"
+Recommended print settings + step 1 blurb also updated (supports **on** for drawer handles + hinge knuckles, **off** for frame + cap).
+
 ### Recently completed (iter-151.24, 2026-07-22) — Instructions Preview modal (Drawer Chest)
 
 The Drawer Chest "Instructions" button in the dialog footer no longer downloads directly — it now opens an inline preview modal:
