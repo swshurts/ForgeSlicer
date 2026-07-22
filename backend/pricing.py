@@ -25,20 +25,29 @@ DEFAULT_PACKAGES = {
         "period_days": 365,
         "early": {"amount": 28.0, "limit": 100},
         "perks": [
-            "200 AI generations / year (up from 10 free)",
-            "Unlimited private designs",
-            "Manifold ✓ priority slicing",
+            "25 AI 3D generations / month (Free tier is capped at 0)",
+            "Bring-your-own Meshy key for unlimited AI",
+            "Multi-plate 3MF export (Bambu, Elegoo, Flashforge)",
+            "Cooperative projects + version history",
+            "Publish your own Print-Shop presets",
         ],
     },
-    "pro": {
-        "name": "Pro",
+    # Iter-151.26 — Pro was renamed to "Studio" and the perk copy was
+    # rewritten around the AI story. The DB key stays "studio"; existing
+    # paying users with the legacy `subscription_tier="pro"` value are
+    # honoured as Studio-tier by `get_effective_tier` (server.py) so
+    # nobody's benefits lapse mid-renewal.
+    "studio": {
+        "name": "Studio",
         "amount": 108.0,
         "currency": "usd",
         "period_days": 365,
         "early": {"amount": 90.0, "limit": 100},
         "perks": [
-            "Unlimited AI generations",
-            "Commercial use license badge on Gallery items",
+            "Unlimited AI 3D generations on our default provider (fal.ai Hunyuan3D)",
+            "100 Meshy generations / month on our key — or bring your own for unlimited",
+            "Everything in Maker",
+            "Commercial-use license badge on Gallery + Marketplace listings",
             "1080p turntable thumbnails",
             "Priority email support",
         ],

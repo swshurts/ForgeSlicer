@@ -104,13 +104,25 @@ async def _upsert_user_from_emergent(profile: dict) -> dict:
         existing["picture"] = profile.get("picture") or existing.get("picture", "")
         return existing
     user_id = f"user_{uuid.uuid4().hex[:12]}"
+    # Iter-151.26 — Grant a 14-day full-Studio trial to every new signup.
+    # Stored as an ISO string so it round-trips cleanly to Mongo. When
+    # `_effective_tier(user)` sees `trial_expires_at` in the future it
+    # returns "studio" regardless of `subscription_tier`, so unlimited
+    # fal.ai + Studio-only badges are unlocked automatically. Once the
+    # trial expires the user silently reverts to "free" until they
+    # convert on /pricing.
+    now = datetime.now(timezone.utc)
+    trial_expires = (now + timedelta(days=14)).isoformat()
     doc = {
         "user_id": user_id,
         "email": email,
         "name": profile.get("name") or email.split("@")[0],
         "picture": profile.get("picture") or "",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "last_login_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.isoformat(),
+        "last_login_at": now.isoformat(),
+        "subscription_tier": "free",
+        "is_trial": True,
+        "trial_expires_at": trial_expires,
     }
     await db.users.insert_one(doc)
     # `insert_one` mutates `doc` by adding `_id` (BSON ObjectId). Strip
@@ -219,12 +231,16 @@ def _public_user(user: dict) -> dict:
         # Override quota — the AIGenerateDialog shows the effective cap;
         # if set, it overrides the default + contributor multiplier.
         "ai_quota_override": user.get("ai_quota_override"),
-        # Stripe subscription state — used by the frontend to render the
+        # Subscription state — used by the frontend to render the
         # current plan in the UserMenu + pricing page. `subscription_tier`
-        # is the package_id ("free", "maker", or "pro"); `expires_at` is
-        # an ISO timestamp set when the most recent payment was confirmed.
+        # is the raw package_id ("free", "maker", "studio", legacy "pro");
+        # `effective_tier` accounts for the 14-day Studio trial and
+        # any expired subscription, and is what the UI should gate on.
         "subscription_tier": user.get("subscription_tier", "free"),
         "subscription_expires_at": user.get("subscription_expires_at"),
+        "effective_tier": _effective_tier(user),
+        "is_trial": bool(user.get("is_trial", False)) and _effective_tier(user) == "studio",
+        "trial_expires_at": user.get("trial_expires_at"),
     }
 
 
@@ -770,9 +786,18 @@ async def contributor_status(request: Request):
 
 
 # ---------- AI Mesh Generation (Meshy) ----------
-# Per-user monthly cap so a single user can't burn through the Meshy budget.
-# Contributor Lifetime users get 2× the cap as a "thanks" perk.
-AI_MONTHLY_CAP = 13
+# Iter-151.26 — Tier-aware caps replaced the flat per-user monthly cap
+# once monetization launched. Free = no AI, Maker = 25/mo on our key
+# (or unlimited via BYO Meshy key), Studio = unlimited on fal.ai / 100
+# on Meshy (or unlimited via BYO). Contributor Lifetime users still
+# get the 2× multiplier on whatever their tier grants.
+AI_MONTHLY_CAP_FREE = 0
+AI_MONTHLY_CAP_MAKER = 25
+AI_MONTHLY_CAP_STUDIO_MESHY = 100
+# Sentinel "unlimited" — anything below this is a real cap; anything
+# equal to or above it is treated as infinite by the frontend and the
+# _ai_increment_or_raise path never rate-limits.
+AI_UNLIMITED = 10_000
 AI_CONTRIB_MULTIPLIER = 2
 
 
@@ -782,28 +807,113 @@ def _month_key(now: Optional[datetime] = None) -> str:
     return f"{n.year:04d}-{n.month:02d}"
 
 
+def _effective_tier(user: dict) -> str:
+    """Iter-151.26 — Resolve a user's *effective* subscription tier at
+    call time. Accounts for:
+      1. Active 14-day Studio trial (`trial_expires_at` > now)
+      2. Expired paid subscription (falls back to free)
+      3. Legacy "pro" tier honoured as "studio"
+
+    Returns one of: "free", "maker", "studio". Never raises.
+    """
+    if not isinstance(user, dict):
+        return "free"
+
+    now = datetime.now(timezone.utc)
+
+    # Trial: overrides any tier field while active. Set to "studio" so
+    # trialing users get the full experience.
+    trial_iso = user.get("trial_expires_at")
+    if trial_iso:
+        try:
+            trial_expires = datetime.fromisoformat(trial_iso)
+            if trial_expires.tzinfo is None:
+                trial_expires = trial_expires.replace(tzinfo=timezone.utc)
+            if trial_expires > now:
+                return "studio"
+        except Exception:
+            pass  # bad iso string — treat as no trial rather than crash
+
+    tier = (user.get("subscription_tier") or "free").lower()
+    if tier == "pro":  # legacy alias for existing paying subscribers
+        tier = "studio"
+    if tier not in ("maker", "studio"):
+        return "free"
+
+    # Enforce paid-subscription expiry so a stale record doesn't grant
+    # perpetual benefits. `subscription_expires_at` set by
+    # braintree_billing on grant.
+    exp_iso = user.get("subscription_expires_at")
+    if exp_iso:
+        try:
+            exp = datetime.fromisoformat(exp_iso)
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < now:
+                return "free"
+        except Exception:
+            pass  # bad iso — treat as still active rather than punish
+    return tier
+
+
 async def _ai_cap_for(user: dict) -> int:
     """Per-user monthly AI cap.
 
-    Precedence (highest wins):
+    Iter-151.26 precedence (highest wins):
       1. Admin-set override `ai_quota_override` (1..300) — bypasses
          everything else, used to give specific users custom quotas.
-      2. Contributor multiplier on the default cap.
-      3. Default cap.
+      2. BYO Meshy key — unlimited (billing goes direct to Meshy).
+      3. Effective tier: Free → 0, Maker → 25, Studio → 100 on Meshy
+         (or unlimited on fal.ai, resolved at call site via
+         `_ai_provider_cap`).
+      4. Contributor multiplier applied on top of the tier base.
     """
     override = user.get("ai_quota_override")
     if isinstance(override, int) and 1 <= override <= 300:
         return override
-    base = AI_MONTHLY_CAP
+    if user.get("meshy_api_key_enc"):
+        return AI_UNLIMITED
+    tier = _effective_tier(user)
+    if tier == "free":
+        base = AI_MONTHLY_CAP_FREE
+    elif tier == "maker":
+        base = AI_MONTHLY_CAP_MAKER
+    else:  # studio (or legacy pro)
+        # Studio's "unlimited on fal.ai" is enforced at provider level
+        # via `_ai_provider_cap` — this baseline cap covers Meshy fall-
+        # back paths so a Studio user can't burn our Meshy credits.
+        base = AI_MONTHLY_CAP_STUDIO_MESHY
+    if base == 0:
+        return 0
     return base * AI_CONTRIB_MULTIPLIER if user.get("contributor_lifetime") else base
+
+
+async def _ai_provider_cap(user: dict, provider: str) -> int:
+    """Effective cap for the *specific* provider that will handle the
+    next generation. Studio + fal.ai → unlimited; every other combo
+    defers to `_ai_cap_for`. Called from the /ai/generate/* handlers
+    so free users get 0-cap even if their Meshy key would otherwise
+    unlock the flow.
+    """
+    tier = _effective_tier(user)
+    if tier == "studio" and provider == "fal":
+        return AI_UNLIMITED
+    return await _ai_cap_for(user)
 
 
 async def _ai_increment_or_raise(user: dict) -> int:
     """Atomically increment monthly AI usage; raise 429 if user is at cap.
 
     Returns the count AFTER increment. Uses MongoDB's $inc + upsert so two
-    concurrent requests can't both squeak past the boundary."""
+    concurrent requests can't both squeak past the boundary.
+
+    Iter-151.26 — short-circuits when the cap is at or above
+    `AI_UNLIMITED` so Studio-on-fal.ai and BYO-key users don't pay a
+    round-trip to Mongo for a counter that never limits them.
+    """
     cap = await _ai_cap_for(user)
+    if cap >= AI_UNLIMITED:
+        return 0  # sentinel — caller uses this only for logging, not display
     mkey = _month_key()
     # Pre-check: cheap read so we don't waste a write if obviously capped.
     cur = await db.ai_usage.find_one({"user_id": user["user_id"], "month_key": mkey})
@@ -889,18 +999,41 @@ async def ai_usage_for_user(request: Request):
         "used": used,
         "cap": cap,
         "remaining": max(0, cap - used),
+        "unlimited": cap >= AI_UNLIMITED,
         "month": _month_key(),
         "contributor_lifetime": bool(user.get("contributor_lifetime")),
         # When True, the frontend shows "Unlimited (your Meshy key)" instead
         # of the used/cap counter, and never renders the "cap reached" toast.
         "has_personal_key": has_personal_key,
         "active_provider": active_provider,
+        # Iter-151.26 — expose the effective tier so the frontend UI
+        # can render Free-tier upgrade nudges without a second round-trip.
+        "effective_tier": _effective_tier(user),
     }
+
+
+def _require_ai_access(user: dict) -> None:
+    """Iter-151.26 — Fail-fast paywall for AI generation.
+    Free users (no active trial, no paid tier, no BYO key) get a clear
+    402 before any provider work. Everyone else falls through to the
+    normal usage-increment path."""
+    if user.get("meshy_api_key_enc"):
+        return  # BYO key holders always allowed
+    if _effective_tier(user) == "free":
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                "AI 3D generation requires a Maker or Studio subscription. "
+                "New signups get a free 14-day Studio trial — check /pricing "
+                "to upgrade or start yours."
+            ),
+        )
 
 
 @api_router.post("/ai/generate/text")
 async def ai_generate_text(req: AITextRequest, request: Request):
     user = await get_current_user(request)
+    _require_ai_access(user)   # iter-151.26 — free-tier paywall
     provider, svc, personal_key = await _pick_ai_provider(user)
     # BYO Meshy key holders bypass the monthly quota — they pay Meshy directly.
     # We still record the job in ai_jobs (for stats + status polling) but
@@ -994,6 +1127,7 @@ async def ai_generate_text(req: AITextRequest, request: Request):
 @api_router.post("/ai/generate/image")
 async def ai_generate_image(request: Request):
     user = await get_current_user(request)
+    _require_ai_access(user)   # iter-151.26 — free-tier paywall
     provider, svc, personal_key = await _pick_ai_provider(user)
     # Iter-132.2 — Body accepts EITHER:
     #   { image_b64, mime_type }              -- direct upload (original)
@@ -1062,6 +1196,7 @@ async def ai_generate_multi_image(request: Request):
     existing /ai/jobs/* handlers with kind='multi_image'.
     """
     user = await get_current_user(request)
+    _require_ai_access(user)   # iter-151.26 — free-tier paywall
     provider, svc, personal_key = await _pick_ai_provider(user)
     body = await request.json()
     images = body.get("images") or []
@@ -1265,6 +1400,7 @@ async def ai_preview_images(req: AIPreviewRequest, request: Request):
     enough because the endpoint is cheap and short-lived).
     """
     user = await get_current_user(request)
+    _require_ai_access(user)   # iter-151.26 — free-tier paywall (also fails preview)
     provider, _svc, personal_key = await _pick_ai_provider(user)
     if provider != "fal":
         # BYO Meshy users don't get the Flux preview step — they

@@ -60,7 +60,14 @@ export default function PricingPage() {
     try { await refreshAuth?.(); } catch { /* noop */ }
   };
 
-  const currentTier = user?.subscription_tier || "free";
+  const currentTier = user ? (user.effective_tier || user.subscription_tier || "free") : null;
+  const isTrial = !!user?.is_trial;
+  const trialExpires = user?.trial_expires_at;
+  const trialDaysLeft = (() => {
+    if (!isTrial || !trialExpires) return null;
+    const days = Math.ceil((new Date(trialExpires) - Date.now()) / 86400000);
+    return days > 0 ? days : null;
+  })();
 
   return (
     <div className="min-h-screen bg-slate-950 text-white" data-testid="pricing-page">
@@ -79,12 +86,20 @@ export default function PricingPage() {
       <main className="max-w-5xl mx-auto px-4 py-12">
         <div className="text-center mb-10">
           <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">Plans &amp; Pricing</h1>
-          <p className="text-slate-400 text-sm mt-3 max-w-lg mx-auto">
-            Free for hobbyists. Upgrade when you want more AI generations, commercial-use licenses, or bigger projects. One-year billing — cancel any time before renewal.
+          <p className="text-slate-400 text-sm mt-3 max-w-xl mx-auto">
+            Free for hobbyists. Upgrade when you want AI generations, multi-plate export, commercial-use licensing, or shared projects. One-year billing — cancel any time before renewal.
           </p>
+          {trialDaysLeft != null && (
+            <div
+              data-testid="pricing-trial-banner"
+              className="mt-4 inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-xs font-semibold rounded-full px-4 py-1.5"
+            >
+              <Check size={12} /> Studio trial — {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} left. Convert any time to keep unlimited AI.
+            </div>
+          )}
           {!user && (
             <div className="text-amber-300 text-xs mt-4 flex items-center justify-center gap-1.5">
-              <AlertCircle size={12} /> Sign in first so we can grant your tier the moment payment succeeds.
+              <AlertCircle size={12} /> Sign in first — new accounts get a free 14-day Studio trial.
             </div>
           )}
         </div>
@@ -107,9 +122,10 @@ export default function PricingPage() {
               period="forever"
               perks={[
                 "Unlimited slicing + STL/3MF export",
-                "10 AI generations / month",
-                "Unlimited public designs",
                 "Manifold ✓ watertight booleans",
+                "Public + private designs",
+                "Browse the marketplace + import presets",
+                "AI 3D generation not included",
               ]}
               current={currentTier === "free"}
               ctaLabel={currentTier === "free" ? "Current plan" : "Downgrade not supported"}
@@ -138,6 +154,59 @@ export default function PricingPage() {
           </div>
         )}
 
+        {/* Iter-151.26 — At-a-glance feature matrix. Values are hard-
+            coded here rather than sourced from the API so admins can
+            edit perk copy in the catalog without breaking the matrix
+            alignment. Keep in sync with pricing.py + tier gates. */}
+        <div className="mt-14" data-testid="pricing-matrix">
+          <h2 className="text-xl font-bold text-center mb-6">What's in each plan</h2>
+          <div className="overflow-x-auto rounded-lg border border-slate-800">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900 text-slate-300">
+                <tr>
+                  <th className="text-left px-4 py-3 font-semibold">Feature</th>
+                  <th className="text-center px-4 py-3 font-semibold">Free</th>
+                  <th className="text-center px-4 py-3 font-semibold text-cyan-300">Maker</th>
+                  <th className="text-center px-4 py-3 font-semibold text-orange-300">Studio</th>
+                </tr>
+              </thead>
+              <tbody className="text-slate-300">
+                {[
+                  ["Slicing, STL/3MF export, manifold booleans", "✓", "✓", "✓"],
+                  ["Public + private designs", "✓", "✓", "✓"],
+                  ["Browse marketplace + import Print-Shop presets", "✓", "✓", "✓"],
+                  ["AI 3D generation (fal.ai Hunyuan3D)", "—", "25 / mo", "Unlimited"],
+                  ["AI 3D generation (Meshy on our key)", "—", "—", "100 / mo"],
+                  ["Bring your own Meshy key (unlimited)", "✓", "✓", "✓"],
+                  ["Multi-plate 3MF export (Bambu / Elegoo / Flashforge)", "✓", "✓", "✓"],
+                  ["Cooperative projects + version history", "✓", "✓", "✓"],
+                  ["Publish your own Print-Shop presets", "—", "✓", "✓"],
+                  ["Marketplace publishing + PayPal payouts", "—", "✓", "✓"],
+                  ["Commercial-use license badge on listings", "—", "—", "✓"],
+                  ["1080p turntable thumbnails", "—", "—", "✓"],
+                  ["Priority email support", "—", "—", "✓"],
+                ].map((row, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-slate-950" : "bg-slate-900/40"}>
+                    <td className="px-4 py-2.5">{row[0]}</td>
+                    {row.slice(1).map((cell, j) => (
+                      <td
+                        key={j}
+                        className={`text-center px-4 py-2.5 font-mono text-xs ${
+                          cell === "—" ? "text-slate-600" :
+                          cell === "✓" ? "text-emerald-400" :
+                          "text-amber-300 font-semibold"
+                        }`}
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <p className="text-[10px] text-slate-500 text-center mt-10">
           Payments processed by Braintree (a PayPal company). Pay with PayPal, Venmo, or any major card. We never see your card details. You&apos;ll receive a receipt by email after every charge.
         </p>
@@ -158,7 +227,10 @@ export default function PricingPage() {
 }
 
 function PlanCard({ id, name, price, strikePrice, earlyNote, period, perks, current, ctaLabel, disabled, busy, onClick }) {
-  const accent = id === "pro" ? "border-orange-500/60 bg-orange-500/5" : id === "maker" ? "border-cyan-500/40 bg-cyan-500/5" : "border-slate-800 bg-slate-900";
+  const accent =
+    id === "studio" || id === "pro" ? "border-orange-500/60 bg-orange-500/5" :
+    id === "maker" ? "border-cyan-500/40 bg-cyan-500/5" :
+    "border-slate-800 bg-slate-900";
   return (
     <div
       data-testid={`pricing-card-${id}`}

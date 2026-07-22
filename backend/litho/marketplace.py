@@ -39,6 +39,12 @@ class ListingPublic(BaseModel):
     description: str
     price_usd: float
     license: str = "All Rights Reserved"
+    # Iter-151.26 — Studio-tier creators get a "commercial use OK" badge
+    # displayed on their listings. True only when BOTH the creator's
+    # effective tier is Studio AND the license text doesn't include
+    # non-commercial / private markers. Computed at read time so a
+    # user losing their subscription automatically drops the badge.
+    commercial_use_ok: bool = False
     creator_id: str
     creator_name: str
     creator_picture: str = ""
@@ -73,18 +79,51 @@ def _iso(dt) -> str:
     return ""
 
 
+# Iter-151.26 — Licenses that unambiguously forbid commercial resale.
+# We keep this a *narrow* deny-list rather than a "must contain
+# commercial" allow-list because free-form license strings are often
+# vague ("MIT-ish", "buyer's choice", …) and denying by default would
+# be paternalistic. The badge only appears when the seller is Studio
+# AND the license does NOT match any of these patterns.
+_NON_COMMERCIAL_MARKERS = (
+    "non-commercial", "noncommercial", "non commercial",
+    "no commercial",  "cc by-nc", "cc-by-nc", "cc-nc",
+    "-nc-", "-nc ", " nc ", " nc,",
+    "private",       "personal use only", "personal-use-only",
+    "not for resale", "no resale",
+)
+
+
+def _license_is_commercial_ok(license_text: str) -> bool:
+    """True unless the license text signals a commercial restriction.
+    Case-insensitive, whitespace-tolerant. Empty / missing → treated
+    as commercial-OK since our default (All Rights Reserved) is
+    still a valid "creator sells you their own file" arrangement."""
+    if not license_text:
+        return True
+    haystack = f" {license_text.lower().strip()} "
+    return not any(marker in haystack for marker in _NON_COMMERCIAL_MARKERS)
+
+
 def _job_to_listing_public(
     job: Dict[str, Any], user_map: Dict[str, Dict[str, Any]]
 ) -> ListingPublic:
     listing = job.get("listing", {})
     user = user_map.get(job["user_id"], {})
     request = job.get("request", {}) or {}
+    # Iter-151.26 — Compute the Studio commercial-use badge inline.
+    # Import locally so this file doesn't take a circular dep on the
+    # server-level tier resolver; tier_gate is already in-package.
+    from .tier_gate import is_studio
+    license_text = listing.get("license", "All Rights Reserved")
+    commercial_ok = is_studio(user) and _license_is_commercial_ok(license_text)
     return ListingPublic(
         job_id=job["job_id"],
         title=listing.get("title", "Untitled"),
         description=listing.get("description", ""),
         price_usd=float(listing.get("price_usd", 0.0)),
-        license=listing.get("license", "All Rights Reserved"),
+        license=license_text,
+        commercial_use_ok=commercial_ok,
         creator_id=job["user_id"],
         creator_name=user.get("name") or user.get("email", "Anonymous"),
         creator_picture=user.get("picture", ""),

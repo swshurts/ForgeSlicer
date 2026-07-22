@@ -12,6 +12,10 @@ Everything else stays open — job generation inherits ForgeSlicer's
 existing tier plumbing (no separate lithophane cap), and exports,
 printers, filament library, presets are unrestricted per product
 direction (2026-07-06 user decision).
+
+Iter-151.26 — tier renaming: Pro → Studio in the catalog. Legacy
+users whose `subscription_tier` is still literally "pro" continue
+to be treated as paid tier so nobody's benefits lapse mid-renewal.
 """
 
 from __future__ import annotations
@@ -20,7 +24,8 @@ from typing import Any, Iterable
 from fastapi import HTTPException
 
 
-PAID_TIERS = ("maker", "pro")
+# "pro" kept as a legacy alias — see iter-151.26 note above.
+PAID_TIERS = ("maker", "studio", "pro")
 
 
 def ensure_paid(user: Any, feature: str = "this feature") -> None:
@@ -40,7 +45,7 @@ def ensure_paid(user: Any, feature: str = "this feature") -> None:
     raise HTTPException(
         status_code=402,
         detail=(
-            f"{feature} requires a Maker or Pro subscription. "
+            f"{feature} requires a Maker or Studio subscription. "
             "Upgrade at /pricing to unlock."
         ),
     )
@@ -63,3 +68,13 @@ def is_paid(user: Any, tiers: Iterable[str] = PAID_TIERS) -> bool:
     response body without failing the whole request (e.g. a status
     endpoint that returns `{eligible: false}` for free users)."""
     return _get_tier(user) in tiers
+
+
+def is_studio(user: Any) -> bool:
+    """True iff the user's effective tier is Studio (or the legacy
+    'pro' alias, still honoured for existing subscribers). Used for
+    Studio-only benefits like the commercial-use license badge and
+    unlimited-fal.ai AI generation.
+    """
+    tier = _get_tier(user)
+    return tier in ("studio", "pro")
