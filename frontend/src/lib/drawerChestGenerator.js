@@ -331,6 +331,32 @@ export async function generateDrawerChest(params) {
       const carved = wasm.Manifold.difference([frameM, axleM]);
       frameM.delete(); axleM.delete();
       frameM = carved;
+
+      // Iter-151.22 — Frame-side hinge stop bar (kickstand).
+      // A rigid tab welded across the full hinge row on the FRAME
+      // side, protruding radially from the knuckle axis at angle β
+      // (measured CCW from +Y in the YZ plane, viewed from +X). The
+      // LID-side stop tabs (added on each lid knuckle below) rotate
+      // with the lid; when the lid swings open they sweep upward and
+      // impact this bar, forming a positive hard stop at ~100° open
+      // that doesn't depend on friction. Bar sits BEHIND-and-ABOVE
+      // the hinge in the closed position, so it doesn't interfere
+      // with the lid or the interior of the chest.
+      if (params.lidKickstand) {
+        const kickTabExt = 3.0;                          // radial protrusion (mm)
+        const kickTabTan = 2.0;                          // tangential thickness (mm)
+        const kickBarLen = W - 2;                        // span across the full hinge row
+        const kickStopAngleDeg = 110;                    // frame bar centred at 110°
+        const rCentre = knuckleR + kickTabExt / 2;
+        const bar = new THREE.BoxGeometry(kickBarLen, kickTabTan, kickTabExt);
+        bar.translate(0, 0, rCentre);
+        bar.rotateX(((kickStopAngleDeg - 90) * Math.PI) / 180);
+        bar.translate(0, knuckleY, knuckleZ);
+        const barM = _geomToMesh(wasm, _weld(bar));
+        const stopped = wasm.Manifold.union([frameM, barM]);
+        frameM.delete(); barM.delete();
+        frameM = stopped;
+      }
     }
   }
 
@@ -646,29 +672,30 @@ export async function generateDrawerChest(params) {
     lidM.delete(); pullM.delete();
     lidM = merged;
 
-    // Iter-151.21 — Optional lid kickstand: a rigid stop-rib on the
-    // underside of the lid, welded near the front edge, extending
-    // downward into the frame's interior cavity when the lid is
-    // closed. When the lid rotates open, this rib swings around the
-    // hinge and its tip contacts the frame's front-inside wall at
-    // approximately 100° — providing a hard stop so the lid rests
-    // locked at that angle instead of relying on friction alone.
-    // Rib is invisible when closed (tucked inside the frame cavity).
+    // Iter-151.22 — Lid-side hinge stop tabs (kickstand).
+    // A radial tab on each LID knuckle at α=0° (pointing +Y from the
+    // hinge axis, i.e. lying along the underside of the closed lid
+    // and tucked inside the lid slab so it's invisible when closed).
+    // As the lid rotates open, each tab sweeps up and impacts the
+    // frame-side stop bar (added above at β=110°) at ~100° open,
+    // providing a positive mechanical hard stop.
     if (params.lidKickstand) {
-      const kickW = Math.min(20, W * 0.25);
-      const kickThick = Math.max(2.5, wall * 0.8);
-      const kickH = Math.max(6, hingeLidThickness * 2);
-      const kick = new THREE.BoxGeometry(kickW, kickThick, kickH);
-      // Position: X centred, Y just BEHIND the lid's front edge (so
-      // the rib clears the frame's front-inside wall when closed),
-      // Z hanging DOWN from the lid's underside.
-      const yPos = D / 2 - wall - kickThick / 2 - 1.0;   // 1 mm gap from front-inside wall
-      const zPos = -kickH / 2 + 0.1;                     // top face flush with lid underside
-      kick.translate(0, yPos, zPos);
-      const kickM = _geomToMesh(wasm, _weld(kick));
-      merged = wasm.Manifold.union([lidM, kickM]);
-      lidM.delete(); kickM.delete();
-      lidM = merged;
+      const kickTabExt = 3.0;                            // radial protrusion (mm)
+      const kickTabTan = 2.0;                            // tangential thickness (mm)
+      const rCentre = knuckleR + kickTabExt / 2;
+      for (let i = 1; i < numKnuckles; i += 2) {
+        const xCenter = -W / 2 + 1 + (i + 0.5) * kSegLen;
+        const kLen = kSegLen - knuckleGap;
+        const tab = new THREE.BoxGeometry(kLen, kickTabTan, kickTabExt);
+        tab.translate(0, 0, rCentre);
+        // α = 0° (pointing +Y). Start box on +Z axis (angle 90°), rotate by -90°.
+        tab.rotateX((-90 * Math.PI) / 180);
+        tab.translate(xCenter, knuckleY, lidKnuckleZ);
+        const tabM = _geomToMesh(wasm, _weld(tab));
+        const withTab = wasm.Manifold.union([lidM, tabM]);
+        lidM.delete(); tabM.delete();
+        lidM = withTab;
+      }
     }
 
     const lidGeom = _manifoldToGeom(lidM);

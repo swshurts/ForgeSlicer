@@ -44,7 +44,7 @@ const DEFAULTS = {
   drawerHeights: [],           // mm, length ≤ rows; LAST slot auto-fills leftover
   topHingedBox: false,         // top row is chest-style hinged-lid box
   lidDetent: true,             // tighten axle hole on the LID knuckles by 0.1 mm so the lid holds any open angle by friction fit (works with the standard 2.0 mm pin)
-  lidKickstand: false,         // interior stop-rib on the lid's front underside — acts as a hard stop at ~100° so the lid rests locked instead of relying on friction alone
+  lidKickstand: false,         // hinge-integrated hard stop: bar on frame knuckles + tabs on lid knuckles collide at ~100° open
   gridfinityLocators: false,   // + crosses on each drawer floor at 42 mm grid (Gridfinity-compatible)
   gridfinityBaseplate: false,  // full Gridfinity pocket profile carved into each drawer floor
   subdivider: "none",          // "none" | "1x2" | "2x1" | "2x2" | "1x3" | "3x1" | "2x3" | "3x2" | "3x3"
@@ -678,7 +678,7 @@ export default function DrawerChestDialog({ open, onClose }) {
                     label="Lid kickstand (hard stop @ ~100°)"
                     value={params.lidKickstand}
                     onChange={(v) => update("lidKickstand", v)}
-                    hint="Adds a rigid stop-rib inside the lid that catches on the frame's front-inside wall at ~100°. Invisible when closed; the lid rests locked at that angle when open."
+                    hint="Adds matching stop tabs on the hinge knuckles (a bar on the frame side + tabs on the lid side) that collide at ~100° open, giving a positive mechanical hard stop. Fully integrated into the hinge — no separate assembly."
                   />
                 </div>
               )}

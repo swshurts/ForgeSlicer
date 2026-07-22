@@ -1,0 +1,39 @@
+{
+  "summary": "ForgeSlicer iter-151.22 hinge-integrated kickstand hard-stop — frontend E2E PASS (5/5 checks). Frame-side stop bar and lid-side tabs correctly gated by params.lidKickstand; no manifold errors; bbox behaviour matches spec (frame grows ~3mm in Z, lid bbox unchanged because tabs are tucked inside the slab when closed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "DrawerChestDialog footer",
+        "issues": [
+          "'What's New' Sonner popup (bottom-right) still overlaps the ZIP BUNDLE button (same issue as flagged in iteration_150.json — unchanged, still MEDIUM). Functional (force=True click works), but a real user might misclick."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "drawerChestGenerator.js kickstand geometry looks correct: frame bar at β=110° (line 349) rotates via `rotateX((110-90)°)` from +Z (bar starts on +Z, tilts ~20° toward +Y), placed at rCentre=knuckleR+1.5. Lid tabs at α=0° rotate via `rotateX(-90°)` so the +Z-oriented box points +Y after rotation — matches the 'tucked inside slab' spec.",
+    "Lid tab bbox observation: with the default 80×60×100 chest + topHingedBox, the tabs project +3.5 mm forward from the hinge axis (which sits ~2mm inside the back edge of the lid), so tabs stay well inside the ~60mm-deep lid slab and don't grow the lid bbox. This is intentional and correct behaviour.",
+    "Frame stop bar spans W-2 = 78mm (correct) and only appears on ODD LID knuckle indices for tabs (i=1,3 out of 5) — matches spec 'appear only on the LID knuckle indices'.",
+    "Both blocks properly reuse the wasm Manifold delete pattern (frameM.delete(); barM.delete()) — no leaks.",
+    "Minor: the kickstand hint text still says '~100°' while the internal frame-bar angle constant is kickStopAngleDeg=110. The actual COLLISION angle for the lid tab (α=0° swept by lid open-angle θ) reaches the fixed bar edge at roughly 110° - (kickTabTan/rCentre * 90°/π ≈ ~16°) → ~90-100° depending on tab width, so the UI label is a reasonable approximation."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% (5/5 checks pass)"},
+  "test_credentials": "Fresh mongosh-seeded session: SESSION_TOKEN=st_kickstand_1784686690319 (user_test_kickstand_1784686690319), valid 7 days. Preview host cookie: session_token.",
+  "seed_data_creation": "Created 1 test user + 1 session in test_database via mongosh (self-contained, does not touch production data). ID user_test_kickstand_1784686690319.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The prior session_token 'st_iter114_1782699840835' in test_credentials.md has EXPIRED. To sign in to /workspace, seed a fresh session with the mongosh snippet in test_credentials.md and inject as a secure httpOnly cookie BEFORE navigating. Left-panel tabs use data-testid='leftpanel-tab-{3d,2d,composites,params,ai}' (not 'left-tab-*'). DrawerChestDialog testids: drawer-chest-dialog, chest-hingedtop, chest-liddetent, chest-lidkickstand (each is on the LABEL wrapper — the input is `[data-testid='chest-lidkickstand'] input[type=checkbox]`), chest-bboxes, chest-building, chest-error. Wait for chest-building count==0 between rebuilds (initial build ~2-4s on 80×60×100 default). BBoxes text format: 'Frame80×60×96 mmDrawer 173.2×...' — regex `(Frame|Hinged lid)\\s*([\\d\\.]+)×([\\d\\.]+)×([\\d\\.]+)`.",
+  "detailed_results": {
+    "T1_default_no_hingedbox": "PASS — default build (80×60×100, 3 rows, feet, cap): Frame 80×60×96 + 3 drawers + Top cap 86×66×4. No Hinged lid. chest-lidkickstand NOT rendered (correctly gated by topHingedBox).",
+    "T2_hingedbox_on": "PASS — enabling chest-hingedtop rebuilds without error. Top row drops out as drawer, Hinged lid 80×69.3×8.1 appears (extended past D=60 by finger pull on FRONT and knuckle overhang on BACK). Frame bbox 80×65.4×101.2 (grew Y and Z for knuckles). chest-lidkickstand NOW visible.",
+    "T3_kickstand_on": "PASS — enabling chest-lidkickstand rebuilds without error, no console warnings. Frame bbox 80×65.4×101.2 → 80×65.589×104.198 (Z +2.998mm from bar sticking up at ~20° lean, Y +0.189mm from slight backward lean — matches β=110° geometry). Lid bbox unchanged at 80×69.3×8.1 — tabs at α=0° are tucked inside the lid slab as spec requires.",
+    "T4_kickstand_off": "PASS — toggling kickstand OFF restores exact prior bboxes (Frame 80×65.4×101.2, Lid 80×69.3×8.1). No residual geometry.",
+    "T5_regression_hingedbox_off": "PASS — turning topHingedBox back off returns to the exact default (Frame 80×60×96 + 3 drawers + Top cap 86×66×4). Hinged lid removed. Kickstand toggle hidden (correctly conditional on topHingedBox)."
+  }
+}
