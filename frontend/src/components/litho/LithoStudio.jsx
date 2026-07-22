@@ -58,6 +58,17 @@ const DEFAULT_CONFIG = {
   box_puck_diameter_mm: 65,
   box_diffuser: true,
   box_cable_notch: true,
+  // Iter-151.27 — Bas-Relief mode defaults (matches AI dialog's
+  // BasReliefTab.jsx). Live under the same config dict so the whole
+  // render-mode switcher is a single state atom.
+  bas_diameter_mm: 220,
+  bas_relief_mm: 12,
+  bas_base_mm: 3,
+  bas_smooth: 1.0,
+  bas_dark_is_high: false,
+  bas_ring_enabled: false,
+  bas_ring_width_mm: 10,
+  bas_ring_height_mm: 5,
 };
 
 export default function LithoStudio() {
@@ -353,6 +364,79 @@ export default function LithoStudio() {
   const handleGenerate = async () => {
     if (!imageId) {
       toast.error("Upload an image first");
+      return;
+    }
+    // Iter-151.27 — Bas-Relief mode short-circuits into the AI
+    // service's local sculpt endpoint (no multi-filament palette
+    // pipeline). Returns STL bytes (or a ZIP with medallion + ring
+    // when the frame ring is enabled). We download directly rather
+    // than routing through the Litho job-history persistence layer,
+    // which is palette-specific and would drop the STLs on the
+    // floor.
+    if (config.render_mode === "bas_relief") {
+      if (!sourceUrl) {
+        toast.error("Upload an image first");
+        return;
+      }
+      setLoading(true);
+      setProgressLabel("Sculpting bas-relief…");
+      try {
+        // Convert the current source URL back to a base64 payload.
+        // Using the raw blob (not the palette-remapped one) so the
+        // sculpt is driven by TRUE image luminance rather than
+        // whichever filament palette happens to be loaded.
+        const blob = await (await fetch(sourceUrl)).blob();
+        const b64 = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result).split(",", 2)[1] || "");
+          r.onerror = reject;
+          r.readAsDataURL(blob);
+        });
+        const axios = (await import("axios")).default;
+        // Use the top-level ForgeSlicer API base (not the /litho/studio
+        // scoped one) since bas-relief lives at /api/ai/generate/*.
+        const forgeApi = `${process.env.REACT_APP_BACKEND_URL}/api`;
+        const resp = await axios.post(`${forgeApi}/ai/generate/bas-relief`, {
+          image_b64: b64,
+          mime_type: blob.type || "image/png",
+          diameter_mm: Number(config.bas_diameter_mm ?? 220),
+          max_relief_mm: Number(config.bas_relief_mm ?? 12),
+          base_thickness_mm: Number(config.bas_base_mm ?? 3),
+          dark_is_high: !!config.bas_dark_is_high,
+          smooth_sigma: Number(config.bas_smooth ?? 1.0),
+          grid_size: 512,
+          ring_enabled: !!config.bas_ring_enabled,
+          ring_width_mm: Number(config.bas_ring_width_mm ?? 10),
+          ring_height_mm: Number(config.bas_ring_height_mm ?? 5),
+        }, { withCredentials: true, responseType: "blob" });
+        // Trigger a browser download of the raw payload — content
+        // type + filename come from the server's headers so a bundle
+        // with the ring shows up as .zip and a single-part shows up
+        // as .stl automatically.
+        const cd = resp.headers?.["content-disposition"] || "";
+        const filenameMatch = /filename="?([^";]+)"?/i.exec(cd);
+        const filename = filenameMatch
+          ? filenameMatch[1]
+          : (config.bas_ring_enabled ? "bas_relief_parts.zip" : "bas_relief_disk.stl");
+        const url = URL.createObjectURL(resp.data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`Bas-relief ready · downloaded ${filename}`);
+      } catch (e) {
+        let detail = e?.response?.data?.detail || e.message || "Bas-relief generation failed";
+        if (e?.response?.data instanceof Blob) {
+          try { detail = JSON.parse(await e.response.data.text()).detail || detail; } catch { /* keep default */ }
+        }
+        toast.error(detail);
+      } finally {
+        setLoading(false);
+        setProgressLabel("");
+      }
       return;
     }
     setLoading(true);

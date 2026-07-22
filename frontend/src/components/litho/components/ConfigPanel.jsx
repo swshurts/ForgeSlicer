@@ -55,6 +55,7 @@ export const ConfigPanel = ({
 }) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
+  const isBasRelief = config.render_mode === "bas_relief";
   const isDisc = config.geometry === "disc";
   const isBox = config.geometry === "box";
   // For sizing the lithophane footprint: box-round and disc both
@@ -162,7 +163,7 @@ export const ConfigPanel = ({
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
           Render mode
-          <HelpHint title="Lithophane vs Painting" testId="help-render-mode">
+          <HelpHint title="Lithophane vs Painting vs Bas-Relief" testId="help-render-mode">
             <strong className="text-zinc-200">Lithophane</strong> uses
             Beer-Lambert subtractive mixing — colors emerge from light
             passing through stacked translucent layers. Requires a
@@ -171,6 +172,11 @@ export const ConfigPanel = ({
             <strong className="text-zinc-200">Painting</strong> maps each
             pixel to a single solid filament on top. No back-light needed,
             high-contrast colors, but cannot mix to in-between hues.
+            <br /><br />
+            <strong className="text-zinc-200">Bas-Relief</strong> sculpts a
+            single-filament circular disc from image luminance (Japanese
+            Cork Art style), with an optional wooden frame ring as a
+            second part.
           </HelpHint>
         </div>
         <ModeToggle
@@ -179,13 +185,120 @@ export const ConfigPanel = ({
           disabled={disabled}
         />
         <div className="font-mono text-[9px] text-zinc-600 leading-relaxed mt-2">
-          {isPainting
+          {isBasRelief
+            ? "Single-filament sculpted disc — pixel luminance drives relief height. Optional wooden frame ring exports as a second STL."
+            : isPainting
             ? "Each pixel shows one filament's pure color — no back-light needed. Dark filaments print at the bottom, light on top."
             : "Color comes from light transmitted through the stack. Needs a back-light. Full CMYKW subtractive mixing."}
         </div>
       </div>
 
       <div className="border-t border-zinc-800" />
+
+      {/* Iter-151.27 — Bas-Relief has its own single-filament sculpt
+          pipeline; it doesn't use the multi-filament palette / swaps /
+          layer-height stack. When active we show a focused config
+          block and short-circuit the multi-filament sections below. */}
+      {isBasRelief && (
+        <div data-testid="bas-relief-config" className="space-y-4">
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-1">
+            Bas-Relief geometry
+          </div>
+          <Row label="Diameter" value={config.bas_diameter_mm ?? 220} unit="mm" testid="row-bas-diameter">
+            <Slider
+              data-testid="bas-diameter-slider"
+              value={[config.bas_diameter_mm ?? 220]}
+              onValueChange={([v]) => update("bas_diameter_mm", v)}
+              min={40} max={300} step={5} disabled={disabled}
+            />
+          </Row>
+          <Row label="Max relief height" value={config.bas_relief_mm ?? 12} unit="mm" testid="row-bas-relief">
+            <Slider
+              data-testid="bas-relief-slider"
+              value={[config.bas_relief_mm ?? 12]}
+              onValueChange={([v]) => update("bas_relief_mm", v)}
+              min={0.5} max={30} step={0.5} disabled={disabled}
+            />
+          </Row>
+          <Row label="Base thickness" value={config.bas_base_mm ?? 3} unit="mm" testid="row-bas-base">
+            <Slider
+              data-testid="bas-base-slider"
+              value={[config.bas_base_mm ?? 3]}
+              onValueChange={([v]) => update("bas_base_mm", v)}
+              min={0.8} max={10} step={0.2} disabled={disabled}
+            />
+          </Row>
+          <Row label="Smoothing" value={(config.bas_smooth ?? 1.0).toFixed(1)} unit="σ" testid="row-bas-smooth">
+            <Slider
+              data-testid="bas-smooth-slider"
+              value={[config.bas_smooth ?? 1.0]}
+              onValueChange={([v]) => update("bas_smooth", v)}
+              min={0} max={4} step={0.1} disabled={disabled}
+            />
+          </Row>
+          <label className="flex items-center gap-2 text-[11px] text-zinc-300 cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="bas-invert-check"
+              checked={!!config.bas_dark_is_high}
+              onChange={(e) => update("bas_dark_is_high", e.target.checked)}
+              disabled={disabled}
+              className="w-3.5 h-3.5"
+            />
+            Invert (dark pixels become the tallest peaks)
+          </label>
+          <div className="border-t border-zinc-800/60 pt-3">
+            <label className="flex items-center gap-2 text-[11px] text-zinc-300 cursor-pointer font-semibold">
+              <input
+                type="checkbox"
+                data-testid="bas-ring-check"
+                checked={!!config.bas_ring_enabled}
+                onChange={(e) => update("bas_ring_enabled", e.target.checked)}
+                disabled={disabled}
+                className="w-3.5 h-3.5"
+              />
+              Add frame ring
+              <span className="text-zinc-500 font-normal">— separate STL, colour independently</span>
+            </label>
+            {config.bas_ring_enabled && (
+              <div className="mt-3 space-y-3 pl-5">
+                <Row label="Ring width" value={config.bas_ring_width_mm ?? 10} unit="mm" testid="row-bas-ring-w">
+                  <Slider
+                    data-testid="bas-ring-width-slider"
+                    value={[config.bas_ring_width_mm ?? 10]}
+                    onValueChange={([v]) => update("bas_ring_width_mm", v)}
+                    min={2} max={40} step={1} disabled={disabled}
+                  />
+                </Row>
+                <Row label="Ring height" value={config.bas_ring_height_mm ?? 5} unit="mm" testid="row-bas-ring-h">
+                  <Slider
+                    data-testid="bas-ring-height-slider"
+                    value={[config.bas_ring_height_mm ?? 5]}
+                    onValueChange={([v]) => update("bas_ring_height_mm", v)}
+                    min={1} max={20} step={0.5} disabled={disabled}
+                  />
+                </Row>
+              </div>
+            )}
+          </div>
+          <div className="font-mono text-[9.5px] text-zinc-600 leading-relaxed">
+            Total thickness at peak:{" "}
+            <span className="text-zinc-300">
+              {((config.bas_base_mm ?? 3) + (config.bas_relief_mm ?? 12)).toFixed(1)} mm
+            </span>
+            {" · "}Generation is <strong className="text-zinc-300">local</strong> — no AI quota consumed.
+          </div>
+          <div className="border-t border-zinc-800 mt-2" />
+        </div>
+      )}
+
+      {/* Iter-151.27 — multi-filament pipeline sections (Geometry,
+          palette, swaps, layer height, painting-mode Relief slider,
+          filament editor). Bas-Relief mode doesn't use any of these,
+          so we wrap them in one conditional instead of decorating
+          each subsection individually. */}
+      {!isBasRelief && (
+        <React.Fragment>
 
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
@@ -827,6 +940,9 @@ export const ConfigPanel = ({
           </div>
         </div>
       </div>
+
+        </React.Fragment>
+      )}
     </div>
   );
 };

@@ -1,0 +1,59 @@
+{
+  "summary": "Frontend-only verification of iter-151.27 restoring Bas-Relief mode inside LithoStudio (/litho). All acceptance criteria from the review request pass: real 3-way segmented ModeToggle is present and functional, the ConfigPanel correctly swaps between the multi-filament sections and the bas-relief config block, end-to-end bas-relief STL generation works (server returns model/stl → browser download triggered), and the existing Lithophane multi-filament optimize pipeline is unaffected (regression clean).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "LithoStudio.jsx now imports axios dynamically inside handleGenerate (line ~395) even though the rest of the codebase uses fetch. Consider consolidating to fetch to drop the extra bundle dependency, or hoist the axios import to the top so it isn't re-evaluated on every generate click.",
+    "In handleGenerate's bas-relief branch, `sourceUrl` is used both as a guard and as the fetch source for base64 encoding, but if the user restored a job (which nulls sourceUrl) and then flips to bas_relief, the branch will still succeed on 'imageId' check first and only fail on the sourceUrl check inside — the pre-flight `toast.error('Upload an image first')` will fire but the surrounding state is a bit confusing. Consider extending canGenerate to require sourceUrl when render_mode === 'bas_relief'.",
+    "The bas-relief request body always sends grid_size: 512 hardcoded — worth exposing this as an advanced control (or at least a comment) since the endpoint clearly supports smaller grids (tested 128 which returned in <5s vs 40MB@512).",
+    "LithoStudio.jsx has grown to 730+ lines with the voice pipeline, session hydration, generate handlers, restore-job handler, and responsive-layout hook all inline. Consider extracting `useVoicePipeline`, `useStudioHydration`, and `useBasReliefGenerate` into standalone hooks.",
+    "ConfigPanel.jsx wraps the entire multi-filament section (Geometry → filament editor) in `{!isBasRelief && <React.Fragment>…</React.Fragment>}` which is correct, but the closing `</React.Fragment>` at line 944 is 640+ lines away from its opening — a nested component or early-return pattern (`if (isBasRelief) return <BasReliefBlock/>;`) would be more maintainable."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (backend testing not requested)", "frontend": "100%"},
+  "seed_data_creation": "Generated /tmp/basrelief_test.png (256x256 radial gradient) used as upload payload; used pre-seeded session token st_kickstand_1784686690319 (from /app/memory/test_credentials.md).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auth on /litho is via httpOnly session_token cookie — set it with page.context.add_cookies (see /app/memory/test_credentials.md). The mode toggle testids are: litho-mode-toggle, litho-mode-lithophane, litho-mode-painting, litho-mode-bas_relief. The bas-relief config block is data-testid='bas-relief-config' with children bas-{diameter,relief,base,smooth}-slider, bas-{invert,ring}-check, and bas-ring-{width,height}-slider (last two only render when bas-ring-check is on). Bas-relief generation calls POST /api/ai/generate/bas-relief on the top-level API base and streams STL/ZIP as `model/stl` or `application/zip`. Regression path uses POST /api/litho/studio/optimize which returned 200 with `Optimized · ΔE 10.70` toast after Suggest Palette → Generate.",
+  "test_evidence": {
+    "mode_toggle_visible": true,
+    "all_three_mode_buttons_present": true,
+    "initial_render_mode_default_is_painting": true,
+    "clicking_bas_relief_shows_bas_relief_config": true,
+    "clicking_bas_relief_hides_geometry_select": true,
+    "all_six_required_bas_controls_present": ["bas-diameter-slider", "bas-relief-slider", "bas-base-slider", "bas-smooth-slider", "bas-invert-check", "bas-ring-check"],
+    "ring_width_height_hidden_until_toggle": true,
+    "ring_width_height_shown_after_toggle": true,
+    "switch_back_to_lithophane_restores_multi_filament": true,
+    "switch_to_painting_also_restores_multi_filament": true,
+    "e2e_bas_relief_generation": {
+      "endpoint": "POST /api/ai/generate/bas-relief",
+      "http_status": 200,
+      "content_type": "model/stl",
+      "content_disposition": "attachment; filename=\"bas_relief_disk.stl\"",
+      "download_triggered_in_browser": true,
+      "downloaded_filename": "bas_relief_disk.stl",
+      "downloaded_size_bytes": 40943084
+    },
+    "e2e_bas_relief_ring_zip_via_curl": {
+      "http_status": 200,
+      "content_type": "application/zip",
+      "size_bytes": 382235
+    },
+    "regression_lithophane_pipeline": {
+      "suggest_palette_worked": true,
+      "optimize_endpoint": "POST /api/litho/studio/optimize",
+      "optimize_status": 200,
+      "success_toast": "Optimized · ΔE 10.70"
+    }
+  }
+}
