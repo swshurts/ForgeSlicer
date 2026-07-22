@@ -32,6 +32,25 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.23, 2026-07-22) — History diff details + Print-ready instructions + Adjustable kickstand angle
+
+**History Diff Details (Coop)**
+- Extracted each version row in `HistoryTab` (`CoopProjectsPage.jsx`) into a new `VersionCard` component with local `showDiff` state.
+- Non-genesis version cards now show a "See details" toggle next to the +/−/~ badges (mirrors `PendingProposalCard`'s pattern exactly). Expanded panel renders emerald `+ name (type)`, red `− name (type)`, and sky-blue `~ name (changed: fields...)` rows. Genesis version correctly has no toggle (no prior version to diff against).
+- Testids: `coop-version-diff-toggle-{v}`, `coop-version-diff-detail-{v}`.
+
+**Print-Ready Instruction Card (Drawer Chest)**
+- New helper `/app/frontend/src/lib/chestInstructions.js` → `buildChestAssemblyGuide(params, parts, name)` returns `{ markdown, html }`. The HTML is a self-contained, printable page (Ctrl/Cmd+P friendly) with overall size + row count in the header, a Parts table (file / label / dims / volume / bed orientation), a conditional Hardware section (only when `topHingedBox` — includes axle-pin spec + optional detent + kickstand notes), a numbered Assembly steps list customised to the exact params (biscuit joints, hinge assembly, kickstand angle, cap, Gridfinity), Recommended print settings, and a Regenerate section that dumps every param as JSON.
+- `DrawerChestDialog.handleDownloadZip` now embeds BOTH `INSTRUCTIONS.md` + `INSTRUCTIONS.html` in the bundle (replaces the old plain `README.txt`).
+- New `Instructions` button in the dialog footer (testid `chest-download-instructions`, between Lid and ZIP) downloads the standalone HTML so the user can print without unpacking the ZIP.
+
+**Adjustable Kickstand Stop Angle**
+- New `lidKickstandAngle` param (default 100, clamped 85..140°). NumField testid `chest-lidkickstand-angle` — appears only when `lidKickstand` is on.
+- Kickstand checkbox label now reflects the current angle live (e.g. `Lid kickstand (hard stop @ 115°)`).
+- Generator now SOLVES the frame stop-bar centre angle mathematically from the requested stop: `β_frame = θ_stop + 2 · halfAng` where halfAng = atan(kickTabTan/2 / rCentre). So `lidKickstandAngle=100` actually stops the lid at ~100° (the previous fixed β=110° was an approximation that landed closer to 90-95°). This is an intentional geometric refinement — the frame bbox at 100° now differs slightly from iter-151.22 by ~1.3 mm in Y and ~0.5 mm in Z, reflecting the corrected bar tilt.
+
+Verified end-to-end by `testing_agent_v3_fork` (iteration_151_23.json): 14/14 detailed checks pass, all previous iter-151.22 testids still reachable, kickstand OFF returns to the exact hingedtop baseline (80×65.4×101.2), ZIP contents now `INSTRUCTIONS.md` + `INSTRUCTIONS.html` + STLs (no more README.txt).
+
 ### Recently completed (iter-151.22, 2026-07-22) — Hinge-Integrated Lid Kickstand (redesign)
 
 Per user feedback: replaced the previous rigid stop-rib on the lid's underside with a **hinge-integrated hard stop**. New geometry:
