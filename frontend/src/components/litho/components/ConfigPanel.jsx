@@ -15,6 +15,43 @@ import { PresetManager } from "./PresetManager";
 import { HelpHint } from "./HelpHint";
 import { PrinterSelect } from "./PrinterSelect";
 import { NozzleSelect } from "./NozzleSelect";
+import { ChevronDown, ChevronRight } from "lucide-react";
+
+// iter-151.33 — Lightweight collapsible section header for the
+// LithoStudio config column. Persists open/closed to localStorage
+// so returning users don't have to re-expand every session.
+function CollapsibleSection({ id, title, help, defaultOpen = true, children }) {
+  const storageKey = `litho.cfg.${id}`;
+  const [open, setOpen] = React.useState(() => {
+    try {
+      const v = localStorage.getItem(storageKey);
+      if (v === "0") return false;
+      if (v === "1") return true;
+    } catch { /* private mode */ }
+    return defaultOpen;
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* no-op */ }
+  }, [open, storageKey]);
+  return (
+    <div data-testid={`cfg-section-${id}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid={`cfg-section-${id}-toggle`}
+        className="w-full flex items-center gap-1.5 mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 hover:text-zinc-300 text-left"
+      >
+        <span className="shrink-0" aria-hidden="true">
+          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </span>
+        <span>{title}</span>
+        {help}
+      </button>
+      {open && <div>{children}</div>}
+    </div>
+  );
+}
 
 const Row = ({ label, value, unit, children, testid, hint }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -160,9 +197,10 @@ export const ConfigPanel = ({
         </>
       )}
 
-      <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
-          Render mode
+      <CollapsibleSection
+        id="render-mode"
+        title="Render mode"
+        help={
           <HelpHint title="Lithophane vs Painting vs Bas-Relief" testId="help-render-mode">
             <strong className="text-zinc-200">Lithophane</strong> uses
             Beer-Lambert subtractive mixing — colors emerge from light
@@ -178,7 +216,8 @@ export const ConfigPanel = ({
             Cork Art style), with an optional wooden frame ring as a
             second part.
           </HelpHint>
-        </div>
+        }
+      >
         <ModeToggle
           mode={config.render_mode}
           setMode={(m) => update("render_mode", m)}
@@ -191,7 +230,7 @@ export const ConfigPanel = ({
             ? "Each pixel shows one filament's pure color — no back-light needed. Dark filaments print at the bottom, light on top."
             : "Color comes from light transmitted through the stack. Needs a back-light. Full CMYKW subtractive mixing."}
         </div>
-      </div>
+      </CollapsibleSection>
 
       <div className="border-t border-zinc-800" />
 
@@ -200,10 +239,8 @@ export const ConfigPanel = ({
           layer-height stack. When active we show a focused config
           block and short-circuit the multi-filament sections below. */}
       {isBasRelief && (
-        <div data-testid="bas-relief-config" className="space-y-4">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-1">
-            Bas-Relief geometry
-          </div>
+        <CollapsibleSection id="bas-relief-geo" title="Bas-Relief geometry">
+          <div data-testid="bas-relief-config" className="space-y-4">
           <Row label="Diameter" value={config.bas_diameter_mm ?? 220} unit="mm" testid="row-bas-diameter">
             <Slider
               data-testid="bas-diameter-slider"
@@ -289,7 +326,8 @@ export const ConfigPanel = ({
             {" · "}Generation is <strong className="text-zinc-300">local</strong> — no AI quota consumed.
           </div>
           <div className="border-t border-zinc-800 mt-2" />
-        </div>
+          </div>
+        </CollapsibleSection>
       )}
 
       {/* Iter-151.27 — multi-filament pipeline sections (Geometry,
@@ -300,12 +338,13 @@ export const ConfigPanel = ({
       {!isBasRelief && (
         <React.Fragment>
 
-      <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
-          Geometry
+      <CollapsibleSection
+        id="geometry"
+        title="Geometry"
+        help={
           <HelpHint title="Geometry" testId="help-geometry">
             <strong className="text-zinc-200">Width × Height</strong> set
-            the print's physical dimensions in mm.
+            the print&apos;s physical dimensions in mm.
             <br /><br />
             <strong className="text-zinc-200">Thickness</strong> is the
             total Z height — more thickness = more layers = better color
@@ -316,7 +355,8 @@ export const ConfigPanel = ({
             print bed orientation; circular disc gives a round print
             (with optional gentle dome).
           </HelpHint>
-        </div>
+        }
+      >
         <div className="space-y-4">
           <div>
             <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
@@ -748,13 +788,14 @@ export const ConfigPanel = ({
             </Row>
           )}
         </div>
-      </div>
+      </CollapsibleSection>
 
       <div className="border-t border-zinc-800" />
 
-      <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
-          Print limits
+      <CollapsibleSection
+        id="print-limits"
+        title="Print limits"
+        help={
           <HelpHint title="Layer height & swaps" testId="help-print-limits">
             <strong className="text-zinc-200">Layer height</strong>:
             thinner layers = better color resolution & smoother gradients
@@ -769,7 +810,8 @@ export const ConfigPanel = ({
             <strong className="text-zinc-200">Relief</strong> (Painting
             mode): 0 = flat plateaus, 100 = full luminance bas-relief.
           </HelpHint>
-        </div>
+        }
+      >
         <div className="space-y-4">
           <div>
             <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
@@ -939,7 +981,7 @@ export const ConfigPanel = ({
             </div>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
         </React.Fragment>
       )}

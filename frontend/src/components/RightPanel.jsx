@@ -18,7 +18,7 @@ import MeshImportTools from "./inspector/MeshImportTools";
 import PrintPresetsPanel from "./inspector/PrintPresetsPanel";
 import { Shape2DControls } from "./inspector/Shape2DControls";
 import { recentPrinters, upvotedPrinters } from "../lib/persist";
-import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, Check, Loader2, Eye, Send } from "lucide-react";
+import { Printer, Sliders, Sigma, AlertTriangle, Factory, Upload, Trash2, ArrowDownToLine, ShieldAlert, Star, BadgeCheck, History, Layers, Plus, Minus, ChevronDown, ChevronRight, Check, Loader2, Eye, Send } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import * as edgeFaceMeta from "../lib/edgeFaceMeta";
 import * as THREE from "three";
@@ -179,14 +179,44 @@ function NumberField({ label, hint, value, onChange, step = 1, min, max, testid,
   );
 }
 
-function Section({ title, icon: Icon, children, testid, accent = "text-slate-500" }) {
+function Section({ title, icon: Icon, children, testid, accent = "text-slate-500", defaultOpen = true, collapsible = true }) {
+  // iter-151.33 — Collapsible sections. Users reported the right-side
+  // "Print" panel was too long to navigate; wrap each grouping in an
+  // expand/contract header and persist the open/closed state per
+  // section-title in localStorage so muscle memory survives reloads.
+  const storageKey = `rp.section.${title}`;
+  const [open, setOpen] = React.useState(() => {
+    if (!collapsible) return true;
+    try {
+      const v = localStorage.getItem(storageKey);
+      if (v === "0") return false;
+      if (v === "1") return true;
+    } catch { /* private mode */ }
+    return defaultOpen;
+  });
+  React.useEffect(() => {
+    if (!collapsible) return;
+    try { localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* no-op */ }
+  }, [open, storageKey, collapsible]);
   return (
     <div className="border-b border-slate-800" data-testid={testid}>
-      <div className="px-3 py-2 flex items-center gap-2 bg-slate-900/40">
+      <button
+        type="button"
+        onClick={() => collapsible && setOpen((v) => !v)}
+        disabled={!collapsible}
+        aria-expanded={open}
+        data-testid={testid ? `${testid}-toggle` : undefined}
+        className={`w-full px-3 py-2 flex items-center gap-2 bg-slate-900/40 ${collapsible ? "hover:bg-slate-900/70 cursor-pointer" : "cursor-default"} text-left`}
+      >
+        {collapsible && (
+          <span className="text-slate-500 shrink-0" aria-hidden="true">
+            {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </span>
+        )}
         {Icon && <Icon size={12} className={accent} />}
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{title}</span>
-      </div>
-      <div className="p-3 flex flex-col gap-3">{children}</div>
+      </button>
+      {open && <div className="p-3 flex flex-col gap-3">{children}</div>}
     </div>
   );
 }
@@ -439,7 +469,8 @@ function ProfileSection({ onSavePrinter }) {
   const alreadyVoted = isCommunity && upvotedPrinters.has(printer.id);
 
   return (
-    <Section title="Printer & Filament" icon={Factory} testid="profile-section" accent="text-orange-500">
+    <>
+    <Section title="Printer" icon={Factory} testid="profile-section" accent="text-orange-500">
       {recentEntries.length > 0 && (
         <div data-testid="recent-printers">
           <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-1 flex items-center gap-1">
@@ -553,6 +584,10 @@ function ProfileSection({ onSavePrinter }) {
         )}
       </div>
 
+      <PrinterClearanceProfile />
+    </Section>
+
+    <Section title="Filament" icon={Layers} testid="filament-section" accent="text-cyan-400">
       <label className="flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Filament</span>
         <select
@@ -590,13 +625,16 @@ function ProfileSection({ onSavePrinter }) {
         />
         Auto-drop to bed on rotate
       </label>
+    </Section>
 
-      <PrinterClearanceProfile />
-
+    <Section title="Print Presets" icon={Sliders} testid="print-presets-section" accent="text-fuchsia-400" defaultOpen={false}>
       <PrintPresetsPanel />
+    </Section>
 
+    <Section title="Auto-save" icon={Upload} testid="autosave-section" accent="text-emerald-400" defaultOpen={false}>
       <AutoSaveSection />
     </Section>
+    </>
   );
 }
 

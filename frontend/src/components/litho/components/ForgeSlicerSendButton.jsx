@@ -1,23 +1,22 @@
 // iter-128 — ForgeSlicerSendButton merged in-tree.
 //
-// LithoForge's original button POSTed the finished 3MF to a separate
-// ForgeSlicer instance via the cross-app inbox API. Now that the
-// pipeline is a single app, this component pulls the STL/3MF from the
-// studio export endpoint and imports it directly onto the ForgeSlicer
-// build plate using the same `importAnyMeshFile` pipeline as drag-and-
-// drop. Modal closes and the mesh is selected + inspectable.
-//
-// Iter-151.32 — Wired props correctly. StatsPanel used to pass
-// `{result, geometry, boxDiffuser}` which left `jobId` undefined and
-// silently disabled the button. Now takes `jobId` + `printerId` + an
-// optional `onSent` callback so LithoStudio can dismiss the modal and
-// drop the user back onto the buildplate as soon as the mesh lands.
+// Iter-151.33 — Ship the 3MF (not the STL) so the per-tone
+// `<basematerials>` displaycolor survives the hand-off. STL is a
+// flat single-color mesh — everything the palette optimiser did
+// (which filament prints which layer, tone-swap heights, auto-pause
+// metadata) is lost. The 3MF export from the studio carries a
+// multi-object envelope where each tone is its own <object> with its
+// own hex color, so we route the download through
+// `import3MFFileMulti` and drop each tone onto the buildplate with
+// its display color set. That way the workspace outliner still
+// reads "Litho tone 1 / tone 2 / …" and the pristine 3MF bytes are
+// stashed so Send-to-OrcaSlicer round-trips the full palette.
 
 import React, { useState } from "react";
 import { toast } from "sonner";
 import { Send, Loader2 } from "lucide-react";
 import { downloadLithoFile } from "../../../lib/lithoStudioApi";
-import { importAnyMeshFile } from "../../../lib/exporters";
+import { import3MFFileMulti, importAnyMeshFile } from "../../../lib/exporters";
 import { useScene } from "../../../lib/store";
 
 export function ForgeSlicerSendButton({
@@ -30,19 +29,54 @@ export function ForgeSlicerSendButton({
 }) {
   const [busy, setBusy] = useState(false);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
+  const setPristineImport = useScene((s) => s.setPristineImport);
 
   const handleSend = async () => {
     if (!jobId || busy) return;
     setBusy(true);
     try {
-      const blob = await downloadLithoFile(jobId, "stl", { printer: printerId });
-      const cleanName = (filename?.replace(/\.[^.]+$/, "") || "lithophane") + "_" + part + ".stl";
-      const file = new File([blob], cleanName, { type: "model/stl" });
-      const mesh = await importAnyMeshFile(file);
-      addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-      toast.success("Sent to build plate", { description: cleanName });
+      // Ask the studio's export endpoint for the multi-material 3MF —
+      // that's the only format that preserves the palette + swap
+      // heights + per-tone displaycolor that the optimiser produced.
+      const blob = await downloadLithoFile(jobId, "3mf", { printer: printerId });
+      const cleanName = (filename?.replace(/\.[^.]+$/, "") || "lithophane") + "_" + part + ".3mf";
+      const file = new File([blob], cleanName, { type: "model/3mf" });
+
+      // Stash the pristine bytes so Send-to-OrcaSlicer can round-trip
+      // the full 3MF envelope (basematerials, pauses, metadata) rather
+      // than re-emitting from the workspace's decomposed meshes.
+      try {
+        const buf = await blob.arrayBuffer();
+        setPristineImport(new Uint8Array(buf), cleanName);
+      } catch { /* non-fatal — pristine slot is a performance perk, not required */ }
+
+      // Multi-object 3MF path: each tone becomes its own Outliner row
+      // with the correct color chip, ready for chamfer / boolean /
+      // mounting-plaque operations.
+      let added = 0;
+      try {
+        const multi = await import3MFFileMulti(file);
+        multi.objects.forEach((o) => {
+          addImportedMesh(o.name, o.vertices, o.indices, o.originalBbox, {
+            customColor: o.displaycolor || undefined,
+            materialName: o.materialName || undefined,
+          });
+          added += 1;
+        });
+      } catch (multiErr) {
+        // Single-object fallback (rare — happens if the export is a
+        // single-tone painting or a bas-relief-style flat mesh).
+        const mesh = await importAnyMeshFile(file);
+        addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
+        added = 1;
+      }
+
+      toast.success(
+        added > 1 ? `Sent ${added} tones to the build plate` : "Sent to build plate",
+        { description: cleanName },
+      );
       // Close the LithoStudio modal so the user lands directly on the
-      // workspace with the freshly-imported mesh selected and ready
+      // workspace with the freshly-imported meshes selected and ready
       // for fillets / chamfers / mounting-plaque booleans.
       if (typeof onSent === "function") onSent();
     } catch (e) {

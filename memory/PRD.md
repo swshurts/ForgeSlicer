@@ -32,6 +32,26 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.33, 2026-07-23) — 3MF Send-to-Buildplate + collapsible right-panel & LithoStudio sections
+
+**Send to Build Plate now ships the 3MF (not the STL).** STL is a flat single-color mesh, so every tone the palette optimiser assigned was silently lost the moment the mesh landed on the workspace. Now the button:
+- Downloads the multi-material 3MF from `/api/litho/studio/export/{jobId}/3mf`.
+- Stashes the pristine bytes via `setPristineImport` so Send-to-OrcaSlicer round-trips the full `<basematerials>` + auto-pause metadata.
+- Uses `import3MFFileMulti` to add one Outliner row per tone with the correct `customColor` from `<basematerials>` displaycolor.
+- Falls back to `importAnyMeshFile` for the single-tone painting / bas-relief edge case.
+- Toast surfaces "Sent N tones to the build plate" for multi-part imports.
+
+**Collapsible sections everywhere they were too long:**
+- `RightPanel.Section` component now takes `defaultOpen` + persists open/closed to `localStorage` under `rp.section.<title>`. Chevron in the header, click to toggle.
+- Split the giant "Printer & Filament" section into four smaller ones:
+  1. **Printer** — picker, volume/temp facts, community upvote/delete, Printer Clearance Profile
+  2. **Filament** — filament dropdown, notes, auto-drop toggles
+  3. **Print Presets** — the `PrintPresetsPanel` (defaultOpen: false)
+  4. **Auto-save** — `AutoSaveSection` (defaultOpen: false)
+- Added a matching `CollapsibleSection` helper inside LithoStudio's `ConfigPanel` and wrapped the long scrollable subsections: **Render mode**, **Bas-Relief geometry** (bas-relief mode only), **Geometry**, and **Print limits**. Persists per-section state under `litho.cfg.<id>`.
+
+Files touched: `ForgeSlicerSendButton.jsx`, `RightPanel.jsx`, `litho/components/ConfigPanel.jsx`.
+
 ### Recently completed (iter-151.32, 2026-07-23) — LithoStudio Send-to-Buildplate wiring fix
 
 User reported: "On the right hand side there is a 'Send to Buildplate' option that does nothing." Root cause: `StatsPanel.jsx` passed `{result, geometry, boxDiffuser}` to `<ForgeSlicerSendButton />`, but the component's signature expected `{jobId, disabled, printerId, part, filename}`. With `jobId === undefined` the button was permanently disabled (`disabled || busy || !jobId`), so clicks were no-ops.
