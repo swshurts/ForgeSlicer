@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useScene } from "../lib/store";
 import {
@@ -406,6 +407,32 @@ export default function LeftPanel() {
   // and session stay put and it feels like a "subsection" of the app
   // (matching the parametric designer dialog pattern).
   const [lithoStudioOpen, setLithoStudioOpen] = useState(false);
+  // Iter-151.30 — When LithoStudio's top-nav switches to one of the AI
+  // 3D-mesh tabs (From Text / From Image / Multi-Image), we open the
+  // existing AIGenerateDialog with that tab pre-selected via
+  // `initialTab`. `aiInitialTab` stores that intent so the dialog
+  // reopens on the right tab even if it was previously dismissed.
+  const [aiInitialTab, setAiInitialTab] = useState(null);
+  // Iter-151.30 — Auto-open the LithoStudio modal when we land on the
+  // workspace with `?open=litho` in the query string. That's the
+  // path old /litho bookmarks now redirect to, so users' saved links
+  // keep landing on the same in-app modal instead of a 404 or a
+  // stale full-page route.
+  const [searchParams, setSearchParams] = useSearchParams();
+  React.useEffect(() => {
+    if (searchParams.get("open") === "litho") {
+      setLithoStudioOpen(true);
+      // Strip the param so a refresh or a subsequent close doesn't
+      // re-open the modal against the user's wishes. Preserve any
+      // other query params the workspace cares about.
+      const next = new URLSearchParams(searchParams);
+      next.delete("open");
+      setSearchParams(next, { replace: true });
+    }
+    // Only care about the initial mount + any subsequent explicit
+    // ?open= change; setSearchParams is stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   // Texture Library dialog state lives on the global store so the
   // right-click "Apply texture to face..." menu item can request it
   // to open even though the context menu unmounts on click. Local
@@ -477,7 +504,20 @@ export default function LeftPanel() {
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} onOpenHoleDialog={() => setHoleDialogOpen(true)} />}
         {tab === "params" && <TabParam onOpenBoxDesigner={() => setBoxDesignerOpen(true)} onOpenDrawerChest={() => setDrawerChestOpen(true)} />}
-        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} onOpenLithoStudio={() => setLithoStudioOpen(true)} />}
+        {tab === "ai" && <TabAI
+          onOpenAi={() => {
+            // Iter-151.30 — AI 3D Mesh now opens the unified AI Studio
+            // modal (LithoStudio shell with From Text / Image / Multi /
+            // LithoForge tab bar). Text tab pre-selected because that's
+            // the most common entry point historically.
+            setLithoStudioOpen(true);
+            setAiInitialTab("text");
+            setAiOpen(true);
+          }}
+          onOpenPhotoPlane={() => setPhotoPlaneOpen(true)}
+          onOpenDesignChat={() => setDesignChatOpen(true)}
+          onOpenLithoStudio={() => setLithoStudioOpen(true)}
+        />}
       </div>
 
       {/* ---- Outliner (unchanged) ---- */}
@@ -499,7 +539,18 @@ export default function LeftPanel() {
         )}
       </div>
       {outlinerCtx && <ContextMenu position={outlinerCtx} onClose={() => setOutlinerCtx(null)} />}
-      <AIGenerateDialog open={aiOpen} onClose={() => setAiOpen(false)} />
+      <AIGenerateDialog
+        open={aiOpen}
+        initialTab={aiInitialTab}
+        onClose={() => {
+          setAiOpen(false);
+          // Iter-151.30 — clearing initialTab on close means the next
+          // time the user opens the dialog via the standalone AI 3D
+          // Mesh button (without going through the AI Studio tabs),
+          // it starts on "text" again — matching prior behaviour.
+          setAiInitialTab(null);
+        }}
+      />
       <PhotoToPlaneDialog open={photoPlaneOpen} onClose={() => setPhotoPlaneOpen(false)} />
       <HardwareLibraryDialog open={hardwareLibOpen} onClose={() => setHardwareLibOpen(false)} />
       <DesignChatDialog open={designChatOpen} onClose={() => setDesignChatOpen(false)} />
@@ -511,26 +562,67 @@ export default function LeftPanel() {
         targetObjectId={textureLibraryTargetId}
         onClose={closeTextureLibrary}
       />
-      {/* Iter-151.29 — LithoStudio full-viewport modal. Same-tab
+      {/* Iter-151.29/30 — LithoStudio full-viewport modal. Same-tab
           overlay (no /litho new-tab navigation) so the workspace
           scene + auth session stay put. Renders LithoStudio inside
           a fixed-inset container above the workspace with a close
           chip in the top-left, matching the parametric designer
-          dialog pattern the user liked. */}
+          dialog pattern the user liked. Iter-151.30 adds a top-nav
+          tab bar (From Text · From Image · Multi-Image · LithoForge)
+          so the AI 3D mesh flows and the LithoForge palette pipeline
+          live in the same surface — clicking any AI tab spawns the
+          existing AIGenerateDialog pre-selected on that tab; clicking
+          LithoForge keeps the current view. */}
       {lithoStudioOpen && (
         <div
           data-testid="litho-studio-modal"
-          className="fixed inset-0 z-[90] bg-slate-950"
+          className="fixed inset-0 z-[90] bg-slate-950 flex flex-col"
         >
-          <button
-            data-testid="litho-studio-modal-close"
-            onClick={() => setLithoStudioOpen(false)}
-            className="absolute top-3 left-3 z-[91] h-8 px-3 rounded bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 shadow-lg"
-            title="Back to workspace"
-          >
-            <span aria-hidden="true">←</span> Back to workspace
-          </button>
-          <LithoStudio />
+          <div className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 flex-shrink-0">
+            <button
+              data-testid="litho-studio-modal-close"
+              onClick={() => setLithoStudioOpen(false)}
+              className="h-8 px-3 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700"
+              title="Back to workspace"
+            >
+              <span aria-hidden="true">←</span> Back
+            </button>
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">AI Studio</div>
+            <div className="flex-1 flex items-center gap-1 justify-center">
+              {[
+                { id: "text",       label: "From Text",     accent: "fuchsia" },
+                { id: "image",      label: "From Image",    accent: "fuchsia" },
+                { id: "multi",      label: "Multi-Image",   accent: "fuchsia" },
+                { id: "lithoforge", label: "LithoForge",    accent: "orange"  },
+              ].map((t) => {
+                const active = (t.id === "lithoforge" && !aiOpen) || (t.id !== "lithoforge" && aiOpen && aiInitialTab === t.id);
+                const accent = t.accent === "orange"
+                  ? (active ? "bg-orange-500/20 border-orange-500/60 text-orange-200" : "text-slate-400 hover:text-white")
+                  : (active ? "bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-300" : "text-slate-400 hover:text-white");
+                return (
+                  <button
+                    key={t.id}
+                    data-testid={`ai-studio-tab-${t.id}`}
+                    onClick={() => {
+                      if (t.id === "lithoforge") {
+                        setAiOpen(false);
+                      } else {
+                        setAiInitialTab(t.id);
+                        setAiOpen(true);
+                      }
+                    }}
+                    className={`h-8 px-3 rounded text-[11px] font-bold uppercase tracking-wider border border-transparent transition-colors ${accent}`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="w-16" />{/* right spacer to balance left "Back" chip */}
+          </div>
+          <div className="flex-1 relative overflow-hidden">
+            <LithoStudio />
+          </div>
         </div>
       )}
     </aside>

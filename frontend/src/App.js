@@ -16,7 +16,10 @@ import AdminPage from "@/components/AdminPage";
 import AdminHealth from "@/components/AdminHealth";
 import PricingPage from "@/components/PricingPage";
 import BillingSuccessPage from "@/components/BillingSuccessPage";
-import LithoStudio from "@/components/litho/LithoStudio";
+// Iter-151.30 — LithoStudio's dedicated /litho route was retired in
+// favour of the same-tab modal opened from LeftPanel. The direct
+// import moved with it; the modal owns the LithoStudio component
+// now. This route file only handles the redirect.
 import { MarketplacePage } from "@/components/litho/components/marketplace/MarketplacePage";
 import { ListingDetailPage } from "@/components/litho/components/marketplace/ListingDetailPage";
 import { CreatorPage } from "@/components/litho/components/marketplace/CreatorPage";
@@ -108,12 +111,12 @@ function AppRouter() {
         }
       />
       <Route path="/handoff" element={<Handoff />} />
-      <Route
-        path="/litho"
-        element={
-          <ProtectedRoute label="Lithophane Studio"><LithoStudio /></ProtectedRoute>
-        }
-      />
+      {/* Iter-151.30 — /litho is retired as a top-level route. LithoStudio
+          now opens as a full-viewport modal inside /workspace (via LeftPanel's
+          `lithoStudioOpen` state). Any bookmarks / links to /litho redirect to
+          /workspace with `?open=litho` so the workspace opens the modal
+          automatically. */}
+      <Route path="/litho" element={<Navigate to="/workspace?open=litho" replace />} />
       {/* Lithophane marketplace — Phase 2 of the LithoForge merge.
           Browsing is public; purchase/publish is gated behind sign-in
           inside the specific pages (client-token + checkout require it). */}

@@ -32,6 +32,23 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.30, 2026-07-22) — Unified AI Studio + /litho retired
+
+**AI 3D Mesh + LithoForge merged into one modal (same tab, no separate site feel).**
+
+- **Route retirement**: `/litho` no longer renders LithoStudio standalone — it now `<Navigate to="/workspace?open=litho" replace />`, so any bookmarks land back on the in-app modal. Removed the direct import from `App.js`.
+- **Query-param auto-open**: `LeftPanel` reads `?open=litho` on mount and auto-opens the LithoStudio modal, then strips the param from the URL so a refresh doesn't re-open against user intent.
+- **Unified top-nav in the modal**: 12px-tall header with a `← Back` chip, an `AI STUDIO` label, and **From Text · From Image · Multi-Image · LithoForge** tabs. Clicking an AI tab sets `aiInitialTab` and opens the existing `AIGenerateDialog` pre-selected on that tab; LithoForge keeps the LithoStudio view. Active-tab styling uses fuchsia for AI tabs and orange for LithoForge.
+- **AIGenerateDialog**: added `initialTab` prop (defaults to prior `"text"` behaviour). A `useEffect` re-syncs the internal tab state when `openProp` flips + `initialTab` changes, so re-opening on a different tab works without ghost state.
+- **Workspace "AI 3D Mesh" button**: now opens the merged modal (LithoStudio shell + AIGenerateDialog on top with From Text pre-selected) instead of the standalone dialog against an empty backdrop.
+- **Follow-up scope**: fully in-line the AI mesh forms (drop the nested AIGenerateDialog modal-on-modal) so the AI tabs render as first-class panels within LithoStudio. Deferred.
+
+Verified by smoke test: `/litho` → redirect to `/workspace?open=litho` → LithoStudio modal auto-opens with all 4 tabs visible. Same browser tab, same URL, session preserved.
+
+### Recently completed (iter-151.29, 2026-07-22) — Lithophane Studio opens in-workspace (not new tab)
+
+User reported that clicking "Lithophane Studio" opened `/litho` in a new browser tab, which "felt like a separate website". Replaced the `window.open("/litho", "_blank")` with a full-viewport modal that mounts `<LithoStudio />` inside the current workspace tab, matching the parametric-designer UX. `LeftPanel` grew a `lithoStudioOpen` state + a "← Back to workspace" chip.
+
 ### Recently completed (iter-151.28, 2026-07-22) — Hinge axis raised so lids actually close (Chest + Box)
 
 **Print bug fix (user-reported)**: User printed a Drawer Chest / Box with hinged lid; lids wouldn't close on their own and popped back open when pressure was released (photo attached showing lid stuck at ~20°). Root cause: hinge axis was placed at the MID-line of the lid slab (chest: `frameTopZ + hingeLidThickness/2`, box: `bodyH`), so the lid's back-BOTTOM edge had to swing DOWNWARD through the frame's top plane to close — a hard geometric interference that manifested as the printed part wedging open.

@@ -76,7 +76,7 @@ function SizingControls({ autoFit, setAutoFit, targetMaxMm, setTargetMaxMm, buil
 // dismissed by the safety prompt, etc.).
 const INFLIGHT_KEY = "forge.ai.inflight";
 
-export default function AIGenerateDialog({ open: openProp, onClose }) {
+export default function AIGenerateDialog({ open: openProp, onClose, initialTab }) {
   const [internalOpen, setInternalOpen] = useState(false);
   // Hybrid open state: parent can control via the `open` prop OR voice
   // can fire `forgeslicer:open-ai-generate` from anywhere in the app and
@@ -93,7 +93,20 @@ export default function AIGenerateDialog({ open: openProp, onClose }) {
   // it up after the prompt is populated.
   const [pendingAutoSubmit, setPendingAutoSubmit] = useState(false);
 
-  const [tab, setTab] = useState("text");      // "text" | "image" | "multi"
+  // Iter-151.30 — Honour an initialTab prop so callers can deep-link
+  // to a specific tab (e.g. LithoStudio's top-nav routes users into
+  // "text" / "image" / "multi" / "bas_relief" without them having to
+  // click through). Undefined falls back to the historic "text"
+  // default so existing entry points are unaffected.
+  const [tab, setTab] = useState(initialTab || "text");
+  // Iter-151.30 — Keep the tab state in sync with the prop when the
+  // dialog is REOPENED with a different initialTab (e.g. user
+  // navigates from the "From Image" nav item, closes, then re-opens
+  // via "Multi-Image"). Without this the dialog would silently stick
+  // to whatever tab was last selected inside the previous session.
+  React.useEffect(() => {
+    if (initialTab) setTab(initialTab);
+  }, [initialTab, openProp]);
   const [prompt, setPrompt] = useState("");
   const [artStyle, setArtStyle] = useState("realistic");
   const [imageB64, setImageB64] = useState(null);
