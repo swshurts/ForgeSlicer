@@ -687,6 +687,24 @@ export default function LithoStudio() {
     />
   );
 
+  // Iter-151.31 — Collapsible side panels. Users asked for the left
+  // (config) and right (stats/history) columns to be foldable so they
+  // can enlarge the viewport when a big preview is more important
+  // than tweaking sliders. Persisted to localStorage so a returning
+  // user gets the same layout without re-clicking every session.
+  const [leftCollapsed, setLeftCollapsed] = React.useState(() => {
+    try { return localStorage.getItem("litho.leftCollapsed") === "1"; } catch { return false; }
+  });
+  const [rightCollapsed, setRightCollapsed] = React.useState(() => {
+    try { return localStorage.getItem("litho.rightCollapsed") === "1"; } catch { return false; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem("litho.leftCollapsed", leftCollapsed ? "1" : "0"); } catch { /* private mode */ }
+  }, [leftCollapsed]);
+  React.useEffect(() => {
+    try { localStorage.setItem("litho.rightCollapsed", rightCollapsed ? "1" : "0"); } catch { /* private mode */ }
+  }, [rightCollapsed]);
+
   return (
     <div className="App h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       <Header
@@ -701,15 +719,38 @@ export default function LithoStudio() {
       {isDesktop ? (
         <div
           className="grid flex-1 overflow-hidden"
-          style={{ gridTemplateColumns: "300px 1fr 340px" }}
+          style={{
+            gridTemplateColumns: `${leftCollapsed ? "36px" : "300px"} 1fr ${rightCollapsed ? "36px" : "340px"}`,
+            transition: "grid-template-columns 200ms ease",
+          }}
           data-testid="desktop-layout"
         >
-          <aside className="border-r border-zinc-800 overflow-hidden">
-            {configPanelEl}
+          <aside className="border-r border-zinc-800 overflow-hidden relative flex flex-col">
+            <button
+              data-testid="litho-toggle-left"
+              onClick={() => setLeftCollapsed((v) => !v)}
+              className="h-8 w-full border-b border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5"
+              title={leftCollapsed ? "Expand config panel" : "Collapse config panel"}
+            >
+              {leftCollapsed ? "▶" : "◀ Hide config"}
+            </button>
+            {!leftCollapsed && (
+              <div className="flex-1 overflow-hidden">{configPanelEl}</div>
+            )}
           </aside>
           <main className="overflow-hidden relative">{viewportEl}</main>
-          <aside className="border-l border-zinc-800 overflow-hidden">
-            {statsPanelEl}
+          <aside className="border-l border-zinc-800 overflow-hidden relative flex flex-col">
+            <button
+              data-testid="litho-toggle-right"
+              onClick={() => setRightCollapsed((v) => !v)}
+              className="h-8 w-full border-b border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5"
+              title={rightCollapsed ? "Expand stats panel" : "Collapse stats panel"}
+            >
+              {rightCollapsed ? "◀" : "Hide stats ▶"}
+            </button>
+            {!rightCollapsed && (
+              <div className="flex-1 overflow-hidden">{statsPanelEl}</div>
+            )}
           </aside>
         </div>
       ) : (

@@ -32,6 +32,16 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.31, 2026-07-22) — LithoStudio polish (dead button, dead tab, collapsible panels)
+
+Three user-reported UX bugs on the new AI Studio modal:
+
+1. **Internal "← Workspace" button was dead** — LithoStudio's own `Header` still had a `<Link to="/workspace">` from when it was a standalone `/litho` page. That link now points at the URL we're already on, so clicking did nothing visually. Removed the Link (and its `ArrowLeft` import); the outer AI Studio modal's "← Back" chip is the sole escape hatch.
+2. **LithoForge tab appeared to "do nothing"** — the AI mesh dialog (`z-[120]`) fully covered the top-nav (`z-[90]`), so the LithoForge tab and Back chip were unclickable while a dialog was open. Raised the top-nav to `z-[130]` (relative + stacked) so both stay reachable when an AI dialog is on top.
+3. **Collapsible side panels** — `LithoStudio` desktop shell (≥ 1280 px) now supports collapsing the LEFT (config) and RIGHT (stats / history / palette) columns independently. Toggle chips at the top of each aside; state persists in `localStorage` (`litho.leftCollapsed` / `litho.rightCollapsed`) so a returning user keeps their preferred layout. Grid columns transition at 200 ms.
+
+Smoke test: `?open=litho` opens the modal, internal Workspace link count = 0, clicking either toggle collapses that side, viewport expands to fill. AI dialog opens on tab click and closes on LithoForge click.
+
 ### Recently completed (iter-151.30, 2026-07-22) — Unified AI Studio + /litho retired
 
 **AI 3D Mesh + LithoForge merged into one modal (same tab, no separate site feel).**

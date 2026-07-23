@@ -578,7 +578,12 @@ export default function LeftPanel() {
           data-testid="litho-studio-modal"
           className="fixed inset-0 z-[90] bg-slate-950 flex flex-col"
         >
-          <div className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 flex-shrink-0">
+          {/* Iter-151.31 — Top nav z-index raised above AIGenerateDialog
+              (z-[120]) so the LithoForge tab and the Back chip stay
+              clickable even when an AI mesh dialog is open on top of
+              this modal. Without this the AI dialog fully covered the
+              tab bar and clicking LithoForge appeared to "do nothing". */}
+          <div className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 flex-shrink-0 relative z-[130]">
             <button
               data-testid="litho-studio-modal-close"
               onClick={() => setLithoStudioOpen(false)}

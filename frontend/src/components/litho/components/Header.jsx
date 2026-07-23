@@ -1,14 +1,18 @@
 // iter-128 — Lithophane Studio in-app header.
+// iter-151.31 — Removed the internal "← Workspace" Link: LithoStudio
+// is now ALWAYS mounted inside the AI Studio modal (LeftPanel owns
+// the outer "← Back" chip), so this duplicated the escape hatch and
+// — worse — the Link pointed at "/workspace" which is where we
+// already are, so clicking it was a visible no-op.
 //
 // LithoForge's original Header contained brand, sign-in, pricing links,
 // and mode toggle. Now that this workflow lives inside ForgeSlicer, the
-// header only needs to identify the page + provide a "back to workspace"
-// escape hatch. The global UserMenu / theme switcher stay in the app-
-// level chrome (they're not mounted here). Kept intentionally slim so
-// it doesn't compete with ForgeSlicer's TopToolbar.
+// header only needs to identify the page + hand back a "Generate" CTA.
+// The global UserMenu / theme switcher stay in the app-level chrome
+// (they're not mounted here). Kept intentionally slim so it doesn't
+// compete with ForgeSlicer's TopToolbar.
 import React from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, Sparkles, Loader2, Wand2 } from "lucide-react";
+import { Sparkles, Loader2, Wand2 } from "lucide-react";
 
 export function Header({
   jobsBadge = null,
@@ -23,15 +27,7 @@ export function Header({
       data-testid="litho-studio-header"
       className="h-14 border-b border-slate-800 bg-slate-950/80 backdrop-blur flex items-center px-4 gap-3 flex-shrink-0"
     >
-      <Link
-        to="/workspace"
-        data-testid="litho-back-to-workspace"
-        className="h-8 px-2.5 text-xs text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded flex items-center gap-1.5 border border-slate-800"
-        title="Back to ForgeSlicer workspace"
-      >
-        <ArrowLeft size={13} /> Workspace
-      </Link>
-      <div className="flex items-center gap-2 ml-1">
+      <div className="flex items-center gap-2">
         <Sparkles size={16} className="text-orange-400" />
         <div className="leading-tight">
           <div className="text-[13px] font-semibold text-white">Lithophane Studio</div>
