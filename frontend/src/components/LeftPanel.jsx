@@ -17,6 +17,12 @@ import DesignChatDialog from "./dialogs/DesignChatDialog";
 import HoleDialog from "./dialogs/HoleDialog";
 import BoxDesignerDialog from "./params/BoxDesignerDialog";
 import DrawerChestDialog from "./params/DrawerChestDialog";
+// Iter-151.29 — LithoStudio mounts as a full-viewport modal (not a
+// separate browser tab). Lazy-import via React.lazy on demand would
+// be cleaner, but this file already loads AIGenerateDialog eagerly,
+// so keeping it consistent — bundle-size-wise both are behind other
+// buttons the user has to click to reach.
+import LithoStudio from "./litho/LithoStudio";
 import { MessageCircle } from "lucide-react";
 import { COMPONENTS, COMPONENT_CATEGORIES } from "../lib/componentLibrary";
 
@@ -393,6 +399,13 @@ export default function LeftPanel() {
   const [hardwareLibOpen, setHardwareLibOpen] = useState(false);
   const [boxDesignerOpen, setBoxDesignerOpen] = useState(false);
   const [drawerChestOpen, setDrawerChestOpen] = useState(false);
+  // Iter-151.29 — LithoStudio (Lithophane / Painting / Bas-Relief)
+  // used to open in a new browser tab via window.open("/litho", ...).
+  // User reported that felt like a separate website. Now it opens as a
+  // FULL-VIEWPORT MODAL inside the current workspace tab, so the URL
+  // and session stay put and it feels like a "subsection" of the app
+  // (matching the parametric designer dialog pattern).
+  const [lithoStudioOpen, setLithoStudioOpen] = useState(false);
   // Texture Library dialog state lives on the global store so the
   // right-click "Apply texture to face..." menu item can request it
   // to open even though the context menu unmounts on click. Local
@@ -464,7 +477,7 @@ export default function LeftPanel() {
         {tab === "2d" && <Tab2D />}
         {tab === "composites" && <TabComposites onOpenHardwareLib={() => setHardwareLibOpen(true)} onOpenTextureLib={() => openTextureLibrary(null)} onOpenHoleDialog={() => setHoleDialogOpen(true)} />}
         {tab === "params" && <TabParam onOpenBoxDesigner={() => setBoxDesignerOpen(true)} onOpenDrawerChest={() => setDrawerChestOpen(true)} />}
-        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} />}
+        {tab === "ai" && <TabAI onOpenAi={() => setAiOpen(true)} onOpenPhotoPlane={() => setPhotoPlaneOpen(true)} onOpenDesignChat={() => setDesignChatOpen(true)} onOpenLithoStudio={() => setLithoStudioOpen(true)} />}
       </div>
 
       {/* ---- Outliner (unchanged) ---- */}
@@ -498,6 +511,28 @@ export default function LeftPanel() {
         targetObjectId={textureLibraryTargetId}
         onClose={closeTextureLibrary}
       />
+      {/* Iter-151.29 — LithoStudio full-viewport modal. Same-tab
+          overlay (no /litho new-tab navigation) so the workspace
+          scene + auth session stay put. Renders LithoStudio inside
+          a fixed-inset container above the workspace with a close
+          chip in the top-left, matching the parametric designer
+          dialog pattern the user liked. */}
+      {lithoStudioOpen && (
+        <div
+          data-testid="litho-studio-modal"
+          className="fixed inset-0 z-[90] bg-slate-950"
+        >
+          <button
+            data-testid="litho-studio-modal-close"
+            onClick={() => setLithoStudioOpen(false)}
+            className="absolute top-3 left-3 z-[91] h-8 px-3 rounded bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 shadow-lg"
+            title="Back to workspace"
+          >
+            <span aria-hidden="true">←</span> Back to workspace
+          </button>
+          <LithoStudio />
+        </div>
+      )}
     </aside>
   );
 }
@@ -739,7 +774,7 @@ function ComponentCard({ component }) {
   );
 }
 
-function TabAI({ onOpenAi, onOpenPhotoPlane, onOpenDesignChat }) {
+function TabAI({ onOpenAi, onOpenPhotoPlane, onOpenDesignChat, onOpenLithoStudio }) {
   return (
     <>
       <SectionHeader
@@ -787,20 +822,15 @@ function TabAI({ onOpenAi, onOpenPhotoPlane, onOpenDesignChat }) {
               tool available for users who don't need the full studio. */}
           <button
             data-testid="lithophane-studio-btn"
-            onClick={() => {
-              // Open in a new tab so the workspace scene isn't lost —
-              // LithoStudio has its own save state / palette workflow.
-              window.open("/litho", "_blank", "noopener,noreferrer");
-            }}
+            onClick={onOpenLithoStudio}
             className="w-full h-11 rounded-md border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 hover:border-teal-500 text-teal-300 flex items-center justify-center gap-2 text-xs font-semibold tracking-wide transition-colors"
-            title="Open Lithophane Studio — full multi-filament optimiser with 3MF export, palette suggestions, and lightbox geometry. Opens in a new tab."
+            title="Open Lithophane Studio — full multi-filament optimiser with 3MF export, palette suggestions, and lithophane / painting / bas-relief modes. Opens inside the workspace."
           >
             <ImageDown size={13} />
             Lithophane Studio
-            <span className="text-[9px] font-normal text-teal-400/70 ml-0.5">↗</span>
           </button>
           <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
-            Full lithophane / hue-forge flow with palette suggestions, layer preview &amp; multi-filament 3MF export. Opens in a new tab.
+            Full lithophane / hue-forge flow with palette suggestions, layer preview &amp; multi-filament 3MF export.
           </p>
           <button
             data-testid="photo-to-plane-btn"
