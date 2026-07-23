@@ -1,165 +1,74 @@
 {
-  "theme_and_archetype": {
-    "theme": "dark",
-    "archetype": "Archetype 2: The Performance Pro (Tactical & Precision)",
-    "description": "A dense, professional, high-contrast dark UI that mirrors desktop CAD applications like OrcaSlicer and FreeCAD. Functional, tool-rich, utilizing structural slates with vibrant indicators for additive (positive) and subtractive (negative) operations."
+  "typography": {
+    "font_stack": "Inter, ui-sans-serif, system-ui, sans-serif",
+    "mono_stack": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    "headings": "Inter font with font-medium to font-bold weight. Avoid generic center alignment.",
+    "section_labels": "Uppercase 10-11px with tracking-[0.22em] (e.g. text-[10px] uppercase tracking-[0.22em] font-semibold text-slate-400)",
+    "body": "12-14px (text-xs to text-sm) for standard text. Dense IDE-like typography.",
+    "numeric_params": "Monospaced font at 10px or 12px (text-[10px] font-mono or text-xs font-mono) for precise alignment."
   },
   "colors": {
-    "background": {
-      "app_bg": "#020617",
-      "panel_bg": "#0F172A",
-      "viewport_bg": "#1E293B",
-      "card_bg": "#0F172A",
-      "hover": "#1E293B",
-      "active": "#334155"
-    },
-    "text": {
-      "primary": "#F8FAFC",
-      "secondary": "#94A3B8",
-      "muted": "#64748B",
-      "accent": "#F97316"
-    },
-    "border": {
-      "default": "#334155",
-      "focus": "#F97316",
-      "divider": "#1E293B"
-    },
-    "brand_and_actions": {
-      "primary": "#F97316",
-      "primary_hover": "#EA580C",
-      "positive_operation": "#F97316",
-      "negative_operation": "#06B6D4",
-      "success_action": "#22C55E",
-      "danger": "#EF4444"
-    },
-    "viewport_materials": {
-      "build_plate_grid": "#475569",
-      "build_plate_base": "#0F172A",
-      "positive_mesh": "#F97316",
-      "negative_mesh": "#06B6D4",
-      "mesh_selected_wireframe": "#FFFFFF"
-    }
-  },
-  "typography": {
-    "rules": "Never use Inter for headings. Use technical, precise fonts suitable for high-density tools.",
-    "font_families": {
-      "heading": "'IBM Plex Sans', sans-serif",
-      "body": "'IBM Plex Sans', sans-serif",
-      "mono": "'JetBrains Mono', monospace"
-    },
-    "scales": {
-      "h1": "text-2xl font-bold tracking-tight",
-      "h2": "text-xl font-semibold",
-      "h3": "text-lg font-medium",
-      "panel_title": "text-sm font-semibold uppercase tracking-wider text-slate-400",
-      "body": "text-sm",
-      "ui_label": "text-xs font-medium text-slate-400",
-      "mono_data": "text-xs font-mono text-slate-300"
-    }
-  },
-  "spacing_and_layout": {
-    "philosophy": "High-density 'Control Room' grid. Efficient use of space, minimal padding on panels to maximize 3D viewport.",
-    "panel_padding": "p-3 sm:p-4",
-    "item_gap": "gap-2",
-    "border_radius": "rounded-md",
-    "workspace_grid": {
-      "left_sidebar": "w-64 flex-shrink-0 border-r border-slate-700 bg-slate-900",
-      "right_sidebar": "w-72 flex-shrink-0 border-l border-slate-700 bg-slate-900",
-      "center_viewport": "flex-grow relative bg-slate-800 overflow-hidden",
-      "top_toolbar": "h-12 border-b border-slate-700 bg-slate-900 flex items-center px-4",
-      "bottom_status": "h-8 border-t border-slate-700 bg-slate-950 flex items-center px-4 text-xs"
-    }
-  },
-  "components": {
-    "buttons": {
-      "toolbar_icon": "h-8 w-8 rounded text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center transition-colors",
-      "primary_action": "h-8 px-4 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded transition-colors",
-      "secondary_action": "h-8 px-4 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors border border-slate-600",
-      "slice_button": "w-full h-10 bg-green-500 hover:bg-green-600 text-white font-bold rounded-md shadow-md transition-all uppercase tracking-wide"
-    },
-    "inputs": {
-      "number_input": "h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none font-mono",
-      "select": "h-8 w-full bg-slate-950 border border-slate-700 rounded text-sm text-white px-2 focus:border-orange-500 outline-none",
-      "slider": "w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
-    },
-    "panels": {
-      "container": "bg-slate-900 flex flex-col h-full",
-      "header": "h-10 flex items-center px-3 border-b border-slate-700 bg-slate-900/50",
-      "section": "border-b border-slate-800 p-3 flex flex-col gap-3"
-    },
-    "tree_view": {
-      "row": "flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-800 cursor-pointer text-sm text-slate-300",
-      "row_active": "flex items-center gap-2 px-2 py-1.5 rounded bg-slate-800 border-l-2 border-orange-500 text-white font-medium"
-    },
-    "viewport_overlays": {
-      "floating_toolbar": "absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg p-1 flex gap-1 shadow-xl",
-      "measurement_label": "px-2 py-1 bg-black/80 text-white text-xs font-mono rounded pointer-events-none"
-    }
-  },
-  "page_layouts": {
-    "1_workspace": {
-      "description": "The main CAD interface.",
-      "layout": "Flex column root (h-screen). Top header/menu (h-12). Main content area (flex-1 flex row). Inside main: Left Sidebar (Primitives, Outliner), Center Viewport (Three.js), Right Sidebar (Transform Inspector, Slicer Settings). Bottom Status Bar (h-8)."
-    },
-    "2_public_gallery": {
-      "description": "Community design browser.",
-      "layout": "Standard website layout. Fixed top nav. Main container with max-w-7xl, pt-24 pb-12 px-6. 'Bento' or CSS Grid for 3D thumbnail cards (grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6)."
-    },
-    "3_welcome_modal": {
-      "description": "Initial entry point.",
-      "layout": "Centered dialog on top of the blurred workspace. Options to Start New Project, Open Local File, or Browse Gallery."
-    }
-  },
-  "icons_and_assets": {
-    "library": "lucide-react",
-    "specific_icons": {
-      "primitives": ["Box", "Circle", "Cylinder", "Cone", "Donut"],
-      "boolean": ["PlusSquare", "MinusSquare", "Combine"],
-      "tools": ["Move3D", "Rotate3D", "Scale3D", "Ruler"],
-      "actions": ["Download", "Upload", "Save", "Printer", "Globe"]
-    }
-  },
-  "media_urls": {
-    "gallery_placeholders": [
-      {
-        "url": "https://images.unsplash.com/photo-1622547748225-3fc4abd2cca0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
-        "category": "gallery_item",
-        "description": "Blue and white round illustration"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1709626011485-6fe000ea2dbc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHw0fHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
-        "category": "gallery_item",
-        "description": "Black and blue abstract background with squares and rectangles"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1622737133809-d95047b9e673?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwxfHxnZW9tZXRyaWMlMjBhYnN0cmFjdCUyMDNkJTIwcmVuZGVyfGVufDB8fHx8MTc3ODgyNDI2Nnww&ixlib=rb-4.1.0&q=85",
-        "category": "gallery_item",
-        "description": "Brown cardboard box with yellow light"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1702863361902-93c51bfbd923?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwzfHwzZCUyMHByaW50ZWQlMjBvYmplY3R8ZW58MHx8fHwxNzc4ODI0MjYyfDA&ixlib=rb-4.1.0&q=85",
-        "category": "gallery_item",
-        "description": "3D printer close up"
-      }
+    "background": "slate-950 (#020617)",
+    "panels": "slate-900 (#0f172a)",
+    "borders": "slate-800 (#1e293b)",
+    "primary_accent": "orange-500 (#f97316)",
+    "secondary_accent": "cyan-400 (#22d3ee) for info, emerald-400 (#34d399) for success",
+    "text": "slate-200 for primary text, slate-400 for secondary, slate-500 for tertiary",
+    "prohibited": [
+      "purple/violet gradients",
+      "pastel cards",
+      "generic vibrant colors that break the professional tool aesthetic",
+      "pure transparent backgrounds behind text or dropdowns"
     ]
   },
-  "testing_attributes": {
-    "rule": "All interactive and key informational elements MUST include a data-testid attribute.",
-    "convention": "kebab-case, role-based",
-    "examples": [
-      "data-testid='add-cube-btn'",
-      "data-testid='boolean-union-btn'",
-      "data-testid='slice-model-btn'",
-      "data-testid='send-to-orcaslicer-btn'",
-      "data-testid='transform-x-input'",
-      "data-testid='scene-tree-item-1'"
-    ]
+  "visual_enhancers": {
+    "borders": "1px crisp borders (border-slate-800) between all logical panels to create a structural, native application feel.",
+    "background_texture": "Subtle grid backgrounds (radial-gradient(#1e293b 1px, transparent 1px)) in 3D viewport areas to imply 3D space.",
+    "shadows": "Minimal ambient shadows except for primary CTA buttons (e.g. shadow-lg shadow-orange-500/20) and floating toolbars."
+  },
+  "layouts": {
+    "app_shell": "Full height (h-screen flex flex-col overflow-hidden) with a fixed header and flexible content area (flex-1 overflow-hidden).",
+    "ai_studio_surface": "Embedded inside the workspace shell. Retains top app header. Displays an internal navigation header specifically for AI modes with Back to Workspace chip.",
+    "columns": "Dense, rigid-width column layout (e.g. w-72 or w-[340px] for config panels, flex-1 for 3D viewports)."
+  },
+  "motion": {
+    "hover_states": "Subtle transition-colors on buttons and panels (hover:bg-slate-800, hover:text-white).",
+    "buttons": "Slight brightness change or inner border reveal, no excessive scaling.",
+    "accessibility": "Respect prefers-reduced-motion. Ensure visual changes on focus (focus:outline-none focus:border-orange-500 or focus:ring-1 focus:ring-orange-500)."
+  },
+  "accessibility": {
+    "contrast": "Ensure text meets WCAG AA (at least 4.5:1 for normal text). Slate-400 on Slate-900 is compliant.",
+    "attributes": "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing.",
+    "focus": "Visible focus states required on inputs, textareas, and interactive tabs."
+  },
+  "media": {
+    "images": "Use realistic references via Unsplash. Grayscale filtering (mix-blend modes) often used for bas-relief height map visualization.",
+    "icons": "Lucide React (lucide-react) exclusively. Ensure crisp rendering at small sizes (w-3.5 h-3.5 or w-4 h-4)."
+  },
+  "component_patterns": {
+    "slider": "Minimalist range input with accent color (accent-slate-500). Numeric values beside them wrapped in monospaced badges.",
+    "toggle": "Custom styled checkbox acting as a pill switch (emerald-500 when active, slate-800 when inactive) built with purely CSS sibling selectors.",
+    "tabs": "Segmented controls with dark backgrounds (bg-slate-950 border-slate-800) and active items highlighted via background (bg-slate-800) and text color (text-white).",
+    "image_upload": "Dashed border dropzone with icon and helper text, dark inset background."
   },
   "instructions_to_main_agent": [
-    "Use react-three-fiber and @react-three/drei for the 3D viewport.",
-    "Implement the layout precisely with the defined spacing and technical fonts.",
-    "Ensure the application occupies 100vh with no global scrollbar, acting as a desktop app.",
-    "Bind Three.js transform controls to the toolbar toggles.",
-    "Distinguish additive and subtractive geometry in the scene tree visually using the defined positive/negative operation colors (orange vs cyan)."
+    "Ensure all merged UI looks like a native subsection of a one-page app, not a standalone website.",
+    "Use exact color tokens specified. Do NOT introduce new hues like purple or generic Tailwind blue.",
+    "Maintain high density (IDE style): small text (10-12px) for labels, tight padding (p-3 to p-5) for panels.",
+    "When building the components, map them closely to the HTML mocks provided in /app/frontend/public/design-mocks/.",
+    "Ensure the top header stays untouched structurally except for the active tab highlighting.",
+    "Include the 'Back to Workspace' chip and Trial Banner as shown in the mocks."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy and subtle inner shadows.",
+    "Use glass-morphism effects with backdrop filters (backdrop-blur bg-slate-900/80) where necessary (e.g. floating toolbars), but prefer solid crisp panels for standard layout structures.",
+    "You MUST NOT apply universal transition (e.g. transition: all). This results in breaking transforms. Always add transitions for specific properties (transition-colors, transition-opacity, transition-transform).",
+    "You MUST NOT center align the app container. This disrupts the human natural reading flow of text.",
+    "Always use modern button styles like sharp or slightly rounded corners with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters for icons. Use Lucide icons.",
+    "All interactive elements MUST include data-testid."
   ]
 }

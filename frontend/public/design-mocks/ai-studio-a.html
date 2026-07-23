@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Screen A - Workspace Default</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slate: { 950: '#020617', 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569', 500: '#64748b', 400: '#94a3b8', 300: '#cbd5e1', 200: '#e2e8f0' },
+              orange: { 300: '#fdba74', 400: '#fb923c', 500: '#f97316', 600: '#ea580c' },
+              cyan: { 400: '#22d3ee', 500: '#06b6d4' },
+              emerald: { 400: '#34d399', 500: '#10b981' }
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      body { font-family: 'Inter', sans-serif; }
+      .label-text { font-size: 10px; text-transform: uppercase; letter-spacing: 0.22em; font-weight: 600; color: #94a3b8; }
+      .bg-grid { background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 24px 24px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 h-screen flex flex-col overflow-hidden">
+    <!-- App Header -->
+    <header class="h-12 border-b border-slate-800 bg-slate-900 flex items-center justify-between px-4 shrink-0">
+        <div class="flex items-center gap-8 h-full">
+            <div class="flex items-center gap-2 text-orange-500 font-bold tracking-tight">
+                <i data-lucide="box" class="w-5 h-5"></i>
+                <span data-testid="app-logo">FORGESLICER</span>
+            </div>
+            <nav class="flex h-full">
+                <button data-testid="tab-param" class="px-4 h-full border-b-2 border-orange-500 text-slate-200 font-medium text-sm flex items-center transition-colors">PARAM</button>
+                <button data-testid="tab-ai" class="px-4 h-full border-b-2 border-transparent text-slate-400 hover:text-slate-200 text-sm flex items-center transition-colors">AI</button>
+                <button data-testid="tab-mp" class="px-4 h-full border-b-2 border-transparent text-slate-400 hover:text-slate-200 text-sm flex items-center transition-colors">MP</button>
+                <button data-testid="tab-settings" class="px-4 h-full border-b-2 border-transparent text-slate-400 hover:text-slate-200 text-sm flex items-center transition-colors">SETTINGS</button>
+            </nav>
+        </div>
+        <div class="flex items-center gap-4">
+            <div data-testid="user-tier-badge" class="bg-slate-800 px-2 py-1 rounded text-xs font-medium text-slate-300 border border-slate-700">Pro Tier</div>
+            <button data-testid="user-menu-btn" class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:bg-slate-700 transition-colors">
+                <i data-lucide="user" class="w-4 h-4 text-slate-400"></i>
+            </button>
+        </div>
+    </header>
+    
+    <!-- Workspace Area -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- 3D Viewport (Main) -->
+        <div data-testid="main-3d-viewport" class="flex-1 bg-slate-950 bg-grid relative flex items-center justify-center">
+            <div class="absolute top-4 left-4 flex gap-2">
+                <button data-testid="tool-select" class="p-2 bg-slate-900 border border-slate-800 rounded text-slate-200 hover:bg-slate-800 transition-colors"><i data-lucide="mouse-pointer-2" class="w-4 h-4"></i></button>
+                <button data-testid="tool-move" class="p-2 bg-slate-900 border border-slate-800 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"><i data-lucide="move" class="w-4 h-4"></i></button>
+                <button data-testid="tool-rotate" class="p-2 bg-slate-900 border border-slate-800 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"><i data-lucide="rotate-3d" class="w-4 h-4"></i></button>
+            </div>
+            <!-- Build plate mockup -->
+            <div class="w-96 h-96 border border-slate-700 bg-slate-900/40 rounded-lg transform perspective-1000 rotate-x-45 rotate-z-45 flex items-center justify-center shadow-2xl relative">
+                <div class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9IiMzMzMzMzMzIi8+PC9zdmc+')] opacity-30"></div>
+                <i data-lucide="box" class="w-24 h-24 text-slate-600"></i>
+            </div>
+        </div>
+        
+        <!-- Right Panel (PARAM) -->
+        <div data-testid="param-panel" class="w-80 border-l border-slate-800 bg-slate-900 flex flex-col z-10 shadow-xl">
+            <div class="p-4 border-b border-slate-800">
+                <h2 class="text-sm font-semibold text-slate-200">Slice Parameters</h2>
+            </div>
+            <div class="p-4 space-y-6 overflow-y-auto flex-1">
+                <div>
+                    <div class="label-text mb-3">Quality</div>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-slate-400">Layer height</span>
+                            <input data-testid="input-layer-height" type="text" class="w-16 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-right text-xs font-mono focus:border-orange-500 focus:outline-none transition-colors" value="0.20">
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-slate-400">Initial layer height</span>
+                            <input data-testid="input-init-layer-height" type="text" class="w-16 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-right text-xs font-mono focus:border-orange-500 focus:outline-none transition-colors" value="0.25">
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <div class="label-text mb-3">Infill</div>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-slate-400">Density</span>
+                            <div class="flex items-center gap-2 w-32">
+                                <input data-testid="slider-infill" type="range" class="flex-1 accent-orange-500" value="15">
+                                <span data-testid="val-infill" class="font-mono text-xs text-right w-8">15%</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-slate-400">Pattern</span>
+                            <select data-testid="select-infill-pattern" class="w-24 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs focus:border-orange-500 focus:outline-none">
+                                <option>Grid</option>
+                                <option>Gyroid</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-800 bg-slate-900/90">
+                <button data-testid="btn-slice-now" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 rounded text-sm transition-colors shadow-lg shadow-orange-500/20">Slice Now</button>
+            </div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

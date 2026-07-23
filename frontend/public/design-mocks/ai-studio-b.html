@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Screen B - AI Studio LithoForge (Lithophane)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slate: { 950: '#020617', 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569', 500: '#64748b', 400: '#94a3b8', 300: '#cbd5e1', 200: '#e2e8f0' },
+              orange: { 300: '#fdba74', 400: '#fb923c', 500: '#f97316', 600: '#ea580c' },
+              cyan: { 400: '#22d3ee', 500: '#06b6d4' },
+              emerald: { 400: '#34d399', 500: '#10b981' }
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      body { font-family: 'Inter', sans-serif; }
+      .label-text { font-size: 10px; text-transform: uppercase; letter-spacing: 0.22em; font-weight: 600; color: #94a3b8; }
+      .bg-grid { background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 16px 16px; }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: #020617; }
+      ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 h-screen flex flex-col overflow-hidden">
+    <!-- App Header -->
+    <header class="h-12 border-b border-slate-800 bg-slate-900 flex items-center justify-between px-4 shrink-0">
+        <div class="flex items-center gap-8 h-full">
+            <div class="flex items-center gap-2 text-slate-500 font-bold tracking-tight">
+                <i data-lucide="box" class="w-5 h-5"></i>
+                <span data-testid="app-logo">FORGESLICER</span>
+            </div>
+            <nav class="flex h-full">
+                <button data-testid="tab-param" class="px-4 h-full border-b-2 border-transparent text-slate-400 hover:text-slate-200 text-sm flex items-center transition-colors">PARAM</button>
+                <button data-testid="tab-ai" class="px-4 h-full border-b-2 border-orange-500 text-slate-200 font-medium text-sm flex items-center transition-colors">AI</button>
+                <button data-testid="tab-mp" class="px-4 h-full border-b-2 border-transparent text-slate-400 hover:text-slate-200 text-sm flex items-center transition-colors">MP</button>
+                <button data-testid="tab-settings" class="px-4 h-full border-b-2 border-transparent text-slate-400 hover:text-slate-200 text-sm flex items-center transition-colors">SETTINGS</button>
+            </nav>
+        </div>
+        <div class="flex items-center gap-4">
+            <button data-testid="user-menu-btn" class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:bg-slate-700 transition-colors">
+                <i data-lucide="user" class="w-4 h-4 text-slate-400"></i>
+            </button>
+        </div>
+    </header>
+    
+    <!-- Trial Ribbon -->
+    <div data-testid="trial-ribbon" class="bg-slate-800 text-slate-300 text-xs py-1.5 px-4 flex justify-between items-center shrink-0 border-b border-slate-900">
+        <span><i data-lucide="sparkles" class="w-3 h-3 inline mr-1 text-orange-400"></i> <strong class="text-white">Studio Trial</strong> &middot; 14 days left</span>
+        <div class="flex items-center gap-4">
+            <a href="#" data-testid="link-upgrade" class="text-orange-400 hover:text-orange-300 font-medium transition-colors">Upgrade</a>
+            <button data-testid="btn-dismiss-ribbon" class="text-slate-500 hover:text-slate-300 transition-colors"><i data-lucide="x" class="w-3 h-3"></i></button>
+        </div>
+    </div>
+
+    <!-- AI Studio Header Surface -->
+    <div class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-6">
+            <button data-testid="btn-back-workspace" class="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 px-2.5 py-1.5 rounded border border-slate-700 transition-colors">
+                <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Workspace
+            </button>
+            <div class="h-5 w-px bg-slate-800"></div>
+            <nav class="flex gap-1 bg-slate-950 p-1 rounded-md border border-slate-800" data-testid="nav-ai-modes">
+                <button data-testid="subtab-from-text" class="px-3 py-1.5 text-xs font-medium text-slate-400 rounded hover:text-slate-200 transition-colors">From Text</button>
+                <button data-testid="subtab-from-image" class="px-3 py-1.5 text-xs font-medium text-slate-400 rounded hover:text-slate-200 transition-colors">From Image</button>
+                <button data-testid="subtab-multi-image" class="px-3 py-1.5 text-xs font-medium text-slate-400 rounded hover:text-slate-200 transition-colors">Multi-Image</button>
+                <button data-testid="subtab-lithoforge" class="px-3 py-1.5 text-xs font-medium text-white bg-slate-800 rounded shadow-sm border border-slate-700">LithoForge</button>
+            </nav>
+        </div>
+        <div class="flex bg-slate-950 p-1 rounded-md border border-slate-800" data-testid="nav-lithoforge-modes">
+            <button data-testid="mode-lithophane" class="px-3 py-1.5 text-xs font-medium text-white bg-slate-800 rounded shadow-sm border border-slate-700 flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-3.5 h-3.5"></i> Lithophane
+            </button>
+            <button data-testid="mode-painting" class="px-3 py-1.5 text-xs font-medium text-slate-400 rounded hover:text-slate-200 transition-colors flex items-center gap-1.5">
+                <i data-lucide="paintbrush" class="w-3.5 h-3.5"></i> Painting
+            </button>
+            <button data-testid="mode-bas-relief" class="px-3 py-1.5 text-xs font-medium text-slate-400 rounded hover:text-slate-200 transition-colors flex items-center gap-1.5">
+                <i data-lucide="disc" class="w-3.5 h-3.5"></i> Bas-Relief
+            </button>
+        </div>
+    </div>
+
+    <!-- 3-Column Layout -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Left Col: Config -->
+        <div data-testid="col-config" class="w-72 border-r border-slate-800 bg-slate-900 flex flex-col z-10 shadow-xl">
+            <div class="p-4 border-b border-slate-800">
+                <div class="label-text mb-3">Source Image</div>
+                <button data-testid="btn-upload-image" class="w-full border-2 border-dashed border-slate-700 hover:border-slate-500 rounded-lg p-5 text-center cursor-pointer transition-colors bg-slate-950/50 hover:bg-slate-950 group">
+                    <i data-lucide="image-plus" class="w-6 h-6 text-slate-500 mx-auto mb-2 group-hover:text-slate-400 transition-colors"></i>
+                    <div class="text-xs text-slate-300 font-medium">Upload Image</div>
+                    <div class="text-[10px] text-slate-500 mt-1">PNG, JPG up to 10MB</div>
+                </button>
+            </div>
+            <div class="p-4 space-y-6 overflow-y-auto flex-1">
+                <div>
+                    <div class="label-text mb-3">Dimensions</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1.5">Width (mm)</div>
+                            <input data-testid="input-dim-width" type="text" class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-sm font-mono text-slate-200 focus:border-orange-500 focus:outline-none transition-colors" value="100.0">
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1.5">Height (mm)</div>
+                            <input data-testid="input-dim-height" type="text" class="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-sm font-mono text-slate-200 focus:border-orange-500 focus:outline-none transition-colors" value="150.0">
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <div class="label-text mb-3">Thickness</div>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-2">
+                                <span>Min Thickness</span>
+                                <span class="font-mono text-[10px] text-slate-300 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">0.6 mm</span>
+                            </div>
+                            <input data-testid="slider-min-thick" type="range" class="w-full accent-slate-500" value="20">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-2">
+                                <span>Max Thickness</span>
+                                <span class="font-mono text-[10px] text-slate-300 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">3.2 mm</span>
+                            </div>
+                            <input data-testid="slider-max-thick" type="range" class="w-full accent-slate-500" value="60">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Col: Image & Palette -->
+        <div data-testid="col-palette" class="w-[340px] border-r border-slate-800 bg-slate-950 flex flex-col relative z-10 shadow-xl">
+            <!-- Reference Image Area -->
+            <div class="h-[45%] p-4 flex flex-col bg-slate-900/40">
+                <div class="label-text mb-3">Source Reference</div>
+                <div class="flex-1 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center overflow-hidden relative shadow-inner">
+                    <img src="https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=400&auto=format&fit=crop" class="w-full h-full object-cover opacity-80" alt="Ref">
+                    <div class="absolute bottom-2 right-2 bg-slate-950/80 backdrop-blur border border-slate-800 px-2 py-1 rounded text-[10px] text-slate-300 font-medium">Vibrancy +10%</div>
+                </div>
+            </div>
+            
+            <!-- Palette & Filament -->
+            <div class="h-[55%] p-4 flex flex-col border-t border-slate-800 bg-slate-900">
+                <div class="label-text mb-4 flex justify-between items-center">
+                    <span>Filament Order</span>
+                    <button data-testid="btn-auto-assign" class="text-[9px] bg-slate-800 border border-slate-700 px-2 py-1 rounded text-slate-300 hover:text-white hover:bg-slate-700 transition-colors tracking-widest">AUTO-ASSIGN</button>
+                </div>
+                <div class="flex-1 space-y-2.5 overflow-y-auto pr-1">
+                    <!-- Chips -->
+                    <div class="flex items-center gap-3 bg-slate-950 border border-slate-800 p-2.5 rounded-md hover:border-slate-600 transition-colors group cursor-grab">
+                        <i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400"></i>
+                        <div class="w-4 h-4 rounded-full bg-[#f8f9fa] shadow-inner border border-slate-300"></div>
+                        <div class="text-xs font-medium flex-1 text-slate-200">White PLA</div>
+                        <div class="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">Base</div>
+                    </div>
+                    <div class="flex items-center gap-3 bg-slate-950 border border-slate-800 p-2.5 rounded-md hover:border-slate-600 transition-colors group cursor-grab">
+                        <i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400"></i>
+                        <div class="w-4 h-4 rounded-full bg-[#fbbf24] shadow-inner border border-yellow-600"></div>
+                        <div class="text-xs font-medium flex-1 text-slate-200">Yellow PLA</div>
+                        <div class="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">0.8mm</div>
+                    </div>
+                    <div class="flex items-center gap-3 bg-slate-950 border border-slate-800 p-2.5 rounded-md hover:border-slate-600 transition-colors group cursor-grab">
+                        <i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400"></i>
+                        <div class="w-4 h-4 rounded-full bg-[#06b6d4] shadow-inner border border-cyan-700"></div>
+                        <div class="text-xs font-medium flex-1 text-slate-200">Cyan PLA</div>
+                        <div class="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">1.4mm</div>
+                    </div>
+                    <div class="flex items-center gap-3 bg-slate-950 border border-slate-800 p-2.5 rounded-md hover:border-slate-600 transition-colors group cursor-grab">
+                        <i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400"></i>
+                        <div class="w-4 h-4 rounded-full bg-[#171717] shadow-inner border border-black"></div>
+                        <div class="text-xs font-medium flex-1 text-slate-200">Black PLA</div>
+                        <div class="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">2.2mm</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Layer Strip (Fixed at bottom of middle col) -->
+            <div class="h-16 border-t border-slate-800 bg-slate-950 flex flex-col justify-center px-4 relative">
+                <div class="text-[9px] text-slate-500 uppercase tracking-widest font-semibold mb-2">Layer Preview</div>
+                <div class="h-4 w-full bg-gradient-to-r from-white via-yellow-400 via-cyan-500 to-black rounded-sm border border-slate-700 opacity-90 shadow-inner relative">
+                    <div class="absolute left-1/4 top-0 bottom-0 w-px bg-slate-900/50"></div>
+                    <div class="absolute left-1/2 top-0 bottom-0 w-px bg-slate-900/50"></div>
+                    <div class="absolute left-3/4 top-0 bottom-0 w-px bg-slate-900/50"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Col: 3D Viewport -->
+        <div data-testid="col-viewport" class="flex-1 bg-slate-950 bg-grid relative flex flex-col min-w-0">
+            <div class="absolute top-4 left-4 flex gap-2 z-10">
+                <button data-testid="tool-rotate-3d" class="p-2 bg-slate-900/80 backdrop-blur border border-slate-800 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"><i data-lucide="rotate-3d" class="w-4 h-4"></i></button>
+                <button data-testid="tool-zoom" class="p-2 bg-slate-900/80 backdrop-blur border border-slate-800 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+            </div>
+            
+            <!-- Viewport Content -->
+            <div class="flex-1 flex items-center justify-center relative p-8">
+                <div class="w-64 h-96 bg-slate-800 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)] rounded-sm transform perspective-[1500px] rotate-x-12 rotate-y-12 border border-slate-700 relative overflow-hidden transition-transform duration-500 hover:rotate-x-6 hover:rotate-y-6">
+                    <img src="https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=400&auto=format&fit=crop" class="w-full h-full object-cover grayscale opacity-60 mix-blend-overlay">
+                    <div class="absolute inset-0 bg-gradient-to-tr from-black/40 via-white/10 to-white/5"></div>
+                    <!-- Thickness depth illusion -->
+                    <div class="absolute -right-[8px] top-[4px] w-[8px] h-full bg-slate-900 skew-y-[-45deg] border-l border-slate-700 origin-left"></div>
+                    <div class="absolute left-[4px] -bottom-[8px] w-full h-[8px] bg-slate-950 skew-x-[-45deg] border-t border-slate-700 origin-top"></div>
+                </div>
+            </div>
+
+            <!-- Anchored Generate Area -->
+            <div class="p-4 border-t border-slate-800 bg-slate-900 flex justify-between items-center z-10">
+                <div class="text-xs text-slate-400 flex items-center gap-2">
+                    <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+                    Est. processing time: <span class="text-slate-200 font-mono">12s</span>
+                </div>
+                <div class="flex gap-3">
+                    <button data-testid="btn-export-3mf" class="px-4 py-2 border border-slate-700 bg-slate-800 text-slate-300 rounded text-sm hover:bg-slate-700 hover:text-white font-medium transition-colors">Export 3MF</button>
+                    <button data-testid="btn-generate-mesh" class="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm font-medium flex items-center gap-2 shadow-lg shadow-orange-500/20 transition-colors">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i> Generate Mesh
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Job History Rail (Collapsed) -->
+        <div data-testid="col-history-rail" class="w-14 border-l border-slate-800 bg-slate-900 flex flex-col items-center py-4 gap-5 z-20 shadow-[-10px_0_20px_rgba(0,0,0,0.2)]">
+            <button data-testid="btn-toggle-history" class="text-slate-500 hover:text-slate-200 transition-colors" title="Job History">
+                <i data-lucide="history" class="w-5 h-5"></i>
+            </button>
+            <div class="w-full px-2 h-px bg-slate-800"></div>
+            <div class="flex flex-col gap-3 w-full px-2">
+                <div class="w-full aspect-square rounded-md bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden hover:border-orange-500 transition-colors relative group">
+                    <img src="https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity">
+                </div>
+                <div class="w-full aspect-square rounded-md bg-slate-800 border border-slate-700 cursor-pointer overflow-hidden hover:border-orange-500 transition-colors relative group">
+                    <img src="https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity">
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
