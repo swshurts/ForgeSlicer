@@ -71,7 +71,7 @@ const DEFAULT_CONFIG = {
   bas_ring_height_mm: 5,
 };
 
-export default function LithoStudio() {
+export default function LithoStudio({ onClose } = {}) {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [filaments, setFilaments] = useState([]);
   const [autoOrder, setAutoOrder] = useState(true);
@@ -684,6 +684,8 @@ export default function LithoStudio() {
       baseMinLayers={config.base_min_layers}
       geometry={config.geometry}
       boxDiffuser={config.box_diffuser ?? true}
+      printerId={config.printer_id}
+      onSentToBuildplate={onClose}
     />
   );
 

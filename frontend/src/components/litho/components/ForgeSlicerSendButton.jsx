@@ -6,6 +6,12 @@
 // studio export endpoint and imports it directly onto the ForgeSlicer
 // build plate using the same `importAnyMeshFile` pipeline as drag-and-
 // drop. Modal closes and the mesh is selected + inspectable.
+//
+// Iter-151.32 — Wired props correctly. StatsPanel used to pass
+// `{result, geometry, boxDiffuser}` which left `jobId` undefined and
+// silently disabled the button. Now takes `jobId` + `printerId` + an
+// optional `onSent` callback so LithoStudio can dismiss the modal and
+// drop the user back onto the buildplate as soon as the mesh lands.
 
 import React, { useState } from "react";
 import { toast } from "sonner";
@@ -13,12 +19,17 @@ import { Send, Loader2 } from "lucide-react";
 import { downloadLithoFile } from "../../../lib/lithoStudioApi";
 import { importAnyMeshFile } from "../../../lib/exporters";
 import { useScene } from "../../../lib/store";
-import { useNavigate } from "react-router-dom";
 
-export function ForgeSlicerSendButton({ jobId, disabled, printerId, part = "lithophane", filename = "lithophane" }) {
+export function ForgeSlicerSendButton({
+  jobId,
+  disabled,
+  printerId,
+  part = "lithophane",
+  filename = "lithophane",
+  onSent,
+}) {
   const [busy, setBusy] = useState(false);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
-  const navigate = useNavigate();
 
   const handleSend = async () => {
     if (!jobId || busy) return;
@@ -29,10 +40,11 @@ export function ForgeSlicerSendButton({ jobId, disabled, printerId, part = "lith
       const file = new File([blob], cleanName, { type: "model/stl" });
       const mesh = await importAnyMeshFile(file);
       addImportedMesh(mesh.name, mesh.vertices, mesh.indices, mesh.originalBbox);
-      toast.success("Sent to build plate", {
-        description: cleanName,
-        action: { label: "Open", onClick: () => navigate("/workspace") },
-      });
+      toast.success("Sent to build plate", { description: cleanName });
+      // Close the LithoStudio modal so the user lands directly on the
+      // workspace with the freshly-imported mesh selected and ready
+      // for fillets / chamfers / mounting-plaque booleans.
+      if (typeof onSent === "function") onSent();
     } catch (e) {
       toast.error("Send to workspace failed", { description: e?.message || String(e) });
     } finally {

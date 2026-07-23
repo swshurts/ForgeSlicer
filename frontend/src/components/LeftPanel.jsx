@@ -626,7 +626,7 @@ export default function LeftPanel() {
             <div className="w-16" />{/* right spacer to balance left "Back" chip */}
           </div>
           <div className="flex-1 relative overflow-hidden">
-            <LithoStudio />
+            <LithoStudio onClose={() => setLithoStudioOpen(false)} />
           </div>
         </div>
       )}

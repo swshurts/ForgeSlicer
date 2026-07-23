@@ -227,6 +227,8 @@ export const StatsPanel = ({
   baseMinLayers,
   geometry,
   boxDiffuser,
+  printerId,
+  onSentToBuildplate,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -566,9 +568,10 @@ export const StatsPanel = ({
               </a>
             </div>
             <ForgeSlicerSendButton
-              result={result}
-              geometry={geometry}
-              boxDiffuser={boxDiffuser}
+              jobId={result.job_id}
+              printerId={printerId}
+              filename={`lithophane_${result.job_id}`}
+              onSent={onSentToBuildplate}
             />
           </div>
         )}

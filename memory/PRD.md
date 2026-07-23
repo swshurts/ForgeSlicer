@@ -32,6 +32,18 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.32, 2026-07-23) — LithoStudio Send-to-Buildplate wiring fix
+
+User reported: "On the right hand side there is a 'Send to Buildplate' option that does nothing." Root cause: `StatsPanel.jsx` passed `{result, geometry, boxDiffuser}` to `<ForgeSlicerSendButton />`, but the component's signature expected `{jobId, disabled, printerId, part, filename}`. With `jobId === undefined` the button was permanently disabled (`disabled || busy || !jobId`), so clicks were no-ops.
+
+Fix:
+- `StatsPanel.jsx` — pass `jobId={result.job_id}` and `printerId={printerId}` correctly; plumb `onSentToBuildplate` through.
+- `LithoStudio.jsx` — accept optional `onClose` prop; forward `printerId={config.printer_id}` and `onSentToBuildplate={onClose}` into `StatsPanel`.
+- `LeftPanel.jsx` — pass `onClose={() => setLithoStudioOpen(false)}` to `<LithoStudio />`.
+- `ForgeSlicerSendButton.jsx` — accept `onSent` callback; call it after `addImportedMesh(...)` completes so the modal closes and the user lands on the workspace with the fresh lithophane selected. Removed the now-unused `useNavigate` (we're already on `/workspace`).
+
+Layout audit: the LEFT panel already renders `ConfigPanel` (Presets · Image · Crop · Geometry) and the RIGHT panel renders `StatsPanel` (AI Palette · Layer Allocation · Export) — matches the user's requested content mapping. No further layout swap needed.
+
 ### Recently completed (iter-151.31, 2026-07-22) — LithoStudio polish (dead button, dead tab, collapsible panels)
 
 Three user-reported UX bugs on the new AI Studio modal:
