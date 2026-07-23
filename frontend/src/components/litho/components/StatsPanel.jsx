@@ -6,6 +6,7 @@ import { HelpHint } from "./HelpHint";
 import { LibraryMatchPanel } from "./LibraryMatchPanel";
 import { CostSwapSimulator } from "./CostSwapSimulator";
 import { ForgeSlicerSendButton } from "./ForgeSlicerSendButton";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { exportUrl } from "../lib/api";
 import { useQuota } from "../lib/quota";
 
@@ -237,95 +238,100 @@ export const StatsPanel = ({
       className="h-full overflow-y-auto p-5 space-y-6"
       data-testid="stats-panel"
     >
-      <div className="space-y-2">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 flex items-center gap-1.5">
-            AI palette
-            <HelpHint title="Palette suggestion modes" testId="help-palette">
-              <strong className="text-zinc-200">Accurate</strong>: lowest
-              ΔE — best for muted, true-to-life photographs.
-              <br /><br />
-              <strong className="text-zinc-200">Balanced</strong>:
-              compromise between ΔE accuracy and saturated picks.
-              <br /><br />
-              <strong className="text-zinc-200">Vibrant</strong>: spreads
-              picks around the hue-wheel — best for posters, illustrations
-              and anything with bold primary colors.
-            </HelpHint>
+      <CollapsibleSection
+        id="ai-palette"
+        title="AI palette"
+        help={
+          <HelpHint title="Palette suggestion modes" testId="help-palette">
+            <strong className="text-zinc-200">Accurate</strong>: lowest
+            ΔE — best for muted, true-to-life photographs.
+            <br /><br />
+            <strong className="text-zinc-200">Balanced</strong>:
+            compromise between ΔE accuracy and saturated picks.
+            <br /><br />
+            <strong className="text-zinc-200">Vibrant</strong>: spreads
+            picks around the hue-wheel — best for posters, illustrations
+            and anything with bold primary colors.
+          </HelpHint>
+        }
+      >
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 border border-zinc-800" data-testid="vibrancy-toggle">
+            {[
+              { id: 0.0, label: "Accurate" },
+              { id: 0.5, label: "Balanced" },
+              { id: 1.0, label: "Vibrant" },
+            ].map((opt, i) => {
+              const active = Math.abs(opt.id - vibrancy) < 0.05;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setVibrancy(opt.id)}
+                  data-testid={`vibrancy-${opt.label.toLowerCase()}`}
+                  className={`px-2 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] transition-colors duration-150 ${
+                    active
+                      ? "bg-zinc-100 text-zinc-950"
+                      : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+                  } ${i > 0 ? "border-l border-zinc-800" : ""}`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
+          <button
+            onClick={onSuggestPalette}
+            disabled={!canSuggest || suggesting}
+            data-testid="suggest-palette-btn"
+            className="w-full flex items-center justify-center gap-2 border border-zinc-700 hover:border-zinc-400 hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-zinc-700 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-200 transition-colors duration-150"
+          >
+            <Wand2 className="w-3 h-3" strokeWidth={1.5} />
+            {suggesting ? "Analyzing…" : "Suggest palette from photo"}
+          </button>
+          {!canSuggest && !suggesting && (
+            <div className="font-mono text-[9px] text-zinc-600 text-center">
+              Upload a photograph first
+            </div>
+          )}
         </div>
-        <div className="grid grid-cols-3 border border-zinc-800" data-testid="vibrancy-toggle">
-          {[
-            { id: 0.0, label: "Accurate" },
-            { id: 0.5, label: "Balanced" },
-            { id: 1.0, label: "Vibrant" },
-          ].map((opt, i) => {
-            const active = Math.abs(opt.id - vibrancy) < 0.05;
-            return (
-              <button
-                key={opt.id}
-                onClick={() => setVibrancy(opt.id)}
-                data-testid={`vibrancy-${opt.label.toLowerCase()}`}
-                className={`px-2 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] transition-colors duration-150 ${
-                  active
-                    ? "bg-zinc-100 text-zinc-950"
-                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
-                } ${i > 0 ? "border-l border-zinc-800" : ""}`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
+
+        <div className="mt-4">
+          <PaletteEditor
+            filaments={filaments}
+            setFilaments={setFilaments}
+            maxActive={maxActive}
+            autoOrder={autoOrder}
+            setAutoOrder={setAutoOrder}
+            onPaletteSizeChange={onPaletteSizeChange}
+          />
         </div>
-        <button
-          onClick={onSuggestPalette}
-          disabled={!canSuggest || suggesting}
-          data-testid="suggest-palette-btn"
-          className="w-full flex items-center justify-center gap-2 border border-zinc-700 hover:border-zinc-400 hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-zinc-700 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-200 transition-colors duration-150"
-        >
-          <Wand2 className="w-3 h-3" strokeWidth={1.5} />
-          {suggesting ? "Analyzing…" : "Suggest palette from photo"}
-        </button>
-        {!canSuggest && !suggesting && (
-          <div className="font-mono text-[9px] text-zinc-600 text-center">
-            Upload a photograph first
-          </div>
-        )}
-      </div>
 
-      <PaletteEditor
-        filaments={filaments}
-        setFilaments={setFilaments}
-        maxActive={maxActive}
-        autoOrder={autoOrder}
-        setAutoOrder={setAutoOrder}
-        onPaletteSizeChange={onPaletteSizeChange}
-      />
-
-      <LibraryMatchPanel
-        palette={filaments.slice(0, maxActive)}
-        scope="mine"
-        testIdSuffix=""
-        emptyHint="Sign in and add your filaments to see whether this palette is reproducible on your printer."
-      />
+        <div className="mt-4">
+          <LibraryMatchPanel
+            palette={filaments.slice(0, maxActive)}
+            scope="mine"
+            testIdSuffix=""
+            emptyHint="Sign in and add your filaments to see whether this palette is reproducible on your printer."
+          />
+        </div>
+      </CollapsibleSection>
 
       <div className="border-t border-zinc-800" />
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-            Color fidelity
+      <CollapsibleSection
+        id="color-identity"
+        title="Color identity"
+        right={q && (
+          <span
+            className="font-mono text-[10px] font-bold tracking-[0.15em]"
+            style={{ color: q.color }}
+            data-testid="fidelity-label"
+          >
+            {q.label}
           </span>
-          {q && (
-            <span
-              className="font-mono text-[10px] font-bold tracking-[0.15em]"
-              style={{ color: q.color }}
-              data-testid="fidelity-label"
-            >
-              {q.label}
-            </span>
-          )}
-        </div>
+        )}
+      >
+        <div className="space-y-3">
         {result ? (
           <div className="grid grid-cols-2 gap-2">
             <DeltaBadge
@@ -349,19 +355,21 @@ export const StatsPanel = ({
         {result && typeof result.light_throughput_pct === "number" && (
           <ThroughputBadge value={result.light_throughput_pct} />
         )}
-      </div>
+        </div>
+      </CollapsibleSection>
 
       <div className="border-t border-zinc-800" />
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-            Layer allocation
-          </span>
+      <CollapsibleSection
+        id="layer-allocation"
+        title="Layer allocation"
+        right={
           <span className="font-mono text-[10px] text-zinc-500">
             {result ? `${result.total_layers} layers` : "—"}
           </span>
-        </div>
+        }
+      >
+        <div className="space-y-3">
         {result ? (
           <div className="space-y-1.5" data-testid="allocation-list">
             {result.timeline.map((t, i) => {
@@ -401,23 +409,25 @@ export const StatsPanel = ({
             —
           </div>
         )}
-      </div>
+        </div>
+      </CollapsibleSection>
 
       {result?.cost_estimate && (
         <>
           <div className="border-t border-zinc-800" />
-          <div className="space-y-3" data-testid="cost-estimate-panel">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-                Print estimate
-              </span>
+          <CollapsibleSection
+            id="print-estimate"
+            title="Print estimate"
+            right={
               <span
                 className="font-mono text-[9px] text-zinc-600 uppercase tracking-[0.15em]"
                 title="Heuristic — slicer is the source of truth"
               >
                 Heuristic
               </span>
-            </div>
+            }
+          >
+          <div className="space-y-3" data-testid="cost-estimate-panel">
             <div className="grid grid-cols-3 gap-2">
               <div className="panel-muted p-2.5">
                 <div className="text-[9px] uppercase tracking-[0.15em] text-zinc-500">
@@ -464,31 +474,30 @@ export const StatsPanel = ({
               Click the ⇄ icon to swap any filament against your library and see live cost changes. Assumes Ø1.75mm filament · 12mm/s extruder throughput · 90s per colour swap. Real prints vary ±20%.
             </div>
           </div>
+          </CollapsibleSection>
         </>
       )}
 
       <div className="border-t border-zinc-800" />
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-            Export
+      <CollapsibleSection
+        id="export"
+        title="Export"
+        right={result && result.void_pixels > 0 ? (
+          <div
+            data-testid="voids-badge"
+            title={`${result.void_pixels.toLocaleString()} pixel${
+              result.void_pixels === 1 ? "" : "s"
+            } resolved to 0 layers — the Base fill slider in the Geometry panel will print ${baseMinLayers ?? 2} layer${
+              (baseMinLayers ?? 2) === 1 ? "" : "s"
+            } of base filament under each, so the slice has no holes.`}
+            className="flex items-center gap-1 px-2 py-1 border border-amber-700/50 text-amber-200 font-mono text-[9px] uppercase tracking-[0.15em]"
+          >
+            <span className="w-1 h-1 rounded-full bg-amber-300 animate-pulse" />
+            Voids · {result.void_pixels.toLocaleString()} px → {baseMinLayers ?? 2}L base
           </div>
-          {result && result.void_pixels > 0 && (
-            <div
-              data-testid="voids-badge"
-              title={`${result.void_pixels.toLocaleString()} pixel${
-                result.void_pixels === 1 ? "" : "s"
-              } resolved to 0 layers — the Base fill slider in the Geometry panel will print ${baseMinLayers ?? 2} layer${
-                (baseMinLayers ?? 2) === 1 ? "" : "s"
-              } of base filament under each, so the slice has no holes.`}
-              className="flex items-center gap-1 px-2 py-1 border border-amber-700/50 text-amber-200 font-mono text-[9px] uppercase tracking-[0.15em]"
-            >
-              <span className="w-1 h-1 rounded-full bg-amber-300 animate-pulse" />
-              Voids · {result.void_pixels.toLocaleString()} px → {baseMinLayers ?? 2}L base
-            </div>
-          )}
-        </div>
+        ) : null}
+      >
         <div className="space-y-2">
           <DownloadButton
             url={result ? exportUrl(result.job_id, "stl", { baseMinLayers }) : null}
@@ -580,13 +589,18 @@ export const StatsPanel = ({
             Generate a lithophane first
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
       {/* My Jobs history — only renders when the user is logged in */}
       {onRestoreJob && (
-        <div className="panel p-4 space-y-3">
-          <JobHistory onRestore={onRestoreJob} />
-        </div>
+        <>
+          <div className="border-t border-zinc-800" />
+          <CollapsibleSection id="my-jobs" title="My jobs" defaultOpen={false}>
+            <div className="panel p-4 space-y-3">
+              <JobHistory onRestore={onRestoreJob} />
+            </div>
+          </CollapsibleSection>
+        </>
       )}
     </div>
   );

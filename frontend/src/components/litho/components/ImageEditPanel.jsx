@@ -3,6 +3,7 @@ import { Slider } from "../../ui/slider";
 import { Label } from "../../ui/label";
 import { RotateCcw, Minus, Plus } from "lucide-react";
 import { Histogram } from "./Histogram";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 export const DEFAULT_EDITS = {
   brightness: 100, // 0..200 (100 = unchanged)
@@ -112,144 +113,146 @@ export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
 
   return (
     <div data-testid="image-edit-panel">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-          Image
-        </div>
-        <button
-          onClick={reset}
-          disabled={disabled || !active}
-          data-testid="image-edit-reset"
-          className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-[0.15em] text-zinc-500 hover:text-zinc-200 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors duration-150"
-        >
-          <RotateCcw className="w-2.5 h-2.5" strokeWidth={2} />
-          Reset
-        </button>
-      </div>
-
-      {image && (
-        <div className="mb-3">
-          <Histogram image={image} edits={edits} />
-        </div>
-      )}
-
-      <div className="space-y-3">
-        <Row
-          label="Brightness"
-          value={edits.brightness - 100 >= 0 ? `+${edits.brightness - 100}` : `${edits.brightness - 100}`}
-          unit=""
-          testid="row-brightness"
-        >
-          <SteppedSlider
-            testid="brightness-slider"
-            value={edits.brightness}
-            onChange={(v) => update("brightness", v)}
-            min={20}
-            max={200}
-            step={1}
-            disabled={disabled}
-          />
-        </Row>
-
-        <Row
-          label="Contrast"
-          value={edits.contrast - 100 >= 0 ? `+${edits.contrast - 100}` : `${edits.contrast - 100}`}
-          unit=""
-          testid="row-contrast"
-        >
-          <SteppedSlider
-            testid="contrast-slider"
-            value={edits.contrast}
-            onChange={(v) => update("contrast", v)}
-            min={20}
-            max={200}
-            step={1}
-            disabled={disabled}
-          />
-        </Row>
-
-        <Row
-          label="Saturation"
-          value={
-            edits.saturation === 0
-              ? "B&W"
-              : edits.saturation - 100 >= 0
-                ? `+${edits.saturation - 100}`
-                : `${edits.saturation - 100}`
-          }
-          unit=""
-          testid="row-saturation"
-        >
-          <SteppedSlider
-            testid="saturation-slider"
-            value={edits.saturation}
-            onChange={(v) => update("saturation", v)}
-            min={0}
-            max={200}
-            step={1}
-            disabled={disabled}
-          />
-          <div className="font-mono text-[9px] text-zinc-600 mt-0.5">
-            0 = black & white · 100 = original · 200 = vivid · hold Shift on ± for 10× step
+      <CollapsibleSection
+        id="image"
+        title="Image"
+        right={
+          <button
+            onClick={reset}
+            disabled={disabled || !active}
+            data-testid="image-edit-reset"
+            className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-[0.15em] text-zinc-500 hover:text-zinc-200 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors duration-150"
+          >
+            <RotateCcw className="w-2.5 h-2.5" strokeWidth={2} />
+            Reset
+          </button>
+        }
+      >
+        {image && (
+          <div className="mb-3">
+            <Histogram image={image} edits={edits} />
           </div>
-        </Row>
+        )}
 
-        <div className="border-t border-zinc-800 my-2" />
+        <div className="space-y-3">
+          <Row
+            label="Brightness"
+            value={edits.brightness - 100 >= 0 ? `+${edits.brightness - 100}` : `${edits.brightness - 100}`}
+            unit=""
+            testid="row-brightness"
+          >
+            <SteppedSlider
+              testid="brightness-slider"
+              value={edits.brightness}
+              onChange={(v) => update("brightness", v)}
+              min={20}
+              max={200}
+              step={1}
+              disabled={disabled}
+            />
+          </Row>
 
-        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
-          Crop
-        </div>
-        <div className="font-mono text-[9px] text-zinc-600 leading-relaxed">
-          Drag the handles directly on the viewport to crop. The numbers below
-          mirror the overlay and clamp at 45% per side.
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Row label="Left" value={edits.cropL} unit="%" testid="row-cropL">
-            <Slider
-              data-testid="crop-left-slider"
-              value={[edits.cropL]}
-              onValueChange={([v]) => update("cropL", v)}
-              min={0}
-              max={45}
+          <Row
+            label="Contrast"
+            value={edits.contrast - 100 >= 0 ? `+${edits.contrast - 100}` : `${edits.contrast - 100}`}
+            unit=""
+            testid="row-contrast"
+          >
+            <SteppedSlider
+              testid="contrast-slider"
+              value={edits.contrast}
+              onChange={(v) => update("contrast", v)}
+              min={20}
+              max={200}
               step={1}
               disabled={disabled}
             />
           </Row>
-          <Row label="Right" value={edits.cropR} unit="%" testid="row-cropR">
-            <Slider
-              data-testid="crop-right-slider"
-              value={[edits.cropR]}
-              onValueChange={([v]) => update("cropR", v)}
+
+          <Row
+            label="Saturation"
+            value={
+              edits.saturation === 0
+                ? "B&W"
+                : edits.saturation - 100 >= 0
+                  ? `+${edits.saturation - 100}`
+                  : `${edits.saturation - 100}`
+            }
+            unit=""
+            testid="row-saturation"
+          >
+            <SteppedSlider
+              testid="saturation-slider"
+              value={edits.saturation}
+              onChange={(v) => update("saturation", v)}
               min={0}
-              max={45}
+              max={200}
               step={1}
               disabled={disabled}
             />
-          </Row>
-          <Row label="Top" value={edits.cropT} unit="%" testid="row-cropT">
-            <Slider
-              data-testid="crop-top-slider"
-              value={[edits.cropT]}
-              onValueChange={([v]) => update("cropT", v)}
-              min={0}
-              max={45}
-              step={1}
-              disabled={disabled}
-            />
-          </Row>
-          <Row label="Bottom" value={edits.cropB} unit="%" testid="row-cropB">
-            <Slider
-              data-testid="crop-bottom-slider"
-              value={[edits.cropB]}
-              onValueChange={([v]) => update("cropB", v)}
-              min={0}
-              max={45}
-              step={1}
-              disabled={disabled}
-            />
+            <div className="font-mono text-[9px] text-zinc-600 mt-0.5">
+              0 = black &amp; white · 100 = original · 200 = vivid · hold Shift on ± for 10× step
+            </div>
           </Row>
         </div>
-      </div>
+      </CollapsibleSection>
+
+      <div className="border-t border-zinc-800 my-3" />
+
+      <CollapsibleSection id="crop" title="Crop">
+        <div className="space-y-3">
+          <div className="font-mono text-[9px] text-zinc-600 leading-relaxed">
+            Drag the handles directly on the viewport to crop. The numbers below
+            mirror the overlay and clamp at 45% per side.
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Row label="Left" value={edits.cropL} unit="%" testid="row-cropL">
+              <Slider
+                data-testid="crop-left-slider"
+                value={[edits.cropL]}
+                onValueChange={([v]) => update("cropL", v)}
+                min={0}
+                max={45}
+                step={1}
+                disabled={disabled}
+              />
+            </Row>
+            <Row label="Right" value={edits.cropR} unit="%" testid="row-cropR">
+              <Slider
+                data-testid="crop-right-slider"
+                value={[edits.cropR]}
+                onValueChange={([v]) => update("cropR", v)}
+                min={0}
+                max={45}
+                step={1}
+                disabled={disabled}
+              />
+            </Row>
+            <Row label="Top" value={edits.cropT} unit="%" testid="row-cropT">
+              <Slider
+                data-testid="crop-top-slider"
+                value={[edits.cropT]}
+                onValueChange={([v]) => update("cropT", v)}
+                min={0}
+                max={45}
+                step={1}
+                disabled={disabled}
+              />
+            </Row>
+            <Row label="Bottom" value={edits.cropB} unit="%" testid="row-cropB">
+              <Slider
+                data-testid="crop-bottom-slider"
+                value={[edits.cropB]}
+                onValueChange={([v]) => update("cropB", v)}
+                min={0}
+                max={45}
+                step={1}
+                disabled={disabled}
+              />
+            </Row>
+          </div>
+        </div>
+      </CollapsibleSection>
     </div>
   );
 };

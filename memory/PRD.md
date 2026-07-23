@@ -32,6 +32,17 @@ See CHANGELOG.md for the full component-level changelog. Highlights:
 - **test_credentials.md** — seed users for the testing agent / E2E suites.
 
 
+### Recently completed (iter-151.34, 2026-07-23) — LithoStudio full collapsible pass
+
+Extended the collapsible-section pattern to every scrollable subsection on both LithoStudio side panels. Extracted a shared `CollapsibleSection` component at `frontend/src/components/litho/components/CollapsibleSection.jsx` (persists open/closed under `litho.section.<id>`) and wrapped:
+
+- **Left / ConfigPanel** — Image (Brightness/Contrast/Saturation) + Crop (L/R/T/B) — split out of `ImageEditPanel`. Existing sections (Render mode, Bas-Relief geometry, Geometry, Print limits) now share the same helper.
+- **Right / StatsPanel** — AI palette (vibrancy + suggest + PaletteEditor + LibraryMatchPanel), Color identity (ΔE badges, throughput), Layer allocation (per-tone list), Print estimate (time/filament/cost + CostSwapSimulator), Export (STL/3MF/swaps + lightbox parts + Send-to-Buildplate), My jobs (JobHistory, defaults collapsed).
+
+Header UX: chevron toggle on the left, right-hand slot preserved for status chips (Voids badge, "Heuristic" label, quality label, layer count, etc.).
+
+Files touched: `ImageEditPanel.jsx`, `ConfigPanel.jsx`, `StatsPanel.jsx`, `CollapsibleSection.jsx` (new).
+
 ### Recently completed (iter-151.33, 2026-07-23) — 3MF Send-to-Buildplate + collapsible right-panel & LithoStudio sections
 
 **Send to Build Plate now ships the 3MF (not the STL).** STL is a flat single-color mesh, so every tone the palette optimiser assigned was silently lost the moment the mesh landed on the workspace. Now the button:

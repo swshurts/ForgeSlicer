@@ -15,43 +15,7 @@ import { PresetManager } from "./PresetManager";
 import { HelpHint } from "./HelpHint";
 import { PrinterSelect } from "./PrinterSelect";
 import { NozzleSelect } from "./NozzleSelect";
-import { ChevronDown, ChevronRight } from "lucide-react";
-
-// iter-151.33 — Lightweight collapsible section header for the
-// LithoStudio config column. Persists open/closed to localStorage
-// so returning users don't have to re-expand every session.
-function CollapsibleSection({ id, title, help, defaultOpen = true, children }) {
-  const storageKey = `litho.cfg.${id}`;
-  const [open, setOpen] = React.useState(() => {
-    try {
-      const v = localStorage.getItem(storageKey);
-      if (v === "0") return false;
-      if (v === "1") return true;
-    } catch { /* private mode */ }
-    return defaultOpen;
-  });
-  React.useEffect(() => {
-    try { localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* no-op */ }
-  }, [open, storageKey]);
-  return (
-    <div data-testid={`cfg-section-${id}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        data-testid={`cfg-section-${id}-toggle`}
-        className="w-full flex items-center gap-1.5 mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 hover:text-zinc-300 text-left"
-      >
-        <span className="shrink-0" aria-hidden="true">
-          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        </span>
-        <span>{title}</span>
-        {help}
-      </button>
-      {open && <div>{children}</div>}
-    </div>
-  );
-}
+import { CollapsibleSection } from "./CollapsibleSection";
 
 const Row = ({ label, value, unit, children, testid, hint }) => (
   <div className="space-y-2" data-testid={testid}>
